@@ -1,6 +1,4 @@
-# MARK - Mini AI Assistant Virtual Agent Local
-
-### Memory Adaptive Response Knowledge
+# MARK - Memory Adaptive Response Knowledge
 
 MARK adalah asisten AI virtual berbasis lokal yang dirancang untuk membantu produktivitas pengguna dengan privasi penuh.
 Ditenagai oleh LLM (_Large Language Model_) open-source, MARK memungkinkan Anda memiliki asisten pintar tanpa bergantung pada koneksi internet atau layanan cloud pihak ketiga.
@@ -62,10 +60,10 @@ npm run build:linux
 ```
 
 ## Roadmap Masa Depan
-
-- [ ] **Voice Interaction**: Integrasi STT (Speech-to-Text) dan TTS (Text-to-Speech) lokal.
-- [ ] **Vision Capability**: Dukungan untuk analisis gambar secara lokal.
-- [ ] **Improved MMS**: Sinkronisasi memori yang lebih cerdas menggunakan Vector Database lokal.
+- [ ] **Customize Assistant**: Dapat menyesuaikan asisten dengan preferensi pengguna.
+- [ ] **Voice Interaction**: Dapat berkomunikasi dengan asisten menggunakan suara.
+- [ ] **Vision Capability**: Dapat menganalisis gambar dan memberikan informasi.
+- [ ] **Improved MMS**: Sinkronisasi memori yang lebih cerdas menggunakan Vector Database.
 - [ ] **Hardware Integration**: Dapat diintegrasikan dengan perangkat keras.
 
 ## Kontribusi
