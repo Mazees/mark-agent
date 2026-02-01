@@ -5,8 +5,6 @@
 MARK adalah asisten AI virtual berbasis lokal yang dirancang untuk membantu produktivitas pengguna dengan privasi penuh.
 Ditenagai oleh LLM (_Large Language Model_) open-source, MARK memungkinkan Anda memiliki asisten pintar tanpa bergantung pada koneksi internet atau layanan cloud pihak ketiga.
 
-![MARK UI Placeholder](https://via.placeholder.com/800x450?text=MARK+AI+Interface+Preview)
-
 ## Fitur Utama
 
 - **Local LLM Support**: Kompatibel dengan model open-source terbaik seperti **Gemma**, **Llama**, dan **Mistral**. Bebas disesuaikan dengan spek perangkat Anda.
