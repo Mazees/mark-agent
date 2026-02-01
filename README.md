@@ -64,9 +64,9 @@ npm run build:linux
 ## Roadmap Masa Depan
 
 - [ ] **Voice Interaction**: Integrasi STT (Speech-to-Text) dan TTS (Text-to-Speech) lokal.
-- [ ] **Plugin System**: Kemampuan untuk memperluas fitur MARK dengan plugin buatan komunitas.
 - [ ] **Vision Capability**: Dukungan untuk analisis gambar secara lokal.
 - [ ] **Improved MMS**: Sinkronisasi memori yang lebih cerdas menggunakan Vector Database lokal.
+- [ ] **Hardware Integration**: Dapat diintegrasikan dengan perangkat keras.
 
 ## Kontribusi
 
