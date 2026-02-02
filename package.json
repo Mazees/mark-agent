@@ -21,6 +21,8 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@tailwindcss/vite": "^4.1.18",
+    "dexie": "^4.3.0",
+    "dexie-export-import": "^4.1.4",
     "electron-updater": "^6.3.9",
     "openai": "^6.17.0",
     "react-router-dom": "^7.13.0",

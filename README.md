@@ -60,6 +60,7 @@ npm run build:linux
 ```
 
 ## Roadmap Masa Depan
+
 - [ ] **Customize Assistant**: Dapat menyesuaikan asisten dengan preferensi pengguna.
 - [ ] **Voice Interaction**: Dapat berkomunikasi dengan asisten menggunakan suara.
 - [ ] **Vision Capability**: Dapat menganalisis gambar dan memberikan informasi.
