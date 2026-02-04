@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
 import ChatList from '../components/ChatList'
-import { getAnswer, getRelevantMemoryId } from '../api/ai'
+import { getAnswer, getRelevantMemoryId, getSearchResult } from '../api/ai'
+import { deleteData, insertData, updateData, getSpecificMemory } from '../api/db'
 
 const Chat = () => {
   const [chatData, setChatData] = useState([])
 
-  const chatEndRef = useRef(null);
+  const chatEndRef = useRef(null)
   const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
   useEffect(() => {
-    scrollToBottom();
-  }, [chatData]);
+    scrollToBottom()
+  }, [chatData])
 
   const [message, setMessage] = useState('')
 
@@ -20,19 +21,54 @@ const Chat = () => {
     e.target.disabled = true
     setChatData((prev) => [...prev, { role: 'user', content: message }])
     setChatData((prev) => [...prev, { role: 'ai', content: '...', isThinking: true }])
-    const result = await getAnswer(message, [], [])
+    const memoryIdRef = await getRelevantMemoryId(message)
+    console.log(`Relevant Memory ID: ${JSON.stringify(memoryIdRef)}`)
+    const memoryReference = await getSpecificMemory(memoryIdRef)
+    const chatHistory = [...chatData].reverse().slice(0, 10)
+    const answer = await getAnswer(message, memoryReference, chatHistory)
     setChatData((prev) => prev.filter((item) => !(item.role === 'ai' && item.isThinking)))
+    console.log('Answer from AI:', answer)
+
+    if (answer.command?.action === 'run') {
+      console.log('Sending command to Main Process:', answer.command.run)
+      const result = await window.api.runNodeFunction(answer.command.run)
+      console.log('Main Process response:', result)
+    } else if (answer.command?.action === 'search') {
+      setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearching: true }])
+      const searchResults = await getSearchResult(answer.answer, answer.command.query)
+      setChatData((prev) => prev.filter((item) => !(item.role === 'ai' && item.isSearching)))
+      setChatData((prev) => [
+        ...prev,
+        { role: 'ai', content: searchResults.answer, sources: searchResults.sources }
+      ])
+      return
+    }
+    if (answer.memory) {
+      if (answer.memory.action === 'insert') {
+        await insertData(answer.memory)
+      } else if (answer.memory.action === 'update') {
+        await updateData(answer.memory)
+      } else if (answer.memory.action === 'delete') {
+        await deleteData(answer.memory)
+      }
+    }
     setChatData((prev) => {
-      if (result.command) {
+      if (answer.command) {
         return [
           ...prev,
-          { role: 'ai', content: result.answer, isMemorySaved: result.memory ? true : false },
-          { role: 'command', content: result.command.run, risk: result.command.risk }
+          { role: 'ai', content: answer.answer, isMemorySaved: answer.memory ? true : false },
+          { role: 'command', content: answer.command.run, risk: answer.command.risk }
         ]
       } else {
         return [
           ...prev,
-          { role: 'ai', content: result.answer, isMemorySaved: result.memory ? true : false }
+          {
+            role: 'ai',
+            content: answer.answer,
+            isMemorySaved: answer.memory?.action === 'insert' ? true : false,
+            isMemoryUpdated: answer.memory?.action === 'update' ? true : false,
+            isMemoryDeleted: answer.memory?.action === 'delete' ? true : false
+          }
         ]
       }
     })

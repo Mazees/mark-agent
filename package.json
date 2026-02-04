@@ -20,11 +20,15 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@tailwindcss/vite": "^4.1.18",
     "dexie": "^4.3.0",
     "dexie-export-import": "^4.1.4",
+    "duck-duck-scrape": "^2.2.7",
     "electron-updater": "^6.3.9",
     "openai": "^6.17.0",
+    "puppeteer-core": "^24.36.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.0",
     "react-syntax-highlighter": "^16.1.0",
     "tailwindcss": "^4.1.18"

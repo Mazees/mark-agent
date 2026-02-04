@@ -7,3 +7,4 @@ build
 *.log*
 .env
 .vscode
+mark_chrome_profile

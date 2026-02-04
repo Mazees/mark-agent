@@ -9,7 +9,7 @@ const Drawer = ({ isOpen = true, onChange }) => {
   ]
 
   return (
-    <div className="drawer">
+    <div className="drawer z-30">
       <input
         id="my-drawer-1"
         type="checkbox"

@@ -1,8 +1,14 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  runNodeFunction: (data) => ipcRenderer.invoke('execute-node-task', data),
+  initMarkInternet: () => ipcRenderer.invoke('init-mark-internet'),
+  deepSearch: (links) => ipcRenderer.invoke('deep-search', links),
+  searchWeb: (query) => ipcRenderer.invoke('search-web', query),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url)
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

@@ -1,12 +1,23 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useState, useEffect } from 'react'
 import Navbar from './components/Navbar'
 import Chat from './pages/Chat'
 import Configuration from './pages/Configuration'
+import SetupScreen from './pages/SetupScreen'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 
 function App() {
-  const ipcHandle = () => window.electron.ipcRenderer.send('ping')
+  const [isSetupComplete, setIsSetupComplete] = useState(() => {
+    return localStorage.getItem('mark-internet-setup') === 'true'
+  })
+
+  const handleSetupComplete = () => {
+    localStorage.setItem('mark-internet-setup', 'true')
+    setIsSetupComplete(true)
+  }
+
+  if (!isSetupComplete) {
+    return <SetupScreen onComplete={handleSetupComplete} />
+  }
 
   return (
     <HashRouter>

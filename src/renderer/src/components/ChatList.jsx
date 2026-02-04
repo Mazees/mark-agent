@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { db } from '../api/db'
-import { getAnswer } from '../api/ai'
-import { getRelevantMemoryId } from '../api/ai'
+import Markdown from 'react-markdown'
 
 const ChatList = ({
   role = 'user',
   content = '',
   isThinking = false,
+  isSearching = false,
   isMemorySaved = false,
+  isMemoryUpdated = false,
+  isMemoryDeleted = false,
   risk = 'safe',
+  sources = [],
   onRun
 }) => {
   const isUser = role === 'user'
@@ -44,7 +46,7 @@ const ChatList = ({
               background: '#282c34'
             }}
           >
-            {content}
+            <Markdown>{content}</Markdown>
           </SyntaxHighlighter>
           <div className="flex items-center gap-2 mt-1">
             {risk === 'confirm' ? (
@@ -132,13 +134,48 @@ const ChatList = ({
             <span className="loading loading-dots loading-xs"></span>
             <span className="text-xs italic opacity-70">Mark is thinking...</span>
           </div>
+        ) : isSearching ? (
+          <div className="flex items-center gap-2 py-1">
+            <span className="loading loading-dots loading-xs"></span>
+            <span className="text-xs italic opacity-70">Mark is searching...</span>
+          </div>
         ) : (
-          <div className="text-sm leading-relaxed whitespace-pre-wrap">{content}</div>
+          <div className="flex flex-col gap-3">
+            <div className="text-sm leading-relaxed whitespace-pre-wrap">
+              <Markdown>{content}</Markdown>
+            </div>
+            {sources && sources.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-primary/10">
+                <span className="text-[10px] font-bold opacity-50 w-full mb-1 uppercase tracking-wider">
+                  Sources:
+                </span>
+                {sources.map((source, i) => (
+                  <button
+                    key={i}
+                    onClick={() => window.api.openExternal(source.link)}
+                    className="btn btn-xs btn-neutral border border-primary/20 hover:border-primary/50 normal-case text-[10px] flex items-center gap-1 bg-base-300 transform transition hover:scale-105"
+                    title={source.link}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-3 h-3 text-primary"
+                    >
+                      <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                      <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                    </svg>
+                    <span className="truncate max-w-[150px]">{source.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
-      {isMemorySaved && (
+      {(isMemorySaved || isMemoryUpdated || isMemoryDeleted) && (
         <div className="chat-footer text-[10px] text-white font-bold mt-2 px-1">
-          Memory Saved{' '}
+          {isMemorySaved ? 'Memory Saved' : isMemoryUpdated ? 'Memory Updated' : 'Memory Deleted'}{' '}
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"

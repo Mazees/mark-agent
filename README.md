@@ -1,28 +1,34 @@
-# MARK - Memory Adaptive Response Knowledge
+# MARK - Memory Adaptive Response Knowledge (Windows Only)
 
 MARK adalah asisten AI virtual berbasis lokal yang dirancang untuk membantu produktivitas pengguna dengan privasi penuh.
-Ditenagai oleh LLM (_Large Language Model_) open-source, MARK memungkinkan Anda memiliki asisten pintar tanpa bergantung pada koneksi internet atau layanan cloud pihak ketiga.
+
+> [!IMPORTANT]
+> Proyek ini saat ini dioptimalkan khusus untuk **Windows**.
 
 ## Fitur Utama
 
-- **Local LLM Support**: Kompatibel dengan model open-source terbaik seperti **Gemma**, **Llama**, dan **Mistral**. Bebas disesuaikan dengan spek perangkat Anda.
-- **Memory Management System (MMS)**: MARK mampu mengingat konteks percakapan sebelumnya dan menyimpan "ingatan" jangka panjang untuk pengalaman yang lebih personal.
-- **Safe Command Execution**: Dapat membantu menjalankan perintah sistem (PowerShell/Shell) secara aman dengan sistem konfirmasi risiko sebelum eksekusi.
-- **Modern & Sleek UI**: Antarmuka berbasis **React 19** dengan **Tailwind CSS 4** dan **DaisyUI 5** yang responsif dan estetik.
-- **Privacy First**: Semua data, memori, dan pemrosesan AI dilakukan 100% secara lokal di perangkat Anda.
+- **Local LLM Support**: Kompatibel dengan model open-source terbaik (Gemma, Llama, Mistral) via LM Studio.
+- **Web Search & Deep Research**: MARK bisa "browsing" internet secara mandiri menggunakan Puppeteer untuk mencari data terbaru tahun 2025-2026.
+- **Internet Setup UI**: Proses setup koneksi internet yang mudah dengan penanganan CAPTCHA otomatis/manual.
+- **Memory Management System (MMS)**: Mengingat konteks percakapan dan menyimpan preferensi pengguna secara permanen.
+- **Safe Command Execution**: Menjalankan perintah PowerShell secara aman dengan sistem konfirmasi risiko.
+- **Modern & Premium UI**: Desain mewah dengan efek glassmorphism, animasi halus, dan mode gelap.
 
 ## Teknologi yang Digunakan
 
-- **Frontend**: React 19, Tailwind CSS 4, DaisyUI 5
-- **Desktop Framework**: Electron
-- **AI Integration**: LM Studio
+- **Core**: Electron, React 19, Vite
+- **Styling**: Tailwind CSS 4, DaisyUI 5
+- **Automation**: Puppeteer Core (untuk Web Search)
+- **AI Backend**: LM Studio (Local Inference)
 
 ## Persiapan & Instalasi
 
 ### Prasyarat
 
-- [Node.js](https://nodejs.org/) (Versi terbaru disarankan)
-- Local LLM Runner [LM Studio](https://lmstudio.ai/)
+- **Operating System**: Windows 10/11
+- **Node.js**: v18+
+- **Google Chrome**: Terinstal di path default (`C:\Program Files\Google\Chrome\Application\chrome.exe`)
+- **LM Studio**: Berjalan pada `http://localhost:1234`
 
 ### Langkah Instalasi
 
@@ -39,41 +45,30 @@ Ditenagai oleh LLM (_Large Language Model_) open-source, MARK memungkinkan Anda 
    npm install
    ```
 
-3. **Jalankan aplikasi dalam mode pengembangan:**
+3. **Jalankan aplikasi:**
    ```bash
    npm run dev
    ```
 
 ## Build Aplikasi
 
-Untuk membuat executable file sesuai OS Anda:
+Untuk membuat executable file (Windows Only):
 
 ```bash
-# Windows
 npm run build:win
-
-# macOS
-npm run build:mac
-
-# Linux
-npm run build:linux
 ```
 
 ## Roadmap Masa Depan
 
-- [ ] **Customize Assistant**: Dapat menyesuaikan asisten dengan preferensi pengguna.
-- [ ] **Voice Interaction**: Dapat berkomunikasi dengan asisten menggunakan suara.
-- [ ] **Vision Capability**: Dapat menganalisis gambar dan memberikan informasi.
-- [ ] **Improved MMS**: Sinkronisasi memori yang lebih cerdas menggunakan Vector Database.
-- [ ] **Hardware Integration**: Dapat diintegrasikan dengan perangkat keras.
-
-## Kontribusi
-
-Proyek ini masih dalam tahap pengembangan aktif. Kontribusi dalam bentuk _bug report_, ide fitur, atau _pull request_ sangat disambut baik!
+- [x] **Web Search Integration**: Mendukung pencarian data real-time.
+- [x] **Internet Setup UI**: Proses inisialisasi browser profile.
+- [ ] **Voice Interaction**: Berkomunikasi dengan suara.
+- [ ] **Vision Capability**: Analisis gambar lokal.
+- [ ] **Advanced MMS**: Integrasi Vector Database (ChromaDB/Pinecone).
 
 ## Lisensi
 
-Proyek ini menggunakan lisensi **MIT**, namun dengan ketentuan tambahan: **Dilarang keras memperjualbelikan perangkat lunak ini atau bagian apa pun didalamnya untuk keuntungan komersial.** Proyek ini dibuat demi kemajuan komunitas AI yang terbuka dan gratis.
+Proyek ini menggunakan lisensi **MIT**, namun dengan ketentuan tambahan: **Dilarang keras memperjualbelikan perangkat lunak ini untuk keuntungan komersial.**
 
 ---
 
