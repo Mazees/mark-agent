@@ -5,11 +5,66 @@
 
 /* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {
-    display: none;
+  display: none;
 }
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Custom Markdown Styles */
+.custom-markdown {
+  color: inherit;
+  line-height: 1.6;
+}
+
+.custom-markdown h1 {
+  @apply text-2xl font-bold mb-4 mt-2;
+}
+.custom-markdown h2 {
+  @apply text-xl font-bold mb-3 mt-2;
+}
+.custom-markdown h3 {
+  @apply text-lg font-bold mb-2 mt-2;
+}
+
+.custom-markdown p {
+  @apply mb-3;
+}
+
+.custom-markdown ul {
+  list-style-type: disc !important;
+  margin-left: 1.5rem !important;
+  margin-bottom: 1rem !important;
+  display: block !important;
+}
+
+.custom-markdown ol {
+  list-style-type: decimal !important;
+  margin-left: 1.5rem !important;
+  margin-bottom: 1rem !important;
+  display: block !important;
+}
+
+.custom-markdown li {
+  display: list-item !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.custom-markdown code {
+  @apply bg-base-300 px-1.5 py-0.5 rounded text-primary font-mono text-sm;
+}
+
+.custom-markdown strong {
+  @apply font-bold text-primary;
+}
+
+.custom-markdown blockquote {
+  @apply border-l-4 border-primary pl-4 italic my-4 opacity-80;
+}
+
+.custom-markdown a {
+  @apply text-primary underline hover:opacity-80 cursor-pointer;
 }

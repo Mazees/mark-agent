@@ -113,7 +113,7 @@ ${JSON.stringify(deepDataArray)}
 3. Fokus pada jawaban dari pertanyaan: "${userInput}".
 4. **DILARANG** menggunakan kata formal (Berdasarkan data, Menurut sumber, dll).
 5. **JANGAN** tambahin Source/URL di jawaban, itu akan ditambahin otomatis.
-6. (Markdown support, gunakan list \n untuk poin-poin)
+6. (Markdown support, gunakan list \n\n* untuk poin-poin)
 
 # EXAMPLE:
 "Gue udah cek, Presiden Indonesia sekarang itu Prabowo Subianto yang dilantik akhir 2024 kemaren bareng Gibran Rakabuming Raka sebagai Wapres. Di tahun 2026 ini mereka lagi fokus sama program hilirisasi dan transisi energi hijau sesuai info dari berita nasional."
@@ -121,15 +121,9 @@ ${JSON.stringify(deepDataArray)}
   console.log(prompts)
   const response = await fetchAI('', prompts)
 
-  // Ambil top 3 source
-  const topSources = search.slice(0, 3).map((item) => ({
-    title: item.title,
-    link: item.link
-  }))
-
   return {
     answer: response,
-    sources: topSources
+    sources: search
   }
 }
 
@@ -205,9 +199,9 @@ Hanya gunakan type dan key berikut:
 # OUTPUT RULES (JSON ONLY)
 - HANYA output JSON. DILARANG ada teks penjelasan di luar kurung kurawal.
 - Output WAJIB diawali '{' dan diakhiri '}'.
-- Gunakan '\n' untuk baris baru di dalam field "answer" agar tampilan list di UI tersusun vertikal.
+- Gunakan '\n\n' sebelum memulai list agar Markdown merender list (bullet points) dengan benar.
 {
-  "answer": "string (Markdown support, gunakan list \n untuk poin-poin)",
+  "answer": "string (Markdown support, gunakan \n\n* untuk poin-poin)",
   "memory": {
     "type": "string",
     "key": "string",

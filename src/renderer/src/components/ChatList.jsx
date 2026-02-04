@@ -46,7 +46,7 @@ const ChatList = ({
               background: '#282c34'
             }}
           >
-            <Markdown>{content}</Markdown>
+            {content}
           </SyntaxHighlighter>
           <div className="flex items-center gap-2 mt-1">
             {risk === 'confirm' ? (
@@ -141,7 +141,7 @@ const ChatList = ({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="text-sm leading-relaxed whitespace-pre-wrap">
+            <div className="text-sm leading-relaxed custom-markdown">
               <Markdown>{content}</Markdown>
             </div>
             {sources && sources.length > 0 && (

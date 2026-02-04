@@ -23,10 +23,12 @@ function App() {
     <HashRouter>
       <div className="h-screen flex flex-col">
         <Navbar />
-        <Routes>
-          <Route path="/" element={<Chat />} />
-          <Route path="/config" element={<Configuration />} />
-        </Routes>
+        <div className="h-[calc(100vh-4rem)] mt-16">
+          <Routes>
+            <Route path="/" element={<Chat />} />
+            <Route path="/config" element={<Configuration />} />
+          </Routes>
+        </div>
       </div>
     </HashRouter>
   )

@@ -5,7 +5,7 @@ const Navbar = () => {
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   return (
     <>
-      <nav className="navbar sticky top-0 z-20 bg-base-100 shadow-sm">
+      <nav className="navbar fixed top-0 z-20 bg-base-100 shadow-sm">
         <div className="flex-none">
           <button className="btn btn-square btn-ghost" onClick={() => setIsDrawerOpen(!isDrawerOpen)}>
             <svg
