@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import icon from '../../resources/icon.ico?asset'
 import { search } from 'duck-duck-scrape'
 import puppeteer from 'puppeteer-core'
 
@@ -13,7 +13,7 @@ function createWindow() {
     height: 670,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon: icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -86,12 +86,6 @@ app.whenReady().then(() => {
       // Pancing ke Google
       await page.goto('https://www.google.com/search?q=tes+koneksi+mark&hl=id')
 
-      // Beri instruksi ke Frontend
-      event.sender.send(
-        'setup-status',
-        'Selesaikan Captcha atau klik "Setuju" di jendela Chrome...'
-      )
-
       await Promise.race([
         page.waitForSelector('#search', { timeout: 0 }),
         page.waitForNavigation({ waitUntil: 'networkidle2' })
@@ -131,7 +125,7 @@ app.whenReady().then(() => {
       const isCaptcha = await page.evaluate(() => document.body.innerHTML.includes('g-recaptcha'))
       if (isCaptcha) {
         await browser.close()
-        return { error: 'CAPTCHA_DETECTED' }
+        throw new Error('captcha_error')
       }
 
       const results = await page.evaluate(() => {
@@ -173,7 +167,40 @@ app.whenReady().then(() => {
       return results
     } catch (e) {
       if (browser) await browser.close()
-      return { error: e.message }
+      throw e
+    }
+  })
+
+  ipcMain.handle('check-captcha', async () => {
+    let browser = null
+    try {
+      const markProfilePath = path.join(app.getPath('userData'), 'mark_chrome_profile')
+      browser = await puppeteer.launch({
+        headless: 'new',
+        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        args: [
+          `--user-data-dir=${markProfilePath}`,
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          // SET USER AGENT DI SINI (Hapus baris page.setUserAgent di bawah nanti)
+          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+        ]
+      })
+      const page = await browser.newPage()
+
+      await page.goto(`https://www.google.com/search?q=tes+koneksi+mark&hl=id`)
+
+      // Cek Captcha secara singkat
+      const isCaptcha = await page.evaluate(() => document.body.innerHTML.includes('g-recaptcha'))
+      console.log('captcha:' + isCaptcha)
+      if (isCaptcha) {
+        throw new Error('captcha_error')
+      }
+      await browser.close()
+      return true
+    } catch (error) {
+      if (browser) await browser.close()
+      return false
     }
   })
 

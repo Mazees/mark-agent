@@ -7,6 +7,8 @@ const Chat = () => {
   const [chatData, setChatData] = useState([])
 
   const chatEndRef = useRef(null)
+  const abortControllerRef = useRef(null)
+
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -16,62 +18,130 @@ const Chat = () => {
 
   const [message, setMessage] = useState('')
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    e.target.disabled = true
-    setChatData((prev) => [...prev, { role: 'user', content: message }])
-    setChatData((prev) => [...prev, { role: 'ai', content: '...', isThinking: true }])
-    const memoryIdRef = await getRelevantMemoryId(message)
-    console.log(`Relevant Memory ID: ${JSON.stringify(memoryIdRef)}`)
-    const memoryReference = await getSpecificMemory(memoryIdRef)
-    const chatHistory = [...chatData].reverse().slice(0, 10)
-    const answer = await getAnswer(message, memoryReference, chatHistory)
-    setChatData((prev) => prev.filter((item) => !(item.role === 'ai' && item.isThinking)))
-    console.log('Answer from AI:', answer)
+  const [isLoading, setIsLoading] = useState(false)
 
-    if (answer.command?.action === 'run') {
-      console.log('Sending command to Main Process:', answer.command.run)
-      const result = await window.api.runNodeFunction(answer.command.run)
-      console.log('Main Process response:', result)
-    } else if (answer.command?.action === 'search') {
-      setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearching: true }])
-      const searchResults = await getSearchResult(answer.answer, answer.command.query)
-      setChatData((prev) => prev.filter((item) => !(item.role === 'ai' && item.isSearching)))
-      setChatData((prev) => [
-        ...prev,
-        { role: 'ai', content: searchResults.answer, sources: searchResults.sources }
-      ])
-      return
+  useEffect(() => {
+    console.log('isLoading changed:', isLoading)
+    if (!isLoading) {
+      abortControllerRef.current = null
     }
-    if (answer.memory) {
-      if (answer.memory.action === 'insert') {
-        await insertData(answer.memory)
-      } else if (answer.memory.action === 'update') {
-        await updateData(answer.memory)
-      } else if (answer.memory.action === 'delete') {
-        await deleteData(answer.memory)
+  }, [isLoading])
+
+  const handleAIResponse = async (userInput) => {
+    setIsLoading(true)
+    const userMessage = { role: 'user', content: userInput }
+    const thinkingMessage = { role: 'ai', content: '...', isThinking: true }
+
+    setChatData((prev) => [...prev, userMessage, thinkingMessage])
+
+    try {
+      abortControllerRef.current = new AbortController()
+      const memoryIdRef = await getRelevantMemoryId(userInput, abortControllerRef.current.signal)
+      const memoryReference = await getSpecificMemory(memoryIdRef, abortControllerRef.current.signal)
+      const chatHistory = [...chatData].reverse().slice(0, 10)
+      const answer = await getAnswer(
+        userInput,
+        memoryReference,
+        chatHistory,
+        abortControllerRef.current.signal
+      )
+      console.log('AI Answer:', answer)
+
+      if (answer.memory && answer.command?.action !== 'search') {
+        const actions = { insert: insertData, update: updateData, delete: deleteData }
+        if (actions[answer.memory.action]) {
+          await actions[answer.memory.action](answer.memory)
+        }
       }
-    }
-    setChatData((prev) => {
-      if (answer.command) {
-        return [
-          ...prev,
-          { role: 'ai', content: answer.answer, isMemorySaved: answer.memory ? true : false },
-          { role: 'command', content: answer.command.run, risk: answer.command.risk }
-        ]
+      setChatData((prev) => {
+        const filtered = prev.filter((item) => !item.isThinking)
+        const aiResponse = {
+          role: 'ai',
+          content: answer.answer,
+          isMemorySaved: answer.memory?.action === 'insert' && answer.command?.action !== 'search',
+          isMemoryUpdated: answer.memory?.action === 'update',
+          isMemoryDeleted: answer.memory?.action === 'delete'
+        }
+        if (answer.command?.run) {
+          return [
+            ...filtered,
+            aiResponse,
+            { role: 'command', content: answer.command.run, risk: answer.command.risk }
+          ]
+        }
+        return [...filtered, aiResponse]
+      })
+      if (answer.command?.action === 'search') {
+        await handleSearchCommand(userInput, answer.command.query)
+      }
+      setMessage('')
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        setChatData((prev) => [...prev.filter((item) => !item.isThinking)])
+        setChatData((prev) => prev.slice(0, -1))
       } else {
-        return [
-          ...prev,
+        setChatData((prev) => [
+          ...prev.filter((item) => !item.isThinking),
           {
             role: 'ai',
-            content: answer.answer,
-            isMemorySaved: answer.memory?.action === 'insert' ? true : false,
-            isMemoryUpdated: answer.memory?.action === 'update' ? true : false,
-            isMemoryDeleted: answer.memory?.action === 'delete' ? true : false
+            content:
+              'Waduh bro, ada masalah teknis pas gue mau jawab. Coba cek LM Studio lu nyala nggak?'
           }
-        ]
+        ])
       }
-    })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSearchCommand = async (userInput, query) => {
+    setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearching: true }])
+    try {
+      const searchResults = await getSearchResult(userInput, query)
+      setChatData((prev) => [
+        ...prev.filter((item) => !item.isSearching),
+        {
+          role: 'ai',
+          content: searchResults.answer,
+          sources: searchResults.sources,
+          isMemorySaved: true
+        }
+      ])
+      insertData({
+        type: 'fact',
+        key: 'misc',
+        summary: `Info net: ${query}`,
+        memoryfull: JSON.stringify(searchResults.answer),
+        confidence: 0.8
+      })
+    } catch (error) {
+      console.error('Search Technical Error:', error)
+      if (error.name === 'AbortError') {
+        setChatData((prev) => [...prev.filter((item) => !item.isSearching)])
+        setChatData((prev) => prev.slice(0, -1))
+      } else {
+        setChatData((prev) => [
+          ...prev.filter((item) => !item.isSearching),
+          {
+            role: 'ai',
+            content: 'Gagal dapet info dari internet nih, koneksi atau captcha mungkin bermasalah.'
+          }
+        ])
+      }
+    }
+  }
+
+  const handleStop = () => {
+    abortControllerRef.current.abort()
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (isLoading) {
+      handleStop()
+    } else {
+      handleAIResponse(message.trim())
+    }
   }
   return (
     <div className="w-full h-full flex flex-col items-center justify-end p-4">
@@ -98,26 +168,41 @@ const Chat = () => {
         className="w-full lg:w-1/2 bg-neutral mb-10 p-5 rounded-xl flex flex-col"
       >
         <textarea
-          onChange={(e) => {
-            setMessage(e.target.value)
-          }}
-          className=" placeholder-white resize-none focus:outline-none w-full overflow-hidden"
-          placeholder="Kirim Pesan..."
+          value={message}
+          disabled={isLoading}
+          required
+          onChange={(e) => setMessage(e.target.value)}
+          className="placeholder-white resize-none focus:outline-none w-full overflow-hidden disabled:opacity-50"
+          placeholder={isLoading ? 'Mark sedang menjawab...' : 'Kirim Pesan...'}
         ></textarea>
         <button
           type="submit"
-          className="ml-auto bg-primary btn btn-circle text-lg text-neutral hover:text-white"
+          className="ml-auto bg-primary btn btn-circle text-lg text-neutral hover:text-white disabled:bg-neutral-focus"
         >
-          <svg
-            fill="currentColor"
-            width="1em"
-            height="1em"
-            viewBox="0 0 256 256"
-            id="Flat"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M231.626,128a16.015,16.015,0,0,1-8.18262,13.96094L54.53027,236.55273a15.87654,15.87654,0,0,1-18.14648-1.74023,15.87132,15.87132,0,0,1-4.74024-17.60156L60.64746,136H136a8,8,0,0,0,0-16H60.64746L31.64355,38.78906A16.00042,16.00042,0,0,1,54.5293,19.44727l168.915,94.59179A16.01613,16.01613,0,0,1,231.626,128Z" />
-          </svg>
+          {isLoading ? (
+            <svg
+              aria-hidden="true"
+              className="text-white"
+              xmlns="http://www.w3.org/2000/svg"
+              width="1em"
+              height="1em"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M7 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H7Z" />
+            </svg>
+          ) : (
+            <svg
+              fill="currentColor"
+              width="1em"
+              height="1em"
+              viewBox="0 0 256 256"
+              id="Flat"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M231.626,128a16.015,16.015,0,0,1-8.18262,13.96094L54.53027,236.55273a15.87654,15.87654,0,0,1-18.14648-1.74023,15.87132,15.87132,0,0,1-4.74024-17.60156L60.64746,136H136a8,8,0,0,0,0-16H60.64746L31.64355,38.78906A16.00042,16.00042,0,0,1,54.5293,19.44727l168.915,94.59179A16.01613,16.01613,0,0,1,231.626,128Z" />
+            </svg>
+          )}
         </button>
       </form>
     </div>

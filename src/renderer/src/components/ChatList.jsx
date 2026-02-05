@@ -130,14 +130,28 @@ const ChatList = ({
       </div>
       <div className={`${containerClass} shadow-md min-h-0 transition-all duration-300`}>
         {isThinking ? (
-          <div className="flex items-center gap-2 py-1">
+          <div className="flex items-center gap-2 py-1 animate-pulse">
             <span className="loading loading-dots loading-xs"></span>
             <span className="text-xs italic opacity-70">Mark is thinking...</span>
           </div>
         ) : isSearching ? (
-          <div className="flex items-center gap-2 py-1">
-            <span className="loading loading-dots loading-xs"></span>
-            <span className="text-xs italic opacity-70">Mark is searching...</span>
+          <div className="flex items-center gap-2 py-1 text-xs text-white animate-pulse">
+            <svg
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              width="1em"
+              height="1em"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-width="2"
+                d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+              />
+            </svg>
+            <span className="italic opacity-70">Mark is searching...</span>
           </div>
         ) : (
           <div className="flex flex-col gap-3">

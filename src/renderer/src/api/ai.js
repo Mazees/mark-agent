@@ -1,15 +1,8 @@
-import OpenAI from 'openai'
 import { getSumMemory } from './db'
-
-const openai = new OpenAI({
-  baseURL: 'http://192.168.56.1:1234/v1',
-  apiKey: 'lm-studio', // Isi bebas
-  dangerouslyAllowBrowser: true
-})
 
 // import OpenAI from 'openai' <--- Hapus atau comment ini
 
-export const fetchAI = async (systemPrompt, userPrompt) => {
+export const fetchAI = async (systemPrompt, userPrompt, signal) => {
   try {
     const response = await fetch('http://192.168.56.1:1234/v1/chat/completions', {
       method: 'POST',
@@ -19,14 +12,13 @@ export const fetchAI = async (systemPrompt, userPrompt) => {
       },
       body: JSON.stringify({
         model: 'google/gemma-3-4b',
+        temperature: 0,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.7,
-        integrations: ['danielsig/visit-website', 'danielsig/duckduckgo']
-        // -------------------------------------
-      })
+        ]
+      }),
+      signal: signal
     })
 
     if (!response.ok) {
@@ -36,8 +28,7 @@ export const fetchAI = async (systemPrompt, userPrompt) => {
     const data = await response.json()
     return data.choices[0].message.content
   } catch (error) {
-    console.error(error)
-    return 'Maaf bro, koneksi ke LM Studio atau Plugin bermasalah.'
+    throw error
   }
 }
 const cleanAndParse = (rawResponse) => {
@@ -62,44 +53,58 @@ const cleanAndParse = (rawResponse) => {
   }
 }
 
-export const getRelevantMemoryId = async (userInput) => {
-  const memoryReference = await getSumMemory()
-  const prompts = `
+export const getRelevantMemoryId = async (userInput, signal) => {
+  try {
+    const memoryReference = await getSumMemory()
+    const prompts = `
 # ROLE
-Kamu adalah sistem ekstraksi memori. Tugasmu adalah mengambil data memori yang relevan dari 'memoryReference' berdasarkan 'userInput'.
+Kamu adalah sistem ekstraksi memori tingkat tinggi dengan filter relevansi yang ketat. 
 
 # INPUT USER
 memoryReference: ${JSON.stringify(memoryReference)}
 userInput: ${userInput}
 
 # TASK
-- Analisis maksud user (misal: mencari nama, skill, atau fakta).
-- Ambil ID dari 'memoryReference' yang memiliki informasi PALING RELEVAN dan memiliki "confidence" paling tinggi.
-- Jika ada dua data yang bertentangan, pilih yang memberikan informasi spesifik (bukan yang berisi "belum tahu").
+1. **Analisis Niat**: Identifikasi entitas atau topik utama yang dicari user (misal: "pendidikan", "hobi", "pekerjaan").
+2. **Kesesuaian Semantik**: HANYA ambil data jika "summary" atau "memoryfull" mengandung jawaban langsung atas pertanyaan user.
+3. **Threshold Ketat**: DILARANG mengambil data jika hanya mirip secara kata kunci tapi konteksnya berbeda. (Contoh: User tanya "Siapa namaku?", jangan ambil data tentang "Nama project").
+4. **Conflict Handling**: Jika ada dua data (misal: alamat lama vs alamat baru), ambil data dengan timestamp terbaru (jika ada) atau yang paling mendetail.
+
+# FILTER RULES:
+- Jika userInput adalah sapaan umum (Halo, Tes, P), keluarkan [].
+- Jika userInput meminta informasi yang BELUM PERNAH tersimpan di memoryReference, keluarkan [].
+- Abaikan data yang isinya hanya "User belum memberitahu..." atau "Belum ada info...".
 
 # OUTPUT RULES (STRICT)
-- HANYA OUTPUT JSON.
-- Gunakan format persis seperti contoh.
-- JANGAN mengubah isi "memoryfull" atau "summary" dari data aslinya.
+- HANYA OUTPUT JSON (Array of Strings).
+- JANGAN berikan penjelasan apapun.
+- JANGAN buat ID baru. Ambil ID yang persis ada di memoryReference.
 
 # OUTPUT FORMAT (WAJIB)
-[ array id ]
-id harus sesuai data memory yang ada gaboleh yang lain, jika tidak ada 'memoryReference' yang relevan 'userInput' dengan userInput keluarkan output array kosong []`
-  console.log(prompts)
-  const response = await fetchAI('', prompts)
-  const text = response
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/\s*```$/, '')
-  const data = JSON.parse(text)
-  return data
+[id_data_1 (dalam bentuk number), id_data_2]
+`
+    console.log(prompts)
+    const response = await fetchAI('', prompts, signal)
+    const text = response
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/\s*```$/, '')
+    const data = JSON.parse(text)
+    return data
+  } catch (error) {
+    console.error('Error in getRelevantMemoryId:', error)
+    throw error
+  }
 }
-export const getSearchResult = async (userInput, query) => {
-  const search = await window.api.searchWeb(query)
-  console.log(search)
-  if (search.length == 0) return { answer: 'Maaf tidak menemukan data di Internet', sources: [] }
-  const deepDataArray = await window.api.deepSearch(search)
-  const prompts = `
+
+export const getSearchResult = async (userInput, query, signal) => {
+  try {
+    const search = await window.api.searchWeb(query, signal)
+    console.log(search)
+    if (!search || search.length == 0)
+      return { answer: 'Maaf tidak menemukan data di Internet', sources: [] }
+    const deepDataArray = await window.api.deepSearch(search)
+    const prompts = `
 # ROLE:
 Kamu adalah Mark, asisten cerdas yang HANYA boleh menjawab berdasarkan data yang diberikan. 
 
@@ -118,17 +123,22 @@ ${JSON.stringify(deepDataArray)}
 # EXAMPLE:
 "Gue udah cek, Presiden Indonesia sekarang itu Prabowo Subianto yang dilantik akhir 2024 kemaren bareng Gibran Rakabuming Raka sebagai Wapres. Di tahun 2026 ini mereka lagi fokus sama program hilirisasi dan transisi energi hijau sesuai info dari berita nasional."
 `
-  console.log(prompts)
-  const response = await fetchAI('', prompts)
+    console.log(prompts)
+    const response = await fetchAI('', prompts, signal)
 
-  return {
-    answer: response,
-    sources: search
+    return {
+      answer: response,
+      sources: search
+    }
+  } catch (error) {
+    console.error('Error in getSearchResult:', error)
+    throw error
   }
 }
 
-export const getAnswer = async (userInput, memoryReference, chatSession) => {
-  const systemPrompt = `
+export const getAnswer = async (userInput, memoryReference, chatSession, signal) => {
+  try {
+    const systemPrompt = `
 ROLE:
 Kamu adalah Mark, asisten lokal yang cerdas, asertif, dan lugas. Panggil user "bro".
 Kepribadian: Santai tapi profesional, to-the-point, jangan bertele-tele.
@@ -319,15 +329,15 @@ Output: {
 }
 `
 
-  const date = new Date()
-  const infoWaktu = date.toLocaleString(undefined, {
-    timeZoneName: 'short',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  })
+    const date = new Date()
+    const infoWaktu = date.toLocaleString(undefined, {
+      timeZoneName: 'short',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
 
-  const userPrompt = `
+    const userPrompt = `
 # INPUT DARI USER
 userInput: ${userInput}
 memoryReference: ${JSON.stringify(memoryReference)}
@@ -335,9 +345,13 @@ chatSession: ${JSON.stringify(chatSession)}}
 currentDate: ${infoWaktu}
 `
 
-  console.log(systemPrompt)
-  console.log(userPrompt)
-  const response = await fetchAI(systemPrompt, userPrompt)
-  const data = cleanAndParse(response)
-  return data
+    console.log(systemPrompt)
+    console.log(userPrompt)
+    const response = await fetchAI(systemPrompt, userPrompt, signal)
+    const data = cleanAndParse(response)
+    return data
+  } catch (error) {
+    console.error('Error in getAnswer:', error)
+    throw error
+  }
 }

@@ -5,6 +5,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   runNodeFunction: (data) => ipcRenderer.invoke('execute-node-task', data),
   initMarkInternet: () => ipcRenderer.invoke('init-mark-internet'),
+  checkCaptcha: () => ipcRenderer.invoke('check-captcha'),
   deepSearch: (links) => ipcRenderer.invoke('deep-search', links),
   searchWeb: (query) => ipcRenderer.invoke('search-web', query),
   openExternal: (url) => ipcRenderer.invoke('open-external', url)
