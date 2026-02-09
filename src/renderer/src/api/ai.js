@@ -1,7 +1,3 @@
-import { getSumMemory } from './db'
-
-// import OpenAI from 'openai' <--- Hapus atau comment ini
-
 export const fetchAI = async (systemPrompt, userPrompt, signal) => {
   try {
     const response = await fetch('http://192.168.56.1:1234/v1/chat/completions', {
@@ -53,49 +49,50 @@ const cleanAndParse = (rawResponse) => {
   }
 }
 
-export const getRelevantMemoryId = async (userInput, signal) => {
-  try {
-    const memoryReference = await getSumMemory()
-    const prompts = `
-# ROLE
-Kamu adalah sistem ekstraksi memori tingkat tinggi dengan filter relevansi yang ketat. 
+// export const getRelevantMemoryId = async (userInput, signal) => {
+//   try {
+//     const memoryReference = await getSumMemory()
+//     const prompts = `
+// # ROLE
+// Kamu adalah sistem ekstraksi memori tingkat tinggi dengan filter relevansi yang ketat yang akan memilih memory mana yang bisa menjawab pertanyaan user.
 
-# INPUT USER
-memoryReference: ${JSON.stringify(memoryReference)}
-userInput: ${userInput}
+// # INPUT USER
+// memoryReference: ${JSON.stringify(memoryReference)}
+// userInput: ${userInput}
 
-# TASK
-1. **Analisis Niat**: Identifikasi entitas atau topik utama yang dicari user (misal: "pendidikan", "hobi", "pekerjaan").
-2. **Kesesuaian Semantik**: HANYA ambil data jika "summary" atau "memoryfull" mengandung jawaban langsung atas pertanyaan user.
-3. **Threshold Ketat**: DILARANG mengambil data jika hanya mirip secara kata kunci tapi konteksnya berbeda. (Contoh: User tanya "Siapa namaku?", jangan ambil data tentang "Nama project").
-4. **Conflict Handling**: Jika ada dua data (misal: alamat lama vs alamat baru), ambil data dengan timestamp terbaru (jika ada) atau yang paling mendetail.
+// # TASK
+// 1. **Analisis Niat**: Identifikasi entitas atau topik utama yang dicari user (misal: "pendidikan", "hobi", "pekerjaan").
+// 2. **Kesesuaian Semantik**: HANYA ambil data jika "summary" atau "memory" mengandung jawaban langsung atas pertanyaan user.
+// 3. **Threshold Ketat**: DILARANG mengambil data jika hanya mirip secara kata kunci tapi konteksnya berbeda. (Contoh: User tanya "Siapa namaku?", jangan ambil data tentang "Nama project").
+// 4. **Conflict Handling**: Jika ada dua data (misal: alamat lama vs alamat baru), ambil data dengan timestamp terbaru (jika ada) atau yang paling mendetail.
 
-# FILTER RULES:
-- Jika userInput adalah sapaan umum (Halo, Tes, P), keluarkan [].
-- Jika userInput meminta informasi yang BELUM PERNAH tersimpan di memoryReference, keluarkan [].
-- Abaikan data yang isinya hanya "User belum memberitahu..." atau "Belum ada info...".
+// # FILTER RULES:
+// - Jika userInput adalah sapaan umum (Halo, Tes, P), keluarkan [].
+// - Jika userInput meminta informasi yang BELUM PERNAH tersimpan di memoryReference, keluarkan [].
+// - Abaikan data yang isinya hanya "User belum memberitahu..." atau "Belum ada info...".
+// - Ambil memory yang memang hanya benar-benar bisa menjawab pertanyaan userInput
 
-# OUTPUT RULES (STRICT)
-- HANYA OUTPUT JSON (Array of Strings).
-- JANGAN berikan penjelasan apapun.
-- JANGAN buat ID baru. Ambil ID yang persis ada di memoryReference.
+// # OUTPUT RULES (STRICT)
+// - HANYA OUTPUT JSON (Array of Strings).
+// - JANGAN berikan penjelasan apapun.
+// - JANGAN buat ID baru. Ambil ID yang persis ada di memoryReference.
 
-# OUTPUT FORMAT (WAJIB)
-[id_data_1 (dalam bentuk number), id_data_2]
-`
-    console.log(prompts)
-    const response = await fetchAI('', prompts, signal)
-    const text = response
-      .trim()
-      .replace(/^```json\s*/i, '')
-      .replace(/\s*```$/, '')
-    const data = JSON.parse(text)
-    return data
-  } catch (error) {
-    console.error('Error in getRelevantMemoryId:', error)
-    throw error
-  }
-}
+// # OUTPUT FORMAT (WAJIB)
+// [id_data_1 (dalam bentuk number), id_data_2]
+// `
+//     console.log(prompts)
+//     const response = await fetchAI('', prompts, signal)
+//     const text = response
+//       .trim()
+//       .replace(/^```json\s*/i, '')
+//       .replace(/\s*```$/, '')
+//     const data = JSON.parse(text)
+//     return data
+//   } catch (error) {
+//     console.error('Error in getRelevantMemoryId:', error)
+//     throw error
+//   }
+// }
 
 export const getSearchResult = async (userInput, query, signal) => {
   try {
@@ -141,6 +138,8 @@ export const getAnswer = async (userInput, memoryReference, chatSession, signal)
     const systemPrompt = `
 ROLE:
 Kamu adalah Mark, asisten lokal yang cerdas, asertif, dan lugas. Panggil user "bro".
+Dinamis: Jawablah pertanyaan user secara spesifik. JANGAN mengulang jawaban sebelumnya jika tidak relevan dengan pertanyaan baru.
+Context Awareness: Jika user bertanya tentang hubungan tokoh (contoh: A siapanya B), fokuslah menjawab hubungan tersebut, jangan mengulang list profil yang sudah diberikan.
 Kepribadian: Santai tapi profesional, to-the-point, jangan bertele-tele.
 Fokus Utama: Membantu coding, manajemen proyek, dan mengatur desktop Windows melalui powershell command.
 
@@ -151,7 +150,7 @@ Fokus Utama: Membantu coding, manajemen proyek, dan mengatur desktop Windows mel
 
 INPUT:
 - userInput: Pesan dari user.
-- memoryReference: Referensi data memori yang sudah tersimpan (Gunakan ini untuk menjawab).
+- memoryReference: Referensi data memori yang SUDAH DISARING berdasarkan relevansi konteks (Gunakan data ini sebagai kebenaran utama/ground truth).
 - chatSession: Riwayat percakapan sebelumnya.
 
 # MEMORY SCHEMA (STRICT ENUM)
@@ -167,14 +166,15 @@ Hanya gunakan type dan key berikut:
 - other: note (catatan harian), learn (pengetahuan/instruksi sistem baru)
 
 ## MEMORY ACTIONS & INTEGRITY:
-1. **DILARANG** menyimpan memori jika informasi sudah ada di 'memoryReference'.
-2. **UPDATE**: Gunakan untuk [profile, preference, project] jika data sudah ada.
+1. **DILARANG** menyimpan memori jika informasi sudah ada atau MIRIP secara makna dengan yang ada di 'memoryReference'.
+2. **UPDATE**: Gunakan untuk [profile, preference, project] jika data sudah ada, sertakan id nya juga yang ingin di update di property id.
 3. **INSERT**: Gunakan untuk data baru di kategori lainnya.
-4. **DELETE**: Gunakan jika user minta melupakan informasi tertentu.
-5. **other:note**: Hanya jika user bilang "Catat ini" atau "Ingatkan".
-6. **other:learn**: Wajib digunakan jika user memberikan snippet kode atau cara baru mengontrol sistem.
-7. HANYA SIMPAN MEMORY JIKA HAL ITU PENTING UNTUK DIINGAT
-8. JANGAN SIMPAN MEMORY JIKA ITU TIDAK PENTING UNTUK DIINGAT
+4. **DELETE**: Gunakan jika user minta melupakan informasi tertentu,  sertakan id nya juga yang ingin di delete di property id.\
+5. **ID**: Gunakan jika melakukan update dan delete memory.
+6. **other:note**: Hanya jika user bilang "Catat ini" atau "Ingatkan".
+7. **other:learn**: Wajib digunakan jika user memberikan snippet kode atau cara baru mengontrol sistem.
+8. HANYA SIMPAN MEMORY JIKA HAL ITU PENTING UNTUK DIINGAT
+9. JANGAN SIMPAN MEMORY JIKA ITU TIDAK PENTING UNTUK DIINGAT
 
 # COMMAND & ARTIFACTS RULES (STRICT)
 1. **CONSISTENCY CHECK (WAJIB)**:
@@ -210,14 +210,14 @@ Hanya gunakan type dan key berikut:
 - HANYA output JSON. DILARANG ada teks penjelasan di luar kurung kurawal.
 - Output WAJIB diawali '{' dan diakhiri '}'.
 - Gunakan '\n\n' sebelum memulai list agar Markdown merender list (bullet points) dengan benar.
+- Masukkan ID memory yang ingin UPDATE atau DELETE jika ingin melakukannya
 {
   "answer": "string (Markdown support, gunakan \n\n* untuk poin-poin)",
   "memory": {
+    "id": number atau null, (Masukkan ID jika ingin UPDATE atau DELETE)
     "type": "string",
     "key": "string",
-    "summary": "string",
-    "memoryfull": "string",
-    "confidence": 0.0-1.0,
+    "memory": "string",
     "action": "insert|update|delete"
   } atau null,
   "command": {
@@ -250,11 +250,10 @@ User: "Mark, inget ya hobi gue main ETS2 pake monitor triple"
 Output: {
   "answer": "Oke bro, hobi main ETS2 pake triple monitor udah gue simpen di otak.",
   "memory": {
+    "id": null,
     "type": "preference",
     "key": "user_personality",
-    "summary": "Hobi ETS2 triple monitor.",
-    "memoryfull": "User memiliki hobi bermain Euro Truck Simulator 2 dengan konfigurasi triple monitor.",
-    "confidence": 1.0,
+    "memory": "User memiliki hobi bermain Euro Truck Simulator 2 dengan konfigurasi triple monitor.",
     "action": "insert"
   },
   "command": null
@@ -279,11 +278,10 @@ User: "ehh kalau kamu mau next lagu pkek "powershell -Command '$w = New-Object -
 Output: {
   "answer": "Siap bro, gue udah pelajarin cara kontrol media pake PowerShell. Sekarang gue tau [char]176 itu buat next dan [char]177 buat back. Udah masuk otak (learn)!",
   "memory": {
+    "id": null,
     "type": "other",
     "key": "learn",
-    "summary": "Belajar kode PowerShell media control.",
-    "memoryfull": "Mark mempelajari perintah baru: powershell -Command '$w = New-Object -ComObject WScript.Shell; $w.SendKeys([char]176)' untuk Next dan [char]177 untuk Back.",
-    "confidence": 1.0,
+    "memory": "Mark mempelajari perintah baru: powershell -Command '$w = New-Object -ComObject WScript.Shell; $w.SendKeys([char]176)' untuk Next dan [char]177 untuk Back.",
     "action": "insert"
   },
   "command": null
@@ -341,8 +339,11 @@ Output: {
 # INPUT DARI USER
 userInput: ${userInput}
 memoryReference: ${JSON.stringify(memoryReference)}
-chatSession: ${JSON.stringify(chatSession)}}
+chatSession: ${JSON.stringify(chatSession)}
 currentDate: ${infoWaktu}
+
+# FINAL RULE (CRITICAL):
+Output MUST be valid JSON only. Dilarang memberikan teks penjelasan apapun di luar JSON.
 `
 
     console.log(systemPrompt)

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import ChatList from '../components/ChatList'
-import { getAnswer, getRelevantMemoryId, getSearchResult } from '../api/ai'
-import { deleteData, insertData, updateData, getSpecificMemory } from '../api/db'
+import { getAnswer, getSearchResult } from '../api/ai'
+import { getRelevantMemory } from '../api/vectorMemory'
+import { deleteData, insertData, updateData, getAllMemory } from '../api/db'
 
 const Chat = () => {
   const [chatData, setChatData] = useState([])
@@ -36,8 +37,9 @@ const Chat = () => {
 
     try {
       abortControllerRef.current = new AbortController()
-      const memoryIdRef = await getRelevantMemoryId(userInput, abortControllerRef.current.signal)
-      const memoryReference = await getSpecificMemory(memoryIdRef, abortControllerRef.current.signal)
+      const allMemory = await getAllMemory()
+      const memoryReference = await getRelevantMemory(userInput, allMemory)
+      console.log('Memory yang relevan:' + JSON.stringify(memoryReference))
       const chatHistory = [...chatData].reverse().slice(0, 10)
       const answer = await getAnswer(
         userInput,
@@ -46,6 +48,10 @@ const Chat = () => {
         abortControllerRef.current.signal
       )
       console.log('AI Answer:', answer)
+
+      if (!answer) {
+        throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
+      }
 
       if (answer.memory && answer.command?.action !== 'search') {
         const actions = { insert: insertData, update: updateData, delete: deleteData }
@@ -80,12 +86,12 @@ const Chat = () => {
         setChatData((prev) => [...prev.filter((item) => !item.isThinking)])
         setChatData((prev) => prev.slice(0, -1))
       } else {
+        console.error('AI Response Error:', error)
         setChatData((prev) => [
           ...prev.filter((item) => !item.isThinking),
           {
             role: 'ai',
-            content:
-              'Waduh bro, ada masalah teknis pas gue mau jawab. Coba cek LM Studio lu nyala nggak?'
+            content: `Maaf, terjadi kesalahan saat memproses permintaanmu, error: ${error.message}`
           }
         ])
       }

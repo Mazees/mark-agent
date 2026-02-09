@@ -222,8 +222,9 @@ app.whenReady().then(() => {
 
     try {
       // Kita proses semua link secara barengan (Parallel)
+      const topLinks = links.slice(0, 5);
       const results = await Promise.all(
-        links.map(async (item) => {
+        topLinks.map(async (item) => {
           const page = await browser.newPage()
 
           // Biar cepet: blokir gambar, css, dan font
