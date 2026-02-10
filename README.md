@@ -63,7 +63,7 @@ Untuk membuat executable file (Windows Only):
 npm run build:win
 ```
 
-## Roadmap Masa Depan
+## Roadmap Plan
 
 - [x] **Web Search Integration**: Mendukung pencarian data real-time.
 - [x] **Deep Research**: Scraping dan perangkuman konten web.
