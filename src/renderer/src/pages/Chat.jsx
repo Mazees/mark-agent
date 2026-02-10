@@ -6,6 +6,7 @@ import { deleteData, insertData, updateData, getAllMemory } from '../api/db'
 
 const Chat = () => {
   const [chatData, setChatData] = useState([])
+  const [isWebSearch, setIsWebSearch] = useState(false)
 
   const chatEndRef = useRef(null)
   const abortControllerRef = useRef(null)
@@ -40,7 +41,14 @@ const Chat = () => {
       const allMemory = await getAllMemory()
       const memoryReference = await getRelevantMemory(userInput, allMemory)
       console.log('Memory yang relevan:' + JSON.stringify(memoryReference))
-      const chatHistory = [...chatData].reverse().slice(0, 10)
+      const chatHistory = [
+        ...chatData.slice(-5).map((item) => ({
+          role: item.role === 'ai' ? 'assistant' : 'user',
+          content: item.content
+        })),
+        { role: 'user', content: userMessage }
+      ]
+
       const answer = await getAnswer(
         userInput,
         memoryReference,
@@ -181,35 +189,62 @@ const Chat = () => {
           className="placeholder-white resize-none focus:outline-none w-full overflow-hidden disabled:opacity-50"
           placeholder={isLoading ? 'Mark sedang menjawab...' : 'Kirim Pesan...'}
         ></textarea>
-        <button
-          type="submit"
-          className="ml-auto bg-primary btn btn-circle text-lg text-neutral hover:text-white disabled:bg-neutral-focus"
-        >
-          {isLoading ? (
+        <div className="w-full flex justify-between">
+          <button
+            type="button"
+            className={`btn btn-outline hover:bg-transparent hover:border-white tooltip tooltip-accent btn-sm ${isWebSearch ? 'btn-active' : ''}`}
+            onClick={() => {
+              setIsWebSearch(!isWebSearch)
+            }}
+            data-tip="Pencarian Web"
+          >
             <svg
-              aria-hidden="true"
-              className="text-white"
+              ariaHidden="true"
               xmlns="http://www.w3.org/2000/svg"
               width="1em"
               height="1em"
-              fill="currentColor"
+              fill="none"
               viewBox="0 0 24 24"
             >
-              <path d="M7 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H7Z" />
+              <path
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeWidth="2"
+                d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+              />
             </svg>
-          ) : (
-            <svg
-              fill="currentColor"
-              width="1em"
-              height="1em"
-              viewBox="0 0 256 256"
-              id="Flat"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path d="M231.626,128a16.015,16.015,0,0,1-8.18262,13.96094L54.53027,236.55273a15.87654,15.87654,0,0,1-18.14648-1.74023,15.87132,15.87132,0,0,1-4.74024-17.60156L60.64746,136H136a8,8,0,0,0,0-16H60.64746L31.64355,38.78906A16.00042,16.00042,0,0,1,54.5293,19.44727l168.915,94.59179A16.01613,16.01613,0,0,1,231.626,128Z" />
-            </svg>
-          )}
-        </button>
+            Web Search
+          </button>
+          <button
+            type="submit"
+            className="bg-primary btn btn-circle text-lg text-neutral hover:text-white disabled:bg-neutral-focus"
+          >
+            {isLoading ? (
+              <svg
+                aria-hidden="true"
+                className="text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                width="1em"
+                height="1em"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M7 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H7Z" />
+              </svg>
+            ) : (
+              <svg
+                fill="currentColor"
+                width="1em"
+                height="1em"
+                viewBox="0 0 256 256"
+                id="Flat"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M231.626,128a16.015,16.015,0,0,1-8.18262,13.96094L54.53027,236.55273a15.87654,15.87654,0,0,1-18.14648-1.74023,15.87132,15.87132,0,0,1-4.74024-17.60156L60.64746,136H136a8,8,0,0,0,0-16H60.64746L31.64355,38.78906A16.00042,16.00042,0,0,1,54.5293,19.44727l168.915,94.59179A16.01613,16.01613,0,0,1,231.626,128Z" />
+              </svg>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   )

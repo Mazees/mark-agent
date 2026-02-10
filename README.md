@@ -3,23 +3,28 @@
 MARK adalah asisten AI virtual berbasis lokal yang dirancang untuk membantu produktivitas pengguna dengan privasi penuh.
 
 > [!IMPORTANT]
-> Proyek ini saat ini dioptimalkan khusus untuk **Windows**.
+> Proyek ini dioptimalkan khusus untuk **Windows**.
 
 ## Fitur Utama
 
-- **Local LLM Support**: Kompatibel dengan model open-source terbaik (Gemma, Llama, Mistral) via LM Studio.
-- **Web Search & Deep Research**: MARK bisa "browsing" internet secara mandiri menggunakan Puppeteer untuk mencari data terbaru tahun 2025-2026.
-- **Internet Setup UI**: Proses setup koneksi internet yang mudah dengan penanganan CAPTCHA otomatis/manual.
-- **Memory Management System (MMS)**: Mengingat konteks percakapan dan menyimpan preferensi pengguna secara permanen.
-- **Safe Command Execution**: Menjalankan perintah PowerShell secara aman dengan sistem konfirmasi risiko.
-- **Modern & Premium UI**: Desain mewah dengan efek glassmorphism, animasi halus, dan mode gelap.
+- **Local LLM Support**: Integrasi penuh dengan model open-source (Gemma 3-4b, Llama, Mistral) via LM Studio.
+- **Web Search & Deep Research**: Kemampuan browsing mandiri menggunakan Puppeteer-core untuk mencari data terbaru. MARK melakukan scraping konten web untuk memberikan jawaban yang akurat dan berbasis sumber.
+- **Internet Setup UI**: Proses sinkronisasi browser profile yang intuitif untuk menangani CAPTCHA secara manual.
+- **Vector Memory Management System (MMS)**: Implementasi memori cerdas menggunakan **Local Vector Embeddings** via LM Studio (`embeddinggemma-300m-qat`). MARK menyimpan memori dalam kategori:
+  - `profile`, `preference`, `skill`, `project`, `transaction`, `goal`, `relationship`, `fact`, `other` (note/learn).
+- **Semantic Search**: MARK memahami konteks secara semantik dengan nilai ambang batas relevansi (threshold) 0.6, memastikan memori yang dipanggil benar-benar akurat.
+- **Local Database**: Semua memori dan riwayat percakapan tersimpan aman di IndexedDB (via Dexie) di perangkat pengguna.
+- **Safe Command Execution**: Sistem perintah PowerShell terintegrasi dengan indikator tingkat risiko (`safe`, `confirm`, `blocked`).
+- **Modern & Premium UI**: Desain mewah menggunakan **Tailwind CSS 4** dan **DaisyUI 5** dengan efek glassmorphism, animasi halus (Framer Motion-style), dan splash screen.
 
 ## Teknologi yang Digunakan
 
-- **Core**: Electron, React 19, Vite
+- **Core**: Electron 39, React 19, Vite 7
 - **Styling**: Tailwind CSS 4, DaisyUI 5
-- **Automation**: Puppeteer Core (untuk Web Search)
-- **AI Backend**: LM Studio (Local Inference)
+- **Automation**: Puppeteer Core (Web Search & Deep Research)
+- **AI Backend**: LM Studio (Local Inference & Embeddings)
+- **Database**: Dexie.js (IndexedDB)
+- **Parsing**: React Markdown & React Syntax Highlighter
 
 ## Persiapan & Instalasi
 
@@ -28,7 +33,7 @@ MARK adalah asisten AI virtual berbasis lokal yang dirancang untuk membantu prod
 - **Operating System**: Windows 10/11
 - **Node.js**: v18+
 - **Google Chrome**: Terinstal di path default (`C:\Program Files\Google\Chrome\Application\chrome.exe`)
-- **LM Studio**: Berjalan pada `http://localhost:1234`
+- **LM Studio**: Berjalan pada `http://localhost:1234` atau IP lokal lainnya (Konfigurasi di `src/api/ai.js`).
 
 ### Langkah Instalasi
 
@@ -61,10 +66,11 @@ npm run build:win
 ## Roadmap Masa Depan
 
 - [x] **Web Search Integration**: Mendukung pencarian data real-time.
-- [x] **Internet Setup UI**: Proses inisialisasi browser profile.
+- [x] **Deep Research**: Scraping dan perangkuman konten web.
+- [x] **Vector MMS**: Pencarian memori berbasis semantik (Local Embedding).
+- [ ] **Command Running**: Menjalankan command sesuai risk level.
 - [ ] **Voice Interaction**: Berkomunikasi dengan suara.
-- [ ] **Vision Capability**: Analisis gambar lokal.
-- [ ] **Advanced MMS**: Integrasi Vector Database (ChromaDB/Pinecone).
+- [ ] **Vision Capability**: Analisis gambar secara lokal.
 
 ## Lisensi
 

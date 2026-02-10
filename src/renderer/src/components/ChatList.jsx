@@ -137,7 +137,7 @@ const ChatList = ({
         ) : isSearching ? (
           <div className="flex items-center gap-2 py-1 text-xs text-white animate-pulse">
             <svg
-              aria-hidden="true"
+              ariaHidden="true"
               xmlns="http://www.w3.org/2000/svg"
               width="1em"
               height="1em"
@@ -146,8 +146,8 @@ const ChatList = ({
             >
               <path
                 stroke="currentColor"
-                stroke-linecap="round"
-                stroke-width="2"
+                strokeLinecap="round"
+                strokeWidth="2"
                 d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
               />
             </svg>
