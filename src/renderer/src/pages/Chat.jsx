@@ -35,13 +35,12 @@ const Chat = () => {
     const thinkingMessage = { role: 'ai', content: '...', isThinking: true }
 
     setChatData((prev) => [...prev, userMessage, thinkingMessage])
-
+    abortControllerRef.current = new AbortController()
     try {
-      abortControllerRef.current = new AbortController()
       const allMemory = await getAllMemory()
       const memoryReference = await getRelevantMemory(userInput, allMemory)
       console.log('Memory yang relevan:' + JSON.stringify(memoryReference))
-      const chatHistory = [
+      const chatSession = [
         ...chatData.slice(-5).map((item) => ({
           role: item.role === 'ai' ? 'assistant' : 'user',
           content: item.content
@@ -52,8 +51,9 @@ const Chat = () => {
       const answer = await getAnswer(
         userInput,
         memoryReference,
-        chatHistory,
-        abortControllerRef.current.signal
+        chatSession,
+        abortControllerRef.current.signal,
+        isWebSearch
       )
       console.log('AI Answer:', answer)
 
@@ -86,7 +86,7 @@ const Chat = () => {
         return [...filtered, aiResponse]
       })
       if (answer.command?.action === 'search') {
-        await handleSearchCommand(userInput, answer.command.query)
+        await handleSearchCommand(userInput, answer.command.query, abortControllerRef.current.signal, chatSession)
       }
       setMessage('')
     } catch (error) {
@@ -108,10 +108,10 @@ const Chat = () => {
     }
   }
 
-  const handleSearchCommand = async (userInput, query) => {
+  const handleSearchCommand = async (userInput, query, signal, chatSession) => {
     setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearching: true }])
     try {
-      const searchResults = await getSearchResult(userInput, query)
+      const searchResults = await getSearchResult(userInput, query, signal, chatSession)
       setChatData((prev) => [
         ...prev.filter((item) => !item.isSearching),
         {
@@ -146,7 +146,7 @@ const Chat = () => {
   }
 
   const handleStop = () => {
-    abortControllerRef.current.abort()
+    abortControllerRef.current?.abort()
   }
 
   const handleSubmit = (e) => {

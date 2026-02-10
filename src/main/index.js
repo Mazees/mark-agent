@@ -100,11 +100,14 @@ app.whenReady().then(() => {
       try {
         browser = await getBrowser(false)
         const page = await browser.newPage()
-        await page.goto('https://www.google.com/search?q=tes+koneksi+mark&hl=id')
+        await page.goto('https://www.google.com/search?q=tes+koneksi+mark&hl=id', {
+          waitUntil: 'networkidle2',
+          timeout: 60000
+        })
 
         await Promise.race([
           page.waitForSelector('#search', { timeout: 0 }),
-          page.waitForNavigation({ waitUntil: 'networkidle2' })
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
         ])
 
         await new Promise((r) => setTimeout(r, 2000))
@@ -112,6 +115,7 @@ app.whenReady().then(() => {
         return { success: true, message: 'Internet Mark sudah siap!' }
       } catch (e) {
         if (browser) await browser.close()
+        console.error(e)
         return { success: false, message: 'Setup gagal atau ditutup paksa.' }
       }
     }))
