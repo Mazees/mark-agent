@@ -3,6 +3,7 @@ import { join } from 'path'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.ico?asset'
+import { fetchTranscript } from 'youtube-transcript-plus'
 
 function createWindow() {
   // Create the browser window.
@@ -62,6 +63,28 @@ app.whenReady().then(() => {
 
   ipcMain.handle('open-external', async (event, url) => {
     shell.openExternal(url)
+  })
+
+  ipcMain.handle('get-youtube-transcript', async (event, url) => {
+    try {
+      const transcript = await fetchTranscript(url)
+      const textTranscript = transcript
+        .filter((_, index) => index % 2 === 0)
+        .map((item) => {
+          const minutes = Math.floor(item.offset / 60)
+            .toString()
+            .padStart(2, '0')
+          const seconds = Math.floor(item.offset % 60)
+            .toString()
+            .padStart(2, '0')
+          return `[${minutes}:${seconds}] ${item.text}`
+        })
+        .join('\n')
+      return textTranscript
+    } catch (error) {
+      console.error('Gagal ambil transkrip YT:', error.message)
+      return ''
+    }
   })
 
   ipcMain.handle('search-web', async (event, query) => {

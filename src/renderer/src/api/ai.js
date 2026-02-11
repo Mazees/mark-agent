@@ -1,3 +1,5 @@
+import axios from 'axios'
+
 export const fetchAI = async (systemPrompt, userPrompt, signal) => {
   try {
     const response = await fetch('http://localhost:1234/v1/chat/completions', {
@@ -49,51 +51,6 @@ const cleanAndParse = (rawResponse) => {
   }
 }
 
-// export const getRelevantMemoryId = async (userInput, signal) => {
-//   try {
-//     const memoryReference = await getSumMemory()
-//     const prompts = `
-// # ROLE
-// Kamu adalah sistem ekstraksi memori tingkat tinggi dengan filter relevansi yang ketat yang akan memilih memory mana yang bisa menjawab pertanyaan user.
-
-// # INPUT USER
-// memoryReference: ${JSON.stringify(memoryReference)}
-// userInput: ${userInput}
-
-// # TASK
-// 1. **Analisis Niat**: Identifikasi entitas atau topik utama yang dicari user (misal: "pendidikan", "hobi", "pekerjaan").
-// 2. **Kesesuaian Semantik**: HANYA ambil data jika "summary" atau "memory" mengandung jawaban langsung atas pertanyaan user.
-// 3. **Threshold Ketat**: DILARANG mengambil data jika hanya mirip secara kata kunci tapi konteksnya berbeda. (Contoh: User tanya "Siapa namaku?", jangan ambil data tentang "Nama project").
-// 4. **Conflict Handling**: Jika ada dua data (misal: alamat lama vs alamat baru), ambil data dengan timestamp terbaru (jika ada) atau yang paling mendetail.
-
-// # FILTER RULES:
-// - Jika userInput adalah sapaan umum (Halo, Tes, P), keluarkan [].
-// - Jika userInput meminta informasi yang BELUM PERNAH tersimpan di memoryReference, keluarkan [].
-// - Abaikan data yang isinya hanya "User belum memberitahu..." atau "Belum ada info...".
-// - Ambil memory yang memang hanya benar-benar bisa menjawab pertanyaan userInput
-
-// # OUTPUT RULES (STRICT)
-// - HANYA OUTPUT JSON (Array of Strings).
-// - JANGAN berikan penjelasan apapun.
-// - JANGAN buat ID baru. Ambil ID yang persis ada di memoryReference.
-
-// # OUTPUT FORMAT (WAJIB)
-// [id_data_1 (dalam bentuk number), id_data_2]
-// `
-//     console.log(prompts)
-//     const response = await fetchAI('', prompts, signal)
-//     const text = response
-//       .trim()
-//       .replace(/^```json\s*/i, '')
-//       .replace(/\s*```$/, '')
-//     const data = JSON.parse(text)
-//     return data
-//   } catch (error) {
-//     console.error('Error in getRelevantMemoryId:', error)
-//     throw error
-//   }
-// }
-
 export const getSearchResult = async (userInput, query, signal, chatSession) => {
   try {
     const search = await window.api.searchWeb(query, signal)
@@ -143,7 +100,52 @@ User: ${userInput}
   }
 }
 
-export const getAnswer = async (userInput, memoryReference, chatSession, signal, isWebSearch) => {
+export const getYoutubeSummary = async (url, data, signal) => {
+  try {
+    const transcript = await window.api.getYoutubeTranscript(url)
+
+    const prompts = `
+# ROLE
+Kamu adalah Mark, asisten AI yang ahli dalam menganalisis konten video. Tugasmu adalah memberikan ringkasan yang akurat, padat, dan mudah dipahami dari transkrip video YouTube yang diberikan.
+
+# FORMAT OUTPUT (WAJIB)
+1. **Ringkasan Singkat**: 1-2 kalimat tentang inti video.
+2. **Poin-Poin Penting**: Daftar 3-5 poin utama yang dibahas. 
+   - WAJIB sertakan timestamp [MM:SS] di setiap awal poin agar user bisa navigasi.
+   - Contoh: "[02:43] Mior menjelaskan cara ganti gigi di ETS2."
+3. **Kesimpulan**: Penutup dan kesimpulan dari seluruh video.
+
+# ATURAN MAIN
+- Gunakan bahasa yang santai tapi informatif (seperti peer/teman).
+- Jika ada istilah teknis jelaskan secara singkat.
+- Fokus HANYA pada isi transkrip. Jangan berikan informasi di luar teks yang diberikan.
+
+# VIDEO META DATA
+judul: ${data.judul},
+author: ${data.author}
+
+# TRANSCRIPT
+${transcript}
+
+`
+    console.log(prompts)
+    const response = await fetchAI('', prompts, signal)
+
+    return response
+  } catch (error) {
+    console.error('Error in youtubeSummary:', error)
+    throw error
+  }
+}
+
+export const getAnswer = async (
+  userInput,
+  memoryReference,
+  chatSession,
+  signal,
+  isWebSearch,
+  isYoutubeSummary
+) => {
   try {
     const systemPrompt = `
 ROLE:
@@ -232,7 +234,7 @@ Hanya gunakan type dan key berikut:
     "action": "insert|update|delete"
   } atau null,
   "command": {
-    "action": "${isWebSearch ? 'search|' : ''}run",
+    "action": "${isYoutubeSummary ? 'youtube' : (isWebSearch ? 'search' : 'run')}",
     "query": string atau null,
     "run": "string${isWebSearch ? ' atau null jika action search' : ''}",
     "risk": "safe|confirm|blocked",
@@ -253,6 +255,17 @@ ${
 `
     : ''
 }
+${
+  isYoutubeSummary
+    ? `
+# YOUTUBE SUMMARY RULES (UNIVERSAL - NO EXCEPTIONS)
+1. **WARNING**: Hanya jika user meminta kamu menjelaskan atau merangkumkan suatu video youtube
+2. **PRIORITY**: Jika user memintanya, berikan JSON dengan command.action: "youtube". dan isi url command.query dengan url youtube yang diberikan user.
+3. Jika user tidak mengirimkan link video youtube maka bilang "Mohon kirimkan link video" dan berikan JSON dengan command null
+4. **MAX VIDEO**: Hanya summary 1 video saja, jika user mengirimkan 2 link video harap tolak dengan "Mohon maaf saya hanya bisa merangkum 1 video saja" dan berikan JSON dengan command null.
+`
+    : ''
+}
 
 # EXAMPLES FOR CONSISTENCY
 
@@ -267,6 +280,26 @@ Output: {
   "command": {
     "action": "search",
     "query": "Siapa Presiden Indonesia terpilih tahun 2026",
+    "run": null,
+    "risk": "safe",
+    "artifacts": null
+  }
+}  
+`
+    : ''
+}
+
+${
+  isYoutubeSummary
+    ? `
+## Example: Youtube Summary (Ketika user meminta untuk merangkumkan video youtube)
+User: "Mark, tolong rangkumin video ini dong https://www.youtube.com/watch?v=uJbbtrx5M_E"
+Output: {
+  "answer": "Siap bro, tunggu bentar yak lagi aku rangkumin!",
+  "memory": null,
+  "command": {
+    "action": "youtube",
+    "query": "https://www.youtube.com/watch?v=uJbbtrx5M_E",
     "run": null,
     "risk": "safe",
     "artifacts": null

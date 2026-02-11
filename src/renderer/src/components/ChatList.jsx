@@ -11,6 +11,9 @@ const ChatList = ({
   isMemorySaved = false,
   isMemoryUpdated = false,
   isMemoryDeleted = false,
+  isSummarizing = false,
+  isYoutubeSummary = false,
+  youtubeLink = '',
   risk = 'safe',
   sources = [],
   onRun
@@ -18,6 +21,13 @@ const ChatList = ({
   const isUser = role === 'user'
   const isCommand = role === 'command'
   const [executed, setExecuted] = useState(risk === 'safe' ? true : false)
+
+  const getYouTubeID= (text) => {
+    const ytRegex =
+      /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+    const match = text.match(ytRegex)
+    return match ? match[1] : null
+  }
 
   // Determine style and metadata
   let containerClass = isUser
@@ -134,6 +144,11 @@ const ChatList = ({
             <span className="loading loading-dots loading-xs"></span>
             <span className="text-xs italic opacity-70">Mark is thinking...</span>
           </div>
+        ) : isSummarizing ? (
+          <div className="flex items-center gap-2 py-1 animate-pulse">
+            <span className="loading loading-dots loading-xs"></span>
+            <span className="text-xs italic opacity-70">Mark is summarizing youtube video...</span>
+          </div>
         ) : isSearching ? (
           <div className="flex items-center gap-2 py-1 text-xs text-white animate-pulse">
             <svg
@@ -155,6 +170,19 @@ const ChatList = ({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {isYoutubeSummary && (
+              <div className="p-3 bg-base-300 rounded-2xl my-2">
+                <iframe
+                  className="w-full aspect-video"
+                  src={`https://www.youtube.com/embed/${getYouTubeID(youtubeLink)}`}
+                  title="YouTube video player"
+                  frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                  allowfullscreen
+                ></iframe>
+              </div>
+            )}
             <div className="text-sm leading-relaxed custom-markdown">
               <Markdown>{content}</Markdown>
             </div>
