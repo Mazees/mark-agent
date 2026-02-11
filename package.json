@@ -30,11 +30,11 @@
     "electron-updater": "^6.3.9",
     "open": "^11.0.0",
     "openai": "^6.17.0",
-    "puppeteer-core": "^24.36.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.0",
     "react-syntax-highlighter": "^16.1.0",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "youtube-transcript": "^1.2.1"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^2.1.0",

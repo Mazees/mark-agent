@@ -3,11 +3,6 @@ import { join } from 'path'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.ico?asset'
-import { search } from 'duck-duck-scrape'
-import puppeteer from 'puppeteer-core'
-
-let browserInstance = null
-let browserQueue = Promise.resolve()
 
 function createWindow() {
   // Create the browser window.
@@ -69,154 +64,88 @@ app.whenReady().then(() => {
     shell.openExternal(url)
   })
 
-  const getBrowser = async (headless = 'new') => {
-    const markProfilePath = path.join(app.getPath('userData'), 'mark_chrome_profile')
-
-    if (browserInstance && browserInstance.isConnected()) {
-      return browserInstance
-    }
-
-    browserInstance = await puppeteer.launch({
-      headless: headless,
-      executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      args: [
-        `--user-data-dir=${markProfilePath}`,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-      ]
-    })
-
-    browserInstance.on('disconnected', () => {
-      browserInstance = null
-    })
-
-    return browserInstance
-  }
-
-  ipcMain.handle('init-mark-internet', async (event) => {
-    return (browserQueue = browserQueue.then(async () => {
-      let browser = null
-      try {
-        browser = await getBrowser(false)
-        const page = await browser.newPage()
-        await page.goto('https://www.google.com/search?q=tes+koneksi+mark&hl=id', {
-          waitUntil: 'networkidle2',
-          timeout: 60000
-        })
-
-        await Promise.race([
-          page.waitForSelector('#search', { timeout: 0 }),
-          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
-        ])
-
-        await new Promise((r) => setTimeout(r, 2000))
-        await browser.close()
-        return { success: true, message: 'Internet Mark sudah siap!' }
-      } catch (e) {
-        if (browser) await browser.close()
-        console.error(e)
-        return { success: false, message: 'Setup gagal atau ditutup paksa.' }
-      }
-    }))
-  })
-
   ipcMain.handle('search-web', async (event, query) => {
-    return (browserQueue = browserQueue.then(async () => {
-      let browser = null
-      try {
-        browser = await getBrowser('new')
-        const page = await browser.newPage()
-        await page.goto(`https://www.google.com/search?q=${encodeURIComponent(query)}&hl=id`)
-
-        const isCaptcha = await page.evaluate(() => document.body.innerHTML.includes('g-recaptcha'))
-        if (isCaptcha) {
-          throw new Error('captcha_error')
+    return new Promise(async (resolve) => {
+      let tempWin = new BrowserWindow({
+        show: false, // Jendela siluman
+        webPreferences: {
+          offscreen: false
         }
+      })
+      const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=id`
+      try {
+        tempWin.webContents.setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+        )
+        await tempWin.loadURL(url)
 
-        const results = await page.evaluate(() => {
-          const items = []
-          const elements = document.querySelectorAll('div.g, div.tF2Cxc, div.v7W49e')
+        // TUNGGU Google ngerender hasilnya (Timing Fix)
+        await new Promise((r) => setTimeout(r, 2000))
+
+        // Eksekusi script dengan selector yang lebih kuat
+        const results = await tempWin.webContents.executeJavaScript(`
+        (() => {
+          const items = [];
+          const elements = document.querySelectorAll('div.g, div.tF2Cxc, div.v7W49e');
 
           elements.forEach((el) => {
-            const title = el.querySelector('h3')?.innerText?.trim()
-            const link = el.querySelector('a')?.href
-            const snippet = el
-              .querySelector('div[style*="-webkit-line-clamp"], .VwiC3b')
-              ?.innerText?.trim()
+            if (items.length < 5) {
+              const title = el.querySelector('h3')?.innerText?.trim();
+              const link = el.querySelector('a')?.href;
+              const snippet = el.querySelector('.VwiC3b, div[style*="-webkit-line-clamp"]')?.innerText?.trim();
 
-            if (title && link && link.includes('http')) {
-              items.push({ title, link, snippet: snippet || 'No snippet' })
+              if (title && link && link.includes('http')) {
+                items.push({ title, link, snippet: snippet || "" });
+              }
             }
-          })
-          return items.slice(0, 10)
-        })
+          });
+          return items;
+        })()
+      `)
 
-        await page.close()
-        return results
-      } catch (e) {
-        throw e
+        tempWin.destroy()
+        resolve(results)
+      } catch (err) {
+        console.error('Scraping Siluman Gagal:', err)
+        if (!tempWin.isDestroyed()) tempWin.destroy()
+        resolve([])
       }
-    }))
-  })
-
-  ipcMain.handle('check-captcha', async () => {
-    return (browserQueue = browserQueue.then(async () => {
-      let browser = null
-      try {
-        browser = await getBrowser('new')
-        const page = await browser.newPage()
-        await page.goto(`https://www.google.com/search?q=tes+koneksi+mark&hl=id`)
-        const isCaptcha = await page.evaluate(() => document.body.innerHTML.includes('g-recaptcha'))
-        await page.close()
-        return !isCaptcha
-      } catch (error) {
-        return false
-      }
-    }))
+    })
   })
 
   ipcMain.handle('deep-search', async (event, links) => {
-    return (browserQueue = browserQueue.then(async () => {
-      let browser = null
-      try {
-        browser = await getBrowser('new')
-        const topLinks = links.slice(0, 5)
-        const results = await Promise.all(
-          topLinks.map(async (item) => {
-            const page = await browser.newPage()
-            await page.setRequestInterception(true)
-            page.on('request', (req) => {
-              if (['image', 'stylesheet', 'font'].includes(req.resourceType())) req.abort()
-              else req.continue()
-            })
+    const results = []
+    const tempWin = new BrowserWindow({
+      show: false,
+      webPreferences: { offscreen: false }
+    })
+    tempWin.webContents.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+    )
 
-            try {
-              await page.goto(item.link, { waitUntil: 'domcontentloaded', timeout: 15000 })
-              const content = await page.evaluate(() => {
-                const unwanted = document.querySelectorAll(
-                  'header, footer, nav, script, style, ads, .sidebar'
-                )
-                unwanted.forEach((el) => el.remove())
-                return Array.from(document.querySelectorAll('p'))
-                  .map((p) => p.innerText)
-                  .filter((txt) => txt.length > 50)
-                  .slice(0, 4)
-                  .join(' ')
-              })
-              await page.close()
-              return { source: item.title, url: item.link, text: content }
-            } catch (err) {
-              await page.close()
-              return { source: item.title, url: item.link, text: 'Gagal ambil konten.' }
-            }
-          })
-        )
-        return results
-      } catch (e) {
-        return []
+    for (const item of links) {
+      try {
+        await tempWin.loadURL(item.link)
+        await new Promise((r) => setTimeout(r, 1500)) // Tunggu sebentar render
+
+        const content = await tempWin.webContents.executeJavaScript(`
+          (() => {
+            const unwanted = document.querySelectorAll('header, footer, nav, script, style, ads, .sidebar, .menu');
+            unwanted.forEach(el => el.remove());
+            return Array.from(document.querySelectorAll('p'))
+              .map(p => p.innerText.trim())
+              .filter(txt => txt.length > 50)
+              .slice(0, 5)
+              .join(' ');
+          })()
+        `)
+        results.push({ source: item.title, url: item.link, text: content || 'Gagal ambil konten.' })
+      } catch (err) {
+        results.push({ source: item.title, url: item.link, text: 'Gagal akses website.' })
       }
-    }))
+    }
+    tempWin.destroy()
+    return results
   })
 
   createWindow()

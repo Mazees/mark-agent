@@ -124,9 +124,7 @@ const Chat = () => {
       insertData({
         type: 'fact',
         key: 'misc',
-        summary: `Info net: ${query}`,
-        memoryfull: JSON.stringify(searchResults.answer),
-        confidence: 0.8
+        memory: JSON.stringify(searchResults.answer),
       })
     } catch (error) {
       console.error('Search Technical Error:', error)

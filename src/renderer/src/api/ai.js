@@ -100,7 +100,9 @@ export const getSearchResult = async (userInput, query, signal, chatSession) => 
     console.log(search)
     if (!search || search.length == 0)
       return { answer: 'Maaf tidak menemukan data di Internet', sources: [] }
+
     const deepDataArray = await window.api.deepSearch(search)
+
     const prompts = `
 # ROLE:
 Kamu adalah Mark, asisten cerdas yang HANYA boleh menjawab berdasarkan data yang diberikan. 
