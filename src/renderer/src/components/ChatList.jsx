@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import Markdown from 'react-markdown'
+import rehypeExternalLinks from 'rehype-external-links'
 
 const ChatList = ({
   role = 'user',
@@ -22,7 +23,7 @@ const ChatList = ({
   const isCommand = role === 'command'
   const [executed, setExecuted] = useState(risk === 'safe' ? true : false)
 
-  const getYouTubeID= (text) => {
+  const getYouTubeID = (text) => {
     const ytRegex =
       /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
     const match = text.match(ytRegex)
@@ -184,7 +185,13 @@ const ChatList = ({
               </div>
             )}
             <div className="text-sm leading-relaxed custom-markdown">
-              <Markdown>{content}</Markdown>
+              <Markdown
+                rehypePlugins={[
+                  [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
+                ]}
+              >
+                {content}
+              </Markdown>
             </div>
             {sources && sources.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-primary/10">

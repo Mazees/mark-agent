@@ -6,21 +6,7 @@ import { deleteData, insertData, updateData, getAllMemory } from '../api/db'
 import axios from 'axios'
 
 const Chat = () => {
-  const [chatData, setChatData] = useState([
-    //     { role: 'ai', content: 'Siap bro, tunggu bentar yak lagi aku rangkumin!' },
-    //     {
-    //       role: 'ai',
-    //       content: `Ringkasan Singkat: Video ini menceritakan pengalaman perjalanan (trip report) menggunakan bus PO Miyor kelas President dari Padang menuju Jakarta, yang menonjolkan kemewahan armada namun memiliki tantangan suhu AC yang sangat dingin bagi penumpang.
-    // Poin-Poin Penting:
-    // [02:15] 🚌 Armada Mewah: Penjelasan tentang fasilitas interior President Class yang menggunakan kursi leg rest lebar dan konfigurasi yang nyaman untuk perjalanan jauh.
-    // [08:40] ❄️ Masalah AC: Banyak penumpang mulai merasa kedinginan yang ekstrem di dalam kabin, meskipun sudah menggunakan selimut yang disediakan.
-    // [15:20] 🛣️ Lintas Sumatera: Momen bus melewati jalur lintas Sumatera dengan gaya mengemudi yang khas namun tetap terasa stabil karena suspensi yang empuk.
-    // [22:10] 🍛 Servis Makan: Review singkat menu makanan di rumah makan pilihan PO Miyor yang dinilai cukup memuaskan untuk kelas eksekutif.
-    // Kesimpulan: Trip ini menunjukkan bahwa MIYOR adalah pilihan solid buat yang nyari kenyamanan premium Padang-Jakarta, asal lo siap bawa jaket ekstra karena AC-nya nggak main-main dinginnya!`,
-    //       isYoutubeSummary: true,
-    //       youtubeLink: 'https://www.youtube.com/watch?v=PcXSbwU4FGc'
-    //     }
-  ])
+  const [chatData, setChatData] = useState([])
   const [isAction, setIsAction] = useState({ web: false, youtube: false })
 
   const chatEndRef = useRef(null)

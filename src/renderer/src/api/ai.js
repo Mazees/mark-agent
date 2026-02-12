@@ -20,6 +20,7 @@ export const fetchAI = async (messages, signal) => {
     }
 
     const data = await response.json()
+    console.log(data.choices[0].message.content)
     return data.choices[0].message.content
   } catch (error) {
     throw error
@@ -28,19 +29,18 @@ export const fetchAI = async (messages, signal) => {
 const cleanAndParse = (rawResponse) => {
   try {
     if (!rawResponse) return null
-
-    // 1. Ambil hanya bagian di dalam kurung kurawal { ... }
-    // Ini otomatis membuang ```json, pesan teks tambahan, atau \n di awal/akhir
     const jsonMatch = rawResponse.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
-
     let cleanText = jsonMatch[0]
-
-    // 2. Perbaiki masalah backslash tunggal di path Windows agar tidak error saat parse
-    // Kita cari backslash yang tidak diikuti oleh karakter escape JSON yang valid
     cleanText = cleanText.replace(/\\(?!(["\\\/bfnrt]|u[a-fA-F0-9]{4}))/g, '\\\\')
-
-    return JSON.parse(cleanText)
+    try {
+      return JSON.parse(cleanText)
+    } catch (e) {
+      cleanText = cleanText.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
+        return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+      })
+      return JSON.parse(cleanText)
+    }
   } catch (error) {
     console.error('Gagal Parse JSON dari Mark:', error)
     return null
@@ -161,8 +161,8 @@ Kepribadian: Santai layaknya seorang teman dan suka bercanda.
 - JANGAN PERNAH mengulang jawaban yang sudah kamu berikan sebelumnya kecuali user meminta.
 
 # MARK SKILLS
-- **Web Search**: ${isWebSearch ? "AKTIF. Gunakan command 'search' jika butuh info terbaru." : "NONAKTIF. JANGAN gunakan command 'search'. Beritahu user untuk mengaktifkan fitur ini."}
-- **YouTube Summary**: ${isYoutubeSummary ? "AKTIF. Gunakan command 'youtube' untuk mengambil transkrip." : "NONAKTIF. Cukup jawab: 'Bro, nyalain dulu fitur YouTube Summary kalau mau gue rangkumin.' dan set command null."}
+- **Web Search**: ${isWebSearch ? 'AKTIF. Gunakan command "search" jika butuh info terbaru.' : 'NONAKTIF. JANGAN gunakan command "search". Beritahu user untuk mengaktifkan fitur ini.'}
+- **YouTube Summary**: ${isYoutubeSummary ? 'AKTIF. Gunakan command "youtube" untuk mengambil transkrip.' : 'NONAKTIF. Cukup jawab: "Bro, nyalain dulu fitur YouTube Summary kalau mau gue rangkumin." dan set command null.'}
 - **Memory Management**: Bisa menyimpan, update, dan hapus memori user. Gunakan field 'memory' di output JSON.
 - **Deep Research**: Saat web search aktif, bisa menggali konten web secara mendalam.
 
@@ -178,8 +178,8 @@ Type dan key yang valid:
 - fact: misc
 - other: note, learn
 
-- **TIME AWARENESS**: Gunakan nTanggal sebagai acuan waktu saat ini. 
-- Jika user bertanya tentang "tadi", "kemarin", atau "hari ini", bandingkan dengan timestamp di chat sebelumnya atau nmemoryReference.
+- **TIME AWARENESS**: Gunakan Tanggal sebagai acuan waktu saat ini. 
+- Jika user bertanya tentang "tadi", "kemarin", atau "hari ini", bandingkan dengan timestamp di chat sebelumnya atau memoryReference.
 - Gunakan informasi ini untuk menentukan apakah suatu informasi (seperti harga barang atau berita) masih relevan atau sudah basi.
 
 ## MEMORY RULES:
@@ -189,6 +189,7 @@ Type dan key yang valid:
 4. DELETE: Jika user minta lupakan. Sertakan id.
 5. DILARANG menyimpan basa-basi ("halo", "oke", "siap", "makasih").
 6. Jika tidak ada data baru yang perlu disimpan, set memory = null.
+7. Jika user memberikan konteks waktu seperti besok, kemaren, bulan depan, tambahkan tanggalnya ke memori.
 ${
   isWebSearch
     ? `
@@ -214,12 +215,13 @@ Jangan ada teks di luar JSON. Field 'answer' berisi respon natural, jangan bahas
 {
   "answer": "string (Markdown support)",
   "memory": { "id": number|null, "type": "string", "key": "string", "memory": "string", "action": "insert|update|delete" } atau null,
-  "command": { "action": 'search' | 'youtube' | 'none', "query": 'string|null' }
+  "command": { "action": "search atau youtube atau none", "query": "string atau null" } atau null
 }
 
-# EXAMPLES FOR CONSISTENCY${
-      isWebSearch
-        ? `
+# EXAMPLES FOR CONSISTENCY
+${
+  isWebSearch
+    ? `
 ## Example: Web Search / Informasi Publik (Data Terbaru)
 User: "Mark, siapa presiden terpilih 2026?"
 Output: {
@@ -227,32 +229,28 @@ Output: {
   "memory": null,
   "command": {
     "action": "search",
-    "query": "Siapa Presiden Indonesia terpilih tahun 2026",
-    "run": null,
-    "risk": "safe",
-    "artifacts": null
+    "query": "Siapa Presiden Indonesia terpilih tahun 2026"
   }
 }  
 `
-        : ''
-    }${
-      isYoutubeSummary
-        ? `
-## Example: Youtube Summary (Ketika user meminta untuk merangkumkan video youtube)
+    : ''
+}
+${
+  isYoutubeSummary
+    ? `
+## Example: Youtube Summary
 User: "Mark, tolong rangkumin video ini dong https://www.youtube.com/watch?v=uJbbtrx5M_E"
 Output: {
   "answer": "Siap bro, tunggu bentar yak lagi aku rangkumin!",
   "memory": null,
   "command": {
     "action": "youtube",
-    "query": "https://www.youtube.com/watch?v=uJbbtrx5M_E",
-    "run": null,
-    "risk": "safe",
-    "artifacts": null
+    "query": "https://www.youtube.com/watch?v=uJbbtrx5M_E"
   }
-}`
-        : ''
-    }
+}
+`
+    : ''
+}
 
 ## Example: Simpan Memori (Command Null)
 User: "Mark, inget ya hobi gue main ETS2 pake monitor triple"
@@ -298,7 +296,10 @@ Output: {
       { role: 'user', content: lastUserMsg.content + contextSuffix }
     ]
 
-    console.log('Messages to LLM:', messages)
+    console.log(
+      'Messages to LLM:',
+      messages.filter((msg) => !msg.content.includes('Error LM Studio:'))
+    )
     const response = await fetchAI(messages, signal)
     const data = cleanAndParse(response)
     return data

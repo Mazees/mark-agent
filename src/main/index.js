@@ -4,6 +4,7 @@ import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.ico?asset'
 import { fetchTranscript } from 'youtube-transcript-plus'
+import { url } from 'inspector'
 
 function createWindow() {
   // Create the browser window.
@@ -25,6 +26,7 @@ function createWindow() {
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
+    console.log('openlink: ' + url)
     return { action: 'deny' }
   })
 
