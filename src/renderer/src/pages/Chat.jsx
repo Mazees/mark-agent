@@ -60,11 +60,20 @@ const Chat = () => {
       const memoryReference = await getRelevantMemory(userInput, allMemory)
       console.log('Memory yang relevan:' + JSON.stringify(memoryReference))
       const chatSession = [
-        ...chatData.slice(-5).map((item) => ({
-          role: item.role === 'ai' ? 'assistant' : 'user',
-          content: item.content
-        })),
-        { role: 'user', content: userMessage }
+        ...chatData
+          .filter(
+            (item) =>
+              item.role !== 'command' &&
+              !item.isThinking &&
+              !item.isSearching &&
+              !item.isSummarizing
+          )
+          .slice(-10)
+          .map((item) => ({
+            role: item.role === 'ai' ? 'assistant' : 'user',
+            content: item.content
+          })),
+        { role: 'user', content: userInput }
       ]
 
       const answer = await getAnswer(
