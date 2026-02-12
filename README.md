@@ -86,7 +86,6 @@ npm run build:win
 - [x] **Few-Shot Examples**: Contoh output di prompt untuk konsistensi respons.
 - [ ] **Session Persistence**: Menyimpan dan memuat riwayat sesi chat.
 - [ ] **Configuration Page**: Halaman pengaturan untuk model, API URL, dll.
-- [ ] **Command Running**: Menjalankan command sesuai risk level secara otomatis.
 - [ ] **Voice Interaction**: Antarmuka berbasis suara.
 - [ ] **Vision Capability**: Analisis gambar secara lokal.
 
