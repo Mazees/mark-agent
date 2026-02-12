@@ -6,12 +6,11 @@ export const db = new Dexie('mark-db')
 db.version(1).stores({
   // Index gabungan hanya [type+key] agar data lain (summary, confidence) bisa diubah
   memory: '++id, [type+key], type, key, summary, memory, confidence',
-  sessions: '++id, title, lastUpdated',
-  history: '++id, sessionId, role, content, timestamp'
+  sessions: '++id, title, data'
 })
 
 // --- CREATE ---
-export async function insertData(data) {
+export async function insertMemory(data) {
   const memoryText = data.memory.trim()
   const vector = await generateVector(memoryText)
   try {
@@ -22,12 +21,28 @@ export async function insertData(data) {
       vector: vector
     })
   } catch (error) {
-    console.error('Error Save Data:', error)
+    console.error('Error Save Memory:', error)
+  }
+}
+
+export async function createSession(title, data) {
+  try {
+    const id = await db.sessions.add({ title: title, data: data })
+    return id
+  } catch (error) {
+    console.error('Error in createSession logic:', error)
+  }
+}
+export async function insertSession(id, data) {
+  try {
+    await db.sessions.update(id, { data: data })
+  } catch (error) {
+    console.error('Error in insertSession logic:', error)
   }
 }
 
 // --- UPDATE ---
-export async function updateData(data) {
+export async function updateMemory(data) {
   try {
     const newMemoryText = data.memory.trim()
     const newVector = await generateVector(newMemoryText)
@@ -39,12 +54,12 @@ export async function updateData(data) {
       vector: newVector
     })
   } catch (error) {
-    console.error('Error in updateData logic:', error)
+    console.error('Error in updateMemory logic:', error)
   }
 }
 
 // --- DELETE ---
-export async function deleteData(data) {
+export async function deleteMemory(data) {
   try {
     // 1. Prioritas utama: Hapus pake ID yang dikasih Mark
     if (data.id) {
@@ -67,7 +82,7 @@ export async function deleteData(data) {
 
     console.warn('Mark mau hapus data tapi gak kasih ID atau Type/Key yang jelas.')
   } catch (error) {
-    console.error('Error saat mencoba menghapus memori:', error)
+    console.error('Error in deleteMemory logic:', error)
     throw error
   }
 }
@@ -77,7 +92,27 @@ export async function getAllMemory() {
     const data = await db.memory.toArray()
     return data || [] // Kembalikan array kosong kalau gak ada data
   } catch (error) {
-    console.error('Gagal ambil semua memori:', error)
+    console.error('Error in getAllMemory logic:', error)
+    return []
+  }
+}
+export async function getAllSessionTitle() {
+  try {
+    const data = await db.sessions.toArray()
+    console.log(data)
+    return data || []
+  } catch (error) {
+    console.error('Error in getAllSessionTitle logic:', error)
+    return []
+  }
+}
+export async function getChatData(id) {
+  try {
+    const session = await db.sessions.where('id').equals(id).toArray()
+    console.log(session[0].data)
+    return session[0].data
+  } catch (error) {
+    console.error('Error in getChatData logic:', error)
     return []
   }
 }

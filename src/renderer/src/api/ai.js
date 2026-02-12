@@ -47,6 +47,31 @@ const cleanAndParse = (rawResponse) => {
   }
 }
 
+export const getTitleSession = async (message, signal) => {
+  const data = await fetchAI(
+    [
+      {
+        role: 'user',
+        content: `
+**ROLE**: Kamu adalah asisten pembuat judul chat yang sangat singkat, padat, dan akurat.
+**TASK**: Buatlah judul chat maksimal 5 kata berdasarkan pesan pertama dari user.
+
+**RULES**:
+1. Judul harus langsung ke inti topik tanpa basa-basi.
+2. DILARANG menggunakan awalan seperti "Judul: ", "Topik: ", atau tanda kutip.
+3. Gunakan Bahasa Indonesia yang santai.
+4. Output HANYA boleh berisi judul saja.
+
+**INPUT**:
+Pesan User: "${message}"
+    `
+      }
+    ],
+    signal
+  )
+  return data
+}
+
 export const getSearchResult = async (userInput, query, signal, chatSession) => {
   try {
     const search = await window.api.searchWeb(query, signal)

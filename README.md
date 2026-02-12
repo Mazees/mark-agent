@@ -84,7 +84,7 @@ npm run build:win
 - [x] **Multi-Turn Conversation**: Native multi-turn messages untuk konteks yang lebih baik.
 - [x] **Time Awareness**: Kesadaran waktu untuk relevansi informasi.
 - [x] **Few-Shot Examples**: Contoh output di prompt untuk konsistensi respons.
-- [ ] **Session Persistence**: Menyimpan dan memuat riwayat sesi chat.
+- [x] **Session Persistence**: Menyimpan dan memuat riwayat sesi chat.
 - [ ] **Configuration Page**: Halaman pengaturan untuk model, API URL, dll.
 - [ ] **Voice Interaction**: Antarmuka berbasis suara.
 - [ ] **Vision Capability**: Analisis gambar secara lokal.

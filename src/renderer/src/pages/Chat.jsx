@@ -2,11 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 import ChatList from '../components/ChatList'
 import { getAnswer, getSearchResult, getYoutubeSummary } from '../api/ai'
 import { getRelevantMemory } from '../api/vectorMemory'
-import { deleteData, insertData, updateData, getAllMemory } from '../api/db'
+import { deleteMemory, insertMemory, updateMemory, getAllMemory } from '../api/db'
 import axios from 'axios'
+import { useChat } from '../contexts/ChatContext'
 
 const Chat = () => {
-  const [chatData, setChatData] = useState([])
+  const { chatData, setChatData, sessionId, setSessionId, changeSession } = useChat()
   const [isAction, setIsAction] = useState({ web: false, youtube: false })
 
   const chatEndRef = useRef(null)
@@ -77,7 +78,7 @@ const Chat = () => {
       }
 
       if (answer.memory && answer.command?.action !== 'search') {
-        const actions = { insert: insertData, update: updateData, delete: deleteData }
+        const actions = { insert: insertMemory, update: updateMemory, delete: deleteMemory }
         if (actions[answer.memory.action]) {
           await actions[answer.memory.action](answer.memory)
         }
@@ -144,7 +145,7 @@ const Chat = () => {
           isMemorySaved: true
         }
       ])
-      insertData({
+      insertMemory({
         type: 'fact',
         key: 'misc',
         memory: JSON.stringify(searchResults.answer)

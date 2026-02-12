@@ -1,12 +1,17 @@
-import React from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { getAllSessionTitle } from '../api/db'
+import { useChat } from '../contexts/ChatContext'
 
 const Drawer = ({ isOpen = true, onChange }) => {
-  const dummySessions = [
-    { id: 1, title: 'Cara membuat React component' },
-    { id: 2, title: 'Optimasi database Dexie' },
-    { id: 3, title: 'Tutorial Tailwind CSS' }
-  ]
+  const [sessions, setSessions] = useState([])
+  const { changeSession, setSessionId, setChatData, chatData } = useChat()
+  useEffect(() => {
+    ;(async () => {
+      const allSessions = await getAllSessionTitle()
+      setSessions(allSessions)
+    })()
+  }, [chatData])
 
   return (
     <div className="drawer z-30">
@@ -22,17 +27,28 @@ const Drawer = ({ isOpen = true, onChange }) => {
         <ul className="menu bg-base-200 min-h-full w-80 p-4">
           {/* Sidebar content here */}
           <li>
-            <NavLink to="/" onClick={() => onChange()}>
+            <NavLink
+              to="/"
+              onClick={() => {
+                setSessionId(null)
+                setChatData([])
+                onChange()
+              }}
+            >
               Chat Baru
             </NavLink>
           </li>
 
           <li className="menu-title mt-4">History Session</li>
-          {dummySessions.map((session) => (
-            <li key={session.id}>
-              <NavLink to={`/chat/${session.id}`} onClick={() => onChange()}>
-                {session.title}
-              </NavLink>
+          {[...sessions].reverse().map((session) => (
+            <li
+              key={session.id}
+              onClick={async () => {
+                await changeSession(session.id)
+                onChange()
+              }}
+            >
+              <a>{session.title}</a>
             </li>
           ))}
 
