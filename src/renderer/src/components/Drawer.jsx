@@ -40,7 +40,7 @@ const Drawer = ({ isOpen = true, onChange }) => {
           </li>
 
           <li className="menu-title mt-4">History Session</li>
-          {[...sessions].reverse().map((session) => (
+          {[...sessions].sort((a, b) => b.timestamp - a.timestamp).map((session) => (
             <li
               key={session.id}
               onClick={async () => {

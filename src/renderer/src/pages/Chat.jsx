@@ -80,7 +80,12 @@ const Chat = () => {
       if (answer.memory && answer.command?.action !== 'search') {
         const actions = { insert: insertMemory, update: updateMemory, delete: deleteMemory }
         if (actions[answer.memory.action]) {
-          await actions[answer.memory.action](answer.memory)
+          const memoryData = { ...answer.memory }
+          memoryData.memory = memoryData.memory
+            .trim()
+            .replace(/^[\\"]+|[\\"]+$/g, '')
+            .replace(/\\n/g, '\n')
+          await actions[answer.memory.action](memoryData)
         }
       }
       setChatData((prev) => {

@@ -29,21 +29,52 @@ export const fetchAI = async (messages, signal) => {
 const cleanAndParse = (rawResponse) => {
   try {
     if (!rawResponse) return null
-    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
-    let cleanText = jsonMatch[0]
-    cleanText = cleanText.replace(/\\(?!(["\\\/bfnrt]|u[a-fA-F0-9]{4}))/g, '\\\\')
+
+    // 1. Cari kurung kurawal pertama dan terakhir
+    const firstBrace = rawResponse.indexOf('{')
+    const lastBrace = rawResponse.lastIndexOf('}')
+
+    if (firstBrace === -1 || lastBrace === -1) return null
+
+    const jsonStr = rawResponse.substring(firstBrace, lastBrace + 1)
+
+    // Attempt 1: Parse langsung tanpa modifikasi (paling aman)
     try {
-      return JSON.parse(cleanText)
-    } catch (e) {
-      cleanText = cleanText.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
-        return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
-      })
-      return JSON.parse(cleanText)
-    }
+      return JSON.parse(jsonStr)
+    } catch (_) {}
+
+    // Attempt 2: Ganti newline/tab/CR dengan SPASI (aman di dalam maupun luar string JSON)
+    //            lalu hapus control char sisanya
+    let cleaned = jsonStr
+      .replace(/\r?\n/g, ' ')
+      .replace(/\t/g, ' ')
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+
+    try {
+      return JSON.parse(cleaned)
+    } catch (_) {}
+
+    // Attempt 3: Perbaiki backslash invalid (e.g. path Windows)
+    cleaned = cleaned.replace(/\\(?!(["\\\/bfnrt]|u[a-fA-F0-9]{4}))/g, '\\\\')
+
+    try {
+      return JSON.parse(cleaned)
+    } catch (_) {}
+
+    // Attempt 4: Hapus trailing comma sebelum } atau ]
+    cleaned = cleaned.replace(/,\s*([}\]])/g, '$1')
+
+    return JSON.parse(cleaned)
   } catch (error) {
-    console.error('Gagal Parse JSON dari Mark:', error)
-    return null
+    console.error('Gagal Parse JSON:', error)
+    // Upaya terakhir: coba bersihkan BOM dan extract ulang
+    try {
+      const lastResort = rawResponse.trim().replace(/^\xEF\xBB\xBF/, '')
+      const match = lastResort.match(/\{[\s\S]*\}/)
+      return match ? JSON.parse(match[0]) : null
+    } catch (e) {
+      return null
+    }
   }
 }
 

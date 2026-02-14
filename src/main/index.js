@@ -16,6 +16,7 @@ function createWindow() {
     icon: icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
+      webviewTag: true,
       sandbox: false
     }
   })
@@ -89,10 +90,12 @@ app.whenReady().then(() => {
     }
   })
 
+  let tempWin = null
+
   ipcMain.handle('search-web', async (event, query) => {
     return new Promise(async (resolve) => {
-      let tempWin = new BrowserWindow({
-        show: false, // Jendela siluman
+      tempWin = new BrowserWindow({
+        show: true, // Jendela siluman
         webPreferences: {
           offscreen: false
         }
@@ -108,9 +111,25 @@ app.whenReady().then(() => {
         await new Promise((r) => setTimeout(r, 2000))
 
         // Eksekusi script dengan selector yang lebih kuat
-        const results = await tempWin.webContents.executeJavaScript(`
+        const results = await tempWin.webContents.executeJavaScript(
+          `
         (() => {
+          function stripHtml(html){
+            let tmp = document.createElement("DIV");
+            tmp.innerHTML = html;
+            return tmp.textContent || tmp.innerText || "";
+          }
           const items = [];
+            let aiSummary = null
+            const mainCol = document.querySelector('[data-container-id="main-col"].mZJni, .mZJni')
+            console.log(mainCol)
+            aiSummary = mainCol ? mainCol.innerText : null
+            console.log('aiSummary ' + aiSummary)
+            if (aiSummary) {
+              aiSummary = stripHtml(aiSummary)
+              items.push({ title: 'AI Google Summary', link: '${url}', snippet: aiSummary })
+            }
+          console.log('aiSummary 2 ' + aiSummary)
           const elements = document.querySelectorAll('div.g, div.tF2Cxc, div.v7W49e');
 
           elements.forEach((el) => {
@@ -126,13 +145,14 @@ app.whenReady().then(() => {
           });
           return items;
         })()
-      `)
-
-        tempWin.destroy()
+      `
+        )
+        tempWin.webContents.openDevTools()
+        // tempWin.destroy()
         resolve(results)
       } catch (err) {
         console.error('Scraping Siluman Gagal:', err)
-        if (!tempWin.isDestroyed()) tempWin.destroy()
+        // if (!tempWin.isDestroyed()) tempWin.destroy()
         resolve([])
       }
     })
@@ -149,11 +169,14 @@ app.whenReady().then(() => {
     )
 
     for (const item of links) {
-      try {
-        await tempWin.loadURL(item.link)
-        await new Promise((r) => setTimeout(r, 1500)) // Tunggu sebentar render
+      if (item.title === 'AI Google Summary') {
+        results.push({ source: item.title, url: item.link, text: item.snippet })
+      } else {
+        try {
+          await tempWin.loadURL(item.link)
+          await new Promise((r) => setTimeout(r, 1500)) // Tunggu sebentar render
 
-        const content = await tempWin.webContents.executeJavaScript(`
+          const content = await tempWin.webContents.executeJavaScript(`
           (() => {
             const unwanted = document.querySelectorAll('header, footer, nav, script, style, ads, .sidebar, .menu');
             unwanted.forEach(el => el.remove());
@@ -164,9 +187,14 @@ app.whenReady().then(() => {
               .join(' ');
           })()
         `)
-        results.push({ source: item.title, url: item.link, text: content || 'Gagal ambil konten.' })
-      } catch (err) {
-        results.push({ source: item.title, url: item.link, text: 'Gagal akses website.' })
+          results.push({
+            source: item.title,
+            url: item.link,
+            text: content || 'Gagal ambil konten.'
+          })
+        } catch (err) {
+          results.push({ source: item.title, url: item.link, text: 'Gagal akses website.' })
+        }
       }
     }
     tempWin.destroy()

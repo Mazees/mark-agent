@@ -6,7 +6,7 @@ export const db = new Dexie('mark-db')
 db.version(1).stores({
   // Index gabungan hanya [type+key] agar data lain (summary, confidence) bisa diubah
   memory: '++id, [type+key], type, key, summary, memory, confidence',
-  sessions: '++id, title, data'
+  sessions: '++id, title, data, timestamp'
 })
 
 // --- CREATE ---
@@ -27,7 +27,7 @@ export async function insertMemory(data) {
 
 export async function createSession(title, data) {
   try {
-    const id = await db.sessions.add({ title: title, data: data })
+    const id = await db.sessions.add({ title: title, data: data, timestamp: Date.now() })
     return id
   } catch (error) {
     console.error('Error in createSession logic:', error)
@@ -35,7 +35,7 @@ export async function createSession(title, data) {
 }
 export async function insertSession(id, data) {
   try {
-    await db.sessions.update(id, { data: data })
+    await db.sessions.update(id, { data: data, timestamp: Date.now() })
   } catch (error) {
     console.error('Error in insertSession logic:', error)
   }
