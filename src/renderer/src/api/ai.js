@@ -103,14 +103,17 @@ Pesan User: "${message}"
   return data
 }
 
-export const getSearchResult = async (userInput, query, signal, chatSession) => {
+export const getSearchResult = async (search, data, userInput, signal, chatSession) => {
   try {
-    const search = await window.api.searchWeb(query, signal)
-    console.log(search)
-    if (!search || search.length == 0)
-      return { answer: 'Maaf tidak menemukan data di Internet', sources: [] }
+    // const search = await window.api.searchWeb(query, signal)
+    // console.log(search)
+    // if (!search || search.length == 0)
+    //   return { answer: 'Maaf tidak menemukan data di Internet', sources: [] }
 
-    const deepDataArray = await window.api.deepSearch(search)
+    // const deepDataArray = await window.api.deepSearch(search)
+
+    const deepDataArray = [...data]
+    console.log(deepDataArray)
 
     const prompts = `
 # ROLE:
@@ -344,7 +347,7 @@ Output: {
     const previousTurns = chatSession.slice(0, -1) // semua kecuali pesan terakhir
     const lastUserMsg = chatSession[chatSession.length - 1] // pesan user terbaru
 
-    const contextSuffix = `\n\n---\nmemoryReference: ${memoryReference.length > 0 ? JSON.stringify(memoryReference) : 'Kosong.'}\nTanggal: ${infoWaktu}\nBALAS DENGAN JSON SAJA.`
+    const contextSuffix = `${isWebSearch ? ' (Coba Cari Di Web)' : ''}\n\n---\nmemoryReference: ${memoryReference.length > 0 ? JSON.stringify(memoryReference) : 'Kosong.'}\nTanggal: ${infoWaktu}\nBALAS DENGAN JSON SAJA.`
 
     const messages = [
       { role: 'system', content: systemPrompt },

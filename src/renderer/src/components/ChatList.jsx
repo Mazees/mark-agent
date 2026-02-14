@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import Markdown from 'react-markdown'
 import rehypeExternalLinks from 'rehype-external-links'
+import { scrapeGoogle } from '../api/scraping'
+import { deepSearch } from '../api/scraping'
 
 const ChatList = ({
   role = 'user',
   content = '',
   isThinking = false,
   isSearching = false,
+  query = null,
   isMemorySaved = false,
   isMemoryUpdated = false,
   isMemoryDeleted = false,
@@ -17,11 +20,33 @@ const ChatList = ({
   youtubeLink = '',
   risk = 'safe',
   sources = [],
+  sendDataWebSearch,
   onRun
 }) => {
   const isUser = role === 'user'
   const isCommand = role === 'command'
   const [executed, setExecuted] = useState(risk === 'safe' ? true : false)
+  const [url, setUrl] = useState(
+    `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=id`
+  )
+  const webRef = useRef(null)
+  const scrapingActive = useRef(false)
+  const initialLoadHandled = useRef(false)
+
+  useEffect(() => {
+    const webview = webRef.current
+    if (!webview || !isSearching) return
+    const handleInitialLoad = () => {
+      if (!initialLoadHandled.current) {
+        initialLoadHandled.current = true
+        onScrape(webview)
+      }
+    }
+    webview.addEventListener('did-stop-loading', handleInitialLoad)
+    return () => {
+      webview.removeEventListener('did-stop-loading', handleInitialLoad)
+    }
+  }, [isSearching])
 
   const getYouTubeID = (text) => {
     const ytRegex =
@@ -37,6 +62,35 @@ const ChatList = ({
 
   if (isCommand) {
     containerClass = 'bg-base-200 p-3 rounded-xl w-full text-base-content border border-base-300'
+  }
+
+  const waitForLoad = (webview) => {
+    return new Promise((resolve) => {
+      const onDone = () => {
+        webview.removeEventListener('did-stop-loading', onDone)
+        resolve()
+      }
+      webview.addEventListener('did-stop-loading', onDone)
+    })
+  }
+  const onScrape = async (webview) => {
+    if (scrapingActive.current) return
+    scrapingActive.current = true
+    const source = await scrapeGoogle(webview, url)
+    const links = []
+    for (const url of source) {
+      let link = null
+      if (url.title === 'AI Google Summary') {
+        link = { source: url.title, url: url.link, text: url.snippet }
+      } else {
+        setUrl(url.link)
+        await waitForLoad(webview)
+        link = await deepSearch(webview, url.link)
+      }
+      links.push(link)
+    }
+    sendDataWebSearch(source, links)
+    scrapingActive.current = false
   }
 
   // For commands, use a different layout without DaisyUI chat grid
@@ -148,26 +202,35 @@ const ChatList = ({
         ) : isSummarizing ? (
           <div className="flex items-center gap-2 py-1 animate-pulse">
             <span className="loading loading-dots loading-xs"></span>
-            <span className="text-xs italic opacity-70">Mark is summarizing youtube video...</span>
+            <span className="text-xs italic opacity-70">Mark is summarizing...</span>
           </div>
         ) : isSearching ? (
-          <div className="flex items-center gap-2 py-1 text-xs text-white animate-pulse">
-            <svg
-              ariaHidden="true"
-              xmlns="http://www.w3.org/2000/svg"
-              width="1em"
-              height="1em"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeWidth="2"
-                d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
-              />
-            </svg>
-            <span className="italic opacity-70">Mark is searching...</span>
+          <div className="aspect-video h-50 rounded-xl overflow-hidden no-scrollbar">
+            <div className="flex gap-2 items-center justify-center py-1 text-lg text-white animate-pulse absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2  w-full h-full z-20">
+              <svg
+                ariaHidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                width="1em"
+                height="1em"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="2"
+                  d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+                />
+              </svg>
+              <span className="italic">Mark is searching...</span>
+            </div>
+            <webview
+              src={url}
+              ref={webRef}
+              style={{ zoom: '0.5' }}
+              className="w-full h-full pointer-events-none overflow-hidden no-scrollbar blur-[2px] brightness-70 zoom"
+              useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-3">

@@ -9,6 +9,51 @@ import { useChat } from '../contexts/ChatContext'
 const Chat = () => {
   const { chatData, setChatData, sessionId, setSessionId, changeSession } = useChat()
   const [isAction, setIsAction] = useState({ web: false, youtube: false })
+  const searchProp = useRef({ userInput: '', signal: null, chatSession: null })
+
+  const receiveSearchResult = async (search, result) => {
+    setChatData((prev) => [
+      ...prev.filter((item) => !item.isSearching),
+      { role: 'ai', content: '...', isSummarizing: true }
+    ])
+    try {
+      const searchSummary = await getSearchResult(
+        search,
+        result,
+        searchProp.current.userInput,
+        searchProp.current.signal,
+        searchProp.current.chatSession
+      )
+      setChatData((prev) => [
+        ...prev.filter((item) => !item.isSummarizing),
+        {
+          role: 'ai',
+          content: searchSummary.answer,
+          sources: searchSummary.sources,
+          isMemorySaved: true
+        }
+      ])
+      insertMemory({
+        type: 'fact',
+        key: 'misc',
+        memory: JSON.stringify(searchSummary.answer)
+      })
+    } catch (error) {
+      console.error('Search Technical Error:', error)
+      if (error.name === 'AbortError') {
+        setChatData((prev) => [...prev.filter((item) => !item.isSearching)])
+        setChatData((prev) => prev.slice(0, -1))
+      } else {
+        setChatData((prev) => [
+          ...prev.filter((item) => !item.isSearching),
+          {
+            role: 'ai',
+            content: 'Gagal dapet info dari internet nih, koneksi atau captcha mungkin bermasalah.'
+          }
+        ])
+      }
+    }
+  }
 
   const chatEndRef = useRef(null)
   const abortControllerRef = useRef(null)
@@ -138,38 +183,17 @@ const Chat = () => {
   }
 
   const handleSearchCommand = async (userInput, query, signal, chatSession) => {
-    setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearching: true }])
-    try {
-      const searchResults = await getSearchResult(userInput, query, signal, chatSession)
-      setChatData((prev) => [
-        ...prev.filter((item) => !item.isSearching),
-        {
-          role: 'ai',
-          content: searchResults.answer,
-          sources: searchResults.sources,
-          isMemorySaved: true
-        }
-      ])
-      insertMemory({
-        type: 'fact',
-        key: 'misc',
-        memory: JSON.stringify(searchResults.answer)
-      })
-    } catch (error) {
-      console.error('Search Technical Error:', error)
-      if (error.name === 'AbortError') {
-        setChatData((prev) => [...prev.filter((item) => !item.isSearching)])
-        setChatData((prev) => prev.slice(0, -1))
-      } else {
-        setChatData((prev) => [
-          ...prev.filter((item) => !item.isSearching),
-          {
-            role: 'ai',
-            content: 'Gagal dapet info dari internet nih, koneksi atau captcha mungkin bermasalah.'
-          }
-        ])
+    searchProp.current = { userInput, signal, chatSession }
+    setChatData((prev) => [
+      ...prev,
+      {
+        role: 'ai',
+        content: '...',
+        isSearching: true,
+        query: query,
+        sendDataWebSearch: receiveSearchResult
       }
-    }
+    ])
   }
 
   const getYoutubeData = async (url) => {

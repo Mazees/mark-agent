@@ -4,8 +4,6 @@ import { electronAPI } from '@electron-toolkit/preload'
 // Custom APIs for renderer
 const api = {
   runNodeFunction: (data) => ipcRenderer.invoke('execute-node-task', data),
-  searchWeb: (query) => ipcRenderer.invoke('search-web', query),
-  deepSearch: (links) => ipcRenderer.invoke('deep-search', links),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url)
 }
