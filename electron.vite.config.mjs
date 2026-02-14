@@ -12,6 +12,10 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    server: {
+      host: true, // Ini sama dengan --host, mengizinkan akses dari network (HP)
+      port: 5173
+    }
   }
 })

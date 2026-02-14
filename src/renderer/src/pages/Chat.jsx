@@ -5,6 +5,8 @@ import { getRelevantMemory } from '../api/vectorMemory'
 import { deleteMemory, insertMemory, updateMemory, getAllMemory } from '../api/db'
 import axios from 'axios'
 import { useChat } from '../contexts/ChatContext'
+import { GridScan } from '../components/GridScan'
+import icon from '../assets/icon.svg'
 
 const Chat = () => {
   const { chatData, setChatData, sessionId, setSessionId, changeSession } = useChat()
@@ -276,42 +278,86 @@ const Chat = () => {
     }
   }
   return (
-    <div className="w-full h-full flex flex-col items-center justify-end p-4">
-      <ul className="flex-1 h-full w-full max-w-2xl no-scrollbar overflow-y-auto mb-4">
-        {chatData.map((item, index) => {
-          if (item.role === 'command') {
-            return (
-              <ChatList
-                key={index}
-                {...item}
-                onRun={() => {
-                  alert('run')
-                }}
+    <div className="relative w-full h-full flex flex-col items-center justify-end overflow-hidden">
+      {/* Background layer */}
+      {chatData.length === 0 && (
+        <div className="fixed inset-0 w-screen h-screen z-0">
+          <GridScan
+            sensitivity={0.55}
+            lineThickness={1}
+            linesColor="#392e4e"
+            gridScale={0.1}
+            scanColor="#1fb854"
+            scanOpacity={0.4}
+            enablePost
+            bloomIntensity={0.6}
+            chromaticAberration={0.002}
+            noiseIntensity={0.01}
+          />
+        </div>
+      )}
+
+      {/* Chat area */}
+      <div className="relative z-10 flex-1 w-full overflow-hidden flex flex-col items-center">
+        {chatData.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 opacity-30 select-none">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-16 w-16"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1}
+                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
               />
-            )
-          } else {
-            return <ChatList key={index} {...item} />
-          }
-        })}
-        <div ref={chatEndRef} />
-      </ul>
+            </svg>
+            <p className="text-lg font-semibold">Mulai percakapan dengan Mark</p>
+            <p className="text-sm">Ketik pesan di bawah untuk memulai.</p>
+          </div>
+        ) : (
+          <ul className="flex-1 h-full w-full max-w-2xl no-scrollbar overflow-y-auto px-4 pt-4 pb-2">
+            {chatData.map((item, index) => {
+              if (item.role === 'command') {
+                return (
+                  <ChatList
+                    key={index}
+                    {...item}
+                    onRun={() => {
+                      alert('run')
+                    }}
+                  />
+                )
+              } else {
+                return <ChatList key={index} {...item} />
+              }
+            })}
+            <div ref={chatEndRef} />
+          </ul>
+        )}
+      </div>
+
+      {/* Input form */}
       <form
         onSubmit={handleSubmit}
-        className="w-full lg:w-1/2 bg-neutral mb-10 p-5 rounded-xl flex flex-col"
+        className="relative z-10 w-[90%] lg:w-1/2 mb-6 p-4 rounded-2xl flex flex-col gap-3 bg-base-200/60 backdrop-blur-xl border border-white/5 shadow-lg"
       >
         <textarea
           value={message}
           disabled={isLoading}
           required
           onChange={(e) => setMessage(e.target.value)}
-          className="placeholder-white resize-none focus:outline-none w-full overflow-hidden disabled:opacity-50"
-          placeholder={isLoading ? 'Mark sedang menjawab...' : 'Kirim Pesan...'}
+          className="bg-transparent resize-none focus:outline-none w-full overflow-hidden disabled:opacity-50 placeholder:opacity-40"
+          placeholder={isLoading ? 'Mark sedang menjawab...' : 'Kirim pesan ke Mark...'}
         ></textarea>
-        <div className="w-full flex justify-between">
-          <div className="flex flex-wrap gap-3">
+        <div className="w-full flex justify-between items-center">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className={`btn btn-outline hover:bg-transparent hover:border-white tooltip tooltip-bottom tooltip-accent btn-sm ${isAction.web ? 'bg-blue-600' : ''}`}
+              className={`btn btn-sm rounded-lg gap-1.5 ${isAction.web ? 'btn-primary' : 'btn-ghost opacity-60 hover:opacity-100'}`}
               onClick={() => {
                 setIsAction((prev) => ({ ...prev, web: !prev.web }))
               }}
@@ -332,11 +378,11 @@ const Chat = () => {
                   d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
                 />
               </svg>
-              Web Search
+              Web
             </button>
             <button
               type="button"
-              className={`btn btn-outline hover:bg-transparent hover:border-white tooltip tooltip-bottom tooltip-accent btn-sm ${isAction.youtube ? 'bg-red-600' : ''}`}
+              className={`btn btn-sm rounded-lg gap-1.5 ${isAction.youtube ? 'btn-error' : 'btn-ghost opacity-60 hover:opacity-100'}`}
               onClick={() => {
                 setIsAction((prev) => ({ ...prev, youtube: !prev.youtube }))
               }}
@@ -351,22 +397,18 @@ const Chat = () => {
                 viewBox="0 0 24 24"
               >
                 <path
-                  fill-rule="evenodd"
+                  fillRule="evenodd"
                   d="M21.7 8.037a4.26 4.26 0 0 0-.789-1.964 2.84 2.84 0 0 0-1.984-.839c-2.767-.2-6.926-.2-6.926-.2s-4.157 0-6.928.2a2.836 2.836 0 0 0-1.983.839 4.225 4.225 0 0 0-.79 1.965 30.146 30.146 0 0 0-.2 3.206v1.5a30.12 30.12 0 0 0 .2 3.206c.094.712.364 1.39.784 1.972.604.536 1.38.837 2.187.848 1.583.151 6.731.2 6.731.2s4.161 0 6.928-.2a2.844 2.844 0 0 0 1.985-.84 4.27 4.27 0 0 0 .787-1.965 30.12 30.12 0 0 0 .2-3.206v-1.516a30.672 30.672 0 0 0-.202-3.206Zm-11.692 6.554v-5.62l5.4 2.819-5.4 2.801Z"
-                  clip-rule="evenodd"
+                  clipRule="evenodd"
                 />
               </svg>
-              Youtube Summary
+              YouTube
             </button>
           </div>
-          <button
-            type="submit"
-            className="bg-primary btn btn-circle text-lg text-neutral hover:text-white disabled:bg-neutral-focus"
-          >
+          <button type="submit" className="btn btn-circle btn-sm btn-primary text-base">
             {isLoading ? (
               <svg
                 aria-hidden="true"
-                className="text-white"
                 xmlns="http://www.w3.org/2000/svg"
                 width="1em"
                 height="1em"
@@ -381,7 +423,6 @@ const Chat = () => {
                 width="1em"
                 height="1em"
                 viewBox="0 0 256 256"
-                id="Flat"
                 xmlns="http://www.w3.org/2000/svg"
               >
                 <path d="M231.626,128a16.015,16.015,0,0,1-8.18262,13.96094L54.53027,236.55273a15.87654,15.87654,0,0,1-18.14648-1.74023,15.87132,15.87132,0,0,1-4.74024-17.60156L60.64746,136H136a8,8,0,0,0,0-16H60.64746L31.64355,38.78906A16.00042,16.00042,0,0,1,54.5293,19.44727l168.915,94.59179A16.01613,16.01613,0,0,1,231.626,128Z" />

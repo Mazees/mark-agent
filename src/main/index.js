@@ -44,6 +44,18 @@ function createWindow() {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
+function getLocalIP() {
+  const interfaces = os.networkInterfaces()
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Cari IPv4 dan pastikan bukan internal (127.0.0.1)
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address
+      }
+    }
+  }
+  return '127.0.0.1'
+}
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
