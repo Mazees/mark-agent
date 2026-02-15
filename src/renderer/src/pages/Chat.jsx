@@ -2,16 +2,22 @@ import { useState, useRef, useEffect } from 'react'
 import ChatList from '../components/ChatList'
 import { getAnswer, getSearchResult, getYoutubeSummary } from '../api/ai'
 import { getRelevantMemory } from '../api/vectorMemory'
-import { deleteMemory, insertMemory, updateMemory, getAllMemory } from '../api/db'
+import { deleteMemory, insertMemory, updateMemory, getAllMemory, getAllConfig } from '../api/db'
 import axios from 'axios'
 import { useChat } from '../contexts/ChatContext'
-import { GridScan } from '../components/GridScan'
+import DotGrid from '../components/DotGrid'
 import icon from '../assets/icon.svg'
 
 const Chat = () => {
   const { chatData, setChatData, sessionId, setSessionId, changeSession } = useChat()
   const [isAction, setIsAction] = useState({ web: false, youtube: false })
   const searchProp = useRef({ userInput: '', signal: null, chatSession: null })
+  const [config, setConfig] = useState([])
+
+  const loadConfig = async () => {
+    const data = await getAllConfig()
+    if (data.length > 0) setConfig(data)
+  }
 
   const receiveSearchResult = async (search, result) => {
     setChatData((prev) => [
@@ -76,6 +82,7 @@ const Chat = () => {
   }
   useEffect(() => {
     scrollToBottom()
+    loadConfig()
   }, [chatData])
 
   useEffect(() => {
@@ -113,7 +120,7 @@ const Chat = () => {
               !item.isSearching &&
               !item.isSummarizing
           )
-          .slice(-10)
+          .slice(-1 * (config[0]?.context || 10))
           .map((item) => ({
             role: item.role === 'ai' ? 'assistant' : 'user',
             content: item.content
@@ -146,24 +153,29 @@ const Chat = () => {
           await actions[answer.memory.action](memoryData)
         }
       }
-      setChatData((prev) => {
-        const filtered = prev.filter((item) => !item.isThinking)
-        const aiResponse = {
-          role: 'ai',
-          content: answer.answer,
-          isMemorySaved: answer.memory?.action === 'insert' && answer.command?.action !== 'search',
-          isMemoryUpdated: answer.memory?.action === 'update',
-          isMemoryDeleted: answer.memory?.action === 'delete'
-        }
-        if (answer.command?.run) {
-          return [
-            ...filtered,
-            aiResponse,
-            { role: 'command', content: answer.command.run, risk: answer.command.risk }
-          ]
-        }
-        return [...filtered, aiResponse]
-      })
+      if (answer.command?.action === 'yt-search') {
+        handleYoutubeSearch(answer, abortControllerRef.current.signal)
+      } else {
+        setChatData((prev) => {
+          const filtered = prev.filter((item) => !item.isThinking)
+          const aiResponse = {
+            role: 'ai',
+            content: answer.answer,
+            isMemorySaved:
+              answer.memory?.action === 'insert' && answer.command?.action !== 'search',
+            isMemoryUpdated: answer.memory?.action === 'update',
+            isMemoryDeleted: answer.memory?.action === 'delete'
+          }
+          if (answer.command?.run) {
+            return [
+              ...filtered,
+              aiResponse,
+              { role: 'command', content: answer.command.run, risk: answer.command.risk }
+            ]
+          }
+          return [...filtered, aiResponse]
+        })
+      }
       if (answer.command?.action === 'search') {
         await handleSearchCommand(
           userInput,
@@ -172,7 +184,7 @@ const Chat = () => {
           chatSession
         )
       }
-      if (answer.command?.action === 'youtube') {
+      if (answer.command?.action === 'yt-summary') {
         await handleYoutubeSummary(answer.command.query, abortControllerRef.current.signal)
       }
       setMessage('')
@@ -264,6 +276,35 @@ const Chat = () => {
       }
     }
   }
+  const handleYoutubeSearch = async (answer, signal) => {
+    try {
+      const searchResults = await window.api.searchYoutube(answer.command.query)
+      setChatData((prev) => [
+        ...prev.filter((item) => !item.isThinking),
+        {
+          role: 'ai',
+          content: answer.answer,
+          isYoutubeSearch: true,
+          youtubeLink: [...searchResults],
+          queryYoutube: answer.command.query
+        }
+      ])
+    } catch (error) {
+      console.error('Youtube Summary Technical Error:', error)
+      if (error.name === 'AbortError') {
+        setChatData((prev) => [...prev.filter((item) => !item.isThinking)])
+        setChatData((prev) => prev.slice(0, -1))
+      } else {
+        setChatData((prev) => [
+          ...prev.filter((item) => !item.isThinking),
+          {
+            role: 'ai',
+            content: 'Gagal dapet info dari youtube nih, koneksi atau captcha mungkin bermasalah.'
+          }
+        ])
+      }
+    }
+  }
 
   const handleStop = () => {
     abortControllerRef.current?.abort()
@@ -282,17 +323,16 @@ const Chat = () => {
       {/* Background layer */}
       {chatData.length === 0 && (
         <div className="fixed inset-0 w-screen h-screen z-0">
-          <GridScan
-            sensitivity={0.55}
-            lineThickness={1}
-            linesColor="#392e4e"
-            gridScale={0.1}
-            scanColor="#1fb854"
-            scanOpacity={0.4}
-            enablePost
-            bloomIntensity={0.6}
-            chromaticAberration={0.002}
-            noiseIntensity={0.01}
+          <DotGrid
+            dotSize={5}
+            gap={15}
+            baseColor="#19362d"
+            activeColor="#1fb854"
+            proximity={120}
+            shockRadius={250}
+            shockStrength={5}
+            resistance={750}
+            returnDuration={1.5}
           />
         </div>
       )}
@@ -300,7 +340,7 @@ const Chat = () => {
       {/* Chat area */}
       <div className="relative z-10 flex-1 w-full overflow-hidden flex flex-col items-center">
         {chatData.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 opacity-30 select-none">
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 select-none text-white/30">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               className="h-16 w-16"

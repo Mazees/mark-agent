@@ -5,7 +5,8 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   runNodeFunction: (data) => ipcRenderer.invoke('execute-node-task', data),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url)
+  getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url),
+  searchYoutube: (query) => ipcRenderer.invoke('youtube-search', query)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

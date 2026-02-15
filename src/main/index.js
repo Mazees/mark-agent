@@ -5,6 +5,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.ico?asset'
 import { fetchTranscript } from 'youtube-transcript-plus'
 import { url } from 'inspector'
+import yts from 'yt-search'
 
 function createWindow() {
   // Create the browser window.
@@ -99,6 +100,17 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('Gagal ambil transkrip YT:', error.message)
       return ''
+    }
+  })
+
+  ipcMain.handle('youtube-search', async (event, query) => {
+    try {
+      const ytData = await yts(query)
+      const video = ytData.videos.slice(0, 4)
+      return video.map((items) => items.videoId)
+    } catch (error) {
+      console.error('Gagal search YT:', error.message)
+      return []
     }
   })
 

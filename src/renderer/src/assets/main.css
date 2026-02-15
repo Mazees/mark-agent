@@ -1,6 +1,18 @@
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
 @import 'tailwindcss';
 @plugin "daisyui" {
   themes: forest;
+}
+
+@theme {
+  --font-sans: 'Poppins', sans-serif;
+}
+
+* {
+  font-family: 'Poppins', sans-serif;
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

@@ -20,6 +20,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@fontsource/poppins": "^5.2.7",
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@tailwindcss/vite": "^4.1.18",
     "@xenova/transformers": "^2.17.2",
@@ -29,6 +30,7 @@
     "duck-duck-scrape": "^2.2.7",
     "electron-updater": "^6.3.9",
     "face-api.js": "^0.22.2",
+    "gsap": "^3.14.2",
     "open": "^11.0.0",
     "openai": "^6.17.0",
     "postprocessing": "^6.38.2",
@@ -40,7 +42,8 @@
     "tailwindcss": "^4.1.18",
     "three": "^0.182.0",
     "youtube-transcript": "^1.2.1",
-    "youtube-transcript-plus": "^1.1.2"
+    "youtube-transcript-plus": "^1.1.2",
+    "yt-search": "^2.13.1"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^2.1.0",

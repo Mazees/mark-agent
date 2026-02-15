@@ -6,7 +6,8 @@ export const db = new Dexie('mark-db')
 db.version(1).stores({
   // Index gabungan hanya [type+key] agar data lain (summary, confidence) bisa diubah
   memory: '++id, [type+key], type, key, summary, memory, confidence',
-  sessions: '++id, title, data, timestamp'
+  sessions: '++id, title, data, timestamp',
+  config: 'id, personality, models, temperature, context'
 })
 
 // --- CREATE ---
@@ -96,6 +97,25 @@ export async function getAllMemory() {
     return []
   }
 }
+
+export async function getAllConfig() {
+  try {
+    const data = await db.config.toArray()
+    return data || [] // Kembalikan array kosong kalau gak ada data
+  } catch (error) {
+    console.error('Error in getAllMemory logic:', error)
+    return []
+  }
+}
+
+export async function saveConfiguration(data) {
+  try {
+    await db.config.upsert(1, data)
+  } catch (error) {
+    console.error('Error in saveConfiguration logic:', error)
+  }
+}
+
 export async function getAllSessionTitle() {
   try {
     const data = await db.sessions.toArray()

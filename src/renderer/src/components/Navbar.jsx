@@ -2,12 +2,15 @@ import { useState } from 'react'
 import Drawer from './Drawer'
 
 const Navbar = () => {
-    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   return (
     <>
-      <nav className="navbar fixed top-0 z-20 bg-base-100 shadow-sm">
+      <nav className="navbar fixed top-0 z-20 shadow-sm">
         <div className="flex-none">
-          <button className="btn btn-square btn-ghost" onClick={() => setIsDrawerOpen(!isDrawerOpen)}>
+          <button
+            className="btn btn-square btn-ghost"
+            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -25,7 +28,7 @@ const Navbar = () => {
           </button>
         </div>
         <div className="flex-1">
-          <a className="btn btn-ghost text-xl">Mark Agent</a>
+          <a className="text-xl font-medium ml-4">Mark Agent</a>
         </div>
         <div className="flex-none">
           <button className="btn btn-square btn-ghost">

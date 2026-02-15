@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react'
-import { getAllMemory, deleteMemory, db } from '../api/db'
+import { getAllMemory, getAllConfig, saveConfiguration, deleteMemory, db } from '../api/db'
 
 const Configuration = () => {
-  const [model, setModel] = useState('google/gemma-3-4b')
-  const [planningMode, setPlanningMode] = useState(false)
-  const [persona, setPersona] = useState(
-    'Kamu adalah Mark, asisten AI yang woles, cerdas, dan suka pake bahasa gaul tapi tetap informatif.'
-  )
-  const [contextWindow, setContextWindow] = useState(10)
+  const [config, setConfig] = useState({
+    personality: 'Santai layaknya seorang teman dan suka bercanda.',
+    model: 'google/gemma-3-4b',
+    temperature: 0,
+    context: 10
+  })
   const [memories, setMemories] = useState([])
   const [loadingMemory, setLoadingMemory] = useState(true)
 
   useEffect(() => {
+    loadConfig()
     loadMemories()
   }, [])
+
+  const loadConfig = async () => {
+    const data = await getAllConfig()
+    if (data.length > 0) setConfig(data[0])
+  }
 
   const loadMemories = async () => {
     setLoadingMemory(true)
@@ -71,7 +77,7 @@ const Configuration = () => {
       <div className="max-w-2xl mx-auto px-4 py-6 pb-24 space-y-8">
         {/* Page Header */}
         <div>
-          <h1 className="text-2xl font-bold">Configuration</h1>
+          <h1 className="text-2xl font-bold">Setup Mark!</h1>
           <p className="opacity-50 text-sm mt-1">Atur perilaku Mark sesuai kebutuhanmu.</p>
         </div>
 
@@ -88,8 +94,8 @@ const Configuration = () => {
               type="text"
               placeholder="Contoh: google/gemma-3-4b"
               className="input input-bordered w-full"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
+              value={config.model}
+              onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
             />
             <p className="text-xs opacity-40">
               Nama model yang aktif di LM Studio. Pastikan sudah ter-load.
@@ -98,12 +104,12 @@ const Configuration = () => {
 
           {/* System Persona */}
           <div className="space-y-1.5">
-            <p className="text-sm font-semibold">System Persona</p>
+            <p className="text-sm font-semibold">Gaya Bicara dan Kepribadian</p>
             <textarea
               className="textarea textarea-bordered w-full h-28 leading-relaxed"
               placeholder="Deskripsikan kepribadian Mark..."
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
+              value={config.personality}
+              onChange={(e) => setConfig((prev) => ({ ...prev, personality: e.target.value }))}
             />
             <p className="text-xs opacity-40">
               Tentukan gaya bicara dan karakter Mark di system prompt.
@@ -112,16 +118,16 @@ const Configuration = () => {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold">Temperature</p>
-              <span className="font-mono text-sm text-primary font-bold">{contextWindow}</span>
+              <span className="font-mono text-sm text-primary font-bold">{config.temperature}</span>
             </div>
             <input
               type="range"
               min="0"
               max="1"
               step="0.1"
-              value={contextWindow}
+              value={config.temperature}
               className="range range-primary range-xs w-full"
-              onChange={(e) => setContextWindow(Number(e.target.value))}
+              onChange={(e) => setConfig((prev) => ({ ...prev, temperature: e.target.value }))}
             />
             <div className="flex justify-between px-2.5 mt-2 text-xs">
               <span>0</span>
@@ -134,6 +140,33 @@ const Configuration = () => {
             <p className="text-xs opacity-40">
               Semakin tinggi temperature, semakin kreatif dan variatif jawaban Mark, tapi bisa jadi
               kurang
+            </p>
+          </div>
+
+          {/* Context Window */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Context Window</p>
+              <span className="font-mono text-sm text-primary font-bold">{config.context}</span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="25"
+              value={config.context}
+              className="range range-primary range-xs w-full"
+              onChange={(e) => setConfig((prev) => ({ ...prev, context: e.target.value }))}
+            />
+            <div className="flex justify-between px-2.5 mt-2 text-xs">
+              <span>5</span>
+              <span>10</span>
+              <span>15</span>
+              <span>20</span>
+              <span>25</span>
+            </div>
+            <p className="text-xs opacity-40">
+              Jumlah pesan yang dikirim ke AI sebagai konteks. Makin banyak = makin pintar tapi
+              makin berat.
             </p>
           </div>
         </section>
@@ -157,33 +190,6 @@ const Configuration = () => {
             </div>
           </div>
 
-          {/* Context Window */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Context Window</p>
-              <span className="font-mono text-sm text-primary font-bold">{contextWindow}</span>
-            </div>
-            <input
-              type="range"
-              min="5"
-              max="25"
-              value={contextWindow}
-              className="range range-primary range-xs w-full"
-              onChange={(e) => setContextWindow(Number(e.target.value))}
-            />
-            <div className="flex justify-between px-2.5 mt-2 text-xs">
-              <span>5</span>
-              <span>10</span>
-              <span>15</span>
-              <span>20</span>
-              <span>25</span>
-            </div>
-            <p className="text-xs opacity-40">
-              Jumlah pesan yang dikirim ke AI sebagai konteks. Makin banyak = makin pintar tapi
-              makin berat.
-            </p>
-          </div>
-
           {/* Memory & Knowledge Base */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -202,7 +208,7 @@ const Configuration = () => {
                 <p className="text-sm">Belum ada memori tersimpan.</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto no-scrollbar">
+              <div className="space-y-2 max-h-100 overflow-y-auto no-scrollbar">
                 {Object.entries(groupedMemories)
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([type, mems]) => (
@@ -245,7 +251,14 @@ const Configuration = () => {
 
         {/* Save */}
         <div className="flex justify-end pt-2">
-          <button className="btn btn-primary px-8">Simpan Pengaturan</button>
+          <button
+            onClick={async () => {
+              saveConfiguration(config)
+            }}
+            className="btn btn-primary px-8"
+          >
+            Simpan Pengaturan
+          </button>
         </div>
       </div>
 

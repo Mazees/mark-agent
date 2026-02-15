@@ -10,7 +10,7 @@ export const ChatProvider = ({ children }) => {
   const [sessionId, setSessionId] = useState(null)
 
   useEffect(() => {
-    if (chatData.length) {
+    if (chatData && chatData.length) {
       console.log('Chat data updated:', chatData.length)
       if (!sessionId) {
         ;(async () => {

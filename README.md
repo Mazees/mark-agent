@@ -31,9 +31,9 @@ Pencarian memori berbasis **cosine similarity** dengan threshold relevansi 0.6. 
 
 Mencari data real-time melalui **Google Search** dan melakukan riset mendalam langsung via **Electron Webview** terintegrasi. Termasuk scraping **AI Overview dari Google**. Tanpa Puppeteer, tanpa instalasi Chrome tambahan.
 
-### YouTube Video Summary
+### YouTube Accesible
 
-Merangkum isi video YouTube hanya dengan mengirimkan link. Mark mengambil transkrip via `youtube-transcript-plus`, menganalisis, dan memberikan poin-poin penting lengkap dengan timestamp.
+Mencari video di youtube sesuai dengan permintaan user dengan `yt search`, dan merangkum isi video YouTube hanya dengan mengirimkan link. Mark mengambil transkrip via `youtube-transcript-plus`, menganalisis, dan memberikan poin-poin penting lengkap dengan timestamp.
 
 ### Context & Time Awareness
 
@@ -154,7 +154,7 @@ Output installer akan tersedia di folder `dist/`.
 - [x] Time Awareness (Kesadaran waktu untuk relevansi informasi)
 - [x] Few-Shot Examples (Contoh output di prompt untuk konsistensi respons)
 - [x] Session Persistence (Menyimpan & memuat riwayat sesi chat)
-- [ ] Configuration Page (Halaman pengaturan untuk model, API URL, dll.)
+- [x] Configuration Page (Halaman pengaturan untuk model, API URL, dll.)
 - [ ] Voice Interaction (Antarmuka berbasis suara)
 - [ ] Vision Capability (Analisis gambar secara lokal)
 - [ ] Export/Import Memory (Backup & restore memori pengguna)
