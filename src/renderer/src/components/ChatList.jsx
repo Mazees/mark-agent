@@ -201,7 +201,9 @@ const ChatList = ({
   }
 
   return (
-    <div className={`chat ${isUser ? 'chat-end' : 'chat-start'} ${isSearching && 'flex flex-col'} mb-4 `}>
+    <div
+      className={`chat ${isUser ? 'chat-end' : 'chat-start'} ${isSearching && 'flex flex-col'} mb-4 `}
+    >
       {!isSearching && (
         <>
           <div className="chat-image avatar">
@@ -261,7 +263,7 @@ const ChatList = ({
               <div className="p-3 bg-base-300 rounded-2xl my-2">
                 <iframe
                   className="w-full aspect-video"
-                  src={`https://www.youtube.com/embed/${getYouTubeID(youtubeLink)}`}
+                  src={`https://www.youtube-nocookie.com/embed/${getYouTubeID(youtubeLink)}`}
                   title="YouTube video player"
                   frameborder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

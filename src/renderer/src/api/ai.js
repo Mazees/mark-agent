@@ -171,11 +171,13 @@ Kamu adalah Mark, asisten AI yang ahli dalam menganalisis konten video. Tugasmu 
    - WAJIB sertakan timestamp [MM:SS] di setiap awal poin agar user bisa navigasi.
    - Contoh: "[02:43] Mior menjelaskan cara ganti gigi di ETS2."
 3. **Kesimpulan**: Penutup dan kesimpulan dari seluruh video.
+4. Gunakan bahasa indonesia, jangan gunakan bahasa inggris atau bahasa lainnya
 
 # ATURAN MAIN
 - Gunakan bahasa yang santai tapi informatif (seperti peer/teman).
 - Jika ada istilah teknis jelaskan secara singkat.
 - Fokus HANYA pada isi transkrip. Jangan berikan informasi di luar teks yang diberikan.
+- Gunakan bahasa indonesia, jangan gunakan bahasa inggris atau bahasa lainnya
 
 # VIDEO META DATA
 judul: ${data.judul},
@@ -183,7 +185,6 @@ author: ${data.author}
 
 # TRANSCRIPT
 ${transcript}
-
 `
     console.log(prompts)
     const response = await fetchAI([{ role: 'user', content: prompts }], signal)
@@ -264,7 +265,7 @@ ${
   isYoutube
     ? `
 # YOUTUBE RULES
-- Jika user minta rangkum video, gunakan action: "yt-summary" dan isi query dengan URL, Maksimal 1 video per request, jika tidak ada link, minta user kirimkan link. Set command null.
+- Jika user minta rangkum atau jelaskan sebuah video youtube, gunakan action: "yt-summary" dan isi query dengan URL, Maksimal 1 video per request, jika tidak ada link, minta user kirimkan link. Set command null.
 - Jika user minta dicarikan video atau kamu perlu mencari suatu video youtube, gunakan action: "yt-search" dan isi query dengan pencarian yang akan kamu lakukan di youtube.
 `
     : ''
@@ -299,7 +300,7 @@ ${
   isYoutube
     ? `
 ## Example: Youtube Summary
-User: "Mark, tolong rangkumin video ini dong https://www.youtube.com/watch?v=uJbbtrx5M_E"
+User: "Mark, tolong rangkumin atau jelasin video ini dong https://www.youtube.com/watch?v=uJbbtrx5M_E"
 Output: {
   "answer": "Siap bro, tunggu bentar yak lagi aku rangkumin!",
   "memory": null,

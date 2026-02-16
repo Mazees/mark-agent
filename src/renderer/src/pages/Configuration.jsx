@@ -151,18 +151,20 @@ const Configuration = () => {
             </div>
             <input
               type="range"
-              min="5"
-              max="25"
+              min="2"
+              max="22"
+              step="2"
               value={config.context}
               className="range range-primary range-xs w-full"
               onChange={(e) => setConfig((prev) => ({ ...prev, context: e.target.value }))}
             />
             <div className="flex justify-between px-2.5 mt-2 text-xs">
-              <span>5</span>
+              <span>2</span>
+              <span>6</span>
               <span>10</span>
-              <span>15</span>
-              <span>20</span>
-              <span>25</span>
+              <span>14</span>
+              <span>18</span>
+              <span>22</span>
             </div>
             <p className="text-xs opacity-40">
               Jumlah pesan yang dikirim ke AI sebagai konteks. Makin banyak = makin pintar tapi

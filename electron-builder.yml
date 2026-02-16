@@ -1,7 +1,7 @@
 appId: com.mark.agent
-productName: "Mark Agent"
+productName: 'Mark Agent'
 directories:
-  buildResources: build
+  buildResources: resources
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -11,7 +11,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: "Mark Agent"
+  executableName: 'Mark Agent'
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

@@ -58,12 +58,11 @@ export const deepSearch = async (webview, url) => {
   try {
     const content = await webview.executeJavaScript(`
             (() => {
-              const unwanted = document.querySelectorAll('header, footer, nav, script, style, ads, .sidebar, .menu');
-              unwanted.forEach(el => el.remove());
+              const paragraf = document.querySelectorAll('p')
               return Array.from(document.querySelectorAll('p'))
-                .map(p => p.innerText.trim())
-                .filter(txt => txt.length > 50)
                 .slice(0, 5)
+                .map(p => p.textContent.trim())
+                .filter(txt => txt.length > 50)
                 .join(' ');
             })()
           `)

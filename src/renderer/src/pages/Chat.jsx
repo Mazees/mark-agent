@@ -120,7 +120,6 @@ const Chat = () => {
               !item.isSearching &&
               !item.isSummarizing
           )
-          .slice(-1 * (config[0]?.context || 10))
           .map((item) => ({
             role: item.role === 'ai' ? 'assistant' : 'user',
             content: item.content
@@ -139,7 +138,7 @@ const Chat = () => {
         }
       })
 
-      console.log(chatSession)
+      chatSession = [...chatSession].slice(-1 * (config[0]?.context || 10))
 
       const answer = await getAnswer(
         userInput,
@@ -237,7 +236,7 @@ const Chat = () => {
   const getYoutubeData = async (url) => {
     try {
       // encodeURIComponent penting biar karakter ? & = di link YouTube gak bikin error
-      const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`
+      const endpoint = `https://www.youtube.com/embed?url=${encodeURIComponent(url)}&format=json`
 
       const response = await axios.get(endpoint)
       const data = response.data

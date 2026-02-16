@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -6,6 +6,20 @@ import icon from '../../resources/icon.ico?asset'
 import { fetchTranscript } from 'youtube-transcript-plus'
 import { url } from 'inspector'
 import yts from 'yt-search'
+
+const setupYoutubeFix = () => {
+  // Kita cegat semua request yang pergi ke YouTube
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://www.youtube.com/*'] },
+    (details, callback) => {
+      // Kita paksa header 'Referer' dan 'Origin' jadi localhost
+      // Supaya YouTube gak tau kalau ini dateng dari file://
+      details.requestHeaders['Referer'] = 'http://localhost'
+      details.requestHeaders['Origin'] = 'http://localhost'
+      callback({ requestHeaders: details.requestHeaders })
+    }
+  )
+}
 
 function createWindow() {
   // Create the browser window.
@@ -39,7 +53,7 @@ function createWindow() {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
-  mainWindow.webContents.openDevTools()
+  // mainWindow.webContents.openDevTools()
 }
 
 // This method will be called when Electron has finished
@@ -59,7 +73,8 @@ function getLocalIP() {
 }
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.mark.agent')
+  setupYoutubeFix()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
