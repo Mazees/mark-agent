@@ -104,41 +104,37 @@ const Chat = () => {
     setIsLoading(true)
     const userMessage = { role: 'user', content: userInput }
     const thinkingMessage = { role: 'ai', content: '...', isThinking: true }
+    const rawSession = [
+      ...chatData
+        .filter(
+          (item) =>
+            item.role !== 'command' && !item.isThinking && !item.isSearching && !item.isSummarizing
+        )
+        .map((item) => ({
+          role: item.role === 'ai' ? 'assistant' : 'user',
+          content: item.content
+        })),
+      { role: 'user', content: userInput }
+    ]
 
+    let chatSession = []
+
+    rawSession.forEach((item, index) => {
+      if (index > 0 && item.role === chatSession[chatSession.length - 1].role) {
+        chatSession[chatSession.length - 1].content =
+          chatSession[chatSession.length - 1].content + `\n ${item.content}`
+      } else {
+        chatSession.push(item)
+      }
+    })
+
+    chatSession = [...chatSession].slice(-1 * (config[0]?.context || 10))
     setChatData((prev) => [...prev, userMessage, thinkingMessage])
     abortControllerRef.current = new AbortController()
     try {
       const allMemory = await getAllMemory()
       const memoryReference = await getRelevantMemory(userInput, allMemory)
       console.log('Memory yang relevan:' + JSON.stringify(memoryReference))
-      const rawSession = [
-        ...chatData
-          .filter(
-            (item) =>
-              item.role !== 'command' &&
-              !item.isThinking &&
-              !item.isSearching &&
-              !item.isSummarizing
-          )
-          .map((item) => ({
-            role: item.role === 'ai' ? 'assistant' : 'user',
-            content: item.content
-          })),
-        { role: 'user', content: userInput }
-      ]
-
-      let chatSession = []
-
-      rawSession.forEach((item, index) => {
-        if (index > 0 && item.role === chatSession[chatSession.length - 1].role) {
-          chatSession[chatSession.length - 1].content =
-            chatSession[chatSession.length - 1].content + `\n ${item.content}`
-        } else {
-          chatSession.push(item)
-        }
-      })
-
-      chatSession = [...chatSession].slice(-1 * (config[0]?.context || 10))
 
       const answer = await getAnswer(
         userInput,

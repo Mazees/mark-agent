@@ -391,6 +391,7 @@ const ChatList = ({
                           className="size-10 rounded-lg object-cover shadow-sm ring-1 ring-white/10"
                           src={music.thumbnail}
                           alt={music.title}
+                          referrerPolicy="no-referrer"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium truncate">{music.title}</div>
