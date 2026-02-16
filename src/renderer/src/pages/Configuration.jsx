@@ -106,7 +106,7 @@ const Configuration = () => {
           <div className="space-y-1.5">
             <p className="text-sm font-semibold">Gaya Bicara dan Kepribadian</p>
             <textarea
-              className="textarea textarea-bordered w-full h-28 leading-relaxed"
+              className="textarea w-full h-72 leading-relaxed no-scrollbar resize-none"
               placeholder="Deskripsikan kepribadian Mark..."
               value={config.personality}
               onChange={(e) => setConfig((prev) => ({ ...prev, personality: e.target.value }))}

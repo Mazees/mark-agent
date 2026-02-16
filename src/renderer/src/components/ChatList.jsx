@@ -25,6 +25,16 @@ const ChatList = ({
   sendDataWebSearch,
   onRun
 }) => {
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'
+  ]
+  const randomUA = useRef(userAgents[Math.floor(Math.random() * userAgents.length)])
+
   const isUser = role === 'user'
   const isCommand = role === 'command'
   const [executed, setExecuted] = useState(risk === 'safe' ? true : false)
@@ -34,6 +44,7 @@ const ChatList = ({
   const webRef = useRef(null)
   const scrapingActive = useRef(false)
   const initialLoadHandled = useRef(false)
+  const [isCaptcha, setIsCaptcha] = useState(false)
 
   useEffect(() => {
     const webview = webRef.current
@@ -66,6 +77,10 @@ const ChatList = ({
     containerClass = 'bg-base-200 p-3 rounded-xl w-full text-base-content border border-base-300'
   }
 
+  if (isSearching) {
+    containerClass = 'bg-success relative p-3 rounded-xl text-base-content border border-base-300'
+  }
+
   const waitForLoad = (webview) => {
     return new Promise((resolve) => {
       const onDone = () => {
@@ -78,7 +93,7 @@ const ChatList = ({
   const onScrape = async (webview) => {
     if (scrapingActive.current) return
     scrapingActive.current = true
-    const source = await scrapeGoogle(webview, url)
+    const source = await scrapeGoogle(webview, url, setIsCaptcha)
     const links = []
     for (const url of source) {
       let link = null
@@ -186,15 +201,19 @@ const ChatList = ({
   }
 
   return (
-    <div className={`chat ${isUser ? 'chat-end' : 'chat-start'} mb-4`}>
-      <div className="chat-image avatar">
-        <div className="w-10 rounded-full bg-neutral text-white flex items-center justify-center border border-primary/20">
-          <span className="text-xs font-bold uppercase">{isUser ? 'U' : 'M'}</span>
-        </div>
-      </div>
-      <div className="chat-header opacity-50 text-[10px] uppercase font-bold mb-1 px-1">
-        {isUser ? 'You' : 'Mark AI'}
-      </div>
+    <div className={`chat ${isUser ? 'chat-end' : 'chat-start'} ${isSearching && 'flex flex-col'} mb-4 `}>
+      {!isSearching && (
+        <>
+          <div className="chat-image avatar">
+            <div className="w-10 rounded-full bg-neutral text-white flex items-center justify-center border border-primary/20">
+              <span className="text-xs font-bold uppercase">{isUser ? 'U' : 'M'}</span>
+            </div>
+          </div>
+          <div className="chat-header opacity-50 text-[10px] uppercase font-bold mb-1 px-1">
+            {isUser ? 'You' : 'Mark AI'}
+          </div>
+        </>
+      )}
       <div className={`${containerClass} shadow-md min-h-0 transition-all duration-300`}>
         {isThinking ? (
           <div className="flex items-center gap-2 py-1 animate-pulse">
@@ -208,30 +227,32 @@ const ChatList = ({
           </div>
         ) : isSearching ? (
           <div className="aspect-video h-50 rounded-xl overflow-hidden no-scrollbar">
-            <div className="flex gap-2 items-center justify-center py-1 text-lg text-white animate-pulse absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2  w-full h-full z-20">
-              <svg
-                ariaHidden="true"
-                xmlns="http://www.w3.org/2000/svg"
-                width="1em"
-                height="1em"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                  d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
-                />
-              </svg>
-              <span className="italic">Mark is searching...</span>
-            </div>
+            {!isCaptcha && (
+              <div className="flex gap-2 items-center justify-center py-1 text-lg text-white animate-pulse absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2  w-full h-full z-20">
+                <svg
+                  ariaHidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="1em"
+                  height="1em"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeWidth="2"
+                    d="m21 21-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+                  />
+                </svg>
+                <span className="italic">Mark is searching...</span>
+              </div>
+            )}
             <webview
               src={url}
               ref={webRef}
               style={{ zoom: '0.5' }}
-              className="w-full h-full pointer-events-none overflow-hidden no-scrollbar blur-[2px] brightness-70 zoom"
-              useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+              className={`w-full h-full overflow-hidden no-scrollbar zoom ${isCaptcha ? '' : 'brightness-70 blur-[2px] pointer-events-none'}`}
+              useragent={randomUA.current}
             />
           </div>
         ) : (
@@ -337,6 +358,23 @@ const ChatList = ({
               clipRule="evenodd"
             />
           </svg>
+        </div>
+      )}
+      {isCaptcha && (
+        <div className="flex chat-footer pointer-events-none justify-center gap-2 text-sm mt-2 text-yellow-300 animate-pulse">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="w-4 h-4 shrink-0"
+          >
+            <path
+              fillRule="evenodd"
+              d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span>Selesaikan captcha untuk melanjutkan</span>
         </div>
       )}
     </div>

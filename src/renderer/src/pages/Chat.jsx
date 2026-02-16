@@ -34,7 +34,7 @@ const Chat = () => {
           searchProp.current.chatSession
         )
         setChatData((prev) => [
-          ...prev.filter((item) => !item.isSummarizing),
+          ...prev.filter((item, index) => !item.isSummarizing || index === chatData.length - 2),
           {
             role: 'ai',
             content: searchSummary.answer,
@@ -111,7 +111,7 @@ const Chat = () => {
       const allMemory = await getAllMemory()
       const memoryReference = await getRelevantMemory(userInput, allMemory)
       console.log('Memory yang relevan:' + JSON.stringify(memoryReference))
-      const chatSession = [
+      const rawSession = [
         ...chatData
           .filter(
             (item) =>
@@ -127,6 +127,19 @@ const Chat = () => {
           })),
         { role: 'user', content: userInput }
       ]
+
+      let chatSession = []
+
+      rawSession.forEach((item, index) => {
+        if (index > 0 && item.role === chatSession[chatSession.length - 1].role) {
+          chatSession[chatSession.length - 1].content =
+            chatSession[chatSession.length - 1].content + `\n ${item.content}`
+        } else {
+          chatSession.push(item)
+        }
+      })
+
+      console.log(chatSession)
 
       const answer = await getAnswer(
         userInput,
@@ -188,7 +201,9 @@ const Chat = () => {
         await handleYoutubeSummary(answer.command.query, abortControllerRef.current.signal)
       }
       setMessage('')
+      setIsLoading(false)
     } catch (error) {
+      setIsLoading(false)
       if (error.name === 'AbortError') {
         setChatData((prev) => [...prev.filter((item) => !item.isThinking)])
         setChatData((prev) => prev.slice(0, -1))
@@ -202,8 +217,6 @@ const Chat = () => {
           }
         ])
       }
-    } finally {
-      setIsLoading(false)
     }
   }
 

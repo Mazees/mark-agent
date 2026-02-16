@@ -1,4 +1,21 @@
-export const scrapeGoogle = async (webview, url) => {
+export const scrapeGoogle = async (webview, url, onCaptcha) => {
+  let isCaptchaActive = true
+  while (isCaptchaActive) {
+    isCaptchaActive = await webview.executeJavaScript(`
+        (() => {
+          return !!(document.getElementById('captcha-form') || 
+                   document.querySelector('iframe[src*="recaptcha"]') ||
+                   document.querySelector('#recaptcha') ||
+                   document.querySelector('div#captcha'));
+        })()
+      `)
+
+    if (isCaptchaActive) {
+      onCaptcha(true)
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+  }
+  onCaptcha(false)
   const results = await webview.executeJavaScript(
     `(() => {
         function stripHtml(html){
