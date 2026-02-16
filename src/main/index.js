@@ -6,6 +6,7 @@ import icon from '../../resources/icon.ico?asset'
 import { fetchTranscript } from 'youtube-transcript-plus'
 import { url } from 'inspector'
 import yts from 'yt-search'
+import YTMusic from 'ytmusic-api'
 
 const setupYoutubeFix = () => {
   // Kita cegat semua request yang pergi ke YouTube
@@ -59,26 +60,11 @@ function createWindow() {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-function getLocalIP() {
-  const interfaces = os.networkInterfaces()
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      // Cari IPv4 dan pastikan bukan internal (127.0.0.1)
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address
-      }
-    }
-  }
-  return '127.0.0.1'
-}
-app.whenReady().then(() => {
+
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.mark.agent')
   setupYoutubeFix()
-
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
@@ -125,6 +111,27 @@ app.whenReady().then(() => {
       return video.map((items) => items.videoId)
     } catch (error) {
       console.error('Gagal search YT:', error.message)
+      return []
+    }
+  })
+
+  ipcMain.handle('search-music', async (event, query) => {
+    try {
+      const ytmusic = new YTMusic()
+      await ytmusic.initialize()
+
+      const songs = await ytmusic.searchSongs(query)
+
+      return songs.slice(0, 5).map((song) => ({
+        id: song.videoId,
+        title: song.name,
+        artist: song.artist.name,
+        album: song.album?.name || 'Single',
+        duration: song.duration,
+        thumbnail: song.thumbnails[song.thumbnails.length - 1].url
+      }))
+    } catch (error) {
+      console.error('Mark gagal mencari lagu:', error.message)
       return []
     }
   })

@@ -223,6 +223,7 @@ Kepribadian dan Gaya Bahasa: ${config[0]?.personality || 'Santai layaknya seoran
 - JANGAN PERNAH mengulang jawaban yang sudah kamu berikan sebelumnya kecuali user meminta.
 
 # MARK SKILLS
+- **Music Play and Search**: Ketika user meminta untuk memutar atau mencari sebuah lagu, berikan command.action 'music' dan isi query sesuai permintaan lagu user.
 - **Web Search**: ${isWebSearch ? 'AKTIF. Gunakan command "search" jika butuh info terbaru.' : 'NONAKTIF. JANGAN gunakan command "search". Beritahu user untuk mengaktifkan fitur ini.'}
 - **YouTube Summary**: ${isYoutube ? 'AKTIF. Gunakan command "youtube" untuk mengakses youtube.' : 'NONAKTIF. Cukup jawab: "Bro, nyalain dulu fitur YouTube." dan set command null.'}
 - **Memory Management**: Bisa menyimpan, update, dan hapus memori user. Gunakan field 'memory' di output JSON.
@@ -276,7 +277,7 @@ Jangan ada teks di luar JSON. Field 'answer' berisi respon natural, jangan bahas
 {
   "answer": "string (Markdown support)",
   "memory": { "id": number|null, "type": "string", "key": "string", "memory": "string", "action": "insert|update|delete" } atau null,
-  "command": { "action": "search atau youtube atau none", "query": "string atau null" } atau null
+  "command": { "action": "search atau youtube atau music atau none", "query": "string atau null" } atau null
 }
 
 # EXAMPLES FOR CONSISTENCY
@@ -321,6 +322,17 @@ Output: {
 }
 `
     : ''
+}
+
+## Example: Music Play and Search
+User: "Ehh setelin aku lagu seventeen jkt48"
+Output: {
+  "answer": "Siap bro, aku puterin lagu seventeen dari jkt48",
+  "memory": null,
+  "command": {
+    "action": "music",
+    "query": "seventeen jkt48"
+  }
 }
 
 ## Example: Simpan Memori (Command Null)

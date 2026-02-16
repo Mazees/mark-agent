@@ -6,7 +6,8 @@ const api = {
   runNodeFunction: (data) => ipcRenderer.invoke('execute-node-task', data),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url),
-  searchYoutube: (query) => ipcRenderer.invoke('youtube-search', query)
+  searchYoutube: (query) => ipcRenderer.invoke('youtube-search', query),
+  searchMusic: (query) => ipcRenderer.invoke('search-music', query)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

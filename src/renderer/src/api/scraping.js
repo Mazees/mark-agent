@@ -76,19 +76,3 @@ export const deepSearch = async (webview, url) => {
     return { source: url.title, url: url.link, text: `Gagal akses website karena: ${err}` }
   }
 }
-
-//   <webview
-//   ref={webviewRef}
-//   src={searchUrl}
-//   className="aspect-video w-50"
-//   useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-//   // INI KUNCINYA: Jalankan scraping otomatis
-//   onDidStopLoading={() => {
-//     // Kasih delay 2 detik biar AI Overview Google sempet muncul
-//     setTimeout(() => {
-//       if (webviewRef.current && onScrape) {
-//         onScrape(webviewRef.current, searchUrl)
-//       }
-//     }, 2000)
-//   }}
-//   />

@@ -89,7 +89,7 @@ export const YoutubeMusicPlayer = () => {
   }, [])
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
       {/* Player Panel */}
       <div
         className={`
@@ -144,7 +144,7 @@ export const YoutubeMusicPlayer = () => {
       <button
         onClick={togglePlayer}
         className={`
-          group relative w-14 h-14 rounded-full flex items-center justify-center
+          group relative w-14 h-14 rounded-full flex items-center justify-center pointer-events-auto
           shadow-lg shadow-black/30 border border-white/10
           transition-all duration-300 ease-out
           hover:scale-110 hover:shadow-xl hover:shadow-red-500/20

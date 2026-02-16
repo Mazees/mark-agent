@@ -199,6 +199,9 @@ const Chat = () => {
       if (answer.command?.action === 'yt-summary') {
         await handleYoutubeSummary(answer.command.query, abortControllerRef.current.signal)
       }
+      if (answer.command?.action === 'music') {
+        await handleMusic('music', answer.command?.query)
+      }
       setMessage('')
       setIsLoading(false)
     } catch (error) {
@@ -231,6 +234,22 @@ const Chat = () => {
         sendDataWebSearch: receiveSearchResult
       }
     ])
+  }
+
+  const handleMusic = async (action, query) => {
+    setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearchingMusic: true }])
+    if (action === 'music') {
+      const music = await window.api.searchMusic(query)
+      setChatData((prev) => [
+        ...prev.filter((item) => !item.isSearchingMusic),
+        {
+          role: 'ai',
+          isMusic: true,
+          musicQuery: query,
+          musicList: [...music]
+        }
+      ])
+    }
   }
 
   const getYoutubeData = async (url) => {
@@ -395,7 +414,7 @@ const Chat = () => {
       {/* Input form */}
       <form
         onSubmit={handleSubmit}
-        className="relative z-10 w-[90%] lg:w-1/2 mb-6 p-4 rounded-2xl flex flex-col gap-3 bg-base-200/60 backdrop-blur-xl border border-white/5 shadow-lg"
+        className="relative z-10 w-[70%] lg:w-1/2 mb-6 p-4 rounded-2xl flex flex-col gap-3 bg-base-200/60 backdrop-blur-xl border border-white/5 shadow-lg"
       >
         <textarea
           value={message}
