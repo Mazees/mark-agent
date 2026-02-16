@@ -31,9 +31,13 @@ Pencarian memori berbasis **cosine similarity** dengan threshold relevansi 0.6. 
 
 Mencari data real-time melalui **Google Search** dan melakukan riset mendalam langsung via **Electron Webview** terintegrasi. Termasuk scraping **AI Overview dari Google**. Tanpa Puppeteer, tanpa instalasi Chrome tambahan.
 
-### YouTube Accesible
+### YouTube Accessible
 
 Mencari video di youtube sesuai dengan permintaan user dengan `yt search`, dan merangkum isi video YouTube hanya dengan mengirimkan link. Mark mengambil transkrip via `youtube-transcript-plus`, menganalisis, dan memberikan poin-poin penting lengkap dengan timestamp.
+
+### YouTube Music Player
+
+Pemutar musik terintegrasi berbasis **YouTube Music** via Electron Webview. Cukup minta Mark untuk memutar lagu — ia akan mencari via `ytmusic-api` dan menampilkan daftar hasil langsung di chat. Dilengkapi dengan **Ad-Blaster** otomatis (auto-mute, 16x speed, auto-skip iklan) dan floating player yang bisa di-minimize.
 
 ### Context & Time Awareness
 
@@ -72,11 +76,13 @@ mark/
 │           │   ├── scraping.js     # Google search & deep web scraping
 │           │   └── vectorMemory.js # Vector embedding & cosine similarity
 │           ├── components/
-│           │   ├── ChatList.jsx    # Chat message rendering & command UI
-│           │   ├── Drawer.jsx      # Sidebar with session history
-│           │   └── Navbar.jsx      # Navigation bar
+│           │   ├── ChatList.jsx            # Chat message rendering & command UI
+│           │   ├── Drawer.jsx              # Sidebar with session history
+│           │   ├── Navbar.jsx              # Navigation bar
+│           │   └── YoutubeMusicPlayer.jsx  # Floating YouTube Music player
 │           ├── contexts/
-│           │   └── ChatContext     # Global chat state management
+│           │   ├── ChatContext             # Global chat state management
+│           │   └── YoutubeMusicContext     # Music player state & webview control
 │           └── pages/
 │               ├── Chat.jsx        # Main chat interface
 │               └── Configuration.jsx # Settings page (WIP)
@@ -90,7 +96,7 @@ mark/
 | **Styling**      | Tailwind CSS 4, DaisyUI 5                                                   |
 | **AI Backend**   | LM Studio (Local Inference & Embeddings via OpenAI-compatible API)          |
 | **Web Scraping** | Electron Webview (Google Search & Deep Research)                            |
-| **YouTube**      | `youtube-transcript-plus` (Transcript fetching)                             |
+| **YouTube**      | `youtube-transcript-plus`, `ytmusic-api`, `yt-search`                       |
 | **Database**     | Dexie.js (IndexedDB wrapper)                                                |
 | **Markdown**     | React Markdown, React Syntax Highlighter, remark-gfm, rehype-external-links |
 | **HTTP**         | Axios, OpenAI SDK                                                           |
@@ -155,6 +161,7 @@ Output installer akan tersedia di folder `dist/`.
 - [x] Few-Shot Examples (Contoh output di prompt untuk konsistensi respons)
 - [x] Session Persistence (Menyimpan & memuat riwayat sesi chat)
 - [x] Configuration Page (Halaman pengaturan untuk model, API URL, dll.)
+- [x] YouTube Music Player (Pemutar musik terintegrasi dengan Ad-Blaster)
 - [ ] Voice Interaction (Antarmuka berbasis suara)
 - [ ] Vision Capability (Analisis gambar secara lokal)
 - [ ] Export/Import Memory (Backup & restore memori pengguna)
