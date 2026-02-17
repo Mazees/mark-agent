@@ -23,6 +23,7 @@ const ChatList = ({
   youtubeLink = '',
   isSearchingMusic = false,
   isMusic = false,
+  isMusicAutoplay = false,
   musicList = [],
   musicQuery = '',
   risk = 'safe',
@@ -385,7 +386,7 @@ const ChatList = ({
                     {musicList.map((music, index) => (
                       <li
                         key={index}
-                        className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors duration-200 group"
+                        className={`flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors duration-200 group ${isMusicAutoplay && index === 0 ? 'bg-white/5' : ''}`}
                       >
                         <img
                           className="size-10 rounded-lg object-cover shadow-sm ring-1 ring-white/10"
@@ -397,26 +398,35 @@ const ChatList = ({
                           <div className="text-sm font-medium truncate">{music.title}</div>
                           <div className="text-[11px] text-white/40 truncate">{music.artist}</div>
                         </div>
-                        <button
-                          className="btn btn-circle btn-sm btn-ghost opacity-50 group-hover:opacity-100 transition-opacity"
-                          onClick={() => playUrl(`https://music.youtube.com/watch?v=${music.id}`)}
-                        >
-                          <svg
-                            className="size-4"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
+                        {isMusicAutoplay && index === 0 ? (
+                          <span className="flex items-center gap-1.5 text-[10px] font-bold text-green-400 animate-pulse select-none">
+                            <svg className="size-3" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M6 3L20 12 6 21 6 3z" />
+                            </svg>
+                            Now Playing
+                          </span>
+                        ) : (
+                          <button
+                            className="btn btn-circle btn-sm btn-ghost opacity-50 group-hover:opacity-100 transition-opacity"
+                            onClick={() => playUrl(`https://music.youtube.com/watch?v=${music.id}`)}
                           >
-                            <g
-                              strokeLinejoin="round"
-                              strokeLinecap="round"
-                              strokeWidth="2"
-                              fill="none"
-                              stroke="currentColor"
+                            <svg
+                              className="size-4"
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
                             >
-                              <path d="M6 3L20 12 6 21 6 3z"></path>
-                            </g>
-                          </svg>
-                        </button>
+                              <g
+                                strokeLinejoin="round"
+                                strokeLinecap="round"
+                                strokeWidth="2"
+                                fill="none"
+                                stroke="currentColor"
+                              >
+                                <path d="M6 3L20 12 6 21 6 3z"></path>
+                              </g>
+                            </svg>
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

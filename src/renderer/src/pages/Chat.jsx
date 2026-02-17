@@ -5,11 +5,13 @@ import { getRelevantMemory } from '../api/vectorMemory'
 import { deleteMemory, insertMemory, updateMemory, getAllMemory, getAllConfig } from '../api/db'
 import axios from 'axios'
 import { useChat } from '../contexts/ChatContext'
+import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import DotGrid from '../components/DotGrid'
 import icon from '../assets/icon.svg'
 
 const Chat = () => {
   const { chatData, setChatData, sessionId, setSessionId, changeSession } = useChat()
+  const { playUrl, nextTrack, prevTrack, playPause } = useYoutubeMusic()
   const [isAction, setIsAction] = useState({ web: false, youtube: false })
   const searchProp = useRef({ userInput: '', signal: null, chatSession: null })
   const [config, setConfig] = useState([])
@@ -195,8 +197,8 @@ const Chat = () => {
       if (answer.command?.action === 'yt-summary') {
         await handleYoutubeSummary(answer.command.query, abortControllerRef.current.signal)
       }
-      if (answer.command?.action === 'music') {
-        await handleMusic('music', answer.command?.query)
+      if (answer.command?.action?.startsWith('music')) {
+        await handleMusic(answer.command.action, answer.command?.query)
       }
       setMessage('')
       setIsLoading(false)
@@ -233,18 +235,39 @@ const Chat = () => {
   }
 
   const handleMusic = async (action, query) => {
+    if (action === 'music-next') {
+      nextTrack()
+      return
+    }
+    if (action === 'music-prev') {
+      prevTrack()
+      return
+    }
+    if (action === 'music-toggle') {
+      playPause()
+      return
+    }
+
+    // music-search dan music-play butuh search dulu
     setChatData((prev) => [...prev, { role: 'ai', content: '...', isSearchingMusic: true }])
-    if (action === 'music') {
-      const music = await window.api.searchMusic(query)
-      setChatData((prev) => [
-        ...prev.filter((item) => !item.isSearchingMusic),
-        {
-          role: 'ai',
-          isMusic: true,
-          musicQuery: query,
-          musicList: [...music]
-        }
-      ])
+    const music = await window.api.searchMusic(query)
+
+    const isAutoplay = action === 'music-play'
+
+    setChatData((prev) => [
+      ...prev.filter((item) => !item.isSearchingMusic),
+      {
+        role: 'ai',
+        isMusic: true,
+        isMusicAutoplay: isAutoplay,
+        musicQuery: query,
+        musicList: isAutoplay ? music.slice(0, 1) : [...music]
+      }
+    ])
+
+    // Autoplay track pertama jika music-play
+    if (isAutoplay && music.length > 0) {
+      playUrl(`https://music.youtube.com/watch?v=${music[0].id}`)
     }
   }
 

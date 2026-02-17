@@ -1,4 +1,4 @@
-import { useState, useContext, createContext, useRef, useCallback } from 'react'
+import { useState, useContext, createContext, useRef, useCallback, useEffect } from 'react'
 
 const YoutubeMusicContext = createContext()
 
@@ -7,7 +7,28 @@ const DEFAULT_URL = 'https://music.youtube.com'
 export const YoutubeMusicProvider = ({ children }) => {
   const [musicUrl, setMusicUrl] = useState(DEFAULT_URL)
   const [isPlayerOpen, setIsPlayerOpen] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
   const webviewRef = useRef(null)
+
+  // Poll webview every 1s to detect if music is playing
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const webview = webviewRef.current
+      if (!webview) {
+        setIsPlaying(false)
+        return
+      }
+      try {
+        const paused = await webview.executeJavaScript(
+          `(function(){ const v = document.querySelector('video'); return v ? v.paused : true; })()`
+        )
+        setIsPlaying(!paused)
+      } catch {
+        setIsPlaying(false)
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   const playUrl = useCallback((url) => {
     setMusicUrl(url)
@@ -38,6 +59,7 @@ export const YoutubeMusicProvider = ({ children }) => {
     setIsPlayerOpen,
     togglePlayer,
     webviewRef,
+    isPlaying,
     nextTrack,
     prevTrack,
     playPause
