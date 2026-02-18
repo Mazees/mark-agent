@@ -466,8 +466,8 @@ Output: {
 export const playVoice = async (text) => {
   try {
     const config = await getAllConfig()
-    const rate = config[0]?.ttsRate ?? 50
-    const pitch = config[0]?.ttsPitch ?? 50
+    const rate = config[0]?.ttsRate ?? 0
+    const pitch = config[0]?.ttsPitch ?? 0
 
     // 1. Minta data audio (base64) ke backend
     const audioBase64 = await window.api.textToSpeech(text, rate, pitch)
