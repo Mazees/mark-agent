@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import ChatList from '../components/ChatList'
-import { getAnswer, getSearchResult, getYoutubeSummary } from '../api/ai'
+import { getAnswer, getSearchResult, getYoutubeSummary, playVoice } from '../api/ai'
 import { getRelevantMemory } from '../api/vectorMemory'
 import { deleteMemory, insertMemory, updateMemory, getAllMemory, getAllConfig } from '../api/db'
 import axios from 'axios'
@@ -151,6 +151,8 @@ const Chat = () => {
       if (!answer) {
         throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
       }
+
+      playVoice(answer.answer)
 
       if (answer.memory && answer.command?.action !== 'search') {
         const actions = { insert: insertMemory, update: updateMemory, delete: deleteMemory }

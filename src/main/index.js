@@ -1,12 +1,14 @@
 import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
 import path from 'path'
+import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.ico?asset'
 import { fetchTranscript } from 'youtube-transcript-plus'
 import { url } from 'inspector'
 import yts from 'yt-search'
 import YTMusic from 'ytmusic-api'
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 
 const setupYoutubeFix = () => {
   // Kita cegat semua request yang pergi ke YouTube
@@ -112,6 +114,30 @@ app.whenReady().then(async () => {
     } catch (error) {
       console.error('Gagal search YT:', error.message)
       return []
+    }
+  })
+
+  // src/main/index.js
+
+  ipcMain.handle('tts-speak', async (_, text) => {
+    try {
+      const tts = new MsEdgeTTS()
+      await tts.setMetadata('id-ID-ArdiNeural', OUTPUT_FORMAT.WEBM_24KHZ_16BIT_MONO_OPUS)
+      const tmpPath = './tts-folder'
+      if (!fs.existsSync(tmpPath)) {
+        fs.mkdirSync(tmpPath, { recursive: true })
+      }
+      const { audioFilePath } = await tts.toFile(tmpPath, text, { rate: 1.5, pitch: '+15Hz' })
+      const audioData = fs.readFileSync(audioFilePath)
+      const base64Audio = `data:audio/mp3;base64,${audioData.toString('base64')}`
+
+      // 4. (Optional) Hapus filenya setelah dibaca biar gak menuhin disk
+      fs.unlinkSync(audioFilePath)
+
+      return base64Audio
+    } catch (error) {
+      console.error('Gagal generate suara Mark:', error)
+      return null
     }
   })
 

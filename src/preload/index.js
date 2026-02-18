@@ -7,7 +7,8 @@ const api = {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url),
   searchYoutube: (query) => ipcRenderer.invoke('youtube-search', query),
-  searchMusic: (query) => ipcRenderer.invoke('search-music', query)
+  searchMusic: (query) => ipcRenderer.invoke('search-music', query),
+  textToSpeech: (text) => ipcRenderer.invoke('tts-speak', text)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

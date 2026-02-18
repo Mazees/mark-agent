@@ -31,6 +31,7 @@
     "electron-updater": "^6.3.9",
     "face-api.js": "^0.22.2",
     "gsap": "^3.14.2",
+    "msedge-tts": "^2.0.4",
     "node-youtube-music": "^0.10.3",
     "open": "^11.0.0",
     "openai": "^6.17.0",
