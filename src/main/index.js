@@ -119,19 +119,27 @@ app.whenReady().then(async () => {
 
   // src/main/index.js
 
-  ipcMain.handle('tts-speak', async (_, text) => {
+  ipcMain.handle('tts-speak', async (_, text, rate, pitch) => {
     try {
       const tts = new MsEdgeTTS()
+      const formattedRate = `${rate || 0}%`
+      const formattedPitch = `${pitch || 0}Hz`
+
+      console.log(formattedRate)
+      console.log(formattedPitch)
+
       await tts.setMetadata('id-ID-ArdiNeural', OUTPUT_FORMAT.WEBM_24KHZ_16BIT_MONO_OPUS)
       const tmpPath = './tts-folder'
       if (!fs.existsSync(tmpPath)) {
         fs.mkdirSync(tmpPath, { recursive: true })
       }
-      const { audioFilePath } = await tts.toFile(tmpPath, text, { rate: 1.5, pitch: '+15Hz' })
+      const { audioFilePath } = await tts.toFile(tmpPath, text, {
+        rate: formattedRate,
+        pitch: formattedPitch
+      })
       const audioData = fs.readFileSync(audioFilePath)
       const base64Audio = `data:audio/mp3;base64,${audioData.toString('base64')}`
 
-      // 4. (Optional) Hapus filenya setelah dibaca biar gak menuhin disk
       fs.unlinkSync(audioFilePath)
 
       return base64Audio

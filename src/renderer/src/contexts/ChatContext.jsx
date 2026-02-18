@@ -31,6 +31,7 @@ export const ChatProvider = ({ children }) => {
   const [config, setConfig] = useState([])
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isSpeak, setIsSpeak] = useState(false)
 
   const searchProp = useRef({ userInput: '', signal: null, chatSession: null })
   const abortControllerRef = useRef(null)
@@ -278,7 +279,9 @@ export const ChatProvider = ({ children }) => {
 
       if (!answer) throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
 
-      playVoice(answer.answer)
+      if (isSpeak) {
+        playVoice(answer.answer)
+      }
 
       if (answer.memory && answer.command?.action !== 'search') {
         const actions = { insert: insertMemory, update: updateMemory, delete: deleteMemory }
@@ -368,6 +371,8 @@ export const ChatProvider = ({ children }) => {
     changeSession,
     isAction,
     setIsAction,
+    isSpeak,
+    setIsSpeak,
     config,
     isLoading,
     message,

@@ -7,7 +7,7 @@ db.version(1).stores({
   // Index gabungan hanya [type+key] agar data lain (summary, confidence) bisa diubah
   memory: '++id, [type+key], type, key, summary, memory, confidence',
   sessions: '++id, title, data, timestamp',
-  config: 'id, personality, models, temperature, context'
+  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch'
 })
 
 // --- CREATE ---
@@ -47,7 +47,7 @@ export async function updateMemory(data) {
   try {
     const newMemoryText = data.memory.trim()
     const newVector = await generateVector(newMemoryText)
-    await db.memory.upsert(data.id, {
+    await db.memory.put({
       id: data.id || undefined,
       type: data.type.toLowerCase().trim(),
       key: data.key.toLowerCase().trim(),
@@ -110,7 +110,8 @@ export async function getAllConfig() {
 
 export async function saveConfiguration(data) {
   try {
-    await db.config.upsert(1, data)
+    await db.config.put({ ...data, id: 1 })
+    console.log('Configuration saved:', data)
   } catch (error) {
     console.error('Error in saveConfiguration logic:', error)
   }

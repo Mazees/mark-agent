@@ -465,8 +465,12 @@ Output: {
 // Fungsi buat minta audio ke backend & play
 export const playVoice = async (text) => {
   try {
+    const config = await getAllConfig()
+    const rate = config[0]?.ttsRate ?? 50
+    const pitch = config[0]?.ttsPitch ?? 50
+
     // 1. Minta data audio (base64) ke backend
-    const audioBase64 = await window.api.textToSpeech(text)
+    const audioBase64 = await window.api.textToSpeech(text, rate, pitch)
 
     if (audioBase64) {
       // 2. Bikin object Audio baru dari string base64 tadi
