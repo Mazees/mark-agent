@@ -386,7 +386,7 @@ const ChatList = ({
                     {musicList.map((music, index) => (
                       <li
                         key={index}
-                        className={`flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors duration-200 group ${isMusicAutoplay && index === 0 ? 'bg-white/5' : ''}`}
+                        className={`flex items-center w-lg gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors duration-200 group ${isMusicAutoplay && index === 0 ? 'bg-white/5' : ''}`}
                       >
                         <img
                           className="size-10 rounded-lg object-cover shadow-sm ring-1 ring-white/10"

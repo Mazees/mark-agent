@@ -80,3 +80,104 @@
 .custom-markdown a {
   @apply text-primary underline hover:opacity-80 cursor-pointer;
 }
+
+/* ===== Live Audio Page Animations ===== */
+
+/* Pulse ring expanding outward */
+@keyframes audio-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.audio-pulse-ring {
+  animation: audio-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Glow effects for the visualizer circle */
+.audio-glow-idle {
+  box-shadow:
+    0 0 40px rgba(255, 255, 255, 0.02),
+    0 0 80px rgba(255, 255, 255, 0.01);
+}
+
+.audio-glow-listening {
+  box-shadow:
+    0 0 40px rgba(31, 184, 84, 0.15),
+    0 0 80px rgba(31, 184, 84, 0.08),
+    0 0 120px rgba(31, 184, 84, 0.04);
+  animation: glow-pulse-listen 2s ease-in-out infinite;
+}
+
+.audio-glow-speaking {
+  box-shadow:
+    0 0 40px rgba(82, 39, 255, 0.2),
+    0 0 80px rgba(82, 39, 255, 0.1),
+    0 0 120px rgba(82, 39, 255, 0.05);
+  animation: glow-pulse-speak 1.5s ease-in-out infinite;
+}
+
+@keyframes glow-pulse-listen {
+  0%,
+  100% {
+    box-shadow:
+      0 0 40px rgba(31, 184, 84, 0.15),
+      0 0 80px rgba(31, 184, 84, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 60px rgba(31, 184, 84, 0.25),
+      0 0 100px rgba(31, 184, 84, 0.12);
+  }
+}
+
+@keyframes glow-pulse-speak {
+  0%,
+  100% {
+    box-shadow:
+      0 0 40px rgba(82, 39, 255, 0.2),
+      0 0 80px rgba(82, 39, 255, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 60px rgba(82, 39, 255, 0.3),
+      0 0 100px rgba(82, 39, 255, 0.15);
+  }
+}
+
+/* Audio bars (waveform placeholder) */
+@keyframes bar-listening {
+  0%,
+  100% {
+    height: 0.75rem;
+  }
+  50% {
+    height: 2rem;
+  }
+}
+
+@keyframes bar-speaking {
+  0%,
+  100% {
+    height: 0.5rem;
+  }
+  25% {
+    height: 2.5rem;
+  }
+  75% {
+    height: 1.5rem;
+  }
+}
+
+.audio-bar-listening {
+  animation: bar-listening 1.2s ease-in-out infinite;
+}
+
+.audio-bar-speaking {
+  animation: bar-speaking 0.8s ease-in-out infinite;
+}

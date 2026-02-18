@@ -59,6 +59,26 @@ const Drawer = ({ isOpen = true, onChange }) => {
               Chat Baru
             </NavLink>
           </li>
+          <li>
+            <NavLink
+              to="/live-audio"
+              className="btn btn-outline btn-success gap-2"
+              onClick={() => onChange()}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="1.5em"
+                height="1.5em"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4Z" />
+                <path d="M17 11a1 1 0 0 1 1 1 6 6 0 0 1-12 0 1 1 0 0 1 2 0 4 4 0 0 0 8 0 1 1 0 0 1 1-1Z" />
+                <path d="M12 19a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Z" />
+              </svg>
+              Live Audio
+            </NavLink>
+          </li>
           <li className="font-bold text-lg">Percakapan</li>
           <li className="flex-1 gap-3">
             <button

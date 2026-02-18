@@ -162,7 +162,7 @@ Output installer akan tersedia di folder `dist/`.
 - [x] Session Persistence (Menyimpan & memuat riwayat sesi chat)
 - [x] Configuration Page (Halaman pengaturan untuk model, API URL, dll.)
 - [x] YouTube Music Player (Pemutar musik terintegrasi dengan Ad-Blaster)
-- [ ] Voice Interaction (Antarmuka berbasis suara)
+- [ ] Voice Interaction (Antarmuka berbasis suara) (WIP)
 - [ ] Vision Capability (Analisis gambar secara lokal)
 - [ ] Export/Import Memory (Backup & restore memori pengguna)
 
