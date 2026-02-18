@@ -115,8 +115,7 @@ const Chat = () => {
         .map((item) => ({
           role: item.role === 'ai' ? 'assistant' : 'user',
           content: item.content
-        })),
-      { role: 'user', content: userInput }
+        }))
     ]
 
     let chatSession = []
@@ -131,6 +130,7 @@ const Chat = () => {
     })
 
     chatSession = [...chatSession].slice(-1 * (config[0]?.context || 10))
+    chatSession = [...chatSession, userMessage]
     setChatData((prev) => [...prev, userMessage, thinkingMessage])
     abortControllerRef.current = new AbortController()
     try {
@@ -258,6 +258,7 @@ const Chat = () => {
       ...prev.filter((item) => !item.isSearchingMusic),
       {
         role: 'ai',
+        content: `Hasil Pencarian Lagu untuk "${query}": \n ${music.map((item) => item.title).join('\n')}`,
         isMusic: true,
         isMusicAutoplay: isAutoplay,
         musicQuery: query,
@@ -438,6 +439,12 @@ const Chat = () => {
         <textarea
           value={message}
           disabled={isLoading}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSubmit(e)
+            }
+          }}
           required
           onChange={(e) => setMessage(e.target.value)}
           className="bg-transparent resize-none focus:outline-none w-full overflow-hidden disabled:opacity-50 placeholder:opacity-40"

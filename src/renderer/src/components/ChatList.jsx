@@ -398,14 +398,7 @@ const ChatList = ({
                           <div className="text-sm font-medium truncate">{music.title}</div>
                           <div className="text-[11px] text-white/40 truncate">{music.artist}</div>
                         </div>
-                        {isMusicAutoplay && index === 0 ? (
-                          <span className="flex items-center gap-1.5 text-[10px] font-bold text-green-400 animate-pulse select-none">
-                            <svg className="size-3" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M6 3L20 12 6 21 6 3z" />
-                            </svg>
-                            Now Playing
-                          </span>
-                        ) : (
+                        {!isMusicAutoplay && (
                           <button
                             className="btn btn-circle btn-sm btn-ghost opacity-50 group-hover:opacity-100 transition-opacity"
                             onClick={() => playUrl(`https://music.youtube.com/watch?v=${music.id}`)}

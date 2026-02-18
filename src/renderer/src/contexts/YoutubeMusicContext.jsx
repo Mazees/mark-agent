@@ -11,24 +11,24 @@ export const YoutubeMusicProvider = ({ children }) => {
   const webviewRef = useRef(null)
 
   // Poll webview every 1s to detect if music is playing
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const webview = webviewRef.current
-      if (!webview) {
-        setIsPlaying(false)
-        return
-      }
-      try {
-        const paused = await webview.executeJavaScript(
-          `(function(){ const v = document.querySelector('video'); return v ? v.paused : true; })()`
-        )
-        setIsPlaying(!paused)
-      } catch {
-        setIsPlaying(false)
-      }
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
+  // useEffect(() => {
+  //   const interval = setInterval(async () => {
+  //     const webview = webviewRef.current
+  //     if (!webview) {
+  //       setIsPlaying(false)
+  //       return
+  //     }
+  //     try {
+  //       const paused = await webview.executeJavaScript(
+  //         `(function(){ const v = document.querySelector('video'); return v ? v.paused : true; })()`
+  //       )
+  //       setIsPlaying(!paused)
+  //     } catch {
+  //       setIsPlaying(false)
+  //     }
+  //   }, 1000)
+  //   return () => clearInterval(interval)
+  // }, [])
 
   const playUrl = useCallback((url) => {
     setMusicUrl(url)
