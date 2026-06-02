@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, session, Tray, Menu, globalShortcut } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, session, Tray, Menu, globalShortcut, nativeImage } from 'electron'
 import { join } from 'path'
 import path from 'path'
 import fs from 'fs'
@@ -108,31 +108,41 @@ app.whenReady().then(async () => {
   createWindow()
 
   // Setup System Tray
-  tray = new Tray(icon)
-  tray.setToolTip('Mark AI Assistant')
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Buka Mark', click: () => mainWindow.show() },
-    { 
-      label: 'Ngobrol Sekarang (Live Audio)', 
-      click: () => {
-        mainWindow.show()
-        mainWindow.webContents.send('trigger-live-audio')
+  // Cara paling aman dan ampuh di Windows: Ekstrak icon 16x16 langsung dari file .exe aplikasi!
+  // Ini menghindari semua masalah pathing ASAR dan masalah format .ico yang rusak.
+  app.getFileIcon(process.execPath, { size: 'small' }).then((exeIcon) => {
+    tray = new Tray(exeIcon)
+    tray.setToolTip('Mark AI Assistant')
+    
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Buka Mark', click: () => mainWindow.show() },
+      { 
+        label: 'Ngobrol Sekarang (Live Audio)', 
+        click: () => {
+          mainWindow.show()
+          mainWindow.webContents.send('trigger-live-audio')
+        }
+      },
+      { type: 'separator' },
+      { 
+        label: 'Keluar', 
+        click: () => {
+          isQuiting = true
+          app.quit()
+        } 
       }
-    },
-    { type: 'separator' },
-    { 
-      label: 'Keluar', 
-      click: () => {
-        isQuiting = true
-        app.quit()
-      } 
-    }
-  ])
-  tray.setContextMenu(contextMenu)
-  tray.on('click', () => mainWindow.show())
+    ])
+    tray.setContextMenu(contextMenu)
+    tray.on('click', () => mainWindow.show())
+  }).catch(() => {
+    // Fallback jika gagal (misal saat masih mode npm run dev)
+    tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16, height: 16 }))
+    tray.setToolTip('Mark AI Assistant')
+  })
 
   // Global Shortcut (One-way)
-  globalShortcut.register('CommandOrControl+Shift+M', () => {
+  // Menggunakan Ctrl+Alt+M untuk menghindari bentrok dengan shortcut OS atau aplikasi lain (misal: Discord/AMD)
+  globalShortcut.register('CommandOrControl+Alt+M', () => {
     if (mainWindow) {
       mainWindow.show()
       mainWindow.webContents.send('trigger-live-audio')

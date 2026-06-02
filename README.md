@@ -67,7 +67,7 @@ Desain menggunakan **Tailwind CSS 4** dan **DaisyUI 5** dengan fitur:
 ### Global Shortcut & System Tray
 
 Aplikasi berjalan secara tersembunyi di latar belakang (System Tray) dan dapat dipanggil kapan saja menggunakan *Global Shortcut*.
-- **`Ctrl + Shift + M`** (atau `Cmd + Shift + M` di Mac): Membuka aplikasi secara instan dan langsung mengaktifkan mode **Live Audio** untuk mulai berbicara dengan Mark.
+- **`Ctrl + Alt + M`** (atau `Cmd + Alt + M` di Mac): Membuka aplikasi secara instan dan langsung mengaktifkan mode **Live Audio** untuk mulai berbicara dengan Mark.
 
 ## Arsitektur Proyek
 

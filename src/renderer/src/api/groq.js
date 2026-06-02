@@ -65,8 +65,9 @@ export const transcribeAudioGroq = async (pcmBuffer) => {
 
   const response = await client.audio.transcriptions.create({
     file: file,
-    model: 'whisper-large-v3-turbo',
-    prompt: 'Ini adalah percakapan santai campur bahasa Indonesia dan English. JKT48, React, coding, you know.',
+    model: 'whisper-large-v3', // Menggunakan model standar yang lebih pintar auto-detect
+    temperature: 0.0,
+    prompt: 'Umm, halo? Ini percakapan asisten virtual berbahasa Indonesia. Putar lagu dangdut, nyalakan musik, coding React, open YouTube, play some music, you know what I mean.',
     response_format: 'json'
   });
 

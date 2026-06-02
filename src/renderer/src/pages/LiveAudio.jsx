@@ -38,7 +38,13 @@ const LiveAudio = () => {
   const isSpeakingRef = useRef(false)
   const audioChunksRef = useRef([])
   const silenceTimerRef = useRef(null)
-  const lastSpokenMessageContentRef = useRef(null)
+  
+  // Inisialisasi dengan pesan terakhir agar saat LiveAudio dibuka, tidak memutar ulang pesan lama
+  const lastSpokenMessageContentRef = useRef(
+    chatData.length > 0 && chatData[chatData.length - 1].role === 'ai'
+      ? chatData[chatData.length - 1].content
+      : null
+  )
 
   const stopRecordingCleanup = () => {
     if (processorRef.current) {
