@@ -28,9 +28,15 @@ const ChatList = ({
   musicQuery = '',
   risk = 'safe',
   sources = [],
+  isPlanSteps = false,
+  plan = [],
+  currentStep,
   sendDataWebSearch,
   onRun
 }) => {
+  // Default currentStep to plan.length for old history messages that don't have it
+  const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan.length;
+
   const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -48,6 +54,13 @@ const ChatList = ({
   const [url, setUrl] = useState(
     `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=id`
   )
+  
+  useEffect(() => {
+    if (isSearching && query) {
+      setUrl(`https://www.google.com/search?q=${encodeURIComponent(query)}&hl=id`)
+    }
+  }, [query, isSearching])
+
   const webRef = useRef(null)
   const scrapingActive = useRef(false)
   const initialLoadHandled = useRef(false)
@@ -124,6 +137,54 @@ const ChatList = ({
     }
     sendDataWebSearch(source, links)
     scrapingActive.current = false
+  }
+
+  if (isPlanSteps) {
+    return (
+      <div className="chat chat-start mb-1 mt-2 opacity-70">
+        <div className="chat-bubble bg-transparent text-white p-0 shadow-none">
+          <details className="group">
+            <summary className="text-xs cursor-pointer select-none flex items-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity">
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="1em" 
+                height="1em" 
+                viewBox="0 0 1024 1024"
+                className="group-open:rotate-90 transition-transform text-[11px]"
+              >
+                <path d="M0 0h1024v1024H0z" fill="none" />
+                <path fill="currentColor" d="M340.9 149.3a30.6 30.6 0 0 0 0 42.8L652.7 512L341 831.9a30.6 30.6 0 0 0 0 42.7a29 29 0 0 0 41.7 0l331.6-340.3a32 32 0 0 0 0-44.6L382.6 149.4a29 29 0 0 0-41.7 0z" />
+              </svg>
+              Planning ({plan.length} steps)
+            </summary>
+            <div className="pl-4 pt-1 flex flex-col gap-1 border-l border-white/20 ml-1.5 mt-1.5 mb-2">
+              {plan.map((step, idx) => {
+                let prefix = idx + 1 + '.';
+                let opacity = 'opacity-50';
+                let suffix = '';
+                
+                if (idx < resolvedCurrentStep) {
+                   prefix = '✓';
+                   opacity = 'opacity-100 text-success';
+                } else if (idx === resolvedCurrentStep) {
+                   opacity = 'opacity-100 text-white';
+                   suffix = '...';
+                } else {
+                   opacity = 'opacity-50 text-white';
+                }
+
+                return (
+                  <div key={idx} className={`text-[11px] font-mono transition-opacity ${idx === resolvedCurrentStep ? 'animate-pulse text-white' : 'text-white/70'}`}>
+                    <span className={`${opacity} mr-1 font-bold inline-block w-3 text-center`}>{prefix}</span>
+                    {step}{suffix}
+                  </div>
+                );
+              })}
+            </div>
+          </details>
+        </div>
+      </div>
+    )
   }
 
   // For commands, use a different layout without DaisyUI chat grid

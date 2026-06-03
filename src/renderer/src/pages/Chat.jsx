@@ -188,6 +188,30 @@ const Chat = () => {
               </svg>
               YouTube
             </button>
+            <button
+              type="button"
+              className={`btn btn-sm rounded-lg gap-1.5 ${isAction.plan ? 'btn-info' : 'btn-ghost opacity-60 hover:opacity-100'}`}
+              onClick={() => {
+                setIsAction((prev) => ({ ...prev, plan: !prev.plan }))
+              }}
+              data-tip="Agentic Planning"
+            >
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="1em" height="1em" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <path d="M12 16v-4"></path>
+                <path d="M12 8h.01"></path>
+                <circle cx="12" cy="12" r="10"></circle>
+              </svg>
+              Planning
+            </button>
           </div>
           <button type="submit" className="btn btn-circle btn-sm btn-primary text-base">
             {isLoading ? (

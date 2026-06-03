@@ -54,13 +54,35 @@ const cleanAndParse = (rawResponse) => {
   try {
     if (!rawResponse) return null
 
-    // 1. Cari kurung kurawal pertama dan terakhir
-    const firstBrace = rawResponse.indexOf('{')
-    const lastBrace = rawResponse.lastIndexOf('}')
+    // Bersihkan format markdown (```json dan ```) jika ada
+    let text = rawResponse.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
 
-    if (firstBrace === -1 || lastBrace === -1) return null
+    // 1. Cari batas JSON (Bisa Object {} atau Array [])
+    const firstBrace = text.indexOf('{')
+    const lastBrace = text.lastIndexOf('}')
+    const firstBracket = text.indexOf('[')
+    const lastBracket = text.lastIndexOf(']')
 
-    const jsonStr = rawResponse.substring(firstBrace, lastBrace + 1)
+    let firstIndex = -1
+    let lastIndex = -1
+
+    // Pilih yang muncul lebih dulu sebagai pembuka
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      firstIndex = firstBrace
+    } else if (firstBracket !== -1) {
+      firstIndex = firstBracket
+    }
+
+    // Pilih yang muncul paling akhir sebagai penutup
+    if (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) {
+      lastIndex = lastBrace
+    } else if (lastBracket !== -1) {
+      lastIndex = lastBracket
+    }
+
+    if (firstIndex === -1 || lastIndex === -1) return null
+
+    const jsonStr = text.substring(firstIndex, lastIndex + 1)
 
     // Attempt 1: Parse langsung tanpa modifikasi (paling aman)
     try {
@@ -503,5 +525,132 @@ export const playVoice = async (text) => {
     }
   } catch (error) {
     console.error('Gagal memutar suara:', error)
+  }
+}
+
+// ==========================================
+// PLANNING (AGENTIC) FUNCTIONS
+// ==========================================
+
+export const getPlan = async (userInput, signal) => {
+  try {
+    const systemPrompt = `
+Kamu adalah Mark, asisten AI cerdas.
+Tugasmu adalah merancang (planning) langkah-langkah sistematis untuk mengeksekusi instruksi dari user.
+Pecah instruksi menjadi array tugas-tugas kecil yang berurutan.
+
+# ATURAN
+1. Output HANYA boleh valid JSON array of strings.
+2. Dilarang memberikan basa-basi atau markdown di luar JSON.
+3. Maksimal 3-4 langkah. Jangan terlalu rumit.
+
+# CONTOH OUTPUT
+["Cari salah satu lagu hits saat ini", "Putar lagu hits tersebut"]
+`
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userInput }
+    ]
+    const response = await fetchAI(messages, signal)
+    const data = cleanAndParse(response)
+    if (Array.isArray(data)) return data
+    throw new Error("Format plan tidak valid (bukan array).")
+  } catch (error) {
+    console.error('Error in getPlan:', error)
+    throw error
+  }
+}
+
+export const getTaskAction = async (task, previousContext, signal) => {
+  try {
+    const systemPrompt = `
+Kamu adalah Mark, asisten AI cerdas. 
+Tugasmu adalah menentukan SATU aksi yang harus dieksekusi oleh sistem untuk menyelesaikan tugas saat ini, berdasarkan riwayat konteks sebelumnya (jika ada).
+
+# ACTION LIST
+- search: Melakukan pencarian web.
+- music-play: Memutar lagu.
+- yt-search: Mencari video YouTube.
+- yt-summary: Merangkum YouTube.
+- none: Tidak perlu aksi khusus / hanya mikir.
+
+# ATURAN
+1. Output WAJIB valid JSON dengan format { "action": "nama-action", "query": "string" }.
+2. Gunakan "previousContext" untuk melengkapi "query". Contoh: jika previousContext bilang "Lagu hits adalah Kangen", dan tugas adalah "Putar lagu", maka query harus "Kangen Dewa 19", bukan sekedar "lagu".
+`
+    const userPrompt = `
+# PREVIOUS CONTEXT (Ringkasan dari tugas-tugas sebelumnya)
+${previousContext.length > 0 ? previousContext.join("\\n") : "Belum ada."}
+
+# TUGAS SAAT INI
+${task}
+
+# PERINTAH
+Tentukan action dan query-nya.
+`
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+    const response = await fetchAI(messages, signal)
+    const data = cleanAndParse(response)
+    return data
+  } catch (error) {
+    console.error('Error in getTaskAction:', error)
+    throw error
+  }
+}
+
+export const getTaskSummary = async (task, actionResult, signal) => {
+  try {
+    const systemPrompt = `
+Kamu adalah asisten perangkum.
+Tugasmu adalah membuat 1 kalimat ringkasan (summary) dari hasil eksekusi sebuah tugas.
+Ringkasan ini akan digunakan sebagai ingatan untuk tugas selanjutnya.
+Tulis dengan lugas dan informatif. Output HANYA ringkasan, tanpa basa-basi.
+`
+    const userPrompt = `
+Tugas: ${task}
+Hasil dari sistem: ${JSON.stringify(actionResult)}
+
+Buat ringkasan 1 kalimat.
+`
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+    const response = await fetchAI(messages, signal)
+    return response.trim()
+  } catch (error) {
+    console.error('Error in getTaskSummary:', error)
+    return "Tugas selesai dijalankan."
+  }
+}
+
+export const getPlanConclusion = async (userInput, taskSummaries, signal) => {
+  try {
+    const systemPrompt = `
+Kamu adalah Mark. 
+User sebelumnya memberikan instruksi kompleks, dan kamu telah memecahnya serta mengeksekusinya selangkah demi selangkah.
+Sekarang, berikan kesimpulan atau jawaban akhir kepada user berdasarkan ringkasan eksekusi yang telah dilakukan.
+Gaya bahasa: Santai, asertif, panggil "bro", EKSPRESIF seperti voice note, jangan kaku.
+`
+    const userPrompt = `
+Instruksi Awal User: "${userInput}"
+
+Riwayat Eksekusi (Summary):
+${taskSummaries.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+Berikan respons akhirmu (HANYA teks respons, tanpa JSON).
+`
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+    const response = await fetchAI(messages, signal)
+    return response
+  } catch (error) {
+    console.error('Error in getPlanConclusion:', error)
+    return "Oke bro, instruksi lu udah gue kerjain semuanya ya!"
   }
 }

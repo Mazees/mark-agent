@@ -4,7 +4,11 @@ import {
   getAnswer,
   getSearchResult,
   getYoutubeSummary,
-  playVoice
+  playVoice,
+  getPlan,
+  getTaskAction,
+  getTaskSummary,
+  getPlanConclusion
 } from '../api/ai'
 import {
   createSession,
@@ -27,7 +31,7 @@ export const ChatProvider = ({ children }) => {
 
   const [chatData, setChatData] = useState([])
   const [sessionId, setSessionId] = useState(null)
-  const [isAction, setIsAction] = useState({ web: false, youtube: false })
+  const [isAction, setIsAction] = useState({ web: false, youtube: false, plan: false })
   const [config, setConfig] = useState([])
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -363,12 +367,135 @@ export const ChatProvider = ({ children }) => {
     abortControllerRef.current?.abort()
   }
 
+  const handlePlanningCommand = async (userInput) => {
+    if (!userInput) return
+    setIsLoading(true)
+    const userMessage = { role: 'user', content: userInput }
+    setChatData((prev) => [...prev, userMessage])
+    abortControllerRef.current = new AbortController()
+    
+    try {
+      // 1. Get Plan
+      setChatData((prev) => [...prev, { role: 'ai', content: 'Menganalisis instruksi dan membuat rencana...', isThinking: true }])
+      const plan = await getPlan(userInput, abortControllerRef.current.signal)
+      
+      setChatData((prev) => {
+         const filtered = prev.filter(item => !item.isThinking);
+         return [...filtered, { role: 'ai', content: '', isPlanSteps: true, plan: plan, currentStep: 0 }];
+      })
+
+      let contextSummaries = [];
+      let previousContext = [];
+
+      // 2. Loop
+      for (let i = 0; i < plan.length; i++) {
+        const task = plan[i];
+        
+        // UI update for running task - UPDATE currentStep instead of adding new thinking message
+        setChatData((prev) => prev.map(item => item.isPlanSteps ? { ...item, currentStep: i } : item));
+        
+        const actionData = await getTaskAction(task, previousContext, abortControllerRef.current.signal);
+
+        
+        let actionResult = null;
+        let summary = "Tidak ada hasil";
+        
+        // Execute Action
+        if (actionData.action === 'search') {
+           actionResult = await new Promise((resolve, reject) => {
+               setChatData((prev) => [
+                   ...prev.filter(item => !item.isThinking), 
+                   { 
+                       role: 'ai', 
+                       content: '...', 
+                       isSearching: true, 
+                       query: actionData.query, 
+                       sendDataWebSearch: (search, result) => resolve({ search, result }) 
+                   }
+               ]);
+               
+               // Optional timeout just in case it hangs (Ditingkatkan ke 45 detik karena deep search bisa lama)
+               setTimeout(() => resolve({ search: [], result: [] }), 45000)
+           });
+           summary = await getTaskSummary(task, actionResult.search, abortControllerRef.current.signal);
+        } else if (actionData.action === 'yt-search') {
+           actionResult = await window.api.searchYoutube(actionData.query);
+           summary = await getTaskSummary(task, actionResult, abortControllerRef.current.signal);
+        } else if (actionData.action === 'yt-summary') {
+           const yData = await getYoutubeData(actionData.query);
+           const sum = await getYoutubeSummary(actionData.query, yData, abortControllerRef.current.signal);
+           summary = sum;
+        } else if (actionData.action?.startsWith('music')) {
+           if (actionData.action === 'music-next') {
+              nextTrack();
+              summary = "Memutar lagu selanjutnya.";
+           } else if (actionData.action === 'music-prev') {
+              prevTrack();
+              summary = "Memutar lagu sebelumnya.";
+           } else if (actionData.action === 'music-toggle') {
+              playPause();
+              summary = "Pause/Resume lagu.";
+           } else {
+              actionResult = await window.api.searchMusic(actionData.query);
+              if (actionData.action === 'music-play' && actionResult.length > 0) {
+                 playUrl(`https://music.youtube.com/watch?v=${actionResult[0].id}`);
+              }
+              summary = await getTaskSummary(task, actionResult.slice(0,3), abortControllerRef.current.signal);
+           }
+        } else {
+           summary = await getTaskSummary(task, { note: "internal thought / done" }, abortControllerRef.current.signal);
+        }
+        
+        contextSummaries.push(summary);
+        previousContext.push(`Task: ${task} -> Hasil: ${summary}`);
+        
+        setChatData((prev) => prev.filter((item) => !item.isSearching));
+      }
+      
+      // All steps done
+      setChatData((prev) => prev.map(item => item.isPlanSteps ? { ...item, currentStep: plan.length } : item));
+      
+      // 3. Conclusion
+      setChatData((prev) => [...prev, { role: 'ai', content: 'Merangkum hasil akhir...', isThinking: true }]);
+      const finalAnswer = await getPlanConclusion(userInput, contextSummaries, abortControllerRef.current.signal);
+      
+      setChatData((prev) => {
+         const filtered = prev.filter(item => !item.isThinking);
+         return [...filtered, { role: 'ai', content: finalAnswer }]
+      });
+      
+      if (isSpeak) {
+        playVoice(finalAnswer);
+      }
+      
+      setMessage('');
+      setIsLoading(false);
+
+    } catch (error) {
+       console.error("Planning Error:", error);
+       setIsLoading(false);
+       if (error.name === 'AbortError') {
+          setChatData((prev) => [...prev.filter((item) => !item.isThinking && !item.isSearching)]);
+          setChatData((prev) => prev.slice(0, -1));
+       } else {
+          setChatData((prev) => [
+            ...prev.filter((item) => !item.isThinking && !item.isSearching),
+            { role: 'ai', content: `Maaf, terjadi kesalahan di proses planning: ${error.message}` }
+          ]);
+       }
+    }
+  }
+
   const handleSubmit = (e) => {
     if (e) e.preventDefault()
     if (isLoading) {
       handleStop()
     } else {
-      handleAIResponse(message.trim())
+      if (isAction.plan) {
+         handlePlanningCommand(message.trim())
+      } else {
+         handleAIResponse(message.trim())
+      }
     }
   }
 

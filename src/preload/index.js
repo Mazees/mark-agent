@@ -8,10 +8,7 @@ const api = {
   getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url),
   searchYoutube: (query) => ipcRenderer.invoke('youtube-search', query),
   searchMusic: (query) => ipcRenderer.invoke('search-music', query),
-  textToSpeech: (text, rate, pitch) => ipcRenderer.invoke('tts-speak', text, rate, pitch),
-  onLiveAudioShortcut: (callback) =>
-    ipcRenderer.on('trigger-live-audio', (_event, ...args) => callback(...args)),
-  removeLiveAudioShortcut: () => ipcRenderer.removeAllListeners('trigger-live-audio')
+  textToSpeech: (text, rate, pitch) => ipcRenderer.invoke('tts-speak', text, rate, pitch)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
