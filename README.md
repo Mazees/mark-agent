@@ -5,16 +5,12 @@
 > [!IMPORTANT]
 > Proyek ini dioptimalkan khusus untuk **Windows** (Windows 10/11).
 
-## Fitur Utama
+## Core Capabilities
 
-- **Hybrid AI Engine:** Kombinasi **Local LLM** (LM Studio) untuk privasi 100% offline dan **Cloud API** (Groq/Cerebras) untuk kecepatan tinggi. Dilengkapi **Secondary Model** yang mendelegasikan tugas *background* (JSON parsing, summarizing) ke cloud agar tidak membebani komputasi lokal.
-- **Agentic Planning:** Memecah instruksi kompleks menjadi aksi otonom (web search, music, memory). Menggunakan arsitektur **JIT Query Generation** untuk menghemat kuota *Requests Per Minute* (RPM) hingga 80%, serta dilengkapi **Auto-Retry Fallback** yang otomatis memperbaiki format output LLM yang rusak.
-- **Vector Memory Management System (MMS):** Memori jangka panjang cerdas menggunakan *embeddings* dari **Transformers.js** (berjalan 100% lokal di memori) atau LM Studio. Operasi *insert*, *update*, dan *delete* memori dikelola otomatis oleh AI dengan pencarian *semantic* berbasis *cosine similarity*.
-- **Web Search & Deep Research:** AI dapat menelusuri web secara real-time dan melakukan riset mendalam melalui Electron Webview tersembunyi tanpa instalasi browser tambahan.
-- **YouTube Ecosystem:** Terintegrasi langsung untuk merangkum isi video YouTube dari *transkrip* otomatis, serta memutar lagu via YouTube Music dengan logika kurasi AI (memilih versi terbaik antara *original*, *live*, atau *cover*).
-- **Live Voice Interaction:** Interaksi suara real-time (Voice-to-Voice) menggunakan Groq API (STT) dan Edge-TTS lokal, dilengkapi dengan *Voice Activity Detection* (VAD).
-- **Transparent Reasoning:** Mengekstrak dan menampilkan proses pemikiran AI (seperti DeepSeek-R1) secara native di antarmuka.
-- **System Tray & Global Shortcut:** Selalu sedia di latar belakang dan dapat dipanggil kapan saja dengan `Ctrl + Alt + M`.
+- **Hybrid AI Engine:** Seamlessly toggle between **Local LLM** (LM Studio) for absolute offline privacy and **Cloud API** (Groq/Cerebras) for lightning-fast inference. Includes a **Secondary Model** pipeline that offloads background tasks (like JSON parsing and planning) to the cloud, preventing local machine bottlenecks.
+- **Agentic Planning (JIT Query Generation):** The engine doesn't just chat; it executes multi-step plans autonomously. Using Just-In-Time (JIT) Query Generation, it drastically reduces unnecessary API calls (saving up to 80% RPM) and strictly differentiates between 1-step tasks (*fast lane*) and complex orchestrations (*slow lane*).
+- **Implicit Learning & Vector MMS:** Mark acts as a true companion. It features an Auto-Memory evaluation system that silently profiles user preferences and schedules from casual conversations. Memories are stored via **Transformers.js** (running 100% locally in-memory via WASM) and retrieved using Cosine Similarity semantic search.
+- **Native Integrations:** Directly integrated with Electron Webview for Deep Web Search, YouTube Music API for seamless audio playback, and Edge-TTS + Groq STT for live Voice-to-Voice interactions.
 
 ## Arsitektur Proyek
 
