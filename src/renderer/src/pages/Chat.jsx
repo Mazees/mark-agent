@@ -173,17 +173,6 @@ const Chat = () => {
               >
                 <li>
                   <a
-                    className={isAction.web ? 'bg-primary/20 text-primary' : ''}
-                    onClick={() => setIsAction((prev) => ({ ...prev, web: !prev.web }))}
-                  >
-                    <div className="flex w-full justify-between items-center">
-                      <span>Web Search</span>
-                      {isAction.web && <span className="font-bold">✓</span>}
-                    </div>
-                  </a>
-                </li>
-                <li>
-                  <a
                     className={isAction.youtube ? 'bg-error/20 text-error' : ''}
                     onClick={() => setIsAction((prev) => ({ ...prev, youtube: !prev.youtube }))}
                   >
