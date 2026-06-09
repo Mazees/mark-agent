@@ -25,6 +25,9 @@ const getCurrentTimeInfo = () => {
   return now.toLocaleDateString('id-ID', options);
 };
 
+let lastGroqFetchTime = 0;
+const GROQ_DELAY_MS = 5000; // 10 seconds delay between requests
+
 export const fetchAI = async (messages, signal, isSmallTask = false, jsonSchema = null) => {
   try {
     const currentConfig = await getAllConfig()
@@ -82,6 +85,19 @@ export const fetchAI = async (messages, signal, isSmallTask = false, jsonSchema 
         }
       }
       body.messages = finalMessages;
+    }
+
+    // --- RATE LIMIT THROTLLING LOGIC ---
+    if (endpoint.includes('groq.com')) {
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastGroqFetchTime;
+      if (timeSinceLastFetch < GROQ_DELAY_MS) {
+        const delay = GROQ_DELAY_MS - timeSinceLastFetch;
+        console.log(`[Rate Limit Guard] Waiting ${delay}ms before next Groq request...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+      // Update time AFTER waiting, right before fetching
+      lastGroqFetchTime = Date.now();
     }
 
     const response = await fetch(endpoint, {
@@ -691,7 +707,7 @@ Gunakan data memori di atas sebagai acuan jika instruksi user menyebutkan kata g
 # KAPABILITAS / TOOL YANG TERSEDIA
 Sistem memiliki kemampuan berikut:
 ${isWebSearch ? '- Web Search: Mencari info umum di Google. Tools ini bakal menjelajah google search dengan membuka 5 web teratas dan hasil summary ai google, dari ke 5 web dan ai summary google akand disimpulkan. namun tools ini tidak dapat membuka halaman tertentu secara explisit secara langsung' : ''}
-- YouTube Search: Mencari video di YouTube.
+- YouTube Search: Mencari video di YouTube, fitur ini akan mendapatkan judul, id, dan time tidak dapat membaca isi video.
 ${isYoutube ? '- YouTube Summary: Merangkum isi video dari link YouTube.' : ''}
 - Music Player: Memutar lagu di YouTube Music.
 - Music Next: Memutar Lagu Selanjutnya
@@ -708,36 +724,11 @@ Rancanglah rencana yang logis dan *memungkinkan* dieksekusi menggunakan kombinas
 5. KECUALIAN: JIKA DAN HANYA JIKA instruksi user sangat sederhana (seperti sapaan "halo", "makasih", "ingat ini ya", atau obrolan basa-basi singkat) yang SAMA SEKALI tidak butuh pemikiran kompleks atau *tools*, maka KEMBALIKAN array kosong: {"plan": []}
 6. BACA KONTEKS PERCAKAPAN SEBELUMNYA. Jika user bilang "cariin satu aja", lihat percakapan sebelumnya untuk memahami apa yang dimaksud "satu". Jangan berhalusinasi membuat rencana pencarian acak jika kamu bisa menemukan konteksnya.
 
-# CONTOH SKENARIO & OUTPUT
-User: "Putarin lagu galau dong"
+# CONTOH OUTPUT
 Output: 
 \`\`\`json
 {
-  "plan": ["Cari lagu pop galau indonesia di YouTube Music", "Putar lagu tersebut"]
-}
-\`\`\`
-
-User: "Jelasin dong apa itu fenomena aurora?" (Jika Web Search aktif)
-Output: 
-\`\`\`json
-{
-  "plan": ["Mencari informasi ilmiah tentang fenomena aurora dengan Web Search", "Menganalisis dan merangkum hasil pencarian tersebut"]
-}
-\`\`\`
-
-User: "Halo mark, apa kabar?"
-Output: 
-\`\`\`json
-{
-  "plan": []
-}
-\`\`\`
-
-User: "Apa itu MBG?"
-Output:
-\`\`\`json
-{
-  "plan": ["Mencari kepanjangan dan pengertian MBG di Web Search", "Menganalisis hasil pencarian untuk menjelaskannya"]
+  "plan": ["plan 1", "plan 2"]
 }
 \`\`\`
 `
@@ -783,16 +774,16 @@ Tugasmu adalah menentukan SATU aksi yang harus dieksekusi oleh sistem untuk meny
 ${getCurrentTimeInfo()}
 
 # ACTION LIST
-${isWebSearch ? '- search: Melakukan pencarian web.' : ''}
-- music-play: Memutar lagu.
-- music-search: Mencari atau melihat daftar lagu.
+${isWebSearch ? '- search: Melakukan pencarian web umum (Google) untuk mencari info, tutorial, coding, berita, dll.' : ''}
+- music-play: Memutar lagu (HANYA jika task berkaitan dengan musik/lagu).
+- music-search: Mencari judul/daftar lagu (HANYA jika task berkaitan dengan musik/lagu).
 - music-next: Lanjut ke lagu berikutnya.
 - music-prev: Kembali ke lagu sebelumnya.
 - music-toggle: Pause atau resume lagu.
-- yt-search: Mencari video YouTube.
-${isYoutube ? '- yt-summary: Merangkum YouTube.' : ''}
-- summary: Menyimpulkan/mengidentifikasi informasi dari konteks sebelumnya tanpa melakukan pencarian baru.
-- none: Tidak perlu aksi khusus.
+- yt-search: Mencari video tutorial atau hiburan di YouTube.
+${isYoutube ? '- yt-summary: Merangkum isi video YouTube.' : ''}
+- summary: Menyimpulkan/menjawab tugas langsung menggunakan otakmu (tanpa nge-search), berguna untuk coding atau teori dasar.
+- none: Tidak ada aksi yang relevan.
 
 # ATURAN
 1. Output WAJIB valid JSON dengan format { "action": "nama-action", "query": "string" }.
@@ -816,7 +807,14 @@ Tentukan action dan query-nya.
     const schema = {
       type: "object",
       properties: {
-        action: { type: "string" },
+        action: { 
+          type: "string",
+          enum: [
+            "search", "music-play", "music-search", "music-next", 
+            "music-prev", "music-toggle", "yt-search", "yt-summary", 
+            "summary", "none"
+          ]
+        },
         query: { type: "string" }
       },
       required: ["action", "query"],
