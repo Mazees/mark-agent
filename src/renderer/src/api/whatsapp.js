@@ -71,12 +71,12 @@ export const extractLatestMessage = async (webviewRef) => {
 
         let quotedSender = null;
         let quotedText = null;
-        const quotedBlock = lastMessageBlock.querySelector('[data-testid="quoted-message"]');
+        const quotedBlock = lastMessageBlock.querySelector('[data-testid="quoted-message"]') || lastMessageBlock.querySelector('div[aria-label="Quoted message"]');
         if (quotedBlock) {
           const qSenderEl = quotedBlock.querySelector('span[dir="auto"]');
           if (qSenderEl) quotedSender = qSenderEl.innerText.trim();
           
-          const qTextEl = quotedBlock.querySelector('.quoted-mention');
+          const qTextEl = quotedBlock.querySelector('span[dir="ltr"]') || quotedBlock.querySelector('.copyable-text') || quotedBlock.querySelector('span[dir="auto"]:nth-of-type(2)');
           if (qTextEl) quotedText = qTextEl.innerText.trim();
         }
 

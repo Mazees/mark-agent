@@ -18,7 +18,7 @@ export const useWhatsappBot = (webviewRef, ytMusic) => {
     let intervalId
 
     const processNewMessage = async ({ sender, text, chatTitle, isGroup, quotedSender, quotedText, recentHistory }) => {
-      const isReplyingToMark = (quotedSender === 'Anda' || quotedSender?.toLowerCase().includes('mark'))
+      const isReplyingToMark = (quotedSender === 'Anda' || quotedSender === 'You' || quotedSender?.toLowerCase().includes('mark'))
 
       if (isGroup) {
         const lowerText = text.toLowerCase()
