@@ -28,11 +28,11 @@ export const WebSearchBubble = ({ query, sendDataWebSearch }) => {
       let timeoutId
       const onDone = () => {
         clearTimeout(timeoutId)
-        webview.removeEventListener('did-stop-loading', onDone)
+        webview.removeEventListener('dom-ready', onDone)
         resolve()
       }
       timeoutId = setTimeout(onDone, 10000) // 10 second timeout for each page load
-      webview.addEventListener('did-stop-loading', onDone)
+      webview.addEventListener('dom-ready', onDone)
     })
   }
 
@@ -65,9 +65,9 @@ export const WebSearchBubble = ({ query, sendDataWebSearch }) => {
         onScrape(webview)
       }
     }
-    webview.addEventListener('did-stop-loading', handleInitialLoad)
+    webview.addEventListener('dom-ready', handleInitialLoad)
     return () => {
-      webview.removeEventListener('did-stop-loading', handleInitialLoad)
+      webview.removeEventListener('dom-ready', handleInitialLoad)
     }
   }, [])
 

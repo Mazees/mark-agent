@@ -58,12 +58,23 @@ export const deepSearch = async (webview, url) => {
   try {
     const content = await webview.executeJavaScript(`
             (() => {
-              const paragraf = document.querySelectorAll('p')
-              return Array.from(document.querySelectorAll('p'))
-                .slice(0, 5)
-                .map(p => p.textContent.trim())
-                .filter(txt => txt.length > 50)
-                .join(' ');
+              const wadah = document.createElement('div');
+              wadah.style.position = 'fixed';
+              wadah.style.opacity = '0';
+              wadah.style.pointerEvents = 'none';
+              wadah.innerHTML = document.body.innerHTML;
+              document.body.appendChild(wadah);
+
+              const sampah = wadah.querySelectorAll('nav, footer, header, aside, script, style, noscript, form, iframe, svg, [class*="sidebar"], [class*="comment"], [class*="ad-"], [class*="promo"], [class*="menu"], [class*="nav"]');
+              sampah.forEach(el => el.remove());
+
+              let kontenUtama = wadah.querySelector('article, main, [class*="article"], [class*="content"], [id*="article"], [id*="content"]');
+              if (!kontenUtama) kontenUtama = wadah;
+
+              let hasil = kontenUtama.innerText || '';
+              wadah.remove();
+              
+              return hasil.replace(/\\n{3,}/g, '\\n\\n').replace(/\\s{2,}/g, ' ').trim().substring(0, 3000);
             })()
           `)
     return {
