@@ -12,6 +12,8 @@
 - **Smart AI:** Layaknya asisten manusia sungguhan, Mark diam-diam mempelajari dan mengingat preferensi, jadwal, serta kebiasaan Anda dari obrolan sehari-hari. Semua "ingatan" ini disimpan secara super aman **di dalam laptop Anda sendiri**, bukan di server milik perusahaan lain.
 - **Fitur Lengkap Bawaan:** Mark sudah tersambung langsung dengan berbagai kemampuan canggih. Ia bisa menelusuri internet secara mendalam, memutar lagu favorit Anda dari YouTube Music, merangkum video panjang secara otomatis, hingga diajak mengobrol langsung menggunakan suara (*Voice-to-Voice*).
 
+- **Otomatisasi WhatsApp (WhatsApp Bot):** Mark dapat bertindak sebagai bot asisten pribadi di WhatsApp Anda. Dilengkapi kesadaran konteks percakapan (*Context Awareness*), Mark bisa membaca riwayat obrolan, mendeteksi penyebutan (*mention*) di grup, hingga mengontrol pemutar musik di laptop langsung lewat perintah WhatsApp.
+
 ## Arsitektur Proyek
 
 ```text
@@ -25,12 +27,14 @@ mark/
 │           │   ├── ai/             # Modul Integrasi AI (inti, obrolan, perencanaan, alat, utilitas)
 │           │   ├── db.js           # Skema & migrasi Basis Data Lokal (Dexie/IndexedDB)
 │           │   ├── scraping.js     # Modul pencarian Google & penelusuran web mendalam
-│           │   └── vectorMemory.js # Sistem Vektor Ingatan (Transformers.js / LM Studio)
+│           │   ├── vectorMemory.js # Sistem Vektor Ingatan (Transformers.js / LM Studio)
+│           │   └── whatsapp.js     # Logika Injeksi & Ekstraksi DOM Web WhatsApp (Tanpa Preload)
 │           ├── components/         # Komponen Antarmuka (Gelembung Obrolan Modular)
 │           ├── contexts/           # Manajemen State Global (ChatContext, YoutubeMusicContext)
 │           ├── hooks/              # Custom Hooks React
-│           │   └── agent/          # Sistem Micro-Hooks (useMarkPlan, useMarkSearch, dll)
-│           └── pages/              # Halaman Antarmuka (Obrolan, Pengaturan)
+│           │   ├── agent/          # Sistem Micro-Hooks (useMarkPlan, useMarkSearch, dll)
+│           │   └── whatsapp/       # Logika Otomatisasi WhatsApp (useWhatsappBot)
+│           └── pages/              # Halaman Antarmuka (Obrolan, Pengaturan, Bot WhatsApp)
 ```
 
 ## Teknologi yang Digunakan
@@ -43,7 +47,7 @@ mark/
 | **Vektor Memori**  | Transformers.js (`@huggingface/transformers`), LM Studio                    |
 | **Pencarian Web**  | Electron Webview (Google Search & Riset Mendalam)                           |
 | **Suara & Audio**  | Groq API (STT), Edge-TTS, Web Audio API (Deteksi Suara)                     |
-| **Integrasi YouTube**| `youtube-transcript-plus`, `ytmusic-api`, `yt-search`                       |
+| **Integrasi Ekstra** | `youtube-transcript-plus`, `ytmusic-api`, Injeksi Web WhatsApp (Bot)        |
 | **Basis Data**     | Dexie.js (Pembungkus IndexedDB)                                                |
 | **Teks Markdown**  | React Markdown, React Syntax Highlighter, remark-gfm, rehype-external-links |
 
@@ -95,12 +99,17 @@ Hasil *file* installer (`.exe`) akan tersedia secara otomatis di dalam folder `d
 - [x] Pemutar Musik YouTube & Pemblokir Iklan Otomatis
 - [x] Interaksi Suara Langsung (Audio Beta & Perintah Suara Groq)
 - [x] Perencanaan Mandiri (Agentic Planning) dilengkapi dengan sumber referensi tautan
+- [x] Integrasi WhatsApp Bot AI Pribadi (Injeksi Tanpa Preload)
 - [ ] Analisis Gambar (Vision): Fitur untuk AI dapat membaca gambar secara lokal
 - [ ] Ekspor/Impor Memori: Fitur cadangan (*backup*) & pemulihan memori pengguna
 - [ ] Alat Khusus (Code Interpreter): Fitur yang memungkinkan AI menjalankan kode program (*script*) secara dinamis, memberikan kebebasan tanpa batas.
 - [ ] Templat Perintah (Prompt Templates): Fitur untuk menyimpan perintah panjang atau persona khusus (misal: "spesialis marketing"). Pengguna cukup mengetik `@nama-template` di kolom obrolan.
 
 ## Changelog (Terbaru)
+
+**v1.2.0**
+- ✨ **Otomatisasi WhatsApp Bot**: Mark kini bisa dihubungkan langsung ke WhatsApp Web sebagai *personal assistant* yang berjalan di latar belakang! Fitur ini bisa membalas obrolan pribadi & grup dengan *context-awareness* (membaca riwayat 4 pesan terakhir), hingga kemampuan memutar lagu di PC langsung dari perintah chat WhatsApp!
+- 🛠️ **Refactor Arsitektur Webview (Zero-Preload)**: Seluruh logika penyadapan dan injeksi DOM WhatsApp telah dipindahkan ke pendekatan React murni menggunakan *custom hooks* (`useWhatsappBot`) dan `executeJavaScript`. Beban memori (*Memory Leak*) dari `wa-preload.js` berhasil dihilangkan sepenuhnya, membuat performa jauh lebih ringan dan antarmuka anti-beku (*freeze-free*).
 
 **v1.1.0**
 - ✨ **Otomatisasi YouTube Summary**: Fitur `yt-summary` kini berjalan sepenuhnya secara otomatis dan mandiri (Agentic). Mark bisa langsung menelusuri, mengekstrak, memecah (chunking) transkrip, hingga menyimpulkan isi video YouTube ke dalam *Plan Conclusion* yang rapi tanpa perlu instruksi lanjutan.

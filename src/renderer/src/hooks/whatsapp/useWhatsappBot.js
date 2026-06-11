@@ -5,22 +5,19 @@ import { checkUnreadAndClick, extractLatestMessage, sendReplyMessage } from '../
 export const useWhatsappBot = (webviewRef, ytMusic) => {
   const [isThinking, setIsThinking] = useState(false)
   const [currentSender, setCurrentSender] = useState('')
-  const [isAutoReplyEnabled, setIsAutoReplyEnabled] = useState(false)
   const [history, setHistory] = useState([])
 
-  const isAutoReplyEnabledRef = useRef(isAutoReplyEnabled)
   const isThinkingRef = useRef(isThinking)
   const lastMessageIdRef = useRef(null)
 
   useEffect(() => {
-    isAutoReplyEnabledRef.current = isAutoReplyEnabled
     isThinkingRef.current = isThinking
-  }, [isAutoReplyEnabled, isThinking])
+  }, [isThinking])
 
   useEffect(() => {
     let intervalId
 
-    const processNewMessage = async ({ sender, text, chatTitle, isGroup, quotedSender, quotedText }) => {
+    const processNewMessage = async ({ sender, text, chatTitle, isGroup, quotedSender, quotedText, recentHistory }) => {
       const isReplyingToMark = (quotedSender === 'Anda' || quotedSender?.toLowerCase().includes('mark'))
 
       if (isGroup) {
@@ -54,9 +51,16 @@ export const useWhatsappBot = (webviewRef, ytMusic) => {
           additionalProperties: true
         }
 
+        let historyContext = ''
+        if (recentHistory && recentHistory.length > 0) {
+          historyContext = '\n\n=== RIWAYAT 4 CHAT TERAKHIR ===\n' + 
+            recentHistory.map(h => `${h.sender}: ${h.text}`).join('\n') + 
+            '\n==============================\n'
+        }
+
         const contextMsg = isGroup 
-          ? `Kamu sedang berada di obrolan Grup WhatsApp bernama "${chatTitle}". Kamu menerima pesan dari salah satu anggota grup bernama "${sender}". Balas pesan tersebut secara santai layaknya teman grup.`
-          : `Kamu sedang mengobrol Private di WhatsApp dengan "${sender}". Jawab pesan tersebut secara personal dan santai.`
+          ? `Kamu sedang berada di obrolan Grup WhatsApp bernama "${chatTitle}". Kamu menerima pesan dari salah satu anggota grup bernama "${sender}". Balas pesan tersebut secara santai layaknya teman grup.${historyContext}`
+          : `Kamu sedang mengobrol Private di WhatsApp dengan "${sender}". Jawab pesan tersebut secara personal dan santai.${historyContext}`
 
         const quoteContext = quotedText ? `\nSebagai konteks tambahan, pesan "${sender}" adalah balasan untuk pesan ini: "${quotedText}". Nyambungkan balasanmu dengan konteks tersebut.` : ''
 
@@ -129,7 +133,7 @@ Output WAJIB berupa JSON yang valid dengan struktur:
     }
 
     const pollWhatsApp = async () => {
-      if (!isAutoReplyEnabledRef.current || isThinkingRef.current) return
+      if (isThinkingRef.current) return
       
       try {
         await checkUnreadAndClick(webviewRef)
@@ -177,8 +181,6 @@ Output WAJIB berupa JSON yang valid dengan struktur:
   return {
     isThinking,
     currentSender,
-    isAutoReplyEnabled,
-    setIsAutoReplyEnabled,
     history,
     setHistory
   }

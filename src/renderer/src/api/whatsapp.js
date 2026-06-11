@@ -85,6 +85,31 @@ export const extractLatestMessage = async (webviewRef) => {
 
         const isGroup = (sender !== chatTitle && chatTitle !== 'Teman');
 
+        // Ekstrak 4 pesan terakhir sebagai konteks
+        const recentHistory = [];
+        const recentBlocks = Array.from(messageBlocks).slice(-4);
+        for (let block of recentBlocks) {
+          const bPreText = block.getAttribute('data-pre-plain-text') || '';
+          const bTextEl = block.querySelector('span[data-testid="selectable-text"]') || block.querySelector('.copyable-text') || block.querySelector('span[dir="ltr"]');
+          const bText = bTextEl ? bTextEl.innerText.trim() : '[Media/Sticker]';
+          
+          if (!bText) continue;
+          
+          let bSender = 'Teman';
+          if (bPreText) {
+            const match = bPreText.match(/]\\s*(.*?):/);
+            if (match && match[1]) bSender = match[1].trim();
+          }
+          
+          const isBOutgoing = block.closest('[data-testid^="conv-msg-"]')?.querySelector('[data-testid="tail-out"]') !== null ||
+                             block.closest('[data-testid^="conv-msg-"]')?.querySelector('svg title')?.textContent.toLowerCase().includes('read') ||
+                             block.className.includes('message-out') || bSender === 'Anda';
+                             
+          if (isBOutgoing) bSender = 'Mark (Kamu)';
+          
+          recentHistory.push({ sender: bSender, text: bText });
+        }
+
         return {
           id: currentMessageId,
           text,
@@ -93,7 +118,8 @@ export const extractLatestMessage = async (webviewRef) => {
           isGroup,
           isOutgoing,
           quotedSender,
-          quotedText
+          quotedText,
+          recentHistory
         };
       } catch (e) {
         return null;
@@ -122,11 +148,29 @@ export const sendReplyMessage = async (webviewRef, text) => {
         if (inputBox) {
           inputBox.focus();
           
-          // Lexical Editor WA merespons paling baik dengan insertHTML memakai <br> untuk enter
-          const escapeHTML = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          const htmlText = escapeHTML(textToInject).replace(/\n/g, '<br>');
+          // Lexical Editor di WA terkadang mengabaikan <br> dari insertHTML.
+          // Cara paling "Hacker" dan 100% Works: Simulasi ketik baris per baris + pencet Shift+Enter!
+          const lines = textToInject.split('\\n');
+          for (let i = 0; i < lines.length; i++) {
+            // Masukkan teks untuk baris ini
+            if (lines[i]) {
+              document.execCommand('insertText', false, lines[i]);
+            }
+            
+            // Jika bukan baris terakhir, pencet Shift+Enter untuk bikin baris baru
+            if (i < lines.length - 1) {
+              const shiftEnterEvent = new KeyboardEvent('keydown', {
+                bubbles: true,
+                cancelable: true,
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                shiftKey: true // Kunci utama biar WA bikin enter, bukan kirim pesan!
+              });
+              inputBox.dispatchEvent(shiftEnterEvent);
+            }
+          }
           
-          document.execCommand('insertHTML', false, htmlText);
           inputBox.dispatchEvent(new Event('input', { bubbles: true }));
           
           setTimeout(() => {

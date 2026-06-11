@@ -11,8 +11,6 @@ export default function WhatsappBot() {
   const {
     isThinking,
     currentSender,
-    isAutoReplyEnabled,
-    setIsAutoReplyEnabled,
     history
   } = useWhatsappBot(webviewRef, ytMusic)
 
@@ -37,16 +35,9 @@ export default function WhatsappBot() {
                 <span className="text-sm font-medium">Membalas {currentSender}...</span>
               </div>
             )}
-            <div className="form-control">
-              <label className="label cursor-pointer gap-3">
-                <span className="label-text font-medium">Status Bot</span> 
-                <input 
-                  type="checkbox" 
-                  className="toggle toggle-success" 
-                  checked={isAutoReplyEnabled}
-                  onChange={(e) => setIsAutoReplyEnabled(e.target.checked)}
-                />
-              </label>
+            <div className="badge badge-success gap-2 p-3 font-medium shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
+              Bot Aktif
             </div>
           </div>
         </div>
