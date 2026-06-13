@@ -78,14 +78,13 @@ let whatsappWindow = null
 function openWhatsappWindow(startHidden = false) {
   if (whatsappWindow) {
     if (whatsappWindow.isMinimized()) whatsappWindow.restore()
-    if (!startHidden) {
-      whatsappWindow.show()
-      whatsappWindow.focus()
-    }
+    whatsappWindow.center()
+    whatsappWindow.show()
+    whatsappWindow.focus()
     return
   }
-  
-  whatsappWindow = new BrowserWindow({
+
+  let windowOptions = {
     width: 1000,
     height: 700,
     show: !startHidden,
@@ -98,7 +97,30 @@ function openWhatsappWindow(startHidden = false) {
       webSecurity: false,
       backgroundThrottling: false
     }
-  })
+  }
+
+  // Trik Off-screen: Agar <webview> dirender oleh Electron sejak awal
+  if (startHidden) {
+    windowOptions.x = -10000
+    windowOptions.y = -10000
+    windowOptions.show = true
+    windowOptions.skipTaskbar = true
+  }
+
+  whatsappWindow = new BrowserWindow(windowOptions)
+
+  if (startHidden) {
+    whatsappWindow.webContents.on('did-finish-load', () => {
+      // Tunggu 2 detik biarkan React dan Webview me-render sempurna off-screen
+      setTimeout(() => {
+        if (whatsappWindow && !whatsappWindow.isDestroyed()) {
+          whatsappWindow.hide()
+          whatsappWindow.center() // kembalikan ke tengah
+          whatsappWindow.setSkipTaskbar(false)
+        }
+      }, 2000)
+    })
+  }
 
   // Buka rute khusus whatsapp-bot
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
