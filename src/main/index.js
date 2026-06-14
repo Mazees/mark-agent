@@ -9,6 +9,10 @@ import { url } from 'inspector'
 import yts from 'yt-search'
 import YTMusic from 'ytmusic-api'
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
+// Matikan semua optimasi throttling Chromium agar webview WhatsApp tidak tertidur di hasil Build (.exe)
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
 const setupYoutubeFix = () => {
   // Kita cegat semua request yang pergi ke YouTube
@@ -75,19 +79,18 @@ function createWindow() {
 
 let whatsappWindow = null
 
-function openWhatsappWindow(startHidden = false) {
+function openWhatsappWindow() {
   if (whatsappWindow) {
     if (whatsappWindow.isMinimized()) whatsappWindow.restore()
-    whatsappWindow.center()
     whatsappWindow.show()
     whatsappWindow.focus()
     return
   }
 
-  let windowOptions = {
+  whatsappWindow = new BrowserWindow({
     width: 1000,
     height: 700,
-    show: !startHidden,
+    show: true,
     autoHideMenuBar: true,
     icon: icon,
     webPreferences: {
@@ -97,30 +100,7 @@ function openWhatsappWindow(startHidden = false) {
       webSecurity: false,
       backgroundThrottling: false
     }
-  }
-
-  // Trik Off-screen: Agar <webview> dirender oleh Electron sejak awal
-  if (startHidden) {
-    windowOptions.x = -10000
-    windowOptions.y = -10000
-    windowOptions.show = true
-    windowOptions.skipTaskbar = true
-  }
-
-  whatsappWindow = new BrowserWindow(windowOptions)
-
-  if (startHidden) {
-    whatsappWindow.webContents.on('did-finish-load', () => {
-      // Tunggu 2 detik biarkan React dan Webview me-render sempurna off-screen
-      setTimeout(() => {
-        if (whatsappWindow && !whatsappWindow.isDestroyed()) {
-          whatsappWindow.hide()
-          whatsappWindow.center() // kembalikan ke tengah
-          whatsappWindow.setSkipTaskbar(false)
-        }
-      }, 2000)
-    })
-  }
+  })
 
   // Buka rute khusus whatsapp-bot
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -141,6 +121,13 @@ function openWhatsappWindow(startHidden = false) {
     whatsappWindow = null
   })
 }
+
+ipcMain.on('wa-ready-to-hide', () => {
+  if (whatsappWindow && !whatsappWindow.isDestroyed()) {
+    console.log('[Main] WhatsApp Web is ready. Hiding window to tray.')
+    whatsappWindow.hide()
+  }
+})
 
 ipcMain.on('open-whatsapp-window', () => openWhatsappWindow())
 

@@ -65,7 +65,7 @@ export const useMarkPlan = ({
           abortControllerRef.current.signal,
           isAction.web
         )
-        if (!answer) throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
+        if (!answer || !answer.answer) throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
 
         if (isSpeak) {
           playVoice(answer.answer)

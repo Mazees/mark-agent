@@ -20,7 +20,8 @@ const api = {
   sendWaReply: (text) => ipcRenderer.send('wa-send-reply', text),
   openWhatsappWindow: () => ipcRenderer.send('open-whatsapp-window'),
   sendRemoteMusicCommand: (command, payload) => ipcRenderer.send('remote-music-command', command, payload),
-  onExecuteMusicCommand: (callback) => ipcRenderer.on('execute-music-command', (event, command, payload) => callback(command, payload))
+  onExecuteMusicCommand: (callback) => ipcRenderer.on('execute-music-command', (event, command, payload) => callback(command, payload)),
+  sendWaReady: () => ipcRenderer.send('wa-ready-to-hide')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

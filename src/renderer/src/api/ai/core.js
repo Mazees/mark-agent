@@ -70,12 +70,30 @@ export const fetchAI = async (messages, signal, isSmallTask = false, jsonSchema 
         lastCloudFetchTime = Date.now()
       }
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(currentBody),
-        signal: signal
-      })
+      // --- TIMEOUT LOGIC ---
+      const timeoutMs = endpoint.includes('localhost') ? 120000 : 45000; // 120s for local, 45s for cloud
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(new Error('Request Timeout')), timeoutMs);
+
+      // Gabungkan signal user dengan signal timeout
+      const combinedSignal = signal ? AbortSignal.any([signal, abortController.signal]) : abortController.signal;
+
+      let response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(currentBody),
+          signal: combinedSignal
+        })
+      } catch (err) {
+        if (combinedSignal.aborted && combinedSignal.reason?.message === 'Request Timeout') {
+          throw new Error('Request Timeout: AI memakan waktu terlalu lama untuk membalas.')
+        }
+        throw err
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const textData = await response.text()

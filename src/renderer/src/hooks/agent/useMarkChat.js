@@ -48,7 +48,7 @@ export const useMarkChat = ({
         isAction.web
       )
 
-      if (!answer) throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
+      if (!answer || !answer.answer) throw new Error('Gagal mengurai jawaban dari Mark menjadi format JSON.')
 
       if (isSpeak) {
         playVoice(answer.answer)
@@ -109,7 +109,7 @@ export const useMarkChat = ({
       setIsLoading(false)
     } catch (error) {
       setIsLoading(false)
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' && !error.message?.includes('Timeout')) {
         setChatData((prev) => [...prev.filter((item) => !item.isThinking)])
         setChatData((prev) => prev.slice(0, -1))
       } else if (

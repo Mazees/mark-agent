@@ -12,6 +12,7 @@ export const useWhatsappBot = (webviewRef, ytMusic, searchWebviewRef) => {
 
   const isThinkingRef = useRef(isThinking)
   const lastMessageIdRef = useRef(null)
+  const hasReportedReadyRef = useRef(false)
 
   useEffect(() => {
     isThinkingRef.current = isThinking
@@ -227,6 +228,7 @@ Output WAJIB berupa JSON yang valid dengan struktur:
 
       } catch (error) {
         console.error('[Mark WhatsApp Bridge] Gagal membalas:', error)
+        await sendReplyMessage(webviewRef, `${isGroup ? `@${sender}` : ''} [Mark WhatsApp Bridge] Gagal membalas: ${error}`)
       } finally {
         setIsThinking(false)
         setCurrentSender('')
@@ -237,6 +239,18 @@ Output WAJIB berupa JSON yang valid dengan struktur:
       if (isThinkingRef.current) return
       
       try {
+        if (!hasReportedReadyRef.current && webviewRef.current) {
+          const isWaReady = await webviewRef.current.executeJavaScript(`
+            !!document.querySelector('div#pane-side')
+          `)
+          if (isWaReady) {
+            hasReportedReadyRef.current = true
+            if (window.api?.sendWaReady) {
+              window.api.sendWaReady()
+            }
+          }
+        }
+
         await checkUnreadAndClick(webviewRef)
         const messageData = await extractLatestMessage(webviewRef)
         
