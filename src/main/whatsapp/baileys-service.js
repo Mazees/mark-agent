@@ -138,33 +138,44 @@ export const startWhatsappBot = async (mainWindow) => {
 
       addMessage(jid, msg)
 
+      const isGroup = jid.endsWith('@g.us')
+      const senderJid = isGroup ? msg.key.participant : jid
+      const senderName = msg.pushName || msg.key.participant || jid
+
+      // Simpan pushName ke cache
+      if (msg.pushName && senderJid) {
+        contactCache[senderJid] = msg.pushName
+      }
+
       if (msg.key.fromMe) continue // jangan balas pesan sendiri
 
-      const isGroup = jid.endsWith('@g.us')
-      const senderName = msg.pushName || msg.key.participant || jid
       const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
 
       const quotedText = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || null
 
       // Kirim event ke UI monitoring
-      if (botWindow && !botWindow.isDestroyed()) {
-        const chatTitle = isGroup
-          ? (await sock.groupMetadata(jid).catch(() => ({ subject: jid }))).subject
-          : senderName
-        botWindow.webContents.send('wa:message', {
-          id: msg.key.id,
-          sender: senderName,
-          text: text || '[Media]',
-          quotedText: quotedText,
-          isGroup,
-          chatTitle,
-          time: new Date(msg.messageTimestamp * 1000).toLocaleTimeString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        })
+      const uiMsgPayload = {
+        id: msg.key.id,
+        sender: senderName,
+        text: text || '[Media]',
+        quotedText: quotedText,
+        isGroup,
+        chatTitle: isGroup ? (await sock.groupMetadata(jid).catch(() => ({ subject: jid }))).subject : senderName,
+        time: new Date(msg.messageTimestamp * 1000).toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        type: 'incoming'
       }
+
+      uiMessageHistory.push(uiMsgPayload)
+      if (uiMessageHistory.length > MAX_UI_HISTORY) uiMessageHistory.shift()
+
+      if (botWindow && !botWindow.isDestroyed()) {
+        botWindow.webContents.send('wa:message', uiMsgPayload)
+      }
+
       // Deteksi senderNumber (LID atau PN)
       let senderNumber
       let rawSenderJid = isGroup ? msg.key.participant : msg.key.remoteJid
@@ -290,14 +301,41 @@ const processMessage = async (msg, isGroup, senderName, text, jid) => {
     const adminDisplay = adminNumbers.length > 0 ? adminNumbers.join(', ') : 'Tidak ada admin'
 
     const chatTitle = isGroup ? (await sock.groupMetadata(jid).catch(()=>({subject: jid}))).subject : senderName
+    let processedText = text
+    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    for (const mJid of mentionedJids) {
+      const num = mJid.split('@')[0]
+      const cachedName = contactCache[mJid]
+      if (cachedName) {
+        const regex = new RegExp(`@${num}`, 'g')
+        processedText = processedText.replace(regex, `@${cachedName}`)
+      }
+    }
+
     const contextMsg = isGroup 
       ? `Kamu sedang berada di obrolan Grup WhatsApp bernama "${chatTitle}". Kamu menerima pesan dari salah satu anggota grup bernama "${senderName}" (Nomor WA: ${senderNumber}). Balas pesan tersebut secara santai layaknya teman grup.${historyContext}`
       : `Kamu sedang mengobrol Private di WhatsApp dengan "${senderName}" (Nomor WA: ${senderNumber}). Jawab pesan tersebut secara personal dan santai.${historyContext}`
 
     const quotedText =
-      msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || null
+      msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation ||
+      msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text ||
+      null
+      
+    const quotedParticipantJid = msg.message?.extendedTextMessage?.contextInfo?.participant || null
+    let quotedParticipant = 'seseorang'
+    if (quotedParticipantJid) {
+      const myPn = sock.user?.id?.split(':')[0] || sock.authState?.creds?.me?.id?.split(':')[0]
+      const senderNum = quotedParticipantJid.split('@')[0]
+      if (myPn && senderNum === myPn) {
+        quotedParticipant = 'dirimu sendiri (Mark)'
+      } else {
+        const cachedName = contactCache[quotedParticipantJid]
+        quotedParticipant = cachedName ? cachedName : `Nomor WA ${senderNum}`
+      }
+    }
+
     const quoteContext = quotedText
-      ? `\nSebagai konteks tambahan, pesan "${senderName}" adalah balasan untuk pesan ini: "${quotedText}". Nyambungkan balasanmu dengan konteks tersebut.`
+      ? `\nSebagai konteks tambahan, pesan "${senderName}" adalah balasan untuk pesan milik ${quotedParticipant} yang bunyinya: "${quotedText}". Nyambungkan balasanmu dengan konteks tersebut.`
       : ''
 
     // MINTA BAILEYS UNTUK CENTANG 2 / CENTANG BIRU (READ RECEIPT)
@@ -358,7 +396,7 @@ CONTOH 2 (Jika ngobrol biasa tanpa tools):
   }
 }`
       },
-      { role: 'user', content: text }
+      { role: 'user', content: processedText }
     ]
 
     const markSchema = {
@@ -453,30 +491,43 @@ CONTOH 2 (Jika ngobrol biasa tanpa tools):
     await sock.sendMessage(jid, { text: replyText }, { quoted: msg })
     await sock.sendPresenceUpdate('paused', jid).catch(() => {})
 
+    const uiReplyPayload = {
+      id: Date.now(),
+      sender: senderName,
+      text,
+      reply: replyText,
+      isGroup,
+      chatTitle,
+      time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      type: 'outgoing'
+    }
+
+    uiMessageHistory.push(uiReplyPayload)
+    if (uiMessageHistory.length > MAX_UI_HISTORY) uiMessageHistory.shift()
+
     if (botWindow && !botWindow.isDestroyed()) {
-      botWindow.webContents.send('wa:reply-sent', {
-        id: Date.now(),
-        sender: senderName,
-        text,
-        reply: replyText,
-        isGroup,
-        chatTitle,
-        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-      })
+      botWindow.webContents.send('wa:reply-sent', uiReplyPayload)
     }
   } catch (e) {
     console.error('[Baileys] Error processing message:', e)
     sock?.sendPresenceUpdate('paused', jid).catch(() => {})
+    
+    const uiErrorPayload = {
+      id: Date.now(),
+      sender: senderName,
+      text,
+      reply: `[Error AI: ${e.message}]`,
+      isGroup,
+      chatTitle: isGroup ? 'Grup' : senderName,
+      time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      type: 'outgoing'
+    }
+
+    uiMessageHistory.push(uiErrorPayload)
+    if (uiMessageHistory.length > MAX_UI_HISTORY) uiMessageHistory.shift()
+
     if (botWindow && !botWindow.isDestroyed()) {
-      botWindow.webContents.send('wa:reply-sent', {
-        id: Date.now(),
-        sender: senderName,
-        text,
-        reply: `[Error AI: ${e.message}]`,
-        isGroup,
-        chatTitle: isGroup ? 'Grup' : senderName,
-        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-      })
+      botWindow.webContents.send('wa:reply-sent', uiErrorPayload)
     }
   }
 }

@@ -15,6 +15,14 @@ export const useWhatsappBot = (ytMusic) => {
       if (initialStatus === 'qr' && qr) setQrCode(qr)
     })
 
+    if (window.api.waGetHistory) {
+      window.api.waGetHistory().then((history) => {
+        if (history && history.length > 0) {
+          setMessages(history)
+        }
+      })
+    }
+
     window.api.onWaQr((qr) => {
       setQrCode(qr)
       setStatus('qr')
@@ -31,11 +39,11 @@ export const useWhatsappBot = (ytMusic) => {
     })
 
     window.api.onWaMessage((data) => {
-      setMessages(prev => [...prev, { ...data, type: 'incoming' }])
+      setMessages(prev => [...prev, { type: 'incoming', ...data }])
     })
 
     window.api.onWaReplySent((data) => {
-      setMessages(prev => [...prev, { ...data, type: 'outgoing' }])
+      setMessages(prev => [...prev, { type: 'outgoing', ...data }])
       setIsThinking(false)
     })
 

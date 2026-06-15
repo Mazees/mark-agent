@@ -34,6 +34,7 @@ const api = {
   waStart: () => ipcRenderer.send('wa:start'),
   waStop: () => ipcRenderer.send('wa:stop'),
   waGetStatus: () => ipcRenderer.invoke('wa:get-status'),
+  waGetHistory: () => ipcRenderer.invoke('wa:get-history'),
   waLogout: () => ipcRenderer.invoke('wa:logout'),
   onWaQr: (cb) => ipcRenderer.on('wa:qr', (_, data) => cb(data)),
   onWaConnection: (cb) => ipcRenderer.on('wa:connection', (_, status) => cb(status)),

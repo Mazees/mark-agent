@@ -12,8 +12,11 @@ const WhatsappBot = () => {
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const timeout = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }, 150)
+    return () => clearTimeout(timeout)
+  }, [messages, isThinking])
 
   return (
     <div className="relative w-full h-full flex flex-col bg-base-100/50">
