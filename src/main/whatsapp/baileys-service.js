@@ -337,14 +337,25 @@ PENTING: Fitur musik INI HANYA BOLEH DIGUNAKAN JIKA DIMINTA OLEH ADMIN TERTENTU 
 - JIKA DAN HANYA JIKA lawan bicara SECARA EKSPLISIT menyuruhmu mencari di internet/google/web (contoh: "coba cariin di google", "browsing dong", "search di web"): gunakan action "web-search" dan isi query dengan kata kunci pencariannya.
 - Jika lawan bicara HANYA bertanya biasa tanpa menyuruh mencari di web: JANGAN gunakan web-search, jawab saja sebisamu secara natural. Gunakan web-search seminimal mungkin!
 
-# FORMATTING TEXT WAJIB:
-- WAJIB gunakan \\n\\n untuk memisahkan paragraf. Jangan membalas dengan satu baris panjang!
-- Gunakan list jika perlu.
+# FORMAT OUTPUT WAJIB (STRICT JSON):
+Kamu WAJIB mengembalikan HANYA JSON murni tanpa markdown, tanpa backtick (\`\`\`), dan tanpa komentar di dalam JSON.
 
-Output WAJIB berupa JSON yang valid dengan struktur:
+CONTOH 1 (Jika disuruh muter lagu):
 {
-  "answer": "Pesan balasanmu",
-  "command": { "action": "music-play", "query": "judul lagu" } // Isi null jika tidak butuh memutar musik
+  "answer": "Oke bos, lagunya diputar!",
+  "command": {
+    "action": "music-play",
+    "query": "judul lagunya"
+  }
+}
+
+CONTOH 2 (Jika ngobrol biasa tanpa tools):
+{
+  "answer": "Balasan biasamu di sini",
+  "command": {
+    "action": "none",
+    "query": ""
+  }
 }`
       },
       { role: 'user', content: text }
@@ -421,7 +432,7 @@ Output WAJIB berupa JSON yang valid dengan struktur:
             { role: 'assistant', content: rawResponse.content },
             {
               role: 'user',
-              content: `[SISTEM INTERNAL: HASIL PENCARIAN WEB]\nBerikut adalah data hasil pencarian web untuk "${response.command.query}":\n${JSON.stringify(searchResult)}\n\nTugasmu sekarang: Jawab pertanyaan awalku berdasarkan data di atas secara natural. DILARANG bilang "sedang mencari", karena datanya sudah kuberikan di atas!\n\nPENTING: Di bagian paling bawah jawabanmu, WAJIB sertakan daftar sumber artikel yang relevan (Tulis "*Sumber:*" lalu list judul dan URL-nya). Format output WAJIB JSON: { "answer": "jawaban akhirmu beserta list sumber", "command": null }.`
+              content: `[SISTEM INTERNAL: HASIL PENCARIAN WEB]\nBerikut adalah data hasil pencarian web untuk "${response.command.query}":\n${JSON.stringify(searchResult)}\n\nTugasmu sekarang: Jawab pertanyaan awalku berdasarkan data di atas secara natural. DILARANG bilang "sedang mencari", karena datanya sudah kuberikan di atas!\n\nPENTING: Di bagian paling bawah jawabanmu, WAJIB sertakan daftar sumber artikel yang relevan (Tulis "*Sumber:*" lalu list judul dan URL-nya). Format output WAJIB JSON: { "answer": "jawaban akhirmu beserta list sumber", "command": { "action": "none", "query": "" } }.`
             }
           ]
           const finalResponseRaw = await fetchAI(searchMessages, null, false, markSchema)

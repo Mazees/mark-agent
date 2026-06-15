@@ -274,12 +274,15 @@ app.whenReady().then(async () => {
     }
   })
 
+  let ytmusicInstance = null
   ipcMain.handle('search-music', async (event, query) => {
     try {
-      const ytmusic = new YTMusic()
-      await ytmusic.initialize()
+      if (!ytmusicInstance) {
+        ytmusicInstance = new YTMusic()
+        await ytmusicInstance.initialize()
+      }
 
-      const results = await ytmusic.search(query)
+      const results = await ytmusicInstance.search(query)
       const validSongs = results.filter(item => item.videoId)
 
       return validSongs.slice(0, 5).map((song) => ({

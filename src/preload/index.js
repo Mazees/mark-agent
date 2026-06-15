@@ -22,8 +22,14 @@ const api = {
   sendWaReply: undefined, // Removed
   openWhatsappWindow: undefined, // Removed
   sendRemoteMusicCommand: (command, payload) => ipcRenderer.send('remote-music-command', command, payload),
-  onExecuteMusicCommand: (callback) => ipcRenderer.on('execute-music-command', (event, command, payload) => callback(command, payload)),
-  onExecuteMusicCommandWa: (callback) => ipcRenderer.on('execute-music-command-wa', (event, command, payload) => callback(command, payload)),
+  onExecuteMusicCommand: (callback) => {
+    ipcRenderer.removeAllListeners('execute-music-command')
+    ipcRenderer.on('execute-music-command', (event, command, payload) => callback(command, payload))
+  },
+  onExecuteMusicCommandWa: (callback) => {
+    ipcRenderer.removeAllListeners('execute-music-command-wa')
+    ipcRenderer.on('execute-music-command-wa', (event, command, payload) => callback(command, payload))
+  },
   sendWaReady: undefined, // Removed
   waStart: () => ipcRenderer.send('wa:start'),
   waStop: () => ipcRenderer.send('wa:stop'),
