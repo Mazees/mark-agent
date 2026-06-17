@@ -11,6 +11,9 @@ let sock = null
 let currentStatus = 'disconnected'
 let qrDataUrl = null
 let botWindow = null
+const uiMessageHistory = []
+const MAX_UI_HISTORY = 50
+const contactCache = {}
 
 const updateStatus = (status, qr = null) => {
   currentStatus = status
@@ -48,7 +51,10 @@ export const stopWhatsappBot = () => {
 export const startWhatsappBot = async (mainWindow) => {
   botWindow = mainWindow
 
-  // Register IPC listener for sending WA messages manually
+  // Register IPC listener for sending WA messages
+  try { ipcMain.removeHandler('wa:get-history') } catch (e) {}
+  ipcMain.handle('wa:get-history', () => uiMessageHistory)
+
   if (!ipcMain.listenerCount('wa:send-message')) {
     ipcMain.on('wa:send-message', async (event, { jid, text }) => {
       if (sock) {

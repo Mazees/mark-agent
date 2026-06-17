@@ -1,3 +1,5 @@
+import { jsonrepair } from 'jsonrepair'
+
 const LM_STUDIO_OFFLINE_MESSAGE = 'LM Studio mati atau belum jalan. Nyalakan dulu di port 1234.'
 
 const createLMStudioOfflineError = (cause) => {
@@ -137,6 +139,37 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
           return executeFetch(fallbackBody, true, trafficRetryCount) // Retry sekali dengan json_object
         }
 
+        // Auto-retry fallback jika json_object gagal divalidasi (karena format markdown/extra teks)
+        if (
+          currentBody.response_format?.type === 'json_object' &&
+          (String(errorMsg).toLowerCase().includes('validate json') ||
+            String(errorMsg).toLowerCase().includes('failed to validate') ||
+            String(errorMsg).toLowerCase().includes('json') ||
+            response.status === 400 ||
+            response.status === 422)
+        ) {
+          console.log('[Auto-Retry] Model gagal menghasilkan JSON murni (strict JSON), fallback tanpa constraint response_format...')
+
+          let fallbackBody = { ...currentBody }
+          delete fallbackBody.response_format
+
+          // Jika awalnya tidak dari json_schema (isRetry === false), kita belum inject schema manual
+          if (!isRetry && jsonSchema) {
+            let fallbackMessages = fallbackBody.messages.map((m) => ({ ...m }))
+            const sysIdx = fallbackMessages.findIndex((m) => m.role === 'system')
+            const instruction = `\n\n[CRITICAL] YOU MUST RETURN ONLY VALID JSON THAT STRICTLY MATCHES THIS EXACT SCHEMA:\n${JSON.stringify(jsonSchema)}\n`
+
+            if (sysIdx >= 0) {
+              fallbackMessages[sysIdx].content += instruction
+            } else {
+              fallbackMessages.unshift({ role: 'system', content: instruction })
+            }
+            fallbackBody.messages = fallbackMessages
+          }
+
+          return executeFetch(fallbackBody, true, trafficRetryCount) // Retry tanpa constraint format
+        }
+
         const errorProvider =
           conf.aiProvider === 'groq'
             ? 'Groq API'
@@ -220,71 +253,19 @@ export const cleanAndParse = (rawResponse) => {
   try {
     if (!rawResponse) return null
 
-    // Bersihkan format markdown (```json dan ```) jika ada
-    let text = rawResponse
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim()
-
-    // 1. Cari batas JSON (Bisa Object {} atau Array [])
-    const firstBrace = text.indexOf('{')
-    const lastBrace = text.lastIndexOf('}')
-    const firstBracket = text.indexOf('[')
-    const lastBracket = text.lastIndexOf(']')
-
-    let firstIndex = -1
-    let lastIndex = -1
-
-    // Pilih yang muncul lebih dulu sebagai pembuka
-    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
-      firstIndex = firstBrace
-    } else if (firstBracket !== -1) {
-      firstIndex = firstBracket
-    }
-
-    // Pilih yang muncul paling akhir sebagai penutup
-    if (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) {
-      lastIndex = lastBrace
-    } else if (lastBracket !== -1) {
-      lastIndex = lastBracket
-    }
-
-    if (firstIndex === -1 || lastIndex === -1) return null
-
-    const jsonStr = text.substring(firstIndex, lastIndex + 1)
-
-    // Attempt 1: Parse langsung tanpa modifikasi (paling aman)
+    // 1. Parse langsung tanpa modifikasi (paling aman)
     try {
-      return JSON.parse(jsonStr)
+      return JSON.parse(rawResponse)
     } catch (_) {}
 
-    // Attempt 2: Ganti newline/tab/CR dengan SPASI (aman di dalam maupun luar string JSON)
-    //            lalu hapus control char sisanya
-    let cleaned = jsonStr
-      .replace(/\r?\n/g, ' ')
-      .replace(/\t/g, ' ')
-      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-
-    try {
-      return JSON.parse(cleaned)
-    } catch (_) {}
-
-    // Attempt 3: Perbaiki backslash invalid (e.g. path Windows)
-    cleaned = cleaned.replace(/\\(?!(["\\\/bfnrt]|u[a-fA-F0-9]{4}))/g, '\\\\')
-
-    try {
-      return JSON.parse(cleaned)
-    } catch (_) {}
-
-    // Attempt 4: Hapus trailing comma sebelum } atau ]
-    cleaned = cleaned.replace(/,\s*([}\]])/g, '$1')
-
-    return JSON.parse(cleaned)
+    // 2. Gunakan jsonrepair untuk membereskan json berantakan dari LLM
+    const repaired = jsonrepair(rawResponse)
+    return JSON.parse(repaired)
   } catch (error) {
-    console.error('Gagal Parse JSON:', error)
-    // Upaya terakhir: coba bersihkan BOM dan extract ulang
+    console.error('Gagal Parse JSON menggunakan jsonrepair:', error)
+    // Upaya terakhir: coba bersihkan BOM dan extract ulang manual
     try {
-      const lastResort = rawResponse.trim().replace(/^\xEF\xBB\xBF/, '')
+      const lastResort = String(rawResponse).trim().replace(/^\xEF\xBB\xBF/, '')
       const match = lastResort.match(/\{[\s\S]*\}/)
       return match ? JSON.parse(match[0]) : null
     } catch (e) {
