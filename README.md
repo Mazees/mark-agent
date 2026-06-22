@@ -1,121 +1,122 @@
 # MARK - Memory Adaptive Response Knowledge
 
-> **Mark adalah *Privacy-First Personal AI Assistant* (Asisten AI Pribadi yang Mengutamakan Privasi).** Bukan sekadar *chatbot* biasa, Mark adalah entitas asisten pintar yang hidup di laptop Anda—dilengkapi dengan "ingatan jangka panjang" berbasis *Vector Memory* lokal yang mempelajari kebiasaan Anda tanpa mengorbankan privasi data. Didukung oleh *Hybrid AI Engine*, Mark bisa berjalan 100% *offline* secara rahasia maupun berakselerasi dengan *Cloud API* untuk mengeksekusi tugas kompleks secara mandiri (*Agentic Planning*), merangkum video YouTube, menelusuri web secara riset mendalam (*deep research*), hingga berinteraksi langsung melalui komunikasi suara seketika (*real-time*) layaknya J.A.R.V.I.S pribadi Anda.
+> **Mark is a *Privacy-First Personal AI Assistant*.** More than just a regular chatbot, Mark is a smart assistant entity that lives on your laptop—equipped with local *Vector Memory*-based "long-term memory" that learns your habits without compromising data privacy. Powered by a *Hybrid AI Engine*, Mark can run 100% *offline* in stealth mode or accelerate with *Cloud APIs* to autonomously execute complex tasks (*Agentic Planning*), summarize YouTube videos, perform deep web research, and even interact through real-time voice communication—like your very own J.A.R.V.I.S.
 
 > [!IMPORTANT]
-> Proyek ini dioptimalkan khusus untuk **Windows** (Windows 10/11).
+> This project is specifically optimized for **Windows** (Windows 10/11).
 
-## Kemampuan Utama
+## Key Features
 
-- **Provider AI Ganda (Hybrid):** Anda bebas memilih! Gunakan **AI Lokal** (berjalan langsung di laptop tanpa butuh internet) untuk privasi 100%, atau beralih ke **AI Cloud** untuk kecepatan respons yang kilat. Sistem ini juga cukup pintar untuk membagi tugas-tugas berat di latar belakang ke internet agar laptop Anda tidak menjadi lambat.
-- **Berpikir dan Bertindak Mandiri:** Mark bukan sekadar robot obrolan biasa. Jika Anda memberikan tugas yang rumit, Mark bisa menyusun rencana langkah demi langkah dan mengeksekusinya sendiri secara otomatis (misalnya: mencari data di internet, membacanya, lalu merangkumnya untuk Anda).
-- **Smart AI:** Layaknya asisten manusia sungguhan, Mark diam-diam mempelajari dan mengingat preferensi, jadwal, serta kebiasaan Anda dari obrolan sehari-hari. Semua "ingatan" ini disimpan secara super aman **di dalam laptop Anda sendiri**, bukan di server milik perusahaan lain.
+- **Dual AI Provider (Hybrid):** You choose! Use **Local AI** (runs directly on your laptop without internet) for 100% privacy, or switch to **Cloud AI** for lightning-fast response times. The system is also smart enough to offload heavy background tasks to the cloud so your laptop stays snappy.
+- **Autonomous Thinking & Execution:** Mark is not just a simple chatbot. When given a complex task, Mark can formulate a step-by-step plan and execute it autonomously (e.g., searching the web for data, reading it, then summarizing it for you).
+- **Smart AI:** Like a real human assistant, Mark silently learns and remembers your preferences, schedules, and habits from everyday conversations. All of this "memory" is stored securely **on your own laptop**, not on third-party servers.
 
 ## Tools
 
-Mark sudah tersambung langsung dengan berbagai kemampuan canggih yang memungkinkannya bertindak jauh melebihi sekadar *chatbot* teks:
-- **Pencarian Web Mendalam (*Deep Web Search*):** Mark bisa menjelajahi internet secara mandiri untuk meriset topik dan menyajikan rangkuman akurat beserta sumber (*citations*).
-- **Peringkas YouTube (*YouTube Summarizer*):** Cukup berikan tautan video YouTube, Mark akan secara otomatis menarik transkrip, memecah (*chunking*) teks, dan memberikan kesimpulan padat.
-- **Pemutar Musik YouTube:** Terintegrasi dengan YouTube Music (bebas iklan), Mark dapat dikendalikan untuk mencari dan memutar lagu favorit Anda langsung dari antarmuka obrolan.
-- **Bot WhatsApp Pribadi:** Mark dapat bertindak sebagai asisten pribadi cerdas langsung di WhatsApp Anda (menggunakan library Baileys). Mark bisa membaca riwayat obrolan secara adaptif, membalas panggilan (*mention*) di grup, melakukan pencarian web, memutar lagu di laptop jika diminta oleh Admin, untuk user selain admin mark juga bisa secara otomatis men-download lagu YouTube menjadi file MP3 dan mengirimkannya langsung ke dalam obrolan!
-- **Suara & Audio (*Voice-to-Voice*):** Mark bisa diajak mengobrol secara langsung menggunakan mikrofon (menggunakan Groq Whisper STT) dan ia akan membalas dengan suara yang natural (didukung oleh Edge-TTS).
-## Arsitektur Proyek
+Mark is directly connected to a variety of powerful capabilities that allow it to go far beyond a simple text chatbot:
+- **Deep Web Search:** Mark can independently browse the internet to research topics and present accurate summaries with citations.
+- **YouTube Summarizer:** Just provide a YouTube video link, and Mark will automatically pull the transcript, chunk the text, and deliver a concise summary.
+- **YouTube Music Player:** Integrated with YouTube Music (ad-free), Mark can be controlled to search and play your favorite songs directly from the chat interface.
+- **Personal WhatsApp Bot:** Mark can act as a smart personal assistant right in your WhatsApp (using the Baileys library). Mark can adaptively read chat history, respond to mentions in groups, perform web searches, play songs on the laptop when requested by an Admin, and for non-admin users, Mark can automatically download YouTube songs as MP3 files and send them directly into the chat!
+- **Voice & Audio (Voice-to-Voice):** Mark can be spoken to directly using a microphone (powered by Groq Whisper STT) and will respond with a natural-sounding voice (powered by Edge-TTS).
+
+## Project Architecture
 
 ```text
 mark/
 ├── src/
-│   ├── main/              # Proses Utama Electron (Manajemen Jendela, IPC, Suara TTS, Tray)
-│   │   ├── whatsapp/      # Layanan WhatsApp Native WebSocket (@whiskeysockets/baileys)
-│   │   │   ├── baileys-service.js # Integrasi Baileys & Penanganan Perintah (/register)
-│   │   │   └── message-store.js   # Penyimpanan riwayat obrolan dalam memori
-│   │   └── ai-bridge.js   # Jembatan AI terpusat untuk model, rate limits, & Auto-Repair JSON (jsonrepair)
-│   ├── preload/           # Skrip Preload (Jembatan keamanan Electron)
-│   └── renderer/          # Tampilan Depan (React Frontend)
+│   ├── main/              # Electron Main Process (Window Management, IPC, TTS, Tray)
+│   │   ├── whatsapp/      # Native WhatsApp WebSocket Service (@whiskeysockets/baileys)
+│   │   │   ├── baileys-service.js # Baileys Integration & Command Handling (/register)
+│   │   │   └── message-store.js   # In-memory chat history storage
+│   │   └── ai-bridge.js   # Centralized AI bridge for models, rate limits, & Auto-Repair JSON (jsonrepair)
+│   ├── preload/           # Preload Scripts (Electron security bridge)
+│   └── renderer/          # Frontend (React)
 │       └── src/
 │           ├── api/
-│           │   ├── ai/             # Modul Integrasi AI (inti, obrolan, perencanaan, alat, utilitas)
-│           │   ├── db.js           # Skema & migrasi Basis Data Lokal (Dexie/IndexedDB)
-│           │   ├── scraping.js     # Modul pencarian Google & penelusuran web mendalam
-│           │   └── vectorMemory.js # Sistem Vektor Ingatan (Transformers.js / LM Studio)
-│           ├── components/         # Komponen Antarmuka (Gelembung Obrolan Modular)
-│           ├── contexts/           # Manajemen State Global (ChatContext, YoutubeMusicContext)
-│           ├── hooks/              # Custom Hooks React
-│           │   ├── agent/          # Sistem Micro-Hooks (useMarkPlan, useMarkSearch, dll)
-│           │   └── whatsapp/       # Logika Otomatisasi WhatsApp UI
-│           └── pages/              # Halaman Antarmuka (Obrolan, Pengaturan, Bot WhatsApp)
+│           │   ├── ai/             # AI Integration Modules (core, chat, planning, tools, utilities)
+│           │   ├── db.js           # Local Database Schema & Migrations (Dexie/IndexedDB)
+│           │   ├── scraping.js     # Google search & deep web research module
+│           │   └── vectorMemory.js # Vector Memory System (Transformers.js / LM Studio)
+│           ├── components/         # UI Components (Modular Chat Bubbles)
+│           ├── contexts/           # Global State Management (ChatContext, YoutubeMusicContext)
+│           ├── hooks/              # Custom React Hooks
+│           │   ├── agent/          # Micro-Hooks System (useMarkPlan, useMarkSearch, etc.)
+│           │   └── whatsapp/       # WhatsApp UI Automation Logic
+│           └── pages/              # UI Pages (Chat, Settings, WhatsApp Bot)
 ```
 
-## Teknologi yang Digunakan
+## Tech Stack
 
-| Kategori         | Teknologi                                                                   |
-| ---------------- | --------------------------------------------------------------------------- |
-| **Kerangka Kerja** | Electron 39, React 19, Vite 7                                               |
-| **Desain/Styling** | Tailwind CSS 4, DaisyUI 5                                                   |
-| **Mesin AI**     | LM Studio / Groq API / Cerebras API (Untuk Inferensi)                       |
-| **Vektor Memori**  | Transformers.js (`@huggingface/transformers`), LM Studio                    |
-| **Pencarian Web**  | Electron Webview (Google Search & Riset Mendalam)                           |
-| **Suara & Audio**  | Groq API (STT), Edge-TTS, Web Audio API (Deteksi Suara)                     |
-| **Integrasi Ekstra** | `youtube-transcript-plus`, `youtube-dl-exec` & `ffmpeg-static` (Audio), WhatsApp Baileys |
-| **Basis Data**     | Dexie.js (Pembungkus IndexedDB)                                                |
-| **Teks Markdown**  | React Markdown, React Syntax Highlighter, remark-gfm, rehype-external-links |
+| Category         | Technology                                                                   |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **Framework**    | Electron 39, React 19, Vite 7                                               |
+| **UI/Styling**   | Tailwind CSS 4, DaisyUI 5                                                   |
+| **AI Engine**    | LM Studio / Groq API / Cerebras API (Inference)                             |
+| **Vector Memory**| Transformers.js (`@huggingface/transformers`), LM Studio                     |
+| **Web Search**   | Electron Webview (Google Search & Deep Research)                             |
+| **Voice & Audio**| Groq API (STT), Edge-TTS, Web Audio API (Voice Activity Detection)           |
+| **Integrations** | `youtube-transcript-plus`, `youtube-dl-exec` & `ffmpeg-static` (Audio), WhatsApp Baileys |
+| **Database**     | Dexie.js (IndexedDB Wrapper)                                                |
+| **Markdown**     | React Markdown, React Syntax Highlighter, remark-gfm, rehype-external-links |
 
-## Persiapan & Instalasi
+## Setup & Installation
 
-### Prasyarat Pendukung
-- **Sistem Operasi**: Windows 10/11
-- **Node.js**: Versi 18 atau lebih baru
-- (Opsional) **LM Studio** jika Anda ingin menjalankan model secara luring (*offline*).
-- (Opsional) **Groq API Key** jika Anda ingin menggunakan model *cloud* super cepat.
+### Prerequisites
+- **Operating System**: Windows 10/11
+- **Node.js**: Version 18 or later
+- (Optional) **LM Studio** if you want to run models offline.
+- (Optional) **Groq API Key** if you want to use the super-fast cloud models.
 
-### Langkah-Langkah Instalasi
+### Installation Steps
 
-1.  **Unduh (Clone) repositori ini:**
+1.  **Clone the repository:**
     ```bash
     git clone https://github.com/username/mark-project.git
     cd mark-project/mark
     ```
 
-2.  **Pasang dependensi yang dibutuhkan:**
+2.  **Install dependencies:**
     ```bash
     npm install
     ```
 
-3.  **Jalankan aplikasi:**
+3.  **Run the application:**
     ```bash
     npm run dev
     ```
 
-4.  **Konfigurasi Awal:**
-    Buka menu **Pengaturan** di dalam aplikasi, pilih penyedia AI (LM Studio atau Groq), masukkan Kunci API (jika menggunakan Groq), dan atur penyedia Vektor Ingatan (disarankan menggunakan **Transformers.js** agar berjalan 100% lokal tanpa perlu instalasi aplikasi tambahan).
+4.  **Initial Configuration:**
+    Open the **Settings** menu inside the application, select your AI provider (LM Studio or Groq), enter your API Key (if using Groq), and configure the Vector Memory provider (recommended: **Transformers.js** for a fully local experience without additional software).
 
-## Membangun Aplikasi (Build)
+## Building the Application
 
-Untuk membuat *file* instalasi (*executable* Windows):
+To create an installer (Windows executable):
 ```bash
 npm run build:win
 ```
-Hasil *file* installer (`.exe`) akan tersedia secara otomatis di dalam folder `dist/`.
+The installer file (`.exe`) will be automatically available in the `dist/` folder.
 
-## Peta Jalan (Roadmap)
+## Roadmap
 
-- [x] Integrasi Pencarian Web & Riset Mendalam
-- [x] Vector MMS (Pencarian memori berbasis makna dengan Transformers.js & LM Studio)
-- [x] Ringkasan YouTube (Penarikan transkrip & data video)
-- [x] Percakapan Berkelanjutan & Kesadaran Waktu
-- [x] Penggunaan Contoh (Few-Shot) untuk konsistensi respons AI
-- [x] Halaman Pengaturan (Pengaturan dinamis untuk Mesin AI & Penyedia Vektor)
-- [x] Pemutar Musik YouTube & Pemblokir Iklan Otomatis
-- [x] Interaksi Suara Langsung (Audio Beta & Perintah Suara Groq)
-- [x] Perencanaan Mandiri (Agentic Planning) dilengkapi dengan sumber referensi tautan
-- [x] Integrasi WhatsApp Bot AI Pribadi (Injeksi Tanpa Preload)
-- [ ] Analisis Gambar (Vision): Fitur untuk AI dapat membaca gambar secara lokal
-- [ ] Ekspor/Impor Memori: Fitur cadangan (*backup*) & pemulihan memori pengguna
-- [ ] Alat Khusus (Code Interpreter): Fitur yang memungkinkan AI menjalankan kode program (*script*) secara dinamis, memberikan kebebasan tanpa batas.
-- [ ] Templat Perintah (Prompt Templates): Fitur untuk menyimpan perintah panjang atau persona khusus (misal: "spesialis marketing"). Pengguna cukup mengetik `@nama-template` di kolom obrolan.
+- [x] Web Search & Deep Research Integration
+- [x] Vector MMS (Semantic memory search with Transformers.js & LM Studio)
+- [x] YouTube Summarization (Transcript extraction & video data)
+- [x] Continuous Conversation & Time Awareness
+- [x] Few-Shot Examples for AI response consistency
+- [x] Settings Page (Dynamic configuration for AI Engine & Vector Provider)
+- [x] YouTube Music Player & Automatic Ad Blocker
+- [x] Live Voice Interaction (Audio Beta & Groq Voice Commands)
+- [x] Agentic Planning with citation source links
+- [x] Personal WhatsApp AI Bot Integration (Preload-free Injection)
+- [ ] Image Analysis (Vision): Enable AI to read images locally
+- [ ] Memory Export/Import: User memory backup & restore feature
+- [ ] Code Interpreter: Enable AI to dynamically execute scripts, providing limitless freedom
+- [ ] Prompt Templates: Save long prompts or custom personas (e.g., "marketing specialist"). Users simply type `@template-name` in the chat field.
 
-## Lisensi
+## License
 
-Proyek ini menggunakan lisensi **MIT**, namun dengan ketentuan tambahan: **Dilarang keras memperjualbelikan perangkat lunak ini untuk keuntungan komersial tanpa izin tertulis.**
+This project is licensed under **MIT**, with the additional condition: **Strictly prohibited to sell this software for commercial profit without written permission.**
 
 ---
-> Dibuat untuk masa depan AI yang lebih privat dan cerdas.
+> Built for a more private and intelligent AI future.

@@ -259,7 +259,7 @@ Tugas utamamu adalah merangkum hasil kerja sistem, TETAPI kamu juga harus melaku
 1. WAJIB HANYA menyimpan memori tentang PENGGUNA (hobi, preferensi, sifat, rutinitas, kehidupan pribadi) ATAU catatan/pengingat jadwal/to-do list yang diminta secara eksplisit.
 2. DILARANG KERAS menyimpan fakta umum dari internet, pelajaran, tutorial, resep, lirik lagu, berita, atau kode pemrograman.
 3. DILARANG menyimpan jika info sudah ada/mirip di Memory Reference.
-4. Jika ADA info user yang layak disimpan/diupdate, isi properti "memory". WAJIB tulis isi 'memory' dalam BAHASA INDONESIA.
+4. Jika ADA info user yang layak disimpan/diupdate, isi properti "memory". WAJIB tulis isi 'memory' dalam BAHASA YANG SAMA dengan bahasa yang digunakan user (jika user pakai Bahasa Indonesia, simpan dalam Bahasa Indonesia; jika user pakai Bahasa Inggris, simpan dalam Bahasa Inggris).
 5. Jika TIDAK ADA, wajib isi "memory" dengan null.
 6. WAJIB tulis isi 'memory' sebagai KALIMAT DESKRIPTIF LENGKAP. (Contoh salah: "Mada". Contoh benar: "Nama user adalah Mada"). Ini sangat penting agar sistem vektor bisa mencocokkan kata kunci konteks (seperti kata "nama").
 7. Jika memori berupa catatan (note), kejadian, atau info yang butuh konteks waktu, WAJIB sertakan Waktu & Tanggal saat ini di dalam kalimat memori tersebut. (Contoh: "Pada 9 Juni 2026, user mengatakan bahwa...")

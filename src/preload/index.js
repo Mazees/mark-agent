@@ -18,9 +18,6 @@ const api = {
     const url = require('url')
     return url.pathToFileURL(path.join(__dirname, filename)).href
   },
-  onWaNewMessage: undefined, // Removed
-  sendWaReply: undefined, // Removed
-  openWhatsappWindow: undefined, // Removed
   sendRemoteMusicCommand: (command, payload) => ipcRenderer.send('remote-music-command', command, payload),
   onExecuteMusicCommand: (callback) => {
     ipcRenderer.removeAllListeners('execute-music-command')

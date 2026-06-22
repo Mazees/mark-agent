@@ -8,6 +8,7 @@ export const YoutubeMusicProvider = ({ children }) => {
   const [musicUrl, setMusicUrl] = useState(DEFAULT_URL)
   const [isPlayerOpen, setIsPlayerOpen] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [playId, setPlayId] = useState(0)
   const webviewRef = useRef(null)
 
   // Poll webview every 1s to detect if music is playing
@@ -32,6 +33,7 @@ export const YoutubeMusicProvider = ({ children }) => {
 
   const playUrl = useCallback((url) => {
     setMusicUrl(url)
+    setPlayId(prev => prev + 1)
     setIsPlayerOpen(true)
   }, [])
 
@@ -55,6 +57,7 @@ export const YoutubeMusicProvider = ({ children }) => {
     musicUrl,
     setMusicUrl,
     playUrl,
+    playId,
     isPlayerOpen,
     setIsPlayerOpen,
     togglePlayer,

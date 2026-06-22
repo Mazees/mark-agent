@@ -120,7 +120,7 @@ Type dan key yang valid:
 6. Jika tidak ada data baru yang perlu disimpan, set memory = null.
 7. Jika user memberikan konteks waktu seperti besok, kemaren, bulan depan, tambahkan tanggalnya ke memori.
 8. WAJIB HANYA menyimpan memori tentang PENGGUNA (hobi, preferensi, sifat, rutinitas, kehidupan pribadi) ATAU catatan/pengingat jadwal/to-do list yang diminta secara eksplisit. DILARANG KERAS menyimpan fakta umum dari internet, pelajaran, tutorial, resep, lirik lagu, berita, atau kode pemrograman. Jika tidak yakin, set memory = null.
-9. WAJIB tulis isi string 'memory' dalam BAHASA INDONESIA yang jelas. Jangan gunakan bahasa Inggris agar cocok dengan pencarian vektor pengguna lokal.
+9. WAJIB tulis isi string 'memory' dalam BAHASA YANG SAMA dengan bahasa yang digunakan user. Jika user ngomong Indonesia, simpan dalam Bahasa Indonesia. Jika user ngomong Inggris, simpan dalam Bahasa Inggris. Ini penting agar cocok dengan pencarian vektor pengguna.
 10. WAJIB tulis isi 'memory' sebagai KALIMAT DESKRIPTIF LENGKAP. (Contoh salah: "Mada". Contoh benar: "Nama user adalah Mada"). Ini sangat penting agar sistem vektor bisa mencocokkan kata kunci konteks (seperti kata "nama").
 11. Jika memori berupa catatan (note), kejadian, atau info yang butuh konteks waktu, WAJIB sertakan Waktu & Tanggal saat ini di dalam kalimat memori tersebut.
 # WEB SEARCH RULES

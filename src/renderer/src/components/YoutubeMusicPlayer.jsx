@@ -2,17 +2,29 @@ import { useEffect, useState, useRef } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 
 export const YoutubeMusicPlayer = () => {
-  const { musicUrl, isPlayerOpen, setIsPlayerOpen, togglePlayer, webviewRef, playUrl, nextTrack, prevTrack, playPause } = useYoutubeMusic()
+  const { musicUrl, isPlayerOpen, setIsPlayerOpen, togglePlayer, webviewRef, playUrl, playId, nextTrack, prevTrack, playPause } = useYoutubeMusic()
   const [isReady, setIsReady] = useState(false)
-  const lastLoadedUrl = useRef(null)
+
+  // IPC listeners — register sekali saja saat mount, pakai ref agar selalu akses fungsi terbaru
+  const playUrlRef = useRef(playUrl)
+  const nextTrackRef = useRef(nextTrack)
+  const prevTrackRef = useRef(prevTrack)
+  const playPauseRef = useRef(playPause)
+
+  useEffect(() => {
+    playUrlRef.current = playUrl
+    nextTrackRef.current = nextTrack
+    prevTrackRef.current = prevTrack
+    playPauseRef.current = playPause
+  }, [playUrl, nextTrack, prevTrack, playPause])
 
   useEffect(() => {
     if (window.api?.onExecuteMusicCommand) {
       window.api.onExecuteMusicCommand((command, payload) => {
-        if (command === 'play' && payload) playUrl(payload)
-        else if (command === 'next') nextTrack()
-        else if (command === 'prev') prevTrack()
-        else if (command === 'toggle') playPause()
+        if (command === 'play' && payload) playUrlRef.current(payload)
+        else if (command === 'next') nextTrackRef.current()
+        else if (command === 'prev') prevTrackRef.current()
+        else if (command === 'toggle') playPauseRef.current()
       })
     }
     if (window.api?.onExecuteMusicCommandWa) {
@@ -21,16 +33,16 @@ export const YoutubeMusicPlayer = () => {
           window.api.searchMusic(payload).then(music => {
             if (music && music.length > 0) {
               const url = `https://music.youtube.com/watch?v=${music[0].id}`
-              playUrl(url)
+              playUrlRef.current(url)
             }
           })
         }
-        else if (command === 'next') nextTrack()
-        else if (command === 'prev') prevTrack()
-        else if (command === 'toggle') playPause()
+        else if (command === 'next') nextTrackRef.current()
+        else if (command === 'prev') prevTrackRef.current()
+        else if (command === 'toggle') playPauseRef.current()
       })
     }
-  }, [playUrl, nextTrack, prevTrack, playPause])
+  }, []) // Register sekali saja, tidak perlu re-register
 
   useEffect(() => {
     const webview = webviewRef.current
@@ -118,16 +130,17 @@ export const YoutubeMusicPlayer = () => {
   }, [])
 
   useEffect(() => {
-    if (isReady && webviewRef.current && musicUrl) {
-      if (lastLoadedUrl.current === musicUrl) return; // Mencegah double navigation
-
-      lastLoadedUrl.current = musicUrl; // Simpan status URL yang sedang diload
-
+    if (isReady && webviewRef.current && musicUrl && musicUrl !== 'https://music.youtube.com') {
       const load = async () => {
         try {
+          // Bangunkan webview yang mungkin frozen/throttled setelah idle lama
+          try {
+            await webviewRef.current.executeJavaScript('1')
+          } catch {
+            // Webview belum siap, skip
+          }
           await webviewRef.current.loadURL(musicUrl)
         } catch (e) {
-          // Abaikan error ERR_ABORTED (-3) karena ini wajar saat double navigation terjadi
           if (e.message && e.message.includes('ERR_ABORTED')) {
             console.log('Navigasi webview diaborsi (biasanya karena ditimpa navigasi baru)');
           } else {
@@ -137,7 +150,7 @@ export const YoutubeMusicPlayer = () => {
       }
       load()
     }
-  }, [musicUrl, isReady])
+  }, [musicUrl, playId, isReady])
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
