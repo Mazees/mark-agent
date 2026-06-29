@@ -36,17 +36,27 @@ export const generateVector = async (text) => {
       const output = await ext(text, { pooling: 'mean', normalize: true });
       return Array.from(output.data);
     } else {
-      const response = await fetch('http://localhost:1234/v1/embeddings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: text,
-          model: conf.lmStudioEmbedModel || "embeddinggemma-300m-qat"
-        })
-      });
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
       
-      const result = await response.json();
-      return result.data[0].embedding;
+      try {
+        const response = await fetch('http://localhost:1234/v1/embeddings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: text,
+            model: conf.lmStudioEmbedModel || "embeddinggemma-300m-qat"
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId)
+        const result = await response.json();
+        return result.data[0].embedding;
+      } catch (err) {
+        clearTimeout(timeoutId)
+        throw err
+      }
     }
   } catch (error) {
     console.error("Gagal generate vector:", error);

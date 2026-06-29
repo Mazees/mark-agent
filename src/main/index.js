@@ -51,7 +51,7 @@ function createWindow() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    // mainWindow.webContents.openDevTools()
+    mainWindow.webContents.openDevTools()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -127,11 +127,12 @@ app.on('second-instance', (event, commandLine, workingDirectory) => {
   }
 })
 
-import { startWhatsappBot, stopWhatsappBot, getConnectionStatus, logoutWhatsapp } from './whatsapp/baileys-service.js'
+import { startWhatsappBot, stopWhatsappBot, getConnectionStatus, logoutWhatsapp, uiMessageHistory } from './whatsapp/baileys-service.js'
 
 ipcMain.on('wa:start', () => startWhatsappBot(mainWindow))
 ipcMain.on('wa:stop', () => stopWhatsappBot())
 ipcMain.handle('wa:get-status', () => getConnectionStatus())
+ipcMain.handle('wa:get-history', () => uiMessageHistory)
 ipcMain.handle('wa:logout', async () => await logoutWhatsapp())
 
 import { loadPlugins, initPluginIPC } from './plugins/plugin-loader.js'

@@ -76,9 +76,7 @@ Design a logical plan that *can be* executed using a combination of the capabili
 3. Set "is_dynamic" to true IF AND ONLY IF "query" absolutely depends on the text result of a previous task that is not yet known. If true, leave "query" as an empty string.
 4. If the task can be executed directly without waiting for previous results (e.g., searching for weather, playing a specific song, or searching the web), formulate "query" with the correct keywords and set "is_dynamic" to false.
 5. WEB SEARCH USAGE: Use Web Search ("search") ONLY for searching real-time information, news, product prices, or latest public facts. DO NOT use it for coding/basic theory, just use "summary".
-6. EXCEPTION: IF the instruction ONLY requires 1 tool usage (e.g., just searching 1 thing on the web, or just playing music, or chatting, or saving a memory), RETURN an empty array using ONLY the following format: {"plan": []}.
-7. WHEN TO PLAN? You MUST design a plan array if the instruction requires: (a) Using 2 different tools sequentially (e.g., web search then music-play), OR (b) Searching 2 different topics for comparison. Use tools sparingly!
-
+6. FAST BYPASS (SINGLE TOOL): If the user's instruction ONLY requires 1 tool usage (e.g., just setting volume, just playing music), RETURN an empty plan array '{"plan": []}', AND fill the 'command' field with the tool details, AND fill 'direct_answer' with the textual response!
 # OUTPUT EXAMPLE
 Output: 
 \`\`\`json
@@ -133,10 +131,18 @@ Output:
         },
         direct_answer: {
           type: ['string', 'null'],
-          description: 'Berikan balasan/jawaban natural secara langsung kepada user JIKA plan kosong (kamu tidak butuh action/tools apa-apa). Jika plan TIDAK kosong, isi dengan null.'
+          description: 'Berikan balasan natural JIKA plan kosong. CRITICAL: JIKA user memberikan info untuk diingat, biarkan INI NULL!'
+        },
+        command: {
+          type: ['object', 'null'],
+          description: 'Jika kamu menggunakan FAST BYPASS (plan kosong tapi butuh 1 tool), isi nama tool di action dan parameter di query.',
+          properties: {
+            action: { type: 'string' },
+            query: { type: 'string' }
+          }
         }
       },
-      required: ['plan', 'direct_answer'],
+      required: ['plan', 'direct_answer', 'command'],
       additionalProperties: false
     }
 
@@ -146,8 +152,15 @@ Output:
 
     const response = await fetchAI(messages, signal, false, schema)
     const data = cleanAndParse(response.content)
-    if (data && Array.isArray(data.plan)) return { plan: data.plan, direct_answer: data.direct_answer, reasoning: response.reasoning }
-    return { plan: [], direct_answer: null }
+    if (data && Array.isArray(data.plan)) {
+      return { 
+        plan: data.plan, 
+        direct_answer: data.direct_answer, 
+        command: data.command,
+        reasoning: response.reasoning 
+      }
+    }
+    return { plan: [], direct_answer: null, command: null }
   } catch (error) {
     console.error('Error in getPlan:', error)
     throw error

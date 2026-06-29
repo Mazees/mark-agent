@@ -189,6 +189,11 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
              // Kalau disuruh nunggu 14 detik, kita nunggu 14.5 detik biar aman
              backoffDelay = Math.ceil(parseFloat(timeMatch[1]) * 1000) + 500; 
            }
+
+           if (backoffDelay > 10000) {
+             console.log(`[Rate Limit] Server minta tunggu ${backoffDelay}ms. Terlalu lama! Skip auto-retry.`);
+             throw new Error(`Rate limit reached: Server terlalu sibuk. Coba lagi nanti.`);
+           }
            
            // Trik Rahasia: Kalau Groq lagi sibuk, kita ganti/swap modelnya ke server cadangan mereka!
            let retryBody = { ...currentBody };
@@ -199,7 +204,7 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
              console.log(`[Model Swap] Model utama sibuk, Mark ganti haluan ke ${nextModel}`);
              if (onStatus) onStatus(`Server sibuk, ganti jalur ke model cadangan (${nextModel})...`);
            } else {
-             if (onStatus) onStatus(`Lalu lintas server AI sedang padat, menunggu jalur kosong...`);
+             if (onStatus) onStatus(`Server sibuk, mencoba ulang dalam ${Math.round(backoffDelay/1000)}s...`);
            }
 
            console.log(`[High Traffic Auto-Retry] Server sibuk (${response.status}). Menunggu ${backoffDelay}ms... (Percobaan ${trafficRetryCount + 1}/4)`);

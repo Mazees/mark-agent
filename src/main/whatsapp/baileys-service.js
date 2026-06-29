@@ -306,22 +306,22 @@ ipcMain.on('wa:agent-execution-done', async (event, data) => {
   const delayNgetik = Math.min(replyText.length * typingSpeed, 1500)
   await new Promise((r) => setTimeout(r, delayNgetik))
   
-  await safeSendMessage(jid, { text: replyText }, { quoted: msg })
-  if (sock) await sock.sendPresenceUpdate('paused', jid).catch(() => {})
-
-  // Update UI
+  // Update UI SEBELUM ngirim pesan, biar di PC kerasa instan!
   const isGroup = jid.endsWith('@g.us')
   const chatTitle = isGroup
     ? (await sock?.groupMetadata(jid).catch(() => ({ subject: jid }))).subject
     : 'Chat'
+  const originalText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
+
   const uiReplyPayload = {
     id: Date.now(),
     jid: jid,
     sender: 'Mark',
-    text: '',
+    text: originalText,
     reply: replyText,
     isGroup,
     chatTitle,
+    toolsUsed: result?.toolsUsed || [],
     time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
     type: 'outgoing'
   }
@@ -330,6 +330,10 @@ ipcMain.on('wa:agent-execution-done', async (event, data) => {
   if (botWindow && !botWindow.isDestroyed()) {
     botWindow.webContents.send('wa:reply-sent', uiReplyPayload)
   }
+
+  // Baru deh kirim via WA (kalau error 1006 tetep aman karena UI udah ke-update)
+  await safeSendMessage(jid, { text: replyText }, { quoted: msg })
+  if (sock) await sock.sendPresenceUpdate('paused', jid).catch(() => {})
 })
 
 ipcMain.removeAllListeners('wa:send-message')

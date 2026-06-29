@@ -194,7 +194,9 @@ function App() {
               </Routes>
             </div>
           </div>
-          {!isStandalone && <YoutubeMusicPlayer />}
+          <div style={{ display: isStandalone ? 'none' : 'block' }}>
+            <YoutubeMusicPlayer />
+          </div>
           <webview 
             id="global-ai-search-webview" 
             src="about:blank" 

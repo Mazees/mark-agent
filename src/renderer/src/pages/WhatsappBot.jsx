@@ -112,6 +112,15 @@ const WhatsappBot = () => {
                 >
                   {msg.type === 'outgoing' ? msg.reply : msg.text}
                 </Markdown>
+                {msg.type === 'outgoing' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {msg.toolsUsed.map((tool, i) => (
+                      <span key={i} className="badge badge-sm badge-accent badge-outline text-[10px] font-mono">
+                        ⚡ {tool}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             {msg.type === 'outgoing' && (

@@ -16,13 +16,59 @@ export const runWhatsappAgent = async (userInput, isAdmin, senderName, jid, isGr
     const contextMsg = (isGroup ? `Kamu di grup WA. Pengirim: ${senderName}.` : `Kamu di chat pribadi dengan ${senderName}.`) + `\n\nFITUR KHUSUS WA: Kamu punya tambahan action "screenshot" (tanpa parameter query) untuk mengambil tangkapan layar monitor PC/laptop jika user memintanya. Gunakan action "screenshot" dan BUKAN "system-command" jika user meminta screenshot.`
     const planResult = await getPlan(userInput, true, null, chatSessionHistory, memory, contextMsg)
     const planArray = planResult?.plan || []
-    
-    // Optimisasi: Jika plan kosong (tidak butuh tools), dan AI sudah memberikan direct_answer di getPlan,
-    // kita tidak perlu membuang 1 API call lagi ke getAnswer! Langsung kirim balasannya.
+
+    // Optimisasi Jalur Cepat (Direct Answer)
+    // Jika plan kosong (tidak butuh tools) DAN AI memutuskan untuk langsung membalas santai tanpa save memori,
+    // langsung return balasan tanpa harus hit API getAnswer kedua kalinya!
     if (planArray.length === 0 && planResult?.direct_answer) {
+      let executedTools = []
+      let finalCommand = { action: 'none', query: '' }
+
+      // Jika menggunakan Fast Bypass untuk 1 tool
+      if (planResult.command && planResult.command.action && planResult.command.action !== 'none') {
+        const cmdAction = planResult.command.action
+        const qry = planResult.command.query || ''
+        finalCommand = planResult.command
+
+        // Eksekusi khusus WA (mirip dengan block eksekusi utama)
+        if (cmdAction === 'screenshot') {
+          if (isAdmin) {
+            window.api.sendWaMessage(jid, "📸 _Siap bos, lagi motret layar laptop..._")
+            window.api.waTakeScreenshot(jid, msgId)
+            executedTools.push(cmdAction)
+          }
+        } else if (cmdAction.startsWith('music-')) {
+          if (cmdAction === 'music-play' && qry) {
+            if (isAdmin) {
+              window.api.waPlayMusicUi('play', qry)
+            } else {
+              window.api.sendWaMessage(jid, "_(⏳ MP3 lagunya lagi didownload ya, tunggu bentar...)_")
+              window.api.waDownloadMusic(jid, msgId, qry)
+            }
+          } else if (isAdmin) {
+            const c = cmdAction.replace('music-', '')
+            window.api.waPlayMusicUi(c, qry)
+          }
+          executedTools.push(qry ? `${cmdAction} ("${qry}")` : cmdAction)
+        } else if (cmdAction === 'search' || cmdAction === 'yt-summary' || cmdAction === 'yt-search') {
+          if (cmdAction === 'search') {
+            window.api.waRequestWebSearch({ id: Date.now(), query: qry })
+            executedTools.push(`${cmdAction} ("${qry}")`)
+          }
+        } else if (isAdmin) {
+          try {
+            await window.api.executePlugin(cmdAction, qry)
+            executedTools.push(qry ? `${cmdAction} ("${qry}")` : cmdAction)
+          } catch (e) {
+            console.error("WA Plugin Execution Error (Fast Bypass):", e)
+          }
+        }
+      }
+
       return {
         answer: planResult.direct_answer,
-        command: { action: 'none', query: '' }
+        command: finalCommand,
+        toolsUsed: executedTools
       }
     }
 
@@ -122,8 +168,20 @@ export const runWhatsappAgent = async (userInput, isAdmin, senderName, jid, isGr
     }
     
     // Panggil getAnswer dari chat.js
-    const finalAnswerObj = await getAnswer(userInput, [], chatSession, false, false, false, contextMsg)
-    
+    let finalAnswerObj = null
+    try {
+      finalAnswerObj = await getAnswer(userInput, [], chatSession, false, false, false, contextMsg)
+    } catch (e) {
+      if (planArray.length > 0) {
+        const executedNames = planArray.map(p => p.action).join(', ')
+        finalAnswerObj = {
+          answer: `✅ Siap! Perintah (${executedNames}) udah gue eksekusi ya.\n_(Btw ini balasan otomatis karena server AI utama lagi delay/sibuk)_`,
+          command: null
+        }
+      } else {
+        throw e
+      }
+    }
     // Handle memory updates from getAnswer
     if (finalAnswerObj?.memory) {
       const { insertMemory, updateMemory, deleteMemory } = await import('./db')
@@ -167,7 +225,7 @@ export const runWhatsappAgent = async (userInput, isAdmin, senderName, jid, isGr
         if (cmdAction === 'search') {
           window.api.waRequestWebSearch({ id: Date.now(), query: qry })
         }
-      } else {
+      } else if (isAdmin) {
         // Execute plugin
         try {
           await window.api.executePlugin(cmdAction, qry)
@@ -177,8 +235,18 @@ export const runWhatsappAgent = async (userInput, isAdmin, senderName, jid, isGr
       }
     }
     
+    const executedTools = planArray
+      .filter(p => p.action !== 'none')
+      .map(p => p.query ? `${p.action} ("${p.query}")` : p.action)
+
+    if (finalAnswerObj?.command && finalAnswerObj.command.action !== 'none') {
+      const c = finalAnswerObj.command
+      executedTools.push(c.query ? `${c.action} ("${c.query}")` : c.action)
+    }
+
     return {
-      answer: finalAnswerObj?.answer || "Selesai diproses."
+      answer: finalAnswerObj?.answer || "Selesai diproses.",
+      toolsUsed: executedTools
     }
 
   } catch (err) {
