@@ -7,7 +7,7 @@ import StatusIndicator from '../components/core/StatusIndicator';
 import FloatingMenu from '../components/core/FloatingMenu';
 import HistoryDrawer from '../components/core/HistoryDrawer';
 import ProcessPanel from '../components/core/ProcessPanel';
-import NowPlayingWidget from '../components/core/NowPlayingWidget';
+import { useYoutubeMusic } from '../contexts/YoutubeMusicContext';
 
 const MarkHome = () => {
   const {
@@ -26,6 +26,7 @@ const MarkHome = () => {
     inputSource,
     handleStop
   } = useChat();
+  const { isPlaying, currentTrack, isPlayerOpen } = useYoutubeMusic();
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [currentResponse, setCurrentResponse] = useState(null);
@@ -74,10 +75,10 @@ const MarkHome = () => {
             mood: lastItem.mood
           });
           
-          // Trigger speaking animation if TTS is on and not thinking
-          if (isSpeak && !lastItem.isThinking) {
+          // Trigger holographic beam (speaking animation) to project the text
+          if (!lastItem.isThinking) {
             setOrbStatus('speaking');
-            setTimeout(() => setOrbStatus('idle'), 5000); // Mock duration, ideally driven by actual TTS
+            setTimeout(() => setOrbStatus('idle'), 2500); // Project the beam for 2.5 seconds
           }
         }
       } else {
@@ -114,18 +115,43 @@ const MarkHome = () => {
       <FloatingMenu onOpenHistory={() => setIsHistoryOpen(true)} />
       <StatusIndicator notifications={notifications} />
       <ProcessPanel processes={activeProcesses} onDismiss={dismissProcess} />
-      <NowPlayingWidget />
 
       {/* Main Content Area */}
       <div className="relative z-10 flex flex-col items-center w-full h-full px-4 pt-[10vh] pb-40 overflow-y-auto custom-scrollbar">
         
         {/* The Orb */}
-        <OrbVisualizer status={orbStatus} intensity={0.5} />
+        <OrbVisualizer status={orbStatus} intensity={0.5} mood={currentResponse?.mood || 'neutral'} />
 
         {/* Dynamic Response Area */}
         <div className="w-full max-w-4xl mt-8 flex flex-col items-center justify-center transition-all duration-500 ease-in-out">
           {currentResponse && (
             <ResponseArea currentResponse={currentResponse} />
+          )}
+
+          {/* Centered Now Playing Info */}
+          {(isPlaying || isPlayerOpen) && currentTrack?.title && (
+            <div className="mt-8 flex flex-col items-center animate-[holo-project-in_0.5s_ease-out_forwards]">
+              <div className="relative group w-48 h-48 mb-4 rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-primary/20">
+                {currentTrack.thumbnail ? (
+                  <img src={currentTrack.thumbnail} alt="Album Art" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                ) : (
+                  <div className="w-full h-full bg-base-300 flex items-center justify-center">
+                    <span className="loading loading-bars text-primary loading-lg"></span>
+                  </div>
+                )}
+                {/* Audio visualizer overlay */}
+                {isPlaying && (
+                  <div className="absolute bottom-0 inset-x-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-center pb-4 gap-1">
+                    <span className="w-1.5 h-4 bg-primary rounded-t-full animate-[music-bar_1s_ease-in-out_infinite]" style={{ animationDelay: '0.1s' }} />
+                    <span className="w-1.5 h-6 bg-primary rounded-t-full animate-[music-bar_1.2s_ease-in-out_infinite]" style={{ animationDelay: '0.3s' }} />
+                    <span className="w-1.5 h-3 bg-primary rounded-t-full animate-[music-bar_0.8s_ease-in-out_infinite]" style={{ animationDelay: '0.2s' }} />
+                    <span className="w-1.5 h-5 bg-primary rounded-t-full animate-[music-bar_1.1s_ease-in-out_infinite]" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                )}
+              </div>
+              <h3 className="text-xl font-bold text-white text-center max-w-md truncate">{currentTrack.title}</h3>
+              <p className="text-sm text-white/50 text-center max-w-sm truncate mt-1">{currentTrack.artist}</p>
+            </div>
           )}
         </div>
 

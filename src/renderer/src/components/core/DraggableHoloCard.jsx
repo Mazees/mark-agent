@@ -20,7 +20,7 @@ const DraggableHoloCard = ({
       return () => clearTimeout(timer);
     } else {
       setAnimState('exiting');
-      const timer = setTimeout(() => setAnimState('hidden'), 200);
+      const timer = setTimeout(() => setAnimState('hidden'), 300);
       return () => clearTimeout(timer);
     }
   }, [isVisible]);
@@ -70,7 +70,7 @@ const DraggableHoloCard = ({
   const animationClass = animState === 'entering' 
     ? 'animate-[holo-project-in_0.3s_ease-out_forwards]'
     : animState === 'exiting'
-      ? 'animate-[holo-dismiss_0.2s_ease-in_forwards]'
+      ? 'animate-[holo-dismiss_0.3s_ease-in_forwards]'
       : '';
 
   const dragClass = isDragging ? 'scale-[1.02] rotate-1 shadow-2xl z-50' : 'shadow-lg z-40';

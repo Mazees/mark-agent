@@ -254,7 +254,12 @@ export const startWhatsappBot = async (mainWindow) => {
   sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
-    syncFullHistory: false
+    syncFullHistory: false,
+    keepAliveIntervalMs: 25000, // Ping server setiap 25 detik biar koneksi nggak diputus sepihak sama WA
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    retryRequestDelayMs: 2000,
+    markOnlineOnConnect: true // Paksa bot selalu terlihat online pas connect
   })
 
   sock.ev.on('creds.update', saveCreds)

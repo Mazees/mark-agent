@@ -53,7 +53,7 @@ function createWindow() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    mainWindow.webContents.openDevTools()
+    // mainWindow.webContents.openDevTools()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -330,7 +330,7 @@ app.whenReady().then(async () => {
         artist: song.artist?.name || 'Unknown',
         album: song.album?.name || 'Single',
         duration: song.duration,
-        thumbnail: song.thumbnails?.[song.thumbnails.length - 1]?.url
+        thumbnail: song.thumbnails?.[song.thumbnails.length - 1]?.url?.replace(/=w\d+-h\d+.*$/, '=w1080-h1080-l90-rj')?.replace(/\?sqp=.*$/, '')
       }))
     } catch (error) {
       console.error('Mark gagal mencari lagu:', error.message)

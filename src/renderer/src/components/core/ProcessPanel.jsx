@@ -1,9 +1,45 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import DraggableHoloCard from './DraggableHoloCard';
 import { WebSearchBubble } from '../Chat/WebSearchBubble';
 import { FaCheckCircle, FaSearch, FaListUl, FaBolt, FaCheck, FaChevronRight } from 'react-icons/fa';
 
 const ProcessPanel = ({ processes, onDismiss }) => {
+  const [renderedProcesses, setRenderedProcesses] = useState([]);
+
+  // Sync rendered processes with delayed unmount
+  useEffect(() => {
+    setRenderedProcesses(prev => {
+      const currentIds = processes.map(p => p.id);
+      
+      // Update existing or mark as exiting
+      let next = prev.map(rp => {
+        const updated = processes.find(p => p.id === rp.id);
+        if (updated) return { ...updated, isExiting: false };
+        if (!rp.isExiting) return { ...rp, isExiting: true };
+        return rp;
+      });
+
+      // Add new ones
+      processes.forEach(p => {
+        if (!prev.find(rp => rp.id === p.id)) {
+          next.push({ ...p, isExiting: false });
+        }
+      });
+
+      return next;
+    });
+  }, [processes]);
+
+  // Clean up exiting processes after animation
+  useEffect(() => {
+    const hasExiting = renderedProcesses.some(p => p.isExiting);
+    if (hasExiting) {
+      const timer = setTimeout(() => {
+        setRenderedProcesses(prev => prev.filter(p => !p.isExiting));
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [renderedProcesses]);
   // Auto-dismiss logic for 'done' status
   useEffect(() => {
     processes.forEach(proc => {
@@ -17,11 +53,11 @@ const ProcessPanel = ({ processes, onDismiss }) => {
     });
   }, [processes, onDismiss]);
 
-  if (!processes || processes.length === 0) return null;
+  if (!renderedProcesses || renderedProcesses.length === 0) return null;
 
   return (
     <div className="fixed inset-0 pointer-events-none z-40">
-      {processes.map((proc, index) => {
+      {renderedProcesses.map((proc, index) => {
         // Spawn even indices on the right, odd indices on the left
         const isRight = index % 2 === 0;
         const sideIndex = Math.floor(index / 2);
@@ -36,6 +72,7 @@ const ProcessPanel = ({ processes, onDismiss }) => {
                 title={proc.status === 'done' ? <><FaCheckCircle className="inline mr-1" /> Web Search Selesai</> : <><FaSearch className="inline mr-1" /> Web Search Aktif</>}
                 defaultPosition={{ x: isRight ? window.innerWidth - 440 - cascadeX : 40 + cascadeX, y: 80 + cascadeY }}
                 onClose={() => onDismiss(proc.id)}
+                isVisible={!proc.isExiting}
               >
                 <div className="w-[400px] flex items-center justify-center">
                   {/* Reuse existing WebSearchBubble logic, but styled differently inside */}
@@ -59,6 +96,7 @@ const ProcessPanel = ({ processes, onDismiss }) => {
                 title={isDone ? <><FaCheckCircle className="inline mr-1" /> Planning Selesai</> : <><FaListUl className="inline mr-1" /> Planning [{currentStep + 1}/{plan.length}]</>}
                 defaultPosition={{ x: isRight ? window.innerWidth - 390 - cascadeX : 40 + cascadeX, y: 80 + cascadeY }}
                 onClose={() => onDismiss(proc.id)}
+                isVisible={!proc.isExiting}
               >
                 <div className="w-[320px] flex flex-col gap-2">
                   {reasoning && (
@@ -109,6 +147,7 @@ const ProcessPanel = ({ processes, onDismiss }) => {
                 title={<><FaBolt className="inline mr-1" /> Plugin: {proc.data.action}</>}
                 defaultPosition={{ x: isRight ? window.innerWidth - 340 - cascadeX : 40 + cascadeX, y: 80 + cascadeY }}
                 onClose={() => onDismiss(proc.id)}
+                isVisible={!proc.isExiting}
               >
                 <div className="w-[280px] text-xs font-mono text-white/80">
                   <div className="mb-2">Mengeksekusi: <span className="text-success">{proc.data.query || proc.data.action}</span></div>

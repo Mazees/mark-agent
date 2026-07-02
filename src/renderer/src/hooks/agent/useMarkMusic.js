@@ -51,7 +51,7 @@ export const useMarkMusic = (setChatData, abortControllerRef, youtubeMusicTools)
     ])
 
     if (isAutoplay && selectedId) {
-      playUrl(`https://music.youtube.com/watch?v=${selectedId}`)
+      playUrl(`https://music.youtube.com/watch?v=${selectedId}`, selectedMusicList[0])
     }
   }
 

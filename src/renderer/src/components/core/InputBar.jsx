@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { FaMicrophone, FaStop, FaArrowUp, FaDesktop, FaWhatsapp } from 'react-icons/fa';
 
 const InputBar = ({ 
@@ -11,6 +11,17 @@ const InputBar = ({
   onStop,
   source = 'pc'
 }) => {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isLoading && inputRef.current) {
+      // setTimeout to ensure it runs after the disabled attribute is fully removed by React
+      setTimeout(() => {
+        if (inputRef.current) inputRef.current.focus();
+      }, 50);
+    }
+  }, [isLoading]);
+
   return (
     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50">
       <form 
@@ -33,6 +44,7 @@ const InputBar = ({
 
         {/* Input */}
         <input
+          ref={inputRef}
           type="text"
           value={value}
           onChange={onChange}

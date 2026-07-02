@@ -127,6 +127,7 @@ export const useMarkPlan = ({
               role: 'ai',
               content: answer.answer,
               reasoning: planData.reasoning,
+              mood: planData.mood || 'neutral',
               isMemorySaved: answer.memory?.action === 'insert' && answer.command?.action !== 'search',
               isMemoryUpdated: answer.memory?.action === 'update',
               isMemoryDeleted: answer.memory?.action === 'delete'
@@ -430,7 +431,7 @@ export const useMarkPlan = ({
         ...prev,
         { role: 'ai', content: 'Merangkum hasil akhir...', isThinking: true }
       ])
-      const { answer: finalAnswer, reasoning: finalReasoning, memory: finalMemory } = await getPlanConclusion(
+      const { answer: finalAnswer, reasoning: finalReasoning, memory: finalMemory, mood: finalMood } = await getPlanConclusion(
         userInput,
         contextSummaries,
         abortControllerRef.current.signal,
@@ -441,7 +442,7 @@ export const useMarkPlan = ({
       const uniqueSources = []
       const seenLinks = new Set()
       allSources.forEach((source) => {
-        const identifier = source.link || source.url || JSON.stringify(source)
+        const identifier = source.link || JSON.stringify(source)
         if (!seenLinks.has(identifier)) {
           seenLinks.add(identifier)
           uniqueSources.push(source)
@@ -458,6 +459,7 @@ export const useMarkPlan = ({
           role: 'ai', 
           content: finalAnswer, 
           reasoning: finalReasoning,
+          mood: finalMood || 'neutral',
           isMemorySaved: finalMemory?.action === 'insert',
           isMemoryUpdated: finalMemory?.action === 'update',
           isMemoryDeleted: finalMemory?.action === 'delete'
