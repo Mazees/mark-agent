@@ -443,7 +443,8 @@ export const useMarkPlan = ({
           setChatData((prev) => prev.filter((item) => !item.isThinking))
           
           if (res.success) {
-            summary = `Hasil Eksekusi Plugin ${act}: ${res.data}`
+            const resultStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+            summary = `Hasil Eksekusi Plugin ${act}: ${resultStr}`
           } else {
             summary = `Gagal mengeksekusi plugin ${act}: ${res.error}`
           }

@@ -22,7 +22,8 @@ export default function Plugins() {
     formData.actions.forEach((act, index) => {
       if (act.code) {
         try {
-          new Function('query', act.code)
+          const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
+          new AsyncFunction('query', act.code)
           errors[index] = null
         } catch (err) {
           errors[index] = err.message

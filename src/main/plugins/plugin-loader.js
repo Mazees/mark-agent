@@ -100,13 +100,7 @@ export const initPluginIPC = () => {
   ipcMain.handle('plugin:execute', async (event, action, query) => {
     if (pluginHandlers[action]) {
       try {
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Plugin execution timed out (10s)')), 10000)
-        })
-        const result = await Promise.race([
-          pluginHandlers[action]({ query }),
-          timeoutPromise
-        ])
+        const result = await pluginHandlers[action]({ query })
         return { success: true, data: result }
       } catch (err) {
         return { success: false, error: err.message }
