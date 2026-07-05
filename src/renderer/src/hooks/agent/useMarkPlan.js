@@ -294,7 +294,14 @@ export const useMarkPlan = ({
       let allSources = []
 
       // 2. Loop
+      let errorRetryCount = 0;
       for (let i = 0; i < planData.plan.length; i++) {
+        if (errorRetryCount >= 3) {
+          console.warn('[useMarkPlan] Maksimal retry error tercapai, menghentikan loop untuk mencegah infinite retry.')
+          contextSummaries.push(`[SYSTEM LOG] Proses dihentikan paksa karena 3 kali percobaan eksekusi gagal berturut-turut.`)
+          break
+        }
+
         const planItem = planData.plan[i]
         const task = typeof planItem === 'object' ? planItem.task : planItem
 
@@ -447,8 +454,24 @@ export const useMarkPlan = ({
           if (res.success) {
             const resultStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
             summary = `Hasil Eksekusi Plugin ${act}: ${resultStr}`
+            errorRetryCount = 0;
           } else {
             summary = `Gagal mengeksekusi plugin ${act}: ${res.error}`
+            errorRetryCount++
+            
+            // AUTO RECOVERY: Force dynamic retry to fix the error
+            const retryStep = {
+              task: `Memperbaiki error dari aksi sebelumnya`,
+              action: 'none',
+              query: '',
+              is_dynamic: true
+            }
+            
+            if (i === planData.plan.length - 1) {
+              planData.plan.push(retryStep)
+            } else {
+              planData.plan.splice(i + 1, 0, retryStep)
+            }
           }
           pushProcess({
             id: pluginProcessId,

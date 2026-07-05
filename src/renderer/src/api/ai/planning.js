@@ -317,6 +317,7 @@ CRITICAL RULE FOR PLUGINS: Only use tools/plugins when EXPLICITLY requested in t
 1. Output MUST be valid JSON with the format { "action": "action-name", "query": "string" }.
 2. Use "previousContext" to complete the "query". Example: if previousContext says "The hit song is Kangen", and the task is "Play the song", then the query should be "Kangen Dewa 19", not just "song".
 3. SPECIFICALLY for the "yt-summary" action, the query MUST contain the YouTube URL/Link from previousContext. Do not fill it with a video title or search keywords.
+4. MENTAL PANTANG MENYERAH (PROBLEM SOLVING): If previousContext shows a FAILED plugin execution (error), DO NOT just output "none" and give up! You are a smart executor. Analyze the error and TRY A WORKAROUND. For example, if PowerShell failed due to path/spaces, try alternative quoting or another command. If a folder already exists, try deleting it or using a different folder. TRY AT LEAST TWICE to fix errors before giving up.
 `
     const userPrompt = `
 # PREVIOUS CONTEXT (Summary of previous tasks)
