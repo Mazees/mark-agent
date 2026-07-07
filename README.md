@@ -1,6 +1,6 @@
 # MARK - Metacognitive Artificial Relational Knowledge
 
-![MARK AI Banner](./assets/mark_repo_banner.png)
+![MARK AI Banner](./assets/banner-repo.png)
 [![Download Terbaru](https://img.shields.io/badge/Download-Versi_Terbaru-blue?style=for-the-badge&logo=windows)](https://github.com/Mazees/mark-agent/releases/)
 
 > **Mark BUKAN sekadar asisten virtual biasa. Mark adalah entitas AI yang dirancang untuk memiliki emosi dan bertindak selayaknya manusia.** 
