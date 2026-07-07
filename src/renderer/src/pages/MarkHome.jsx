@@ -7,6 +7,7 @@ import StatusIndicator from '../components/core/StatusIndicator';
 import FloatingMenu from '../components/core/FloatingMenu';
 import HistoryDrawer from '../components/core/HistoryDrawer';
 import ProcessPanel from '../components/core/ProcessPanel';
+import ThoughtNeuralFlow from '../components/core/ThoughtNeuralFlow';
 import MemoryVisualizer from '../components/core/MemoryVisualizer';
 import musicCoverFallback from '../assets/music-cover.png';
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext';
@@ -164,9 +165,11 @@ const MarkHome = () => {
 
       {/* Main Content Area */}
       <div className="relative z-10 flex flex-col items-center w-full h-full px-4 pt-[10vh] pb-40 overflow-y-auto custom-scrollbar">
-        
-        {/* The Orb */}
-        <OrbVisualizer status={orbStatus} intensity={0.5} mood={currentResponse?.mood || 'neutral'} />
+        {/* The Orb & Neural Flow */}
+        <div className="relative flex items-center justify-center w-full max-w-3xl mt-10 mb-8 h-64">
+          <ThoughtNeuralFlow processes={activeProcesses} />
+          <OrbVisualizer status={orbStatus} intensity={0.5} mood={currentResponse?.mood || 'neutral'} />
+        </div>
 
         {/* Dynamic Response Area */}
         <div className="w-full max-w-4xl mt-8 flex flex-col items-center justify-center transition-all duration-500 ease-in-out">

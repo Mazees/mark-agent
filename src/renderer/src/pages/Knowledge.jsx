@@ -28,8 +28,8 @@ const Knowledge = () => {
   const loadData = useCallback(async () => {
     try {
       const allDocs = await getAllDocuments()
-      const uniqueDocs = Array.from(new Set(allDocs.map(d => d.docName))).map(name => {
-        const chunks = allDocs.filter(d => d.docName === name)
+      const uniqueDocs = Array.from(new Set(allDocs.map((d) => d.docName))).map((name) => {
+        const chunks = allDocs.filter((d) => d.docName === name)
         return {
           name,
           chunks: chunks.length,
@@ -85,11 +85,11 @@ const Knowledge = () => {
       text: `Yakin ingin menghapus dokumen "${docName}"? Mark tidak akan bisa mengingat informasi dari dokumen ini lagi.`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: 'oklch(var(--er))',
-      cancelButtonColor: 'oklch(var(--b3))',
+      confirmButtonColor: '#ff5f56',
+      cancelButtonColor: '#4b5563',
       confirmButtonText: 'Ya, Hapus',
       cancelButtonText: 'Batal',
-      background: 'oklch(var(--b2))',
+      background: '#1d232a',
       color: 'oklch(var(--bc))'
     })
 
@@ -97,15 +97,15 @@ const Knowledge = () => {
 
     try {
       const allDocs = await getAllDocuments()
-      const chunks = allDocs.filter(d => d.docName === docName)
-      
+      const chunks = allDocs.filter((d) => d.docName === docName)
+
       for (const chunk of chunks) {
         await deleteDocumentByName(docName)
         if (chunk.oramaId) {
           await deleteDocumentFromOrama(chunk.oramaId)
         }
       }
-      
+
       await loadData()
       Toast.fire({
         icon: 'success',
@@ -135,11 +135,18 @@ const Knowledge = () => {
         <div className="max-w-2xl mx-auto px-4 py-8 pb-32 space-y-8">
           {/* Page Header */}
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => navigate('/')} 
-              className="btn btn-ghost btn-sm btn-circle"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            <button onClick={() => navigate('/')} className="btn btn-ghost btn-sm btn-circle">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="1.2em"
+                height="1.2em"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
             <div>
               <h1 className="text-2xl font-bold">Document Knowledge</h1>
@@ -155,11 +162,14 @@ const Knowledge = () => {
                 <h2 className="card-title text-base font-bold uppercase tracking-wider opacity-70">
                   Upload Dokumen Baru
                 </h2>
-                <p className="text-sm opacity-50 mb-2">Pilih file PDF, TXT, MD, atau DOCX. Mark akan membaca dan memprosesnya menjadi bagian dari ingatannya (RAG).</p>
-                
+                <p className="text-sm opacity-50 mb-2">
+                  Pilih file PDF, TXT, MD, atau DOCX. Mark akan membaca dan memprosesnya menjadi
+                  bagian dari ingatannya (RAG).
+                </p>
+
                 <div className="form-control">
-                  <input 
-                    type="file" 
+                  <input
+                    type="file"
                     className="file-input file-input-bordered file-input-primary w-full"
                     accept=".pdf,.txt,.md,.docx"
                     onChange={handleFileUpload}
@@ -169,8 +179,14 @@ const Knowledge = () => {
 
                 {isUploading && (
                   <div className="w-full mt-4">
-                    <progress className="progress progress-primary w-full" value={uploadProgress} max="100"></progress>
-                    <p className="text-xs text-center mt-2 opacity-50">Memproses: {uploadProgress}%</p>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={uploadProgress}
+                      max="100"
+                    ></progress>
+                    <p className="text-xs text-center mt-2 opacity-50">
+                      Memproses: {uploadProgress}%
+                    </p>
                   </div>
                 )}
               </div>
@@ -194,15 +210,22 @@ const Knowledge = () => {
                 </div>
               ) : (
                 documents.map((doc, i) => (
-                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-base-200/50 backdrop-blur-sm p-4 rounded-xl hover:bg-base-300 transition-colors border border-base-content/5 gap-3">
+                  <div
+                    key={i}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between bg-base-200/50 backdrop-blur-sm p-4 rounded-xl hover:bg-base-300 transition-colors border border-base-content/5 gap-3"
+                  >
                     <div className="truncate pr-2">
-                      <p className="font-semibold truncate text-sm" title={doc.name}>{doc.name}</p>
+                      <p className="font-semibold truncate text-sm" title={doc.name}>
+                        {doc.name}
+                      </p>
                       <div className="flex gap-2 mt-1 items-center">
                         <span className="badge badge-xs badge-secondary">{doc.chunks} chunks</span>
-                        <span className="text-xs opacity-40">Diunggah {new Date(doc.timestamp).toLocaleDateString()}</span>
+                        <span className="text-xs opacity-40">
+                          Diunggah {new Date(doc.timestamp).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
-                    <button 
+                    <button
                       className="btn btn-outline btn-error btn-sm shrink-0"
                       onClick={() => handleDeleteDocument(doc.name)}
                     >

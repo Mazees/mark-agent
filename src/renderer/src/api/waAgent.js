@@ -1,14 +1,25 @@
 import { fetchAI } from './ai/core'
 import { getAllConfig } from './db'
 
-export const runWhatsappAgent = async (userInput, senderName, jid, isGroup, chatSessionHistory = []) => {
+export const runWhatsappAgent = async (
+  userInput,
+  senderName,
+  jid,
+  isGroup,
+  chatSessionHistory = []
+) => {
   try {
     const configs = await getAllConfig()
     const config = configs[0] || {}
     const waPersonality = `ATURAN PERSONA WHATSAPP:\n1. Bertingkahlah seperti teman manusia biasa, BUKAN AI.\n2. Balas dengan santai dan asik.\n3. DILARANG KERAS menawarkan bantuan secara klise (misal: "Ada yang bisa dibantu?").`
-    const contextMsg = (isGroup ? `Kamu di grup WA. Pengirim: ${senderName}.` : `Kamu di chat pribadi dengan ${senderName}.`) + '\n' + waPersonality
-    
-    const systemPrompt = `Kamu adalah Mark (Memory Adaptive Response Knowledge), sebuah entitas AI yang hidup di komputer/PC milik owner-mu.
+    const contextMsg =
+      (isGroup
+        ? `Kamu di grup WA. Pengirim: ${senderName}.`
+        : `Kamu di chat pribadi dengan ${senderName}.`) +
+      '\n' +
+      waPersonality
+
+    const systemPrompt = `Kamu adalah Mark (Metacognitive Artificial Relational Knowledge), sebuah entitas AI yang hidup di komputer/PC milik owner-mu.
 Sekarang kamu sedang membalas chat dari WhatsApp karena tubuhmu terhubung dengan bot WhatsApp.
 Kepribadian asli: ${config.personality || 'Santai'}
 ${contextMsg}
@@ -29,7 +40,7 @@ Lakukan balasan tunggal (single response). Jawab senatural mungkin dan langsung 
       ...chatSessionHistory,
       { role: 'user', content: userInput }
     ]
-    
+
     const response = await fetchAI(messages)
     return { answer: response.content }
   } catch (err) {

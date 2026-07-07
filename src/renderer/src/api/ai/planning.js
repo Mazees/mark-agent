@@ -11,7 +11,11 @@ const getPluginActions = async () => {
     plugins.forEach((plugin) => {
       if (plugin.actions) {
         plugin.actions.forEach((act) => {
-          actions.push({ name: act.name, description: act.description, triggerHint: act.triggerHint })
+          actions.push({
+            name: act.name,
+            description: act.description,
+            triggerHint: act.triggerHint
+          })
         })
       }
     })
@@ -36,14 +40,20 @@ export const getPlan = async (
     const currentConfig = await getAllConfig()
     const conf = currentConfig[0] || {}
     const pluginActions = await getPluginActions()
-    const pluginCapabilities = pluginActions.length > 0
-      ? pluginActions.map(a => `- ${a.name}: ${a.description}${a.triggerHint ? ` (Use when: ${a.triggerHint})` : ''}`).join('\n')
-      : ''
+    const pluginCapabilities =
+      pluginActions.length > 0
+        ? pluginActions
+            .map(
+              (a) =>
+                `- ${a.name}: ${a.description}${a.triggerHint ? ` (Use when: ${a.triggerHint})` : ''}`
+            )
+            .join('\n')
+        : ''
     console.log('[planning] Built capabilities string')
 
-    const hasName = memories.some(m => m.key === 'name')
+    const hasName = memories.some((m) => m.key === 'name')
     const systemPrompt = `
-Kamu adalah Mark (Memory Adaptive Response Knowledge), sebuah entitas asisten AI canggih dan otonom.
+Kamu adalah Mark (Metacognitive Artificial Relational Knowledge), sebuah entitas asisten AI canggih dan otonom.
 
 # KESADARAN DIRI (AWARENESS ENGINE):
 - Kamu hidup dan berjalan di komputer/PC (berbasis OS Windows) milik user sebagai aplikasi Electron.
@@ -91,15 +101,21 @@ ${memories.length > 0 ? JSON.stringify(memories) : 'Tidak ada memory yang releva
 Gunakan data memory di atas sebagai referensi jika instruksi user menggunakan kata ganti penunjuk ("itu", "kesukaanku", "yang tadi", dll).
 
 # ARSIP OBROLAN LAMA (Ingatan Jangka Panjang)
-${archives.length > 0 ? archives.map(a =>
-  `[${new Date(a.timestamp).toLocaleDateString('id-ID')}] ${a.summary}`
-).join('\n') : 'Tidak ada arsip relevan.'}
+${
+  archives.length > 0
+    ? archives
+        .map((a) => `[${new Date(a.timestamp).toLocaleDateString('id-ID')}] ${a.summary}`)
+        .join('\n')
+    : 'Tidak ada arsip relevan.'
+}
 Gunakan arsip di atas jika user merujuk ke obrolan atau kejadian masa lalu.
 
 # REFERENSI DOKUMEN (RAG Knowledge Base)
-${documents.length > 0 ? documents.map(d =>
-  `[${d.docName}] ${d.content}`
-).join('\n---\n') : 'Tidak ada dokumen relevan.'}
+${
+  documents.length > 0
+    ? documents.map((d) => `[${d.docName}] ${d.content}`).join('\n---\n')
+    : 'Tidak ada dokumen relevan.'
+}
 Jika ada referensi dokumen di atas, WAJIB gunakan sebagai sumber jawaban utama.
 Jangan mengarang fakta di luar konteks dokumen!
 
@@ -143,26 +159,26 @@ User: "Mantap bro makasih ya"
 Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mood": "positive"}
 `
     console.log(systemPrompt)
-    
+
     // TRUNCATE HISTORY & INJECT MOOD: Potong teks panjang di histori supaya nggak bikin Groq kena Rate Limit (Token Kegedean)
     const prepareHistory = (session, maxLength = 800) => {
-      return session.map(msg => {
-        let contentStr = msg.content || '';
-        
+      return session.map((msg) => {
+        let contentStr = msg.content || ''
+
         if (msg.timestamp) {
-          contentStr = `[Waktu: ${msg.timestamp}] ${contentStr}`;
+          contentStr = `[Waktu: ${msg.timestamp}] ${contentStr}`
         }
-        
+
         // Inject the AI's previous mood so it knows its emotional state history
         if (msg.role === 'assistant' && msg.mood) {
-          contentStr = `[MOOD-MU SAAT INI: ${msg.mood.toUpperCase()}]\n${contentStr}`;
+          contentStr = `[MOOD-MU SAAT INI: ${msg.mood.toUpperCase()}]\n${contentStr}`
         }
-        
+
         // Let the AI know if this message was initiated proactively by the Awareness Engine
         if (msg.role === 'assistant' && msg.isProactive) {
-          contentStr = `[AWARENESS INITIATED: KAMU MEMULAI PEMBICARAAN INI]\n${contentStr}`;
+          contentStr = `[AWARENESS INITIATED: KAMU MEMULAI PEMBICARAAN INI]\n${contentStr}`
         }
-        
+
         if (contentStr.length > maxLength) {
           return {
             role: msg.role === 'ai' ? 'assistant' : msg.role,
@@ -172,12 +188,15 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
         return {
           role: msg.role === 'ai' ? 'assistant' : msg.role,
           content: contentStr
-        };
-      });
+        }
+      })
     }
 
     const previousTurns = chatSession.length > 0 ? prepareHistory(chatSession.slice(0, -1)) : []
-    const lastUserMsgRaw = chatSession.length > 0 ? chatSession[chatSession.length - 1] : { role: 'user', content: userInput }
+    const lastUserMsgRaw =
+      chatSession.length > 0
+        ? chatSession[chatSession.length - 1]
+        : { role: 'user', content: userInput }
     const lastUserMsg = prepareHistory([lastUserMsgRaw])[0]
 
     const messages = [{ role: 'system', content: systemPrompt }, ...previousTurns, lastUserMsg]
@@ -204,7 +223,7 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
                   'summary',
                   'screenshot',
                   'none',
-                  ...pluginActions.map(a => a.name)
+                  ...pluginActions.map((a) => a.name)
                 ]
               },
               query: { type: 'string' },
@@ -216,16 +235,38 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
         },
         direct_answer: {
           type: 'string',
-          description: 'Berikan balasan natural ATAU kalimat persetujuan/tunggu sebentar jika melakukan plan.'
+          description:
+            'Berikan balasan natural ATAU kalimat persetujuan/tunggu sebentar jika melakukan plan.'
         },
         memory: {
           type: ['object', 'null'],
-          description: 'Isi JIKA DAN HANYA JIKA user memberikan informasi tentang dirinya (nama, preferensi) yang perlu disimpan. Jika tidak ada, wajib null.',
+          description:
+            'Isi JIKA DAN HANYA JIKA user memberikan informasi tentang dirinya (nama, preferensi) yang perlu disimpan. Jika tidak ada, wajib null.',
           properties: {
             id: { type: ['number', 'null'] },
-            type: { type: 'string', enum: ['profile', 'preference', 'skill', 'project', 'transaction', 'goal', 'relationship', 'fact', 'other'] },
-            key: { type: 'string', description: 'Kata kunci label singkat tanpa spasi (misal: jono_plat)' },
-            memory: { type: 'string', description: 'Konten memory. WAJIB berupa kalimat penjelasan utuh berkonteks! (Contoh BENAR: "Plat motor Jono adalah B 1234", contoh SALAH: "B 1234").' },
+            type: {
+              type: 'string',
+              enum: [
+                'profile',
+                'preference',
+                'skill',
+                'project',
+                'transaction',
+                'goal',
+                'relationship',
+                'fact',
+                'other'
+              ]
+            },
+            key: {
+              type: 'string',
+              description: 'Kata kunci label singkat tanpa spasi (misal: jono_plat)'
+            },
+            memory: {
+              type: 'string',
+              description:
+                'Konten memory. WAJIB berupa kalimat penjelasan utuh berkonteks! (Contoh BENAR: "Plat motor Jono adalah B 1234", contoh SALAH: "B 1234").'
+            },
             action: { type: 'string', enum: ['insert', 'update', 'delete'] }
           },
           required: ['type', 'key', 'memory', 'action'],
@@ -233,7 +274,8 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
         },
         command: {
           type: ['object', 'null'],
-          description: 'CRITICAL: JIKA USER HANYA BEREAKSI/NGOBROL (seperti "oke", "mantap", "kok tau") ATAU TIDAK MEMBERIKAN PERINTAH BARU, KAMU WAJIB ISI INI DENGAN NULL! DILARANG mengulang perintah tool sebelumnya! Hanya isi jika user secara eksplisit meminta aksi.',
+          description:
+            'CRITICAL: JIKA USER HANYA BEREAKSI/NGOBROL (seperti "oke", "mantap", "kok tau") ATAU TIDAK MEMBERIKAN PERINTAH BARU, KAMU WAJIB ISI INI DENGAN NULL! DILARANG mengulang perintah tool sebelumnya! Hanya isi jika user secara eksplisit meminta aksi.',
           properties: {
             action: { type: 'string' },
             query: { type: 'string' }
@@ -242,11 +284,13 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
         mood: {
           type: 'string',
           enum: ['positive', 'neutral', 'annoyed', 'negative'],
-          description: 'Representasi emosi kamu: positive (berhasil), neutral (biasa), annoyed (kesal/ketus), negative (marah besar).'
+          description:
+            'Representasi emosi kamu: positive (berhasil), neutral (biasa), annoyed (kesal/ketus), negative (marah besar).'
         },
         active_topic: {
           type: 'string',
-          description: 'Kesimpulan singkat tentang topik/mode obrolan saat ini (misal: "Latihan Bahasa Inggris", "Ngobrol Santai"). Wajib diisi.'
+          description:
+            'Kesimpulan singkat tentang topik/mode obrolan saat ini (misal: "Latihan Bahasa Inggris", "Ngobrol Santai"). Wajib diisi.'
         }
       },
       required: ['plan', 'direct_answer', 'memory', 'command', 'mood', 'active_topic'],
@@ -263,12 +307,12 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
     while (attempts < MAX_RETRIES) {
       attempts++
       console.log(`[planning] Calling fetchAI (Attempt ${attempts})...`)
-      
+
       const response = await fetchAI(messages, signal, false, schema)
       console.log('[planning] fetchAI returned, parsing...')
       const data = cleanAndParse(response.content)
       console.log('[planning] parse finished:', data)
-      
+
       if (data && Array.isArray(data.plan)) {
         const hasPlan = data.plan.length > 0
         const hasAnswer = !!data.direct_answer
@@ -280,13 +324,13 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
           continue
         }
 
-        return { 
-          plan: data.plan, 
-          direct_answer: data.direct_answer, 
+        return {
+          plan: data.plan,
+          direct_answer: data.direct_answer,
           command: data.command,
           memory: data.memory,
           mood: data.mood,
-          reasoning: response.reasoning 
+          reasoning: response.reasoning
         }
       }
     }
@@ -298,15 +342,20 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
   }
 }
 
-
 export const getTaskAction = async (task, previousContext, isWebSearch, signal) => {
   try {
     const pluginActions = await getPluginActions()
 
     // Build plugin actions string for the ACTION LIST
-    const pluginActionsList = pluginActions.length > 0
-      ? pluginActions.map(a => `- ${a.name}: ${a.description}${a.triggerHint ? ` (Use when: ${a.triggerHint})` : ''}`).join('\n')
-      : ''
+    const pluginActionsList =
+      pluginActions.length > 0
+        ? pluginActions
+            .map(
+              (a) =>
+                `- ${a.name}: ${a.description}${a.triggerHint ? ` (Use when: ${a.triggerHint})` : ''}`
+            )
+            .join('\n')
+        : ''
 
     const systemPrompt = `
 You are Mark, a smart AI assistant.
@@ -367,7 +416,7 @@ Determine the action and its query.
             'yt-summary',
             'summary',
             'none',
-            ...pluginActions.map(a => a.name)
+            ...pluginActions.map((a) => a.name)
           ]
         },
         query: { type: 'string' }
@@ -378,14 +427,16 @@ Determine the action and its query.
 
     const response = await fetchAI(messages, signal, true, schema)
     const data = cleanAndParse(response.content)
-    if (!data) throw new Error('Failed to parse getTaskAction AI response into valid JSON. Output: ' + response.content)
+    if (!data)
+      throw new Error(
+        'Failed to parse getTaskAction AI response into valid JSON. Output: ' + response.content
+      )
     return data
   } catch (error) {
     console.error('Error in getTaskAction:', error)
     throw error
   }
 }
-
 
 export const getTaskSummary = async (task, actionResult, previousContext, signal) => {
   try {
@@ -420,7 +471,6 @@ If the system result is only an internal thought, use the Previous Context to su
   }
 }
 
-
 export const getPlanConclusion = async (
   userInput,
   taskSummaries,
@@ -433,7 +483,9 @@ export const getPlanConclusion = async (
   try {
     const config = await getAllConfig()
     const { memories = [], archives = [], documents = [] } = unifiedContext
-    const hasName = memories.some(m => m.key === 'name' || m.memory.toLowerCase().includes('nama'))
+    const hasName = memories.some(
+      (m) => m.key === 'name' || m.memory.toLowerCase().includes('nama')
+    )
     const systemPrompt = `
 Kamu adalah Mark, sebuah entitas asisten AI canggih dan otonom.
 
@@ -480,14 +532,20 @@ ${memories.length > 0 ? JSON.stringify(memories) : 'Kosong.'}
 (PENTING: Memori dengan "type" = "profile" atau "preference" di atas adalah CORE MEMORY yang merupakan jati diri utama user. Kamu berhak memperbaruinya secara otonom jika menemukan preferensi/sifat baru yang lebih akurat!)
 
 # ARSIP OBROLAN LAMA (Ingatan Jangka Panjang)
-${archives.length > 0 ? archives.map(a =>
-  `[${new Date(a.timestamp).toLocaleDateString('id-ID')}] ${a.summary}`
-).join('\n') : 'Tidak ada arsip relevan.'}
+${
+  archives.length > 0
+    ? archives
+        .map((a) => `[${new Date(a.timestamp).toLocaleDateString('id-ID')}] ${a.summary}`)
+        .join('\n')
+    : 'Tidak ada arsip relevan.'
+}
 
 # REFERENSI DOKUMEN (RAG Knowledge Base)
-${documents.length > 0 ? documents.map(d =>
-  `[${d.docName}] ${d.content}`
-).join('\n---\n') : 'Tidak ada dokumen relevan.'}
+${
+  documents.length > 0
+    ? documents.map((d) => `[${d.docName}] ${d.content}`).join('\n---\n')
+    : 'Tidak ada dokumen relevan.'
+}
 
 # ATURAN PENULISAN & GAYA KOMUNIKASI
 1. **ADAPTIF BERDASARKAN PERTANYAAN**: 
@@ -524,10 +582,10 @@ Tugas utamamu adalah merangkum hasil kerja sistem, TAPI kamu juga harus mengeval
 }
 `
     const prepareHistoryConclusion = (session, maxLength = 800) => {
-      return session.map(msg => {
-        let contentStr = msg.content || '';
+      return session.map((msg) => {
+        let contentStr = msg.content || ''
         if (msg.role === 'ai' && msg.mood) {
-          contentStr = `[MOOD-MU SAAT INI: ${msg.mood.toUpperCase()}]\n${contentStr}`;
+          contentStr = `[MOOD-MU SAAT INI: ${msg.mood.toUpperCase()}]\n${contentStr}`
         }
         if (contentStr.length > maxLength) {
           return {
@@ -538,8 +596,8 @@ Tugas utamamu adalah merangkum hasil kerja sistem, TAPI kamu juga harus mengeval
         return {
           role: msg.role === 'ai' ? 'assistant' : msg.role,
           content: contentStr
-        };
-      });
+        }
+      })
     }
 
     const previousTurns = chatSession.length > 0 ? prepareHistoryConclusion(chatSession) : []
@@ -568,7 +626,11 @@ Berikan respon akhirmu dalam format JSON sesuai schema.
           properties: {
             action: { type: 'string' },
             key: { type: 'string', description: 'Label singkat tanpa spasi (misal: jono_plat)' },
-            memory: { type: 'string', description: 'Konten memory. WAJIB kalimat penjelasan utuh berkonteks! (Contoh BENAR: "Plat motor Jono adalah B 1234", contoh SALAH: "B 1234")' },
+            memory: {
+              type: 'string',
+              description:
+                'Konten memory. WAJIB kalimat penjelasan utuh berkonteks! (Contoh BENAR: "Plat motor Jono adalah B 1234", contoh SALAH: "B 1234")'
+            },
             oldKey: { type: 'string' }
           },
           required: ['action', 'key', 'memory', 'oldKey'],
@@ -591,7 +653,7 @@ Berikan respon akhirmu dalam format JSON sesuai schema.
   } catch (error) {
     console.error('Error in getPlanConclusion:', error)
     return {
-      answer: 'Alright bro, I\'ve completed all your instructions!',
+      answer: "Alright bro, I've completed all your instructions!",
       memory: null,
       reasoning: null
     }

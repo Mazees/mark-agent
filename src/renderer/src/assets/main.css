@@ -467,3 +467,5 @@ html {
     height: 16px;
   }
 }
+
+@keyframes slide-right { 0% { left: 0%; opacity: 0; } 50% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
