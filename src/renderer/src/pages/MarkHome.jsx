@@ -7,6 +7,7 @@ import StatusIndicator from '../components/core/StatusIndicator';
 import FloatingMenu from '../components/core/FloatingMenu';
 import HistoryDrawer from '../components/core/HistoryDrawer';
 import ProcessPanel from '../components/core/ProcessPanel';
+import MemoryVisualizer from '../components/core/MemoryVisualizer';
 import musicCoverFallback from '../assets/music-cover.png';
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext';
 import { useVAD } from '../hooks/useVAD';
@@ -31,9 +32,16 @@ const MarkHome = () => {
   const { isPlaying, currentTrack, isPlayerOpen } = useYoutubeMusic();
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isMemoryMapOpen, setIsMemoryMapOpen] = useState(false);
   const [currentResponse, setCurrentResponse] = useState(null);
   const [showMusicWidget, setShowMusicWidget] = useState(false);
   const [isMusicAnimatingOut, setIsMusicAnimatingOut] = useState(false);
+
+  useEffect(() => {
+    const handleOpenMap = () => setIsMemoryMapOpen(true);
+    window.addEventListener('open-memory-map', handleOpenMap);
+    return () => window.removeEventListener('open-memory-map', handleOpenMap);
+  }, []);
 
   const handleVoiceTranscript = (text) => {
     setMessage(text);
@@ -224,6 +232,11 @@ const MarkHome = () => {
       <HistoryDrawer 
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
+      />
+
+      <MemoryVisualizer 
+        isOpen={isMemoryMapOpen}
+        onClose={() => setIsMemoryMapOpen(false)}
       />
     </div>
   );

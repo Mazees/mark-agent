@@ -7,7 +7,8 @@ import {
   FaMicrophoneAlt,
   FaHistory,
   FaWhatsapp,
-  FaDatabase
+  FaDatabase,
+  FaNetworkWired
 } from 'react-icons/fa'
 
 const FloatingMenu = ({ onOpenHistory, waStatus = 'disconnected' }) => {
@@ -70,10 +71,14 @@ const FloatingMenu = ({ onOpenHistory, waStatus = 'disconnected' }) => {
           </button>
 
           <button
-            onClick={() => handleNav('/archives')}
+            onClick={() => {
+              // Custom event to open memory map in MarkHome
+              window.dispatchEvent(new CustomEvent('open-memory-map'));
+              setIsOpen(false);
+            }}
             className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-white/10 transition-colors text-white/80 hover:text-white text-sm font-medium text-left"
           >
-            <FaHistory className="text-primary" /> Chat Archives
+            <FaNetworkWired className="text-primary" /> Memory Map
           </button>
 
           <button
