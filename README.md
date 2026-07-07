@@ -10,10 +10,13 @@
 
 ## Fitur Unggulan
 
-- **Emosi & Persona Dinamis (Dynamic Mood Engine):** Mark bukan sekadar program yang merespons secara datar. Sistem ini memiliki 4 tingkat emosi (`positive`, `neutral`, `annoyed`, `negative`) yang secara visual memengaruhi antarmuka (Orb) serta gaya bahasanya. Berkat arsitektur *Memory-Aware*, Mark dapat mengingat interaksi sebelumnya. Jika percakapan berjalan tidak menyenangkan, emosinya dapat bereskalasi. Mark menggunakan bahasa gaul Indonesia yang natural, menghindari gaya bahasa kaku khas AI pada umumnya.
-- **Dual AI Provider (Hybrid):** Anda memegang kendali penuh. Gunakan **Local AI** (berjalan langsung di PC Anda tanpa koneksi internet) untuk privasi absolut, atau alihkan ke **Cloud AI** (Groq/Cerebras) untuk kecepatan respons tingkat tinggi. Sistem secara cerdas mampu mengalihkan beban komputasi berat ke *cloud* untuk menjaga performa PC Anda.
-- **Asisten Bot WhatsApp Mandiri:** Mark mampu memproses tugas rumit melalui WhatsApp dengan menyusun rencana terstruktur, mengeksekusi langkah demi langkah (mencari data, membaca, lalu merangkum), dan memberikan laporan akhir kepada Anda. Seluruh proses ini dikendalikan oleh modul AI mandiri (`waAutonomous.js`).
-- **Memori Vektor Cerdas (Vector MMS):** Layaknya asisten di dunia nyata, Mark secara diam-diam mempelajari preferensi, jadwal, dan kebiasaan Anda dari percakapan sehari-hari. Seluruh data "ingatan" ini disimpan secara enkripsi **di dalam perangkat Anda sendiri** (menggunakan Dexie & IndexedDB), dan tidak pernah dikirimkan ke server pihak ketiga.
+- **Infinite Memory & Injection Knowledge RAG:** Sistem Vector Retrieval-Augmented Generation (RAG) kini berjalan secara *offline*. Mark dapat menyimpan riwayat memori obrolan masif tanpa batas dan pengguna dapat menambahkan pengetahuan dari sebuah file document tanpa membebani *context window* utama LLM.
+- **Visualisasi Jaringan Otak (Memory Visualizer) (Baru v3.0):** Dilengkapi dengan UI *Live Feed* "Mark Neural Core". Pengguna dapat melihat secara *real-time* grafis Neural Network yang menampilkan jaringan *Chat History*, *Knowledge Base*, hingga *Document Vault*.
+- **Live Thought Process (Neural Flow) (Baru v3.0):** Perhatikan Mark berpikir! Setiap kali sistem mengeksekusi rencana (*Agentic Planning*), antarmuka akan memancarkan animasi *3D Neuron* yang terbang mengorbit inti pikiran (Orb) untuk interaktivitas tingkat *Sci-Fi*.
+- **Emosi & Persona Dinamis (Dynamic Mood Engine):** Mark bukan sekadar program yang merespons secara datar. Sistem ini memiliki tingkat emosi yang secara visual memengaruhi antarmuka (Orb) serta gaya bahasanya berdasarkan perlakuan pengguna (Tone Matching).
+- **Dual AI Provider (Hybrid) & Custom API:** Anda memegang kendali penuh. Gunakan **Local AI** (berjalan langsung di PC Anda), atau alihkan ke **Cloud AI** (Groq/Cerebras). Ditambah dukungan Custom OpenAI-Compatible API untuk fleksibilitas mutlak.
+- **Asisten Bot WhatsApp Mandiri:** Mark mampu memproses tugas rumit melalui WhatsApp dengan menyusun rencana terstruktur, mengeksekusi langkah demi langkah (mencari data, merangkum, dll), dan memberi laporan akhir berkat arsitektur `waAutonomous.js`.
+- **Proaktif dengan Awareness Engine:** Sistem Mark tidak hanya pasif merespons. Dengan *Awareness Engine*, Mark bisa proaktif menegur, menyapa, atau memutarkan musik secara tiba-tiba tanpa disuruh jika ia mendeteksi konteks yang pas!
 
 ## Kemampuan Utama (Tools)
 
@@ -55,13 +58,13 @@ mark/
 | Kategori         | Teknologi                                                                    |
 | ---------------- | ---------------------------------------------------------------------------- |
 | **Framework**    | Electron 39, React 19, Vite 7                                                |
-| **Antarmuka (UI)**| Tailwind CSS 4, DaisyUI 5, Framer Motion/GSAP (Animasi)                      |
-| **Mesin AI**     | LM Studio (Offline) / Groq API & Cerebras API (Cloud)                        |
+| **Antarmuka (UI)**| Tailwind CSS 4, DaisyUI 5, Framer Motion/GSAP (Animasi), React Force Graph 2D |
+| **Mesin AI**     | LM Studio (Offline) / Groq, Cerebras, Custom OpenAI-Compatible API           |
 | **Memori Vektor**| Transformers.js (`@huggingface/transformers`), LM Studio                     |
 | **Pencarian Web**| Electron Webview (Bypass Anti-Bot)                                           |
 | **Suara & Audio**| Groq API (STT), Transformers.js (Local STT), Edge-TTS, Web Audio API (VAD)   |
 | **Integrasi**    | `youtube-transcript-plus`, `youtube-dl-exec`, `ffmpeg-static`, Baileys WA    |
-| **Database**     | Dexie.js (IndexedDB)                                                         |
+| **Database/RAG** | Dexie.js (IndexedDB), `pdf-parse` (Document Extraction)                      |
 
 ## Instalasi & Penggunaan
 
