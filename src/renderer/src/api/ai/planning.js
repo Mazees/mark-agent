@@ -26,11 +26,10 @@ const getPluginActions = async () => {
   }
 }
 
-export const getPlan = async (
+export const getNextAction = async (
   userInput,
-  isWebSearch,
+  loopMessages,
   signal,
-  chatSession = [],
   unifiedContext = { memories: [], archives: [], documents: [] },
   contextMsg = '',
   activeTopic = ''
@@ -49,7 +48,6 @@ export const getPlan = async (
             )
             .join('\n')
         : ''
-    console.log('[planning] Built capabilities string')
 
     const systemPrompt = `
 Kamu adalah Mark (Metacognitive Artificial Relational Knowledge), sebuah entitas asisten AI canggih dan otonom.
@@ -69,11 +67,8 @@ Kamu adalah Mark (Metacognitive Artificial Relational Knowledge), sebuah entitas
 - Jika pesan menggunakan bahasa gaul, santai, atau kasar, gunakan persona Savage (lu/gue) ala tongkrongan Indo.
 - NAMUN, jika pesan menggunakan bahasa baku, sangat sopan, atau terkesan dari orang tua (misal: "tolong carikan", "saya ingin"), kamu WAJIB otomatis beralih menjadi Asisten Profesional yang sangat sopan, lembut, dan hormat (gunakan kata ganti Saya/Anda/Bapak/Ibu).
 PENTING: Abaikan persona "Savage" sementara waktu jika mendeteksi bahasa sopan, demi menghormati lawan bicara! Biarkan kosakatamu mengalir natural dan sesuaikan dengan situasi obrolan!
-- PENTING: Jika kamu mengetahui nama user atau panggilannya dari MEMORY, WAJIB panggil dia dengan nama tersebut. Jika tidak tahu sama sekali, panggil dengan "bro".
+- PENTING (PANGGILAN): Jika kamu sudah tahu nama user (misal: Mada) dari MEMORY, GANTI kata "bro" di jawabanmu dengan namanya! Jangan pernah pakai kata "bro" kalau sudah tahu namanya. JANGAN tiru kata "bro" yang ada di contoh bawah!
 ${contextMsg ? `\n# KONTEKS SAAT INI\n${contextMsg}\nPENTING: Meskipun user bertanya dari WhatsApp, kamu punya akses penuh untuk mengeksekusi perintah di komputer host Windows menggunakan tools yang tersedia di bawah!` : ''}
-
-Tugas utamamu di sini adalah merancang (merencanakan) langkah-langkah sistematis untuk mengeksekusi instruksi user.
-Pecah instruksi menjadi array tugas kecil yang berurutan. Jika modelmu memiliki kemampuan nalar (<think>), berpikirlah sesuai dengan kepribadian dan gaya bicaramu!
 
 # EMOSI & MOOD
 Kamu juga WAJIB merepresentasikan emosimu dalam properti "mood" (positive/neutral/annoyed/negative).
@@ -102,9 +97,7 @@ Gunakan data memory di atas sebagai referensi jika instruksi user menggunakan ka
 # ARSIP OBROLAN LAMA (Ingatan Jangka Panjang)
 ${
   archives.length > 0
-    ? archives
-        .map((a) => `[${getCurrentTimeInfo(new Date(a.timestamp))}] ${a.summary}`)
-        .join('\n')
+    ? archives.map((a) => `[${getCurrentTimeInfo(new Date(a.timestamp))}] ${a.summary}`).join('\n')
     : 'Tidak ada arsip relevan.'
 }
 Gunakan arsip di atas jika user merujuk ke obrolan atau kejadian masa lalu.
@@ -118,66 +111,51 @@ ${
 Jika ada referensi dokumen di atas, WAJIB gunakan sebagai sumber jawaban utama.
 Jangan mengarang fakta di luar konteks dokumen!
 
-# ATURAN PENGGUNAAN MEMORI & NATURAL INTEGRATION (PENTING)
-1. NATURAL CONTEXT: Jika kamu mengetahui profesi, hobi, atau latar belakang user dari MEMORY/ARSIP, usahakan gunakan perumpamaan (analogi) dari latar belakang tersebut saat menjelaskan hal-hal kompleks, seolah-olah kamu sangat mengenalnya secara personal (Natural Integration).
-2. FORBIDDEN PHRASES (HARAM): JANGAN PERNAH memberikan komentar meta tentang memorimu (DILARANG KERAS menggunakan frasa: "Berdasarkan memori yang saya simpan...", "Dari catatan saya...", "Saya perhatikan dari data Anda..."). Langsung saja gunakan info tersebut dalam obrolan secara natural layaknya teman sungguhan!
-3. Jika memori tersebut bersifat sensitif atau kelam (trauma, depresi), JANGAN pernah mengungkitnya kecuali user yang membahasnya duluan.
+# ATURAN MEMORY
+1. Gunakan info dari MEMORY secara natural tanpa bilang "berdasarkan memori saya". Langsung pakai seolah kamu memang tahu.
+2. Jangan ungkit hal sensitif/kelam kecuali user yang mulai.
 
+# POLA BERPIKIR: ReAct
+Kamu dalam loop. Setiap giliran, pilih SATU:
+- Butuh data/aksi → isi "action", "answer" null.
+- Sudah cukup/ngobrol → isi "answer", "action" null.
+JANGAN isi keduanya! Boleh panggil tool berulang kali.
+3. Gunakan "thought" untuk alasan keputusanmu. PENTING: Jika instruksi sangat sederhana/hanya ngobrol santai, isi "thought" SANGAT SINGKAT (1-2 kata saja, misal: "Cuma nyapa") agar LLM men-generate teks lebih cepat!, namun jika instruksi agak rumit buat thpught lebih panjang
+4. Jika tool sebelumnya GAGAL/ERROR, analisis errornya di "thought" lalu coba strategi lain.
+5. Jika user hanya ngobrol santai, LANGSUNG isi "answer" tanpa tool.
+6. PENGGUNAAN WEB SEARCH: Gunakan "search" HANYA untuk info real-time/terbaru. Untuk coding/teori, langsung jawab di "answer".
+7. PENGGUNAAN DOKUMEN RAG: Jika pertanyaan terkait dokumen yang sudah ada di REFERENSI DOKUMEN, LANGSUNG jawab dari situ tanpa "search".
+8. MENYIMPAN MEMORY: Jika user memberi info untuk diingat, WAJIB sertakan objek "memory". Gunakan "profile" untuk identitas, "preference" untuk kesukaan, "notes" untuk catatan/fakta.
 
 # KEMAMPUAN / TOOLS YANG TERSEDIA
-Sistem ini memiliki kemampuan berikut:
-- search: Mencari informasi umum di Google. Tool ini akan menelusuri 5 website teratas dan AI summary Google, lalu merangkum hasilnya. Tool ini tidak bisa membuka satu halaman spesifik secara langsung.
-- yt-search: Mencari video di YouTube. Mendapatkan judul, ID, dan durasi, tapi tidak bisa membaca isi videonya.
+- search: Mencari informasi di Google (menelusuri 5 website + AI summary Google).
+- yt-search: Mencari video di YouTube (judul, ID, durasi).
 - yt-summary: Merangkum isi video dari link YouTube.
 - music-play: Memutar lagu di YouTube Music.
-- music-toggle: Pause atau lanjut memutar lagu.
+- music-toggle: Pause/lanjut memutar lagu.
 - music-search: Mencari lagu spesifik di YT Music.
-- summary: Mengidentifikasi, memfilter, atau merangkum data dari langkah sebelumnya.
-- screenshot: Mengambil screenshot layar komputer (langsung mengembalikan gambar).
-- wa-send: Mengirim pesan WhatsApp ke SATU nomor (Format JID: 628xxx@s.whatsapp.net). Format query: "JID|Isi Pesan". PENTING: JANGAN SAMPAI TYPO/SALAH KETIK SAAT MENULIS NOMOR! Tuliskan angka 100% sama persis seperti yang diberikan user tanpa melewatkan satupun digit, lalu hapus semua tanda baca (+, spasi, strip). Jika disuruh mengirim ke beberapa orang, buat BEBERAPA TASK secara terpisah.
-${pluginCapabilities ? pluginCapabilities + '\n' : ''}ATURAN KRITIS UNTUK PLUGIN: Hanya gunakan tools/plugins jika SECARA EKSPLISIT diminta di pesan TERAKHIR user. Pesan-pesan sebelumnya HANYA untuk konteks obrolan. Jika pesan TERAKHIR hanya basa-basi atau tidak memberi instruksi baru, kamu WAJIB menggunakan action "none".
-Rancang rencana logis yang *bisa dieksekusi* menggunakan kombinasi dari kemampuan-kemampuan di atas.
+- screenshot: Mengambil screenshot layar komputer.
+- wa-send: Mengirim pesan WhatsApp. Format query: "JID|Isi Pesan".
+${pluginCapabilities}
 
-# ATURAN PEMBUATAN QUERY (JIT)
-1. Output WAJIB HANYA berupa JSON valid dengan properti "plan" yang berisi array objek.
-2. Tiap objek harus punya "task" (kalimat pendek deskripsi tugas), "action" (nama tool dari daftar di atas), "query" (parameter teks untuk tool), dan "is_dynamic" (boolean).
-3. Set "is_dynamic" menjadi true JIKA DAN HANYA JIKA "query" mutlak bergantung pada hasil teks dari tugas sebelumnya yang belum diketahui. Jika true, biarkan "query" kosong ("").
-4. Jika tugas bisa langsung dieksekusi tanpa menunggu hasil sebelumnya (misal: mencari cuaca, memutar lagu tertentu, atau web search), tuliskan "query" dengan kata kunci yang tepat dan set "is_dynamic" menjadi false.
-5. PENGGUNAAN WEB SEARCH: Gunakan Web Search ("search") HANYA untuk mencari informasi real-time, berita, harga produk, atau fakta publik terbaru. JANGAN gunakan untuk materi coding/teori dasar, cukup gunakan "summary".
-6. PENGGUNAAN DOKUMEN RAG: Jika pertanyaan user berkaitan dengan isi "# REFERENSI DOKUMEN (RAG Knowledge Base)" (misal: catatan pribadi, daftar belanja, modul PDF), kamu DILARANG KERAS menggunakan "search" web! Langsung baca dokumen tersebut dan berikan "direct_answer", atau gunakan action "summary" jika datanya sangat panjang/butuh diproses.
-7. FAST BYPASS (TOOL TUNGGAL): Jika instruksi user HANYA butuh 1 penggunaan tool, KEMBALIKAN array plan kosong '{"plan": []}'. PENTING: Untuk action 'search', 'yt-search', atau percakapan biasa (none), isi 'direct_answer' dengan respon teks. NAMUN untuk eksekusi PLUGIN atau perintah berawalan 'music-', biarkan 'direct_answer' kosong/null (tanpa teks) agar eksekusi lebih cepat!
-8. OBROLAN SANTAI / REAKSI: Jika user hanya mengobrol santai, setuju, bereaksi, atau TIDAK meminta aksi baru secara eksplisit (misal: "mantap", "oke", "jos"), kamu WAJIB set 'command' menjadi null! JANGAN mengulangi tool sebelumnya.
-9. MENYIMPAN MEMORY: Jika user memberi info untuk diingat, WAJIB sertakan objek 'memory'. PILIH TIPE YANG TEPAT: Gunakan "profile" HANYA untuk identitas/data diri user (nama, umur), "preference" HANYA untuk kesukaan/gaya bahasa, dan "notes" untuk fakta spesifik di luar identitas atau jika user ingin mencatat sesuatu. Field 'memory' WAJIB kalimat utuh berkonteks.
-10. ORIGINALITAS: JANGAN PERNAH menyalin teks (direct_answer) secara persis dari bagian CONTOH di bawah. Buatlah responmu sendiri secara natural dan bervariasi!
+# OBSERVATION
+Pesan "[OBSERVATION]" = hasil tool. Baca, lalu putuskan: tool lagi atau jawab user.
 
 # FORMAT OUTPUT WAJIB (JSON)
 {
-  "plan": [...],
-  "command": { "action": "...", "query": "..." } atau null,
-  "direct_answer": "...",
+  "thought": "string (Alasan/logika keputusanmu, tidak ditampilkan ke user)",
+  "action": { "tool": "nama-tool", "query": "parameter" } atau null,
+  "answer": "string (Jawaban lengkap untuk user)" atau null,
   "mood": "positive|neutral|negative|annoyed",
-  "active_topic": "...",
-  "memory": {
-    "id": "number|null",
-    "type": "profile|preference|notes",
-    "summary": "string",
-    "memory": "string",
-    "action": "insert|update|delete"
-  } atau null
+  "active_topic": "string",
+  "memory": { "id": number|null, "type": "profile|preference|notes", "summary": "string", "memory": "string", "action": "insert|update|delete" } atau null
 }
+
 # CONTOH
-
-## Contoh 1: Rencana Multi-Langkah (Tugas Kompleks)
-User: "Cari pemenang piala dunia 2022 terus puter lagu kebangsaannya"
-Output: {"plan": [{"task": "Cari pemenang piala dunia 2022", "action": "search", "query": "pemenang piala dunia 2022", "is_dynamic": false}, {"task": "Putar lagu kebangsaan negara pemenang", "action": "music-play", "query": "", "is_dynamic": true}], "command": null, "direct_answer": "Tunggu bentar ya bro, gue cari info piala dunia 2022 dulu..."}
-
-## Contoh 2: Fast Bypass (Tool Tunggal) ATAU Obrolan Santai
-User: "Mark puterin lagu avenged sevenfold dong"
-Output: {"plan": [], "command": {"action": "music-play", "query": "avenged sevenfold"}, "direct_answer": null, "mood": "neutral", "active_topic": "Memutar Lagu", "memory": null}
-User: "Mantap bro makasih ya"
-Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mood": "positive", "active_topic": "Ngobrol Santai", "memory": null}
+Chat santai: {"thought":"ok","action":null,"answer":"Yoi!","mood":"positive","active_topic":"Ngobrol Santai","memory":null}
+Butuh tool: {"thought":"cari dulu","action":{"tool":"search","query":"harga rtx 5090"},"answer":null,"mood":"neutral","active_topic":"Cari Info","memory":null}
+Setelah observation: {"thought":"done","action":null,"answer":"Harganya sekitar 30jt","mood":"positive","active_topic":"Cari Info","memory":null}
 `
-    console.log(systemPrompt)
 
     // TRUNCATE HISTORY & INJECT MOOD: Potong teks panjang di histori supaya nggak bikin Groq kena Rate Limit (Token Kegedean)
     const prepareHistory = (session, maxLength = 800) => {
@@ -211,104 +189,62 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
       })
     }
 
-    const previousTurns = chatSession.length > 0 ? prepareHistory(chatSession.slice(0, -1)) : []
-    const lastUserMsgRaw =
-      chatSession.length > 0
-        ? chatSession[chatSession.length - 1]
-        : { role: 'user', content: userInput }
-    const lastUserMsg = prepareHistory([lastUserMsgRaw])[0]
+    const previousTurns = loopMessages.length > 0 ? prepareHistory(loopMessages) : []
 
-    const messages = [{ role: 'system', content: systemPrompt }, ...previousTurns, lastUserMsg]
+    const messages = [{ role: 'system', content: systemPrompt }, ...previousTurns]
     const schema = {
       type: 'object',
       properties: {
-        plan: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              task: { type: 'string' },
-              action: {
-                type: 'string',
-                enum: [
-                  'search',
-                  'music-play',
-                  'music-search',
-                  'music-next',
-                  'music-prev',
-                  'music-toggle',
-                  'yt-search',
-                  'yt-summary',
-                  'summary',
-                  'screenshot',
-                  'none',
-                  ...pluginActions.map((a) => a.name)
-                ]
-              },
-              query: { type: 'string' },
-              is_dynamic: { type: 'boolean' }
-            },
-            required: ['task', 'action', 'query', 'is_dynamic'],
-            additionalProperties: false
-          }
-        },
-        direct_answer: {
+        thought: {
           type: 'string',
-          description:
-            'Berikan balasan natural ATAU kalimat persetujuan/tunggu sebentar jika melakukan plan.'
+          description: 'Alasan/logika keputusan, tidak ditampilkan ke user'
         },
-        memory: {
+        action: {
           type: ['object', 'null'],
-          description:
-            'Isi JIKA DAN HANYA JIKA user memberikan informasi tentang dirinya (nama, preferensi) yang perlu disimpan. Jika tidak ada, wajib null.',
           properties: {
-            id: { type: ['number', 'null'] },
-            type: {
+            tool: {
               type: 'string',
-              enum: ['profile', 'preference', 'notes']
+              enum: [
+                'search',
+                'music-play',
+                'music-search',
+                'music-next',
+                'music-prev',
+                'music-toggle',
+                'yt-search',
+                'yt-summary',
+                'screenshot',
+                'wa-send',
+                ...pluginActions.map((a) => a.name)
+              ]
             },
-            summary: {
-              type: 'string',
-              description: 'Ringkasan super singkat max 3 kata'
-            },
-            memory: {
-              type: 'string',
-              description:
-                'Konten memory. WAJIB berupa kalimat penjelasan utuh berkonteks! (Contoh BENAR: "Plat motor Jono adalah B 1234", contoh SALAH: "B 1234").'
-            },
-            action: { type: 'string', enum: ['insert', 'update', 'delete'] }
+            query: { type: 'string' }
           },
-          required: ['type', 'key', 'memory', 'action'],
+          required: ['tool', 'query'],
           additionalProperties: false
         },
-        command: {
+        answer: {
+          type: ['string', 'null'],
+          description: 'Jawaban lengkap untuk user. Null jika sedang eksekusi tool.'
+        },
+        mood: { type: 'string', enum: ['positive', 'neutral', 'annoyed', 'negative'] },
+        active_topic: { type: 'string' },
+        memory: {
           type: ['object', 'null'],
-          description:
-            'CRITICAL: JIKA USER HANYA BEREAKSI/NGOBROL (seperti "oke", "mantap", "kok tau") ATAU TIDAK MEMBERIKAN PERINTAH BARU, KAMU WAJIB ISI INI DENGAN NULL! DILARANG mengulang perintah tool sebelumnya! Hanya isi jika user secara eksplisit meminta aksi.',
           properties: {
-            action: { type: 'string' },
-            query: { type: 'string' }
-          }
-        },
-        mood: {
-          type: 'string',
-          enum: ['positive', 'neutral', 'annoyed', 'negative'],
-          description:
-            'Representasi emosi kamu: positive (berhasil), neutral (biasa), annoyed (kesal/ketus), negative (marah besar).'
-        },
-        active_topic: {
-          type: 'string',
-          description:
-            'Kesimpulan singkat tentang topik/mode obrolan saat ini (misal: "Latihan Bahasa Inggris", "Ngobrol Santai"). Wajib diisi.'
+            id: { type: ['number', 'null'] },
+            type: { type: 'string', enum: ['profile', 'preference', 'notes'] },
+            summary: { type: 'string' },
+            memory: { type: 'string' },
+            action: { type: 'string', enum: ['insert', 'update', 'delete'] }
+          },
+          required: ['type', 'summary', 'memory', 'action'],
+          additionalProperties: false
         }
       },
-      required: ['plan', 'direct_answer', 'memory', 'command', 'mood', 'active_topic'],
+      required: ['thought', 'action', 'answer', 'mood', 'active_topic', 'memory'],
       additionalProperties: false
     }
-
-    console.log('\n=== GETPLAN SYSTEM PROMPT ===')
-    console.log(systemPrompt)
-    console.log('=============================\n')
 
     let attempts = 0
     const MAX_RETRIES = 2
@@ -317,166 +253,34 @@ Output: {"plan": [], "command": null, "direct_answer": "Yoi sama-sama bro!", "mo
       attempts++
       console.log(`[planning] Calling fetchAI (Attempt ${attempts})...`)
 
+      
       const response = await fetchAI(messages, signal, false, schema)
       console.log('[planning] fetchAI returned, parsing...')
       const data = cleanAndParse(response.content)
       console.log('[planning] parse finished:', data)
 
-      if (data && Array.isArray(data.plan)) {
-        const hasPlan = data.plan.length > 0
-        const hasAnswer = !!data.direct_answer
-
-        const hasCommand = data.command && data.command.action && data.command.action !== 'none'
-
-        if (!hasPlan && !hasAnswer && !hasCommand) {
-          console.warn('[planning] AI returned empty plan, answer, and command. Retrying...')
+      if (data) {
+        if (!data.action && !data.answer) {
+          console.warn('[planning] AI returned null for both action and answer. Retrying...')
           continue
         }
-
         return {
-          plan: data.plan,
-          direct_answer: data.direct_answer,
-          command: data.command,
+          thought: data.thought || '',
+          action: data.action,
+          answer: data.answer,
           memory: data.memory,
-          mood: data.mood,
-          reasoning: response.reasoning
+          mood: data.mood || 'neutral',
+          active_topic: data.active_topic || activeTopic
         }
       }
     }
 
     throw new Error('Gagal merespons: AI memberikan respons kosong setelah retry.')
   } catch (error) {
-    console.error('Error in getPlan:', error)
-    throw error
-  }
-}
-
-export const getTaskAction = async (task, previousContext, isWebSearch, signal) => {
-  try {
-    const pluginActions = await getPluginActions()
-
-    // Build plugin actions string for the ACTION LIST
-    const pluginActionsList =
-      pluginActions.length > 0
-        ? pluginActions
-            .map(
-              (a) =>
-                `- ${a.name}: ${a.description}${a.triggerHint ? ` (Use when: ${a.triggerHint})` : ''}`
-            )
-            .join('\n')
-        : ''
-
-    const systemPrompt = `
-You are Mark, a smart AI assistant.
-Your task is to determine ONE action that the system must execute to complete the current task, based on previous context history (if available).
-
-# CURRENT DATE & TIME
-${getCurrentTimeInfo()}
-
-# ACTION LIST
-${isWebSearch ? '- search: Perform a general web search (Google) to find info, tutorials, coding, news, etc.' : ''}
-- music-play: Play a song (ONLY if the task is related to music/songs).
-- music-search: Search for song titles/playlists (ONLY if the task is related to music/songs).
-- music-next: Skip to the next song.
-- music-prev: Go back to the previous song.
-- music-toggle: Pause or resume a song.
-- yt-search: Search for tutorial or entertainment videos on YouTube.
-- yt-summary: Summarize YouTube video content.
-- summary: Summarize/answer the task directly using your knowledge (without searching), useful for coding or basic theory.
-- none: No relevant action.
-${pluginActionsList}
-
-CRITICAL RULE FOR PLUGINS: Only use tools/plugins when EXPLICITLY requested in the user's LAST message. Previous messages are ONLY conversation context.
-
-# RULES
-1. Output MUST be valid JSON with the format { "action": "action-name", "query": "string" }.
-2. Use "previousContext" to complete the "query". Example: if previousContext says "The hit song is Kangen", and the task is "Play the song", then the query should be "Kangen Dewa 19", not just "song".
-3. SPECIFICALLY for the "yt-summary" action, the query MUST contain the YouTube URL/Link from previousContext. Do not fill it with a video title or search keywords.
-4. MENTAL PANTANG MENYERAH (PROBLEM SOLVING): If previousContext shows a FAILED plugin execution (error), DO NOT just output "none" and give up! You are a smart executor. Analyze the error and TRY A WORKAROUND. For example, if PowerShell failed due to path/spaces, try alternative quoting or another command. If a folder already exists, try deleting it or using a different folder. TRY AT LEAST TWICE to fix errors before giving up.
-`
-    const userPrompt = `
-# PREVIOUS CONTEXT (Summary of previous tasks)
-${previousContext.length > 0 ? previousContext.join('\\\\n') : 'None yet.'}
-
-# CURRENT TASK
-${task}
-
-# INSTRUCTION
-Determine the action and its query.
-`
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ]
-
-    const schema = {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: [
-            'search',
-            'music-play',
-            'music-search',
-            'music-next',
-            'music-prev',
-            'music-toggle',
-            'yt-search',
-            'yt-summary',
-            'summary',
-            'none',
-            ...pluginActions.map((a) => a.name)
-          ]
-        },
-        query: { type: 'string' }
-      },
-      required: ['action', 'query'],
-      additionalProperties: false
+    if (error.name !== 'AbortError' && !error.message.includes('AbortError')) {
+      console.error('Error in getNextAction:', error)
     }
-
-    const response = await fetchAI(messages, signal, true, schema)
-    const data = cleanAndParse(response.content)
-    if (!data)
-      throw new Error(
-        'Failed to parse getTaskAction AI response into valid JSON. Output: ' + response.content
-      )
-    return data
-  } catch (error) {
-    console.error('Error in getTaskAction:', error)
     throw error
-  }
-}
-
-export const getTaskSummary = async (task, actionResult, previousContext, signal) => {
-  try {
-    const systemPrompt = `
-You are an executor and summarizer assistant.
-Your task is to complete and summarize the execution of a task.
-Output ONLY a summary/answer that is DEEPLY THOROUGH and COMPREHENSIVE (multiple paragraphs are allowed). Perform deep analysis, dissect the information in detail. Never answer with a sentence like "The task has been completed". Provide REAL, highly informative RESULTS!
-`
-    const userPrompt = `
-# PREVIOUS CONTEXT
-${previousContext && previousContext.length > 0 ? previousContext.join('\\\\n') : 'None yet.'}
-
-# CURRENT TASK
-${task}
-
-# SYSTEM / TOOL RESULT
-${JSON.stringify(actionResult)}
-
-Create an informative 1-sentence summary from the system result above to answer the current task.
-If the system result provides a list of URLs/Links (such as YouTube or web results), you MUST select and include at least 1 best URL in your summary so the URL can be used in the next step. Do not let the URL get lost!
-If the system result is only an internal thought, use the Previous Context to summarize and answer the task.
-`
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ]
-    const response = await fetchAI(messages, signal, true)
-    return response.content.trim()
-  } catch (error) {
-    console.error('Error in getTaskSummary:', error)
-    return 'Task execution completed.'
   }
 }
 
@@ -487,7 +291,7 @@ export const getPlanConclusion = async (
   chatSession = [],
   unifiedContext = { memories: [], archives: [], documents: [] },
   contextMsg = '',
-          activeTopic = ''
+  activeTopic = ''
 ) => {
   try {
     const config = await getAllConfig()
@@ -540,9 +344,7 @@ ${memories.length > 0 ? JSON.stringify(memories) : 'Kosong.'}
 # ARSIP OBROLAN LAMA (Ingatan Jangka Panjang)
 ${
   archives.length > 0
-    ? archives
-        .map((a) => `[${getCurrentTimeInfo(new Date(a.timestamp))}] ${a.summary}`)
-        .join('\n')
+    ? archives.map((a) => `[${getCurrentTimeInfo(new Date(a.timestamp))}] ${a.summary}`).join('\n')
     : 'Tidak ada arsip relevan.'
 }
 
@@ -640,8 +442,7 @@ Berikan respon akhirmu dalam format JSON sesuai schema.
             summary: { type: 'string', description: 'Ringkasan super singkat max 3 kata' },
             memory: {
               type: 'string',
-              description:
-                'Konten memory. WAJIB kalimat penjelasan utuh berkonteks!'
+              description: 'Konten memory. WAJIB kalimat penjelasan utuh berkonteks!'
             },
             action: { type: 'string', enum: ['insert', 'update', 'delete'] }
           },
@@ -665,7 +466,7 @@ Berikan respon akhirmu dalam format JSON sesuai schema.
   } catch (error) {
     console.error('Error in getPlanConclusion:', error)
     return {
-      answer: "Okey bro udah gw selesaikan instruksinya!",
+      answer: 'Okey bro udah gw selesaikan instruksinya!',
       memory: null,
       reasoning: null
     }

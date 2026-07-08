@@ -67,7 +67,7 @@ function createWindow() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    mainWindow.webContents.openDevTools()
+    // mainWindow.webContents.openDevTools()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -101,7 +101,7 @@ ipcMain.on('remote-music-command', (event, command, payload) => {
   }
 })
 
-import { fetchAI, setGlobalConfig } from './ai-bridge.js'
+import { fetchAI, setGlobalConfig, abortAllFetches } from './ai-bridge.js'
 
 ipcMain.on('sync-config', (event, config) => {
   setGlobalConfig(config)
@@ -122,9 +122,7 @@ ipcMain.handle('ai:fetch', async (event, data) => {
 })
 
 ipcMain.on('ai:abort-fetch', () => {
-  import('./ai-bridge.js').then(({ activeAbortControllers }) => {
-    activeAbortControllers.forEach((controller) => controller.abort(new Error('User Aborted')))
-  })
+  abortAllFetches()
 })
 
 // This method will be called when Electron has finished

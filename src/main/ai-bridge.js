@@ -24,6 +24,13 @@ const CLOUD_DELAY_MS = 2500 // 2.5 seconds delay
 
 let globalConfig = {}
 export const activeAbortControllers = new Set();
+export const abortAllFetches = () => {
+  activeAbortControllers.forEach((controller) => {
+    try {
+      controller.abort(new Error('User Aborted'));
+    } catch (e) {}
+  });
+};
 
 export const setGlobalConfig = (config) => {
   globalConfig = config || {}
@@ -71,6 +78,11 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
     } else {
       body.model = conf.model || 'google/gemma-3-4b'
     }
+    
+    // Set max_tokens to prevent truncation, tapi jangan terlalu gede buat local LLM
+    if (conf.aiProvider === 'groq') {
+      body.max_tokens = 8192;
+    }
 
     const parentAbortController = new AbortController()
     activeAbortControllers.add(parentAbortController)
@@ -80,7 +92,7 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
         throw new Error('AbortError')
       }
       // --- RATE LIMIT THROTLLING LOGIC (Khusus Cloud) ---
-      if (endpoint.includes('groq.com') || endpoint.includes('cerebras.ai')) {
+      if (!endpoint.includes('localhost') && !endpoint.includes('127.0.0.1')) {
         const now = Date.now()
         const timeSinceLastFetch = now - lastCloudFetchTime
         if (timeSinceLastFetch < CLOUD_DELAY_MS) {
@@ -92,7 +104,7 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
       }
 
       // --- TIMEOUT LOGIC ---
-      const timeoutMs = endpoint.includes('localhost') ? 120000 : 45000; // 120s for local, 45s for cloud
+      const timeoutMs = 3600000; // 1 jam (Timeout dimatikan atas permintaan user) // 120s for local, 45s for cloud
       const abortController = new AbortController();
       activeAbortControllers.add(abortController);
       const timeoutId = setTimeout(() => abortController.abort(new Error('Request Timeout')), timeoutMs);
@@ -210,7 +222,7 @@ export const fetchAI = async (messages, config, isSmallTask = false, jsonSchema 
           isHighTraffic = false;
         }
 
-        if (isHighTraffic && trafficRetryCount < 20 && (endpoint.includes('cerebras.ai') || endpoint.includes('groq.com'))) {
+        if (isHighTraffic && trafficRetryCount < 20) {
            
            // Cek apakah server ngasih tau harus nunggu berapa detik (khusus Groq 429)
            let backoffDelay = (trafficRetryCount + 1) * 3000; 

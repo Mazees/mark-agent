@@ -67,6 +67,8 @@ Aturan:
 
     console.log('[ChatSummarizer] Sukses merangkum dan mengarsipkan:', summary.substring(0, 60) + '...')
   } catch (error) {
-    console.error('[ChatSummarizer] Exception saat merangkum:', error)
+    if (error.name !== 'AbortError' && !error.message.includes('AbortError')) {
+      console.error('[ChatSummarizer] Exception saat merangkum:', error)
+    }
   }
 }
