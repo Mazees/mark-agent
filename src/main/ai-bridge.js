@@ -20,7 +20,7 @@ const isLMStudioOfflineError = (error) => {
 }
 
 let lastCloudFetchTime = 0
-const CLOUD_DELAY_MS = 2500 // 2.5 seconds delay
+const CLOUD_DELAY_MS = 3000 // 3 seconds delay biar aman dari rate limit (Gemini/Groq/Custom)
 
 let globalConfig = {}
 export const activeAbortControllers = new Set()
@@ -97,8 +97,8 @@ export const fetchAI = async (
       if (parentAbortController.signal.aborted) {
         throw new Error('AbortError')
       }
-      // --- RATE LIMIT THROTLLING LOGIC (Khusus API Gratisan yang rewel) ---
-      if (endpoint.includes('groq.com') || endpoint.includes('cerebras.ai')) {
+      // --- RATE LIMIT THROTLLING LOGIC (Berlaku buat SEMUA API cloud/berbayar/gratis biar gak jebol) ---
+      if (!endpoint.includes('localhost') && !endpoint.includes('127.0.0.1')) {
         const now = Date.now()
         const timeSinceLastFetch = now - lastCloudFetchTime
         if (timeSinceLastFetch < CLOUD_DELAY_MS) {

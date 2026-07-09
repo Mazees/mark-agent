@@ -27,8 +27,6 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
-// Matikan Hardware Acceleration untuk mencegah GPU crash (command_buffer_proxy_impl.cc:327)
-app.disableHardwareAcceleration()
 
 const setupYoutubeFix = () => {
   // Kita cegat semua request yang pergi ke YouTube
