@@ -11,6 +11,7 @@ const api = {
   showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
   getActivityBuffer: () => ipcRenderer.invoke('awareness:get-buffer'),
   clearActivityBuffer: () => ipcRenderer.send('awareness:clear-buffer'),
+  takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
   getYoutubeTranscript: (url) => ipcRenderer.invoke('get-youtube-transcript', url),
   searchYoutube: (query) => ipcRenderer.invoke('youtube-search', query),
   searchMusic: (query) => ipcRenderer.invoke('search-music', query),

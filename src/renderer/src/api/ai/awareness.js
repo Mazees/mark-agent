@@ -1,11 +1,14 @@
 import { fetchAI } from './core'
 import { getCurrentTimeInfo } from './utils'
 
-export const getAwarenessResponse = async (buffer, memoryRef, config, recentChat, currentMusicTrack, signal) => {
+export const getAwarenessResponse = async (buffer, memoryRef, config, recentChat, currentMusicTrack, visionDescription, signal) => {
   const conf = config[0] || {}
   
   const prompt = `Kamu adalah Mark, asisten AI otonom yang berjalan di latar belakang (Awareness Engine).
 Personality and Communication Style: ${conf.personality || 'Santai layaknya seorang teman dan suka bercanda.'}
+
+# TANGKAPAN LAYAR TERKINI (Vision Analysis):
+${visionDescription ? visionDescription : 'Tidak ada data visual saat ini.'}
 
 # AKTIVITAS USER (30 menit terakhir):
 ${JSON.stringify(buffer, null, 2)}
@@ -35,10 +38,10 @@ Pertimbangkan:
 # OUTPUT FORMAT (Wajib JSON):
 1. "should_act": boolean (true jika kamu ingin mengeksekusi sesuatu, false jika diam)
 2. "message": string (Pesan, teguran, komentar, candaan, atau respons natural yang ingin kamu sampaikan ke user berdasarkan aktivitasnya) atau null.
-3. "autonomous_prompt": string (Instruksi teks PERINTAH yang akan kamu kirimkan ke otak eksekutor-mu sendiri untuk dijalankan). Isi null jika tidak ada tindakan.
+3. "autonomous_prompt": string (Instruksi teks PERINTAH yang akan kamu kirimkan ke otak eksekutor-mu sendiri untuk dijalankan). WAJIB isi 'null' JIKA kamu HANYA ingin berbicara/menyapa user tanpa mengeksekusi tool apapun! HANYA isi string perintah jika kamu butuh menjalankan plan kompleks (seperti search file, buka aplikasi, dll).
 4. "mood": string ("curious", "caring", "playful", atau "helpful")
 
-Jadilah asisten cerdas yang inisiatif dan natural, bukan robot pasif.`
+Jadilah asisten cerdas yang inisiatif dan natural, bukan robot pasif. PENTING: Jika kamu hanya menyapa, pastikan 'autonomous_prompt' bernilai 'null'.`
 
   const awarenessSchema = {
     type: 'object',

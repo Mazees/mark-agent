@@ -8,7 +8,8 @@ import {
   Menu,
   globalShortcut,
   nativeImage,
-  Notification
+  Notification,
+  desktopCapturer
 } from 'electron'
 import { join } from 'path'
 import path from 'path'
@@ -294,6 +295,26 @@ app.whenReady().then(async () => {
   // Awareness Engine IPC
   ipcMain.handle('awareness:get-buffer', () => getBuffer())
   ipcMain.on('awareness:clear-buffer', () => flushBuffer())
+  
+  ipcMain.handle('take-screenshot', async () => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1920, height: 1080 }
+      })
+      if (sources.length > 0) {
+        // Return array of Base64 for all screens
+        return sources.map(source => ({
+          name: source.name,
+          data: source.thumbnail.toDataURL()
+        }))
+      }
+      return []
+    } catch (error) {
+      console.error('Failed to take screenshot:', error)
+      return null
+    }
+  })
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))

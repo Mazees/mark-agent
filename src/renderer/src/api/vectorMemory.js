@@ -2,6 +2,8 @@ import { pipeline, env } from '@huggingface/transformers';
 import { getAllConfig } from './db';
 
 env.allowLocalModels = false;
+env.useBrowserCache = true;
+env.useFSCache = false;
 
 let extractor = null;
 let isDownloading = false;

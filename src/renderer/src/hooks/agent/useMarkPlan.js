@@ -197,8 +197,8 @@ export const useMarkPlan = ({
             window.api.showNotification('Mark', decision.answer)
           }
 
-          // Tampilkan jawaban akhir di UI (skip jika autonomous — cukup pakai autonomousInitialMessage)
-          if (!isAutonomous) {
+          // Tampilkan jawaban akhir di UI (skip jika autonomous DAN punya initial message)
+          if (!isAutonomous || !autonomousInitialMessage) {
             setChatData(prev => {
               const filtered = prev.filter(item => !item.isThinking)
               const aiMsg = {
@@ -210,7 +210,7 @@ export const useMarkPlan = ({
                 isMemoryUpdated: decision.memory?.action === 'update',
                 isMemoryDeleted: decision.memory?.action === 'delete',
                 pluginExecution: lastToolExecution,
-                isProactive: false,
+                isProactive: isAutonomous,
                 timestamp: getCurrentTimeInfo()
               }
               if (allSources.length > 0) {

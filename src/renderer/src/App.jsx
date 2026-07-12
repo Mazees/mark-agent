@@ -34,7 +34,7 @@ const GlobalListener = () => {
         if (configs && configs[0]) {
           const cfg = configs[0]
           const pending = cfg.waPendingAdmins || []
-          const existingIdx = pending.findIndex(p => p.id === data.id)
+          const existingIdx = pending.findIndex((p) => p.id === data.id)
           if (existingIdx !== -1) {
             pending[existingIdx] = data
           } else {
@@ -67,7 +67,6 @@ const GlobalListener = () => {
     }
 
     // Web search logic moved to waAutonomous.js for better modularity
-
 
     return () => {
       if (window.api?.removeLiveAudioShortcut) {
@@ -102,9 +101,24 @@ function App() {
       try {
         setLoadingText('Memuat Memori Kognitif...')
         const { getExtractor } = await import('./api/vectorMemory')
+        let memStats = {}
         await getExtractor((info) => {
-          if (info.status === 'progress' && info.total > 0) {
-            setLoadingText(`Mengunduh Memori AI... ${Math.round((info.loaded / info.total) * 100)}%`)
+          if (info.status === 'initiate') {
+            memStats[info.file] = { loaded: 0, total: info.total || 0 }
+          } else if (info.status === 'progress') {
+            if (memStats[info.file]) {
+              memStats[info.file].loaded = info.loaded
+              memStats[info.file].total = info.total
+            }
+            const values = Object.values(memStats)
+            const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
+            const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
+            if (totalBytes > 0) {
+              const percent = Math.round((loadedBytes / totalBytes) * 100)
+              const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
+              const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
+              setLoadingText(`Mengunduh Memori AI... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
+            }
           } else if (info.status === 'done' || info.status === 'ready') {
             setLoadingText('Membangunkan Mark...')
           }
@@ -121,6 +135,38 @@ function App() {
         setHasConfig(true)
         if (window.api && window.api.syncConfig) {
           window.api.syncConfig(data[0])
+        }
+
+        // 3. Load Vision Model (hanya jika awareness menyala)
+        if (data[0].awarenessEnabled !== false) {
+          try {
+            setLoadingText('Memuat Mata Kognitif (Vision)...')
+            const { initVisionModel } = await import('./api/vision')
+            let downloadStats = {}
+            await initVisionModel((info) => {
+              if (info.status === 'initiate') {
+                downloadStats[info.file] = { loaded: 0, total: info.total || 0 }
+              } else if (info.status === 'progress') {
+                if (downloadStats[info.file]) {
+                  downloadStats[info.file].loaded = info.loaded
+                  downloadStats[info.file].total = info.total // sometimes total is updated
+                }
+                const values = Object.values(downloadStats)
+                const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
+                const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
+                if (totalBytes > 0) {
+                  const percent = Math.round((loadedBytes / totalBytes) * 100)
+                  const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
+                  const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
+                  setLoadingText(`Mengunduh Vision AI... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
+                }
+              } else if (info.status === 'done' || info.status === 'ready') {
+                setLoadingText('Membangunkan Mark...')
+              }
+            })
+          } catch (e) {
+            console.error('[App] Failed to load Vision model:', e)
+          }
         }
       }
       setIsChecking(false)
@@ -140,12 +186,7 @@ function App() {
   }
 
   if (!hasConfig) {
-    return (
-      <Configuration 
-        isFirstSetup={true} 
-        onSetupComplete={() => setHasConfig(true)} 
-      />
-    )
+    return <Configuration isFirstSetup={true} onSetupComplete={() => setHasConfig(true)} />
   }
 
   const isStandalone = window.location.hash.includes('whatsapp-bot')
@@ -171,11 +212,11 @@ function App() {
             <div style={{ display: isStandalone ? 'none' : 'block' }}>
               <YoutubeMusicPlayer />
             </div>
-            <webview 
-              id="global-ai-search-webview" 
-              src="about:blank" 
+            <webview
+              id="global-ai-search-webview"
+              src="about:blank"
               useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-              style={{ display: 'none' }} 
+              style={{ display: 'none' }}
             />
           </HashRouter>
         </ChatProvider>

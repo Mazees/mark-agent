@@ -327,13 +327,49 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     setDownloadProgress(0)
 
     try {
+      let extStats = {}
       await getExtractor((info) => {
-        if (info.status === 'progress' && info.total > 0) {
-          setDownloadProgress(Math.round((info.loaded / info.total) * 100))
+        if (info.status === 'initiate') {
+          extStats[info.file] = { loaded: 0, total: info.total || 0 }
+        } else if (info.status === 'progress') {
+          if (extStats[info.file]) {
+            extStats[info.file].loaded = info.loaded
+            extStats[info.file].total = info.total
+          }
+          const values = Object.values(extStats)
+          const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
+          const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
+          if (totalBytes > 0) {
+            setDownloadProgress(Math.round((loadedBytes / totalBytes) * 100))
+          }
         } else if (info.status === 'done' || info.status === 'ready') {
           setDownloadProgress(100)
         }
       })
+      
+      // Load vision model if awareness is enabled
+      if (config.awarenessEnabled !== false) {
+        const { initVisionModel } = await import('../api/vision')
+        let visStats = {}
+        await initVisionModel((info) => {
+          if (info.status === 'initiate') {
+            visStats[info.file] = { loaded: 0, total: info.total || 0 }
+          } else if (info.status === 'progress') {
+            if (visStats[info.file]) {
+              visStats[info.file].loaded = info.loaded
+              visStats[info.file].total = info.total
+            }
+            const values = Object.values(visStats)
+            const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
+            const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
+            if (totalBytes > 0) {
+              setDownloadProgress(Math.round((loadedBytes / totalBytes) * 100))
+            }
+          } else if (info.status === 'done' || info.status === 'ready') {
+            setDownloadProgress(100)
+          }
+        })
+      }
     } catch (e) {
       console.error(e)
     }
