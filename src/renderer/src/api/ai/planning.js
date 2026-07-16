@@ -68,7 +68,8 @@ export const getNextAction = async (
     const conf = currentConfig[0] || {}
 
     // === DYNAMIC PROMPT ROUTING ===
-    const userVec = await generateVector(userInput)
+    const queryForIntent = options.intentQuery || userInput
+    const userVec = await generateVector(queryForIntent)
     let activeCategories = []
     if (userVec) {
       const catVecs = await getCategoryVectors()
