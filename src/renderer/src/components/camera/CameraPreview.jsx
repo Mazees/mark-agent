@@ -25,32 +25,42 @@ export const CameraPreview = ({
   }, [])
 
   const captureFrame = useCallback(() => {
-    if (hasCapturedRef.current || !videoRef.current || !canvasRef.current) return
+    console.log('[CameraPreview] captureFrame called. hasCaptured:', hasCapturedRef.current, 'video:', !!videoRef.current, 'canvas:', !!canvasRef.current)
+    if (hasCapturedRef.current || !videoRef.current || !canvasRef.current) {
+      console.log('[CameraPreview] captureFrame aborted!')
+      return
+    }
     hasCapturedRef.current = true
 
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
+    try {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')
 
-    // Maintain aspect ratio, max 1280x720
-    let width = video.videoWidth || 1280
-    let height = video.videoHeight || 720
-    
-    if (width > 1280 || height > 720) {
-      const ratio = Math.min(1280 / width, 720 / height)
-      width = Math.floor(width * ratio)
-      height = Math.floor(height * ratio)
+      // Maintain aspect ratio, max 1280x720
+      let width = video.videoWidth || 1280
+      let height = video.videoHeight || 720
+      
+      if (width > 1280 || height > 720) {
+        const ratio = Math.min(1280 / width, 720 / height)
+        width = Math.floor(width * ratio)
+        height = Math.floor(height * ratio)
+      }
+
+      canvas.width = width
+      canvas.height = height
+      ctx.drawImage(video, 0, 0, width, height)
+
+      // Convert to base64 JPEG 70%
+      const base64Data = canvas.toDataURL('image/jpeg', 0.7)
+      console.log('[CameraPreview] Frame captured, size:', Math.round(base64Data.length / 1024), 'KB')
+      stopStream()
+      onCapture(base64Data)
+    } catch (e) {
+      console.error('[CameraPreview] Error during captureFrame:', e)
+      stopStream()
+      onCapture(null)
     }
-
-    canvas.width = width
-    canvas.height = height
-    ctx.drawImage(video, 0, 0, width, height)
-
-    // Convert to base64 JPEG 70%
-    const base64Data = canvas.toDataURL('image/jpeg', 0.7)
-    console.log('[CameraPreview] Frame captured, size:', Math.round(base64Data.length / 1024), 'KB')
-    stopStream()
-    onCapture(base64Data)
   }, [onCapture, stopStream])
 
   // Main effect: open/close camera
@@ -105,6 +115,7 @@ export const CameraPreview = ({
               if (isAutonomous) {
                 // Wait a bit for auto-focus, then snap instantly
                 setTimeout(() => {
+                  console.log('[CameraPreview] setTimeout 800ms finished. isMounted:', isMounted, 'hasCaptured:', hasCapturedRef.current)
                   if (isMounted && !hasCapturedRef.current) captureFrame()
                 }, 800)
               }
@@ -154,10 +165,10 @@ export const CameraPreview = ({
   if (!isOpen) return null
   if (isAutonomous) {
     return (
-      <>
-        <video ref={videoRef} autoPlay playsInline muted className="hidden" />
-        <canvas ref={canvasRef} className="hidden" />
-      </>
+      <div className="fixed bottom-0 right-0 w-1 h-1 opacity-0 pointer-events-none overflow-hidden">
+        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full" />
+        <canvas ref={canvasRef} className="w-full h-full" />
+      </div>
     )
   }
 
