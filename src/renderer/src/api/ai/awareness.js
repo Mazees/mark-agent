@@ -10,7 +10,7 @@ export const getAwarenessResponse = async (buffer, memoryRef, config, recentChat
 
 ${await getPersonaPrompt('owner', conf.personality)}
 
-# AKTIVITAS OS USER (30 menit terakhir):
+# AKTIVITAS OS USER:
 ${buffer && buffer.length > 0 ? buffer.map(b => `- [${b.time}] ${b.app}${b.title ? ' — ' + b.title : ''}`).join('\n') : 'Tidak ada aktivitas tercatat.'}
 
 ${memoryRef && memoryRef.length > 0 ? `\n# MEMORY RELEVAN TENTANG USER:\n${memoryRef.map(m => `- [${m.type.toUpperCase()}] ${m.memory}`).join('\n')}` : ''}

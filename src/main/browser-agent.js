@@ -163,6 +163,9 @@ export async function navigateTo(url) {
       if (!isForceClosing) {
         event.preventDefault()
         browserWindow.hide()
+        // Panggil readDOM agar mengirimkan 'browser:preview' event ke frontend
+        // sehingga widget (hologram) muncul kembali setelah fisik browser ditutup (di-hide).
+        readDOM().catch(e => console.error("Gagal readDOM saat hide browser:", e))
       }
     })
 

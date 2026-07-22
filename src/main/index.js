@@ -28,6 +28,8 @@ app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+// Fix GPU crash for hidden webview (command_buffer_proxy_impl.cc:327 GPU state invalid)
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 
 
 const setupYoutubeFix = () => {

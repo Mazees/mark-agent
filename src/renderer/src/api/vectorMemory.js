@@ -92,12 +92,13 @@ export const searchExtendedMemory = async (query) => {
 }
 
 export const getUnifiedContext = async (userInput, memoryList) => {
+  const memories = await getRelevantMemory(userInput, memoryList)
+
   // Masih perlu generate vector untuk Orama (Documents & Archives)
   const output = await generateVector(userInput)
-  if (!output) return { memories: [], archives: [], documents: [] }
+  if (!output) return { memories, archives: [], documents: [] }
   const userVector = Array.from(output)
 
-  const memories = await getRelevantMemory(userInput, memoryList)
   const archives = await searchArchives(userVector, 3)
   const documents = await searchDocuments(userInput, userVector, 5)
 

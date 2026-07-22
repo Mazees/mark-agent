@@ -164,8 +164,24 @@ export const useMarkPlan = ({
         /* Silent fail — jika API tidak tersedia */
       }
 
-      // [DIHAPUS] Jangan push autonomousInitialMessage di awal karena akan tertimpa animasi 'isThinking'
-      // dan kita ingin ini menjadi jawaban final (decision.answer) di akhir loop.
+      // Jika AI memiliki inisiatif (autonomous), tampilkan pesannya sebagai chat permanen sebelum masuk loop mikir
+      if (isAutonomous && autonomousInitialMessage && !waContext) {
+        const initMsg = {
+          role: 'ai',
+          content: autonomousInitialMessage,
+          timestamp: getCurrentTimeInfo(),
+          isProactive: true
+        }
+        // Tampilkan langsung di layar obrolan
+        setChatData((prev) => [...prev, initMsg])
+        
+        // Simpan ke memori sesi agar AI sadar dia baru saja mengucapkan ini
+        // WAJIB ditaruh SEBELUM 'userMessage' (elemen terakhir) agar API tidak menolak request karena berakhiran 'assistant'
+        chatSession.splice(chatSession.length - 1, 0, {
+          role: 'assistant',
+          content: autonomousInitialMessage
+        })
+      }
 
       // ========== STEP 3: AGENTIC LOOP ==========
       const loopMessages = [...chatSession]
@@ -190,7 +206,8 @@ export const useMarkPlan = ({
         // --- Update UI: Tampilkan step ke berapa ---
         setChatData((prev) => {
           const filtered = prev.filter((item) => !item.isThinking)
-          return [...filtered, { role: 'ai', content: lastDecision?.thought || (isAutonomous ? 'Memproses inisiatif...' : 'Bentar, mikir dlu...'), isThinking: true }]
+          let loadingText = (isAutonomous && autonomousInitialMessage) ? autonomousInitialMessage : 'Bentar, mikir dlu...'
+          return [...filtered, { role: 'ai', content: loadingText, isThinking: true }]
         })
 
         // --- Panggil AI: getNextAction ---
@@ -326,7 +343,8 @@ export const useMarkPlan = ({
           // Update UI
           setChatData((prev) => {
             const filtered = prev.filter((item) => !item.isThinking)
-            return [...filtered, { role: 'ai', content: decision.thought || `Menjalankan ${tool}...`, isThinking: true }]
+            let loadingText = (isAutonomous && autonomousInitialMessage) ? autonomousInitialMessage : 'Bentar, mikir dlu...'
+            return [...filtered, { role: 'ai', content: loadingText, isThinking: true }]
           })
 
           // ========== EXECUTE TOOL ==========
