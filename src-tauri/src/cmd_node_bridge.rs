@@ -35,19 +35,19 @@ pub struct NodeResponse {
 }
 
 pub async fn start_node_engine(app: AppHandle, state: Arc<NodeBridgeState>) -> Result<(), String> {
-    let engine_path = if std::path::Path::new("src/backend/engine.js").exists() {
-        "src/backend/engine.js".to_string()
-    } else if std::path::Path::new("../src/backend/engine.js").exists() {
-        "../src/backend/engine.js".to_string()
+    let engine_path = if std::path::Path::new("backend/engine.js").exists() {
+        "backend/engine.js".to_string()
+    } else if std::path::Path::new("../backend/engine.js").exists() {
+        "../backend/engine.js".to_string()
     } else if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled = resource_dir.join("src/backend/engine.js");
+        let bundled = resource_dir.join("backend/engine.js");
         if bundled.exists() {
             bundled.to_string_lossy().to_string()
         } else {
-            "src/backend/engine.js".to_string()
+            "backend/engine.js".to_string()
         }
     } else {
-        "src/backend/engine.js".to_string()
+        "backend/engine.js".to_string()
     };
 
     log::info!("[NodeBridge] Memulai Node.js backend engine di path: {}", engine_path);
