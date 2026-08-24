@@ -13,7 +13,6 @@ export const useVAD = ({
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [audioIntensity, setAudioIntensity] = useState(0)
-  const [toastMessage, setToastMessage] = useState('')
   const [sttLang, setSttLang] = useState(DEFAULT_LANGUAGE)
 
   const streamRef = useRef(null)
@@ -86,7 +85,6 @@ export const useVAD = ({
     isStartingRef.current = false
     setIsProcessing(false)
     setAudioIntensity(0)
-    setToastMessage('')
 
     if (shouldSubmitPending && pendingText && pendingText.length >= 1) {
       if (onTranscriptRef.current) {
@@ -109,7 +107,6 @@ export const useVAD = ({
 
           const clean = interim.trim()
           lastTranscriptRef.current = clean
-          setToastMessage(`Mendengarkan: "${clean}"`)
 
           // Batalkan timer inaktivitas karena user sedang aktif berbicara
           if (inactivityTimerRef.current) {
@@ -131,7 +128,6 @@ export const useVAD = ({
 
           const clean = finalText.trim()
           lastTranscriptRef.current = clean
-          setToastMessage(`Mendengarkan: "${clean}"`)
 
           if (inactivityTimerRef.current) {
             clearTimeout(inactivityTimerRef.current)
@@ -268,8 +264,6 @@ export const useVAD = ({
     } catch (error) {
       console.error('[VAD] Error starting mic:', error)
       stopVADCleanup(false)
-      setToastMessage('Gagal mengakses mikrofon.')
-      setTimeout(() => setToastMessage(''), 5000)
     }
   }, [stopVADCleanup, restartRecognition])
 
@@ -293,7 +287,6 @@ export const useVAD = ({
     toggleRecording,
     startRecording: startVADRecording,
     stopRecording: () => stopVADCleanup(true),
-    toastMessage,
     sttLang,
     setSttLang
   }

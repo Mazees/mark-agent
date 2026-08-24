@@ -126,7 +126,6 @@ const MarkHome = () => {
     toggleRecording,
     startRecording,
     stopRecording,
-    toastMessage,
     sttLang,
     setSttLang
   } = useVAD({
@@ -373,12 +372,6 @@ const MarkHome = () => {
       <StatusIndicator notifications={notifications} />
       <ProcessPanel processes={activeProcesses} onDismiss={dismissProcess} />
       <BrowserPreviewWidget />
-
-      {toastMessage && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-error/90 text-white px-4 py-2 rounded-xl z-50 backdrop-blur shadow-lg animate-bounce text-sm">
-          {toastMessage}
-        </div>
-      )}
 
       {/* Main Content Area */}
       <div className="relative z-10 flex flex-col md:flex-row w-full h-full px-4 lg:px-12 pb-[120px] overflow-hidden">
