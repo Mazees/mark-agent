@@ -48,8 +48,8 @@ export const faqs = [
     a: "Jika Anda pakai mode Offline (LM Studio), kecepatan mikir Mark 100% bergantung pada kekuatan prosesor (CPU) dan VGA laptop Anda. Semakin besar memori otak (model AI) yang dipakai, semakin berat kerja laptopnya."
   },
   {
-    q: "Untuk apa Groq API Key di pengaturan?",
-    a: "Groq API Key digunakan khusus untuk fitur Speech-to-Text (Voice STT via Whisper), sehingga Mark dapat mendengarkan ucapan suara Anda dari mikrofon secara cepat dan akurat."
+    q: "Bagaimana cara kerja pengenalan suara (Voice STT) Mark?",
+    a: "Mark menggunakan Web Speech API bawaan Microsoft Edge di Windows yang bekerja secara instan, bebas lag, dan menggunakan RAM 0 MB tanpa memerlukan unduhan model atau API key."
   },
   {
     q: "Bisakah saya menghapus ingatan Mark tentang saya?",

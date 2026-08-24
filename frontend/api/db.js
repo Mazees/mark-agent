@@ -112,7 +112,7 @@ db.version(19).stores({
   config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity, localWhisperModel'
 }).upgrade(tx => {
   return tx.table('config').toCollection().modify(config => {
-    config.localWhisperModel = config.localWhisperModel ?? 'whisper-small'
+    config.localWhisperModel = config.localWhisperModel ?? 'web-speech'
   })
 })
 
@@ -255,7 +255,7 @@ export async function getAllConfig() {
         data[0].windowOpacity = 0.85
       }
       if (!data[0].localWhisperModel) {
-        data[0].localWhisperModel = 'whisper-small'
+        data[0].localWhisperModel = 'web-speech'
       }
     }
     return data || []

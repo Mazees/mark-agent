@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -46,7 +46,41 @@ pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<
 }
 
 #[tauri::command]
-pub fn sync_config(_app: AppHandle, config: serde_json::Value) -> Result<(), String> {
-    log::info!("Config synced: {:?}", config.get("theme"));
+pub fn update_global_shortcut(app: AppHandle, shortcut_str: String) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+    let normalized = shortcut_str
+        .replace("CommandOrControl", "Ctrl")
+        .replace("CmdOrCtrl", "Ctrl");
+
+    let parsed_shortcut: Shortcut = match normalized.parse() {
+        Ok(s) => s,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    let global_shortcut = app.global_shortcut();
+    let _ = global_shortcut.unregister_all();
+
+    let app_handle = app.clone();
+    let _ = global_shortcut.on_shortcut(parsed_shortcut, move |_app, _shortcut, event| {
+        if event.state() == ShortcutState::Pressed {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.emit("trigger-live-audio", ());
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sync_config(app: AppHandle, config: serde_json::Value) -> Result<(), String> {
+    if let Some(shortcut_val) = config.get("shortcutKey").and_then(|v| v.as_str()) {
+        if !shortcut_val.trim().is_empty() {
+            let _ = update_global_shortcut(app, shortcut_val.to_string());
+        }
+    }
     Ok(())
 }

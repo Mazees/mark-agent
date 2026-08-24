@@ -199,13 +199,20 @@ export const tauriApi = {
     }
   },
   removeLiveAudioShortcut: () => {},
+  updateGlobalShortcut: (shortcutStr) => {
+    return invoke('update_global_shortcut', { shortcutStr }).catch((err) => {
+      console.warn('[TauriBridge] Gagal update global shortcut:', err)
+    })
+  },
   textToSpeech: async (text, rate, pitch) => {
     try {
       const res = await invoke('node_invoke', {
         action: 'executeNativeTool',
         payload: { toolName: 'tts-speak', query: `${text}||${rate}||${pitch}` }
       })
-      return res.data
+      if (typeof res?.data === 'string') return res.data
+      if (res?.data?.data && typeof res.data.data === 'string') return res.data.data
+      return null
     } catch (e) {
       return null
     }

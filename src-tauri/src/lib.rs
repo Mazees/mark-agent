@@ -42,6 +42,7 @@ pub fn run() {
             cmd_window::open_external,
             cmd_window::show_notification,
             cmd_window::sync_config,
+            cmd_window::update_global_shortcut,
             cmd_screenshot::take_screenshot,
             cmd_node_bridge::node_invoke,
         ])

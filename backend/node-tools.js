@@ -3,6 +3,7 @@ import path from 'path'
 import os from 'os'
 import { exec } from 'child_process'
 import util from 'util'
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 
 export const _getOSMeta = () =>
   'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
@@ -1214,6 +1215,50 @@ export const NATIVE_TOOLS = {
         hideBrowser(sessionId)
         return { success: true, data: `Browser sesi [${sessionId}] disembunyikan.` }
       } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+  'tts-speak': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        const parts = (query || '').split('||')
+        const text = parts[0]?.trim() || ''
+        const rate = parseFloat(parts[1]) || 0
+        const pitch = parseFloat(parts[2]) || 0
+
+        if (!text) {
+          return { success: false, error: 'Teks kosong' }
+        }
+
+        const tts = new MsEdgeTTS()
+        await tts.setMetadata('id-ID-ArdiNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+
+        const ratePercent = rate >= 0 ? `+${Math.round(rate)}%` : `${Math.round(rate)}%`
+        const pitchHz = pitch >= 0 ? `+${Math.round(pitch)}Hz` : `${Math.round(pitch)}Hz`
+
+        const { audioStream } = tts.toStream(text, {
+          rate: ratePercent,
+          pitch: pitchHz
+        })
+
+        const chunks = []
+        audioStream.on('data', (chunk) => {
+          chunks.push(chunk)
+        })
+
+        await new Promise((resolve, reject) => {
+          audioStream.on('end', resolve)
+          audioStream.on('close', resolve)
+          audioStream.on('error', reject)
+        })
+
+        const buffer = Buffer.concat(chunks)
+        const base64 = `data:audio/mp3;base64,${buffer.toString('base64')}`
+        return { success: true, data: base64 }
+      } catch (e) {
+        console.error('[NodeTools] tts-speak error:', e)
         return { success: false, error: e.message }
       }
     }

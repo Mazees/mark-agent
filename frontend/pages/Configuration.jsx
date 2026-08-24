@@ -932,99 +932,16 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                 Audio & Voice Engine
               </h2>
 
-              {/* STT Engine Selection */}
-              <div className="space-y-1.5">
-                <p className="text-sm font-semibold">Mesin Transkripsi Suara (STT)</p>
-                <select
-                  className="select select-bordered w-full"
-                  value={config.localWhisperModel || 'whisper-small'}
-                  onChange={(e) =>
-                    setConfig((prev) => ({ ...prev, localWhisperModel: e.target.value }))
-                  }
-                >
-                  <option value="whisper-small">Local Offline (Whisper Small)</option>
-                  <option value="groq-whisper">Groq API Cloud (Whisper Large-v3)</option>
-                  <option value="groq-whisper-turbo">Groq API Cloud (Whisper Large-v3 Turbo)</option>
-                </select>
-                <p className="text-xs opacity-40">
-                  Pilih "Groq API Cloud" untuk transkripsi via internet yang sangat ringan di
-                  sistem.
+              {/* STT Engine Info */}
+              <div className="space-y-1.5 p-4 rounded-xl bg-base-200/50 border border-base-content/10">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">Voice Speech-to-Text (STT)</p>
+                  <span className="badge badge-primary badge-sm font-mono font-bold">Edge Native (0 MB RAM)</span>
+                </div>
+                <p className="text-xs opacity-60">
+                  MARK menggunakan <strong>Web Speech API</strong> bawaan Microsoft Edge di Windows. Bekerja secara instan dan bebas lag tanpa memerlukan unduhan model AI lokal atau API key.
                 </p>
               </div>
-
-              {config.localWhisperModel?.startsWith('groq') && (
-                <div id="tour-groq-key" className="space-y-1.5 p-2 -mx-2 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <p className="text-sm font-semibold">
-                      Groq API Key{' '}
-                      <span className="text-xs font-normal opacity-60">
-                        (Khusus untuk Voice Speech-to-Text)
-                      </span>
-                    </p>
-                    <a
-                      href="https://console.groq.com/keys"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-xs btn-outline btn-primary"
-                    >
-                      Ambil API Key
-                    </a>
-                  </div>
-                  <div className="relative w-full">
-                    <input
-                      type={showGroqKey ? 'text' : 'password'}
-                      placeholder="Contoh: gsk_xxxxxxxxxxxxxxxxx"
-                      className="input input-bordered w-full pr-10"
-                      value={config.groqApiKey || ''}
-                      onChange={handleGroqApiKeyChange}
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
-                      onClick={handleToggleGroqKey}
-                      title={showGroqKey ? 'Sembunyikan API Key' : 'Tampilkan API Key'}
-                    >
-                      {showGroqKey ? (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                          <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                          <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                          <line x1="2" x2="22" y1="2" y2="22" />
-                        </svg>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-xs opacity-40">
-                    API Key Groq ini digunakan khusus untuk fitur transkripsi suara mikrofon
-                    (Whisper STT).
-                  </p>
-                </div>
-              )}
 
               {/* Microphone Source Selection */}
               <div className="space-y-1.5">

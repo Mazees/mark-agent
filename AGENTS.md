@@ -16,7 +16,7 @@
 - **Local Database & Vector Search:** `dexie` (IndexedDB wrapper, v14 schema with 8 stores) and `@orama/orama` for Hybrid Full-Text & Vector search
 - **Desktop Host (Rust):** `src-tauri/` handling window lifecycle, WebView2 container, system tray, global shortcut `Ctrl+Alt+M`, single-instance lock, GDI screen capture, and Node.js process supervisor.
 - **Backend & Native OS Tools (Node.js):** `src/backend/engine.js` stdio JSON RPC daemon powering file CRUD, PowerShell execution, multi-session browser automation, PC automation daemon, plugins, skills, and Telegram bot.
-- **Voice/Audio:** Groq API (Speech-to-Text via `whisper-large-v3`), Edge-TTS (`msedge-tts`, voice: `id-ID-ArdiNeural`), Web Audio API (Voice Activity Detection via `useVAD.js`, 16kHz sample rate, RMS threshold 0.015)
+- **Voice/Audio:** Web Speech API (Edge Native Speech-to-Text with Indonesian `id-ID` locale, RAM 0 MB), Edge-TTS (`msedge-tts`, voice: `id-ID-ArdiNeural`), Web Audio API (Real-time volume visualizer & FFT intensity extraction)
 - **Media/Integrations:** `youtube-transcript-plus`, `ytmusic-api` (YouTube Music with ad-blaster), `yt-search`, `youtube-dl-exec` + `ffmpeg-static`
 - **Communication:** `telegraf` (Telegram Bot Framework)
 - **Packaging:** `tauri build` (NSIS installer, `identifier: com.mark.agent`)
