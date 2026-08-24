@@ -1,74 +1,79 @@
-import React, { useEffect } from 'react';
+import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
-const ConfirmModal = ({ 
+const ConfirmModal = ({
   isOpen,
-  title, 
-  message, 
-  onConfirm, 
+  title,
+  message,
+  onConfirm,
   onCancel,
-  confirmText = "Ya", 
-  cancelText = "Batal", 
+  confirmText = 'Ya',
+  cancelText = 'Batal',
   isError = false,
   hideCancel = false
 }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isOpen) {
-        onCancel?.();
+        onCancel?.()
       }
-    };
-    if (isOpen) {
-      window.addEventListener('keydown', handleKeyDown);
     }
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onCancel]);
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown)
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onCancel])
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null
 
-  return (
-    <div className="modal modal-open z-[99999] fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-[response-fade-in_0.15s_ease-out_forwards]">
-      <div className="modal-box relative bg-base-300 border border-white/10 shadow-2xl z-10 max-w-md">
-        <h3 className={`font-bold text-lg ${isError ? 'text-error' : 'text-primary'}`}>{title}</h3>
-        <p className="py-4 text-sm opacity-80 whitespace-pre-wrap">
+  const modalContent = (
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-[response-fade-in_0.15s_ease-out_forwards]">
+      <div 
+        className="fixed inset-0 bg-transparent cursor-pointer"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onCancel?.()
+        }}
+      />
+      <div className="relative w-full max-w-md bg-base-300 border border-white/15 rounded-2xl shadow-2xl z-10 p-6 overflow-hidden animate-[holo-project-in_0.2s_ease-out_forwards]">
+        <h3 className={`font-bold text-lg ${isError ? 'text-error' : 'text-primary'}`}>
+          {title}
+        </h3>
+        <p className="py-4 text-sm text-base-content/80 whitespace-pre-wrap leading-relaxed">
           {message}
         </p>
-        <div className="modal-action">
+        <div className="flex items-center justify-end gap-3 pt-2">
           {!hideCancel && (
-            <button 
+            <button
               type="button"
-              className="btn btn-ghost btn-sm" 
+              className="btn btn-ghost btn-sm px-4 rounded-lg cursor-pointer"
               onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onCancel?.();
+                e.preventDefault()
+                e.stopPropagation()
+                onCancel?.()
               }}
             >
               {cancelText}
             </button>
           )}
-          <button 
+          <button
             type="button"
-            className={`btn ${isError ? 'btn-error' : 'btn-primary'} btn-sm shadow-md`} 
+            className={`btn ${isError ? 'btn-error' : 'btn-primary'} btn-sm px-5 shadow-lg rounded-lg font-medium cursor-pointer`}
             onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onConfirm?.();
+              e.preventDefault()
+              e.stopPropagation()
+              onConfirm?.()
             }}
           >
             {confirmText}
           </button>
         </div>
       </div>
-      <div 
-        className="modal-backdrop fixed inset-0 cursor-pointer" 
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onCancel?.();
-        }} 
-      />
     </div>
-  );
-};
+  )
 
-export default ConfirmModal;
+  return createPortal(modalContent, document.body)
+}
+
+export default ConfirmModal

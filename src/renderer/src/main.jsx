@@ -1,4 +1,5 @@
 import './assets/main.css'
+import './api/tauri-bridge'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
