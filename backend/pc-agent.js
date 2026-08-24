@@ -291,26 +291,23 @@ export function resolveAskUserPC(response) {
 /**
  * Helper to spawn mouse locker
  */
+function getMouseLockerScriptPath() {
+  let scriptPath = join(__dirname, 'pc-agent-scripts', 'mouse-locker.ps1')
+  if (fs.existsSync(scriptPath)) return scriptPath
+  const fallbackPath = path.resolve('backend/pc-agent-scripts/mouse-locker.ps1')
+  if (fs.existsSync(fallbackPath)) return fallbackPath
+  const altPath = path.resolve('src/backend/pc-agent-scripts/mouse-locker.ps1')
+  if (fs.existsSync(altPath)) return altPath
+  return scriptPath
+}
+
 function startMouseLocker() {
-  if (mouseLockerProcess) return
+  if (mouseLockerProcess && !mouseLockerProcess.killed) return
   try {
-    let scriptPath = join(__dirname, 'pc-agent-scripts', 'mouse-locker.ps1')
-    if (app.isPackaged) {
-      const unpackedPath = join(
-        process.resourcesPath,
-        'app.asar.unpacked',
-        'src',
-        'main',
-        'pc-agent-scripts',
-        'mouse-locker.ps1'
-      )
-      if (fs.existsSync(unpackedPath)) {
-        scriptPath = unpackedPath
-      } else {
-        scriptPath = scriptPath.replace('app.asar', 'app.asar.unpacked')
-      }
-    } else if (!fs.existsSync(scriptPath)) {
-      scriptPath = join(__dirname, 'pc-agent-scripts', 'mouse-locker.ps1')
+    const scriptPath = getMouseLockerScriptPath()
+    if (!fs.existsSync(scriptPath)) {
+      console.warn('[PC-Agent] Mouse locker script not found at:', scriptPath)
+      return
     }
     mouseLockerProcess = spawn('powershell.exe', [
       '-NoProfile',
@@ -320,7 +317,24 @@ function startMouseLocker() {
       'Bypass',
       '-File',
       scriptPath
-    ])
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+
+    mouseLockerProcess.stdout.on('data', (data) => {
+      console.log('[PC-Agent] Mouse locker stdout:', data.toString().trim())
+    })
+
+    mouseLockerProcess.stderr.on('data', (data) => {
+      console.warn('[PC-Agent] Mouse locker stderr:', data.toString().trim())
+    })
+
+    mouseLockerProcess.on('close', (code) => {
+      console.log('[PC-Agent] Mouse locker process exited with code', code)
+      mouseLockerProcess = null
+    })
+
+    console.log('[PC-Agent] Mouse locker spawned successfully')
   } catch (err) {
     console.warn('[PC-Agent] Failed to start mouse locker:', err)
   }
@@ -332,6 +346,7 @@ function stopMouseLocker() {
       mouseLockerProcess.kill()
     } catch (err) {}
     mouseLockerProcess = null
+    console.log('[PC-Agent] Mouse locker stopped and mouse unlocked')
   }
 }
 
@@ -633,7 +648,9 @@ export async function readDesktop(options = {}, query = '') {
     console.log('[PC-Agent] Resetting isStoppedByUser=false for new readDesktop() call')
     isStoppedByUser = false
   }
-  showPCOverlay()
+  if (isSessionOpen) {
+    showPCOverlay('Membaca Layar Desktop', 'Scanning accessibility tree...')
+  }
   
   const isFocus = (query === 'focus')
   if (!isFocus && !stateChanged && lastReadResult && (Date.now() - lastReadTimestamp < CACHE_TTL)) {
@@ -653,17 +670,21 @@ export async function readDesktop(options = {}, query = '') {
       uiText = await runScriptFallback('read-ui.ps1')
     }
 
-    let parsed = null
-    if (uiText) {
-      try {
-        parsed = JSON.parse(uiText)
-      } catch (e) {
-        console.warn('[PC-Agent] Failed to parse UIAutomation JSON, falling back to OCR')
-      }
+    if (!uiText || uiText.trim().length === 0) {
+      lastReadResult = { window: 'unknown', method: 'empty', elements: [], element_count: 0 }
+      lastReadTimestamp = Date.now()
+      scheduleHidePCOverlay()
+      return lastReadResult
     }
 
-    // If UIAutomation returned 0 elements or failed, fallback to local OCR
-    if (!isFocus && (!parsed || !parsed.elements || parsed.elements.length === 0)) {
+    let parsed = null
+    try {
+      parsed = JSON.parse(uiText)
+    } catch (e) {
+      console.warn('[PC-Agent] Failed to parse UIAutomation JSON, falling back to OCR')
+    }
+
+    if (!parsed || !parsed.elements || parsed.elements.length === 0) {
       console.log(
         '[PC-Agent] UIAutomation returned 0 elements. Executing local WinRT OCR fallback...'
       )
@@ -673,52 +694,57 @@ export async function readDesktop(options = {}, query = '') {
       } else {
         ocrText = await runScriptFallback('ocr-region.ps1')
       }
-      if (ocrText) {
-        try {
-          parsed = JSON.parse(ocrText)
-        } catch {}
+      
+      try {
+        parsed = JSON.parse(ocrText)
+      } catch (e) {
+        parsed = { window: 'unknown', method: 'ocr_fallback', elements: [], element_count: 0 }
       }
     }
 
-    if (parsed && parsed.elements) {
-      lastReadResult = parsed
-      lastReadTimestamp = Date.now()
-      stateChanged = false
-    } else {
-      parsed = { window: 'unknown', method: 'none', elements: [], element_count: 0 }
-    }
-
+    lastReadResult = parsed
+    lastReadTimestamp = Date.now()
+    stateChanged = false
     scheduleHidePCOverlay()
     return parsed
   } catch (err) {
-    scheduleHidePCOverlay()
     console.error('[PC-Agent] readDesktop error:', err)
-    return { window: 'error', method: 'error', elements: [], element_count: 0 }
+    scheduleHidePCOverlay()
+    return {
+      window: 'unknown',
+      method: 'error',
+      elements: [],
+      element_count: 0,
+      error: err.message
+    }
   }
 }
 
 /**
- * Helper: Find coordinates from element ID or x||y string
+ * Resolve element coordinates by numeric ID from lastReadResult
  */
 function resolveCoordinates(query) {
   if (!query) return null
 
-  // If query is "x||y"
-  if (query.includes('||')) {
-    const parts = query.split('||').map((p) => parseInt(p.trim(), 10))
-    if (!isNaN(parts[0]) && !isNaN(parts[1])) {
-      return { x: parts[0], y: parts[1] }
-    }
+  // Format "x,y" coordinates
+  if (typeof query === 'string' && query.includes(',')) {
+    const parts = query.split(',')
+    const x = parseInt(parts[0].trim(), 10)
+    const y = parseInt(parts[1].trim(), 10)
+    if (!isNaN(x) && !isNaN(y)) return { x, y }
   }
 
-  // If query is element ID (number)
-  const id = parseInt(query.trim(), 10)
+  // Format numeric element ID
+  const id = parseInt(query, 10)
   if (!isNaN(id) && lastReadResult && lastReadResult.elements) {
-    const el = lastReadResult.elements.find((item) => item.id === id)
-    if (el && el.rect && el.rect.length === 4) {
-      const centerX = Math.round(el.rect[0] + el.rect[2] / 2)
-      const centerY = Math.round(el.rect[1] + el.rect[3] / 2)
-      return { x: centerX, y: centerY, id: id }
+    const el = lastReadResult.elements.find((e) => e.id === id)
+    if (el && el.rect) {
+      return {
+        id,
+        x: el.rect.x + Math.floor(el.rect.width / 2),
+        y: el.rect.y + Math.floor(el.rect.height / 2),
+        name: el.name
+      }
     }
   }
 
@@ -735,12 +761,12 @@ export async function executeClick(query) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
   const coords = resolveCoordinates(query)
   if (!coords) {
     scheduleHidePCOverlay()
     return `[PC-Agent] Error: Element ID or coordinates '${query}' not found. Try os-read first.`
   }
+  showPCOverlay('Mengklik Elemen', `Koordinat (${coords.x}, ${coords.y})`)
   
   let result = ''
   if (isDaemonAlive()) {
@@ -774,12 +800,12 @@ export async function executeDoubleClick(query) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
   const coords = resolveCoordinates(query)
   if (!coords) {
     scheduleHidePCOverlay()
     return `[PC-Agent] Error: Element ID or coordinates '${query}' not found. Try os-read first.`
   }
+  showPCOverlay('Double Click', `Koordinat (${coords.x}, ${coords.y})`)
   
   let result = ''
   if (isDaemonAlive()) {
@@ -809,7 +835,6 @@ export async function executeType(query) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
   let text = query
   let coords = null
 
@@ -819,6 +844,8 @@ export async function executeType(query) {
     text = query.substring(idx + 2).trim()
     coords = resolveCoordinates(possibleId)
   }
+
+  showPCOverlay('Mengetik Teks', text.slice(0, 35))
 
   // If element ID was provided, click it first to focus
   if (coords) {
@@ -857,7 +884,7 @@ export async function executeKey(combo) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
+  showPCOverlay('Menekan Tombol Shortcut', combo)
   let result = ''
   if (isDaemonAlive()) {
     result = await sendCommand({ cmd: 'key', combo })
@@ -879,7 +906,6 @@ export async function executeScroll(query) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
   let direction = 'down'
   let amount = 5
   if (query && query.includes('||')) {
@@ -891,6 +917,7 @@ export async function executeScroll(query) {
     direction = query.trim().toLowerCase()
   }
   
+  showPCOverlay('Scroll Layar', `${direction} (${amount}x)`)
   let result = ''
   if (isDaemonAlive()) {
     result = await sendCommand({ cmd: 'scroll', direction, amount })
@@ -916,7 +943,7 @@ export async function openApp(target) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
+  showPCOverlay('Membuka Aplikasi', target)
   let result = ''
   if (isDaemonAlive()) {
     result = await sendCommand({ cmd: 'open', target })
@@ -944,7 +971,7 @@ export async function listWindows() {
   if (isStopActive()) {
     return { status: 'stopped_by_user', windows: [], count: 0, message: lastStopReason }
   }
-  showPCOverlay()
+  showPCOverlay('Memeriksa Jendela Aktif', 'Scanning windows...')
   let result = ''
   if (isDaemonAlive()) {
     result = await sendCommand({ cmd: 'list-windows' })
@@ -970,7 +997,7 @@ export async function focusWindow(title) {
   if (isStopActive()) {
     return `[PC-Agent] Stopped by user: ${lastStopReason || 'User pressed Ctrl+Shift+S'}`
   }
-  showPCOverlay()
+  showPCOverlay('Fokus Jendela', title)
   let result = ''
   if (isDaemonAlive()) {
     result = await sendCommand({ cmd: 'focus-window', title })

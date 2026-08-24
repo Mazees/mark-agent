@@ -19,7 +19,6 @@ import { YoutubeMusicProvider } from './contexts/YoutubeMusicContext'
 import { ApprovalProvider } from './contexts/ApprovalContext'
 import { YoutubeMusicPlayer } from './components/YoutubeMusicPlayer'
 import { GlobalCameraManager } from './components/GlobalCameraManager'
-import { PCOverlay } from './components/pc/PCOverlay'
 import { getAllConfig } from './api/db'
 import { initOramaIndices, hydrateFromDexie } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
@@ -193,6 +192,15 @@ const MainLayout = () => {
 }
 
 function App() {
+  // Jika window ini adalah secondary window PC Overlay, render murni hanya PCOverlayPage tanpa context lain
+  if (window.location.hash.includes('pc-overlay')) {
+    return (
+      <HashRouter>
+        <PCOverlayPage />
+      </HashRouter>
+    )
+  }
+
   const [hasConfig, setHasConfig] = useState(true)
   const [isChecking, setIsChecking] = useState(true)
   const [loadingText, setLoadingText] = useState('Membangunkan Mark...')
@@ -302,7 +310,6 @@ function App() {
             <div style={{ display: isStandalone ? 'none' : 'block' }}>
               <YoutubeMusicPlayer />
             </div>
-            <PCOverlay />
             <GlobalCameraManager />
             <webview
               id="global-ai-search-webview"

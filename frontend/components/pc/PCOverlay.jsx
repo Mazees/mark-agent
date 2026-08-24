@@ -105,9 +105,9 @@ export const PCOverlay = () => {
       >
         {isAsking ? (
           // Mode Dialog Interaktif (os-ask)
-          <div className="w-[380px] sm:w-[440px] rounded-2xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] border border-cyan-500/40 bg-[#080808]/95 backdrop-blur-3xl p-5 flex flex-col gap-3">
+          <div className="w-[380px] sm:w-[440px] rounded-2xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] border border-[#1fb854]/40 bg-[#0e1411]/95 backdrop-blur-3xl p-5 flex flex-col gap-3 font-mono">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs tracking-wider uppercase">
+              <div className="flex items-center gap-2 text-[#1fb854] font-bold text-xs tracking-wider uppercase">
                 <FaQuestionCircle size={15} />
                 <span>MARK Membutuhkan Masukan</span>
               </div>
@@ -120,7 +120,7 @@ export const PCOverlay = () => {
               </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-xs text-white/90 leading-relaxed max-h-36 overflow-y-auto">
+            <div className="p-3 rounded-xl bg-black/40 border border-[#1fb854]/20 text-xs text-[#cac9c9] leading-relaxed max-h-36 overflow-y-auto">
               {askQuestion}
             </div>
 
@@ -131,7 +131,7 @@ export const PCOverlay = () => {
                 value={userAnswer}
                 onChange={(e) => setUserAnswer(e.target.value)}
                 placeholder="Ketik jawaban atau instruksi Anda..."
-                className="input input-sm input-bordered w-full bg-black/50 border-white/20 text-xs focus:border-cyan-500 text-white"
+                className="input input-sm input-bordered w-full bg-black/60 border-[#1fb854]/30 focus:border-[#1fb854] text-xs text-white"
               />
 
               <div className="flex items-center justify-between gap-2 pt-1">
@@ -145,7 +145,7 @@ export const PCOverlay = () => {
                 <button
                   type="submit"
                   disabled={!userAnswer.trim()}
-                  className="btn btn-primary btn-xs px-4 gap-1.5 font-bold shadow-md shadow-primary/30"
+                  className="btn btn-xs px-4 gap-1.5 font-bold bg-[#1fb854] hover:bg-[#1fb854]/85 text-black border-none shadow-md shadow-[#1fb854]/30"
                 >
                   <FaPaperPlane size={10} />
                   <span>Kirim Jawaban</span>
@@ -155,14 +155,14 @@ export const PCOverlay = () => {
           </div>
         ) : (
           // Mode Floating Security Banner (Live Actions)
-          <div className="min-w-[340px] sm:min-w-[380px] max-w-[480px] rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-cyan-500/30 bg-[#080808]/95 backdrop-blur-3xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-[340px] sm:min-w-[380px] max-w-[480px] rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-[#1fb854]/35 bg-[#0e1411]/95 backdrop-blur-3xl px-4 py-3 flex items-center justify-between gap-3 font-mono">
             <div className="flex items-center gap-3 min-w-0">
               {/* Pulsing Status Icon */}
               <div
                 className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors shadow-md ${
                   isStopped
                     ? 'bg-error text-white shadow-error/40'
-                    : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-cyan-500/20'
+                    : 'bg-[#1fb854]/15 text-[#1fb854] border border-[#1fb854]/30 shadow-[0_0_12px_rgba(31,184,84,0.25)]'
                 }`}
               >
                 {isStopped ? <FaShieldAlt size={14} /> : <FaTerminal size={14} className="animate-pulse" />}
@@ -173,13 +173,13 @@ export const PCOverlay = () => {
                 <div className="flex items-center gap-2">
                   <span
                     className={`text-[10px] font-extrabold tracking-wider uppercase ${
-                      isStopped ? 'text-error' : 'text-cyan-400'
+                      isStopped ? 'text-error' : 'text-[#1fb854]'
                     }`}
                   >
                     {isStopped ? 'STOPPED' : 'PC AUTOMATION ACTIVE'}
                   </span>
                   {!isStopped && (
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#1fb854] shadow-[0_0_8px_#1fb854] animate-ping" />
                   )}
                 </div>
                 <p className="text-xs font-semibold text-white/90 truncate">
