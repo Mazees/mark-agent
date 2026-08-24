@@ -1,7 +1,8 @@
-// Web Speech API (Microsoft Edge Native STT in Tauri v2)
+// Web Speech API (Microsoft Edge Native STT in Tauri v2 / WebView2)
 
 let recognition = null
 let isListening = false
+let isStarting = false
 let activeCallbacks = {
   onResult: null,
   onInterim: null,
@@ -18,11 +19,12 @@ function getSpeechRecognitionClass() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null
 }
 
-export function startWebSpeechRecognition({
+export async function startWebSpeechRecognition({
   onResult,
   onInterim,
   onError,
   onEnd,
+  continuous = false,
   lang = 'id-ID'
 } = {}) {
   if (!isWebSpeechSupported()) {
@@ -30,20 +32,27 @@ export function startWebSpeechRecognition({
     return false
   }
 
-  stopWebSpeechRecognition()
+  if (isStarting) return false
+  isStarting = true
+
+  // Jika sudah ada recognition aktif, hentikan dulu dan beri jeda untuk Windows Audio Session
+  if (recognition) {
+    stopWebSpeechRecognition()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
 
   const SpeechClass = getSpeechRecognitionClass()
   try {
-    recognition = new SpeechClass()
-    recognition.lang = lang
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.maxAlternatives = 1
+    const instance = new SpeechClass()
+    instance.lang = lang
+    instance.continuous = continuous
+    instance.interimResults = true
+    instance.maxAlternatives = 1
 
     activeCallbacks = { onResult, onInterim, onError, onEnd }
-    isListening = true
+    recognition = instance
 
-    recognition.onresult = (event) => {
+    instance.onresult = (event) => {
       let finalTranscript = ''
       let interimTranscript = ''
 
@@ -66,25 +75,39 @@ export function startWebSpeechRecognition({
       }
     }
 
-    recognition.onerror = (event) => {
+    instance.onerror = (event) => {
+      // Abaikan error normal saat hening (no-speech) atau saat sengaja di-abort
+      if (event.error === 'no-speech' || event.error === 'aborted') {
+        return
+      }
       console.warn('[WebSpeech] Recognition error:', event.error)
       if (activeCallbacks.onError) {
         activeCallbacks.onError(new Error(event.error || 'Speech recognition error'))
       }
     }
 
-    recognition.onend = () => {
-      isListening = false
+    instance.onend = () => {
+      if (recognition === instance) {
+        recognition = null
+        isListening = false
+      }
       if (activeCallbacks.onEnd) {
         activeCallbacks.onEnd()
       }
     }
 
-    recognition.start()
+    instance.start()
+    isListening = true
+    isStarting = false
     return true
   } catch (err) {
-    console.error('[WebSpeech] Failed to start recognition:', err)
+    // Tangani WindowsError (0x8007139F - Invalid State) secara aman
+    if (err.name !== 'InvalidStateError') {
+      console.warn('[WebSpeech] Safe catch on start recognition:', err.message || err)
+    }
+    recognition = null
     isListening = false
+    isStarting = false
     if (onError) onError(err)
     return false
   }
@@ -93,21 +116,20 @@ export function startWebSpeechRecognition({
 export function stopWebSpeechRecognition() {
   if (recognition) {
     try {
-      recognition.stop()
+      const target = recognition
+      recognition = null
+      target.onresult = null
+      target.onerror = null
+      target.onend = null
+      target.abort()
     } catch (_) {}
-    recognition = null
   }
   isListening = false
+  isStarting = false
 }
 
 export function abortWebSpeechRecognition() {
-  if (recognition) {
-    try {
-      recognition.abort()
-    } catch (_) {}
-    recognition = null
-  }
-  isListening = false
+  stopWebSpeechRecognition()
 }
 
 export function isWebSpeechListening() {

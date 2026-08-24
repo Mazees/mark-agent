@@ -19,6 +19,7 @@ export const useVAD = ({
   const processorRef = useRef(null)
   const isStartingRef = useRef(false)
   const isRecordingRef = useRef(false)
+  const isProcessingSpeechRef = useRef(false)
   const onTranscriptRef = useRef(onTranscript)
 
   useEffect(() => {
@@ -48,11 +49,80 @@ export const useVAD = ({
     }
 
     isRecordingRef.current = false
+    isProcessingSpeechRef.current = false
     setIsRecording(false)
     isStartingRef.current = false
     setIsProcessing(false)
     setAudioIntensity(0)
+    setToastMessage('')
   }, [])
+
+  const restartRecognition = useCallback(() => {
+    if (!isRecordingRef.current) return
+    if (window.isMarkSpeaking || isProcessingSpeechRef.current) return
+
+    if (isWebSpeechSupported()) {
+      startWebSpeechRecognition({
+        lang: 'id-ID',
+        continuous: false,
+        onInterim: (interim) => {
+          if (interim && interim.trim()) {
+            setToastMessage(`Mendengarkan: "${interim}"`)
+          }
+        },
+        onResult: (finalText) => {
+          if (finalText && finalText.trim()) {
+            // Bersihkan panggilan nama Mark di awal kalimat
+            const stripped = finalText.replace(
+              /^\s*(?:hey|hei|halo|hello|helo|hai|hi|woi|oi|bro)?\s*(?:mbak|mak|makh|marg|mart|marck|marc|mac|mag|mark|smart)\b/gi,
+              ''
+            ).replace(/^[,:\-–—\s]+/, '').trim()
+
+            // Jika user hanya mengucapkan "Mark" / "Halo Mark" tanpa perintah lanjutan, jangan matikan mic dan jangan kirim prompt kosong
+            if (!stripped || stripped.length < 2) {
+              console.log('[VAD] Ignored solo wake word in interactive mic:', finalText)
+              return
+            }
+
+            const cleanText = finalText.replace(
+              /\b(mbak|mak|makh|marg|mart|marck|marc|mac|mag)\b/gi,
+              'Mark'
+            )
+
+            // Matikan mikrofon interaktif seketika setelah kalimat perintah valid selesai terucap
+            stopVADCleanup()
+
+            if (onTranscriptRef.current) {
+              onTranscriptRef.current(cleanText.trim())
+            }
+          }
+        },
+        onError: (err) => {
+          if (err.message !== 'no-speech' && err.message !== 'aborted') {
+            console.warn('[VAD] Web Speech error:', err.message)
+          }
+        },
+        onEnd: () => {
+          // Jika recognition mati secara alami oleh timeout Edge, restart jika user masih dalam mode record
+          if (
+            isRecordingRef.current &&
+            !window.isMarkSpeaking &&
+            !isProcessingSpeechRef.current
+          ) {
+            setTimeout(() => {
+              if (
+                isRecordingRef.current &&
+                !window.isMarkSpeaking &&
+                !isProcessingSpeechRef.current
+              ) {
+                restartRecognition()
+              }
+            }, 300)
+          }
+        }
+      })
+    }
+  }, [stopVADCleanup])
 
   const startVADRecording = useCallback(async () => {
     if (isStartingRef.current || isRecordingRef.current) return
@@ -96,6 +166,7 @@ export const useVAD = ({
       gainNode.connect(audioContext.destination)
 
       isRecordingRef.current = true
+      isProcessingSpeechRef.current = false
       setIsRecording(true)
 
       const RMS_THRESHOLD = 0.01
@@ -114,60 +185,8 @@ export const useVAD = ({
         setAudioIntensity(Math.max(0, normalized))
       }
 
-      // Start Web Speech Recognition
-      if (isWebSpeechSupported()) {
-        startWebSpeechRecognition({
-          lang: 'id-ID',
-          onInterim: (interim) => {
-            if (interim && interim.trim()) {
-              setToastMessage(`Mendengarkan: "${interim}"`)
-            }
-          },
-          onResult: (finalText) => {
-            setToastMessage('')
-            if (finalText && finalText.trim()) {
-              const cleanText = finalText.replace(
-                /\b(mbak|mak|makh|marg|mart|marck|marc|mac|mag)\b/gi,
-                'Mark'
-              )
-              if (onTranscriptRef.current) {
-                onTranscriptRef.current(cleanText.trim())
-              }
-            }
-          },
-          onError: (err) => {
-            console.warn('[VAD] Web Speech error:', err.message)
-          },
-          onEnd: () => {
-            if (isRecordingRef.current && !window.isMarkSpeaking) {
-              setTimeout(() => {
-                if (isRecordingRef.current && !window.isMarkSpeaking) {
-                  startWebSpeechRecognition({
-                    lang: 'id-ID',
-                    onInterim: (interim) => {
-                      if (interim && interim.trim()) setToastMessage(`Mendengarkan: "${interim}"`)
-                    },
-                    onResult: (finalText) => {
-                      setToastMessage('')
-                      if (finalText && finalText.trim()) {
-                        const cleanText = finalText.replace(
-                          /\b(mbak|mak|makh|marg|mart|marck|marc|mac|mag)\b/gi,
-                          'Mark'
-                        )
-                        if (onTranscriptRef.current) {
-                          onTranscriptRef.current(cleanText.trim())
-                        }
-                      }
-                    }
-                  })
-                }
-              }, 200)
-            }
-          }
-        })
-      } else {
-        setToastMessage('Web Speech API tidak didukung di sistem ini.')
-      }
+      // Mulai recognition
+      restartRecognition()
 
       isStartingRef.current = false
     } catch (error) {
@@ -176,7 +195,7 @@ export const useVAD = ({
       setToastMessage('Gagal mengakses mikrofon.')
       setTimeout(() => setToastMessage(''), 5000)
     }
-  }, [stopVADCleanup])
+  }, [stopVADCleanup, restartRecognition])
 
   useEffect(() => {
     window.isVADRecording = isRecording

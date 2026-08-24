@@ -82,10 +82,10 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     context: 10,
     ttsRate: 0,
     ttsPitch: 0,
-    groqApiKey: '',
     aiProvider: 'gemini-web',
     geminiWebModel: 'gemini-3.6-flash',
-    groqModel: 'llama-3.1-8b-instant',
+    wakeWordEnabled: false,
+    wakeWordKeyword: 'hey-mark',
     tgBotToken: '',
     tgAdminIds: '',
     micDeviceId: 'default',
@@ -104,7 +104,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   const { confirm, ModalComponent } = useConfirm()
   const chatContext = useChat()
 
-  const [showGroqKey, setShowGroqKey] = useState(false)
   const [showCustomKey, setShowCustomKey] = useState(false)
 
   const handleTestVoice = async () => {
@@ -189,19 +188,9 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
               }
             },
             {
-              element: '#tour-groq-key',
-              popover: {
-                title: '3. Wajib: Groq API Key',
-                description:
-                  'Nah ini penting! Karena fitur ngobrol pakai suara (Speech-to-Text) eksklusif pakai Groq, bagian ini WAJIB kamu isi walaupun pakai AI lokal.',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
               element: '#tour-persona',
               popover: {
-                title: '4. Kepribadian Mark',
+                title: '3. Kepribadian Mark',
                 description:
                   'Di sini kamu bebas nentuin gaya bicara Mark. Mau dia formal kayak asisten pro, atau santai kayak temen nongkrong? Tulis aja di sini!',
                 side: 'top',
@@ -327,19 +316,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   }
 
   const handleSaveConfiguration = async () => {
-    // Validasi API Key
-    if (!config.groqApiKey?.trim()) {
-      await confirm({
-        title: 'API Key Kosong',
-        message:
-          'Tolong isi Groq API Key terlebih dahulu! API Key ini wajib untuk fitur Voice STT.',
-        isError: true,
-        hideCancel: true,
-        confirmText: 'Tutup'
-      })
-      return
-    }
-
     if (config.aiProvider === 'custom') {
       const endpoint = config.customEndpoint?.trim() || ''
       if (!endpoint.endsWith('/chat/completions')) {
@@ -414,8 +390,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   const handleAiProviderChange = (provider) =>
     setConfig((prev) => ({ ...prev, aiProvider: provider }))
   const handleModelChange = (e) => setConfig((prev) => ({ ...prev, model: e.target.value }))
-  const handleGroqApiKeyChange = (e) =>
-    setConfig((prev) => ({ ...prev, groqApiKey: e.target.value }))
   const handleCustomEndpointChange = (e) =>
     setConfig((prev) => ({ ...prev, customEndpoint: e.target.value }))
   const handleCustomApiKeyChange = (e) =>
@@ -490,7 +464,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     setIsRecordingShortcut(false)
   }
   const handleBack = () => window.history.back()
-  const handleToggleGroqKey = () => setShowGroqKey(!showGroqKey)
   const handleToggleCustomKey = () => setShowCustomKey(!showCustomKey)
 
   const handleTgBotTokenChange = (e) =>
@@ -941,6 +914,65 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                 <p className="text-xs opacity-60">
                   MARK menggunakan <strong>Web Speech API</strong> bawaan Microsoft Edge di Windows. Bekerja secara instan dan bebas lag tanpa memerlukan unduhan model AI lokal atau API key.
                 </p>
+              </div>
+
+              {/* Wake Word Hands-Free Section */}
+              <div className="space-y-3 p-4 rounded-xl bg-base-200/50 border border-base-content/10">
+                <div className="flex items-center justify-between">
+                  <div className="pr-4">
+                    <p className="text-sm font-semibold">Panggilan Suara Hands-Free (Wake Word)</p>
+                    <p className="text-xs opacity-60">
+                      Panggil Mark secara lisan kapan saja (misal: "Hey Mark" / "Halo Mark") tanpa menyentuh mouse atau keyboard.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary toggle-sm"
+                    checked={Boolean(config.wakeWordEnabled)}
+                    onChange={(e) => {
+                      const enabled = e.target.checked
+                      setConfig((prev) => {
+                        const updated = { ...prev, wakeWordEnabled: enabled }
+                        if (window.api?.syncConfig) window.api.syncConfig(updated)
+                        saveConfiguration(updated).catch(console.error)
+                        return updated
+                      })
+                      window.dispatchEvent(
+                        new CustomEvent('wake-word-config-changed', {
+                          detail: { enabled, keyword: config.wakeWordKeyword || 'hey-mark' }
+                        })
+                      )
+                    }}
+                  />
+                </div>
+
+                {config.wakeWordEnabled && (
+                  <div className="space-y-1.5 pt-2 border-t border-base-content/10">
+                    <p className="text-xs font-semibold opacity-80">Kata Pemicu (Wake Keyword)</p>
+                    <select
+                      className="select select-bordered select-sm w-full font-mono text-xs"
+                      value={config.wakeWordKeyword || 'hey-mark'}
+                      onChange={(e) => {
+                        const keyword = e.target.value
+                        setConfig((prev) => {
+                          const updated = { ...prev, wakeWordKeyword: keyword }
+                          if (window.api?.syncConfig) window.api.syncConfig(updated)
+                          saveConfiguration(updated).catch(console.error)
+                          return updated
+                        })
+                        window.dispatchEvent(
+                          new CustomEvent('wake-word-config-changed', {
+                            detail: { enabled: Boolean(config.wakeWordEnabled), keyword }
+                          })
+                        )
+                      }}
+                    >
+                      <option value="hey-mark">Hey Mark / Halo Mark / Mark (Rekomendasi)</option>
+                      <option value="halo-mark">Halo Mark</option>
+                      <option value="mark-only">Mark (Hanya Nama)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Microphone Source Selection */}

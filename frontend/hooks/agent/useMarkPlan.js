@@ -1827,6 +1827,7 @@ export const useMarkPlan = ({
       }
       if (activeSessionNum === 1) {
         setIsLoading(false)
+        window.dispatchEvent(new CustomEvent('mark-plan-completed'))
       }
     }
   }

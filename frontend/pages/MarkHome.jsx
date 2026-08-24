@@ -16,6 +16,7 @@ import { MessageSquare } from 'lucide-react'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useVAD } from '../hooks/useVAD'
+import { useWakeWord } from '../hooks/useWakeWord'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
 import { db, setSessionWorkspace } from '../api/db'
 
@@ -106,6 +107,7 @@ const MarkHome = () => {
   }, [])
 
   const handleVoiceTranscript = (text) => {
+    stopRecording()
     const prefixedText = `(Mikrofon) ${text}`
     setMessage(prefixedText)
     setIsSpeak(true) // Sets global state
@@ -122,6 +124,29 @@ const MarkHome = () => {
     toastMessage
   } = useVAD({
     onTranscript: handleVoiceTranscript
+  })
+
+  // Integrasi Panggilan Suara Wake Word ("Hey Mark" / "Halo Mark")
+  const handleWakeWordTriggered = React.useCallback(
+    ({ command, wakePhrase }) => {
+      console.log('[MarkHome] Wake word detected:', wakePhrase, 'Command:', command)
+      if (command && command.trim()) {
+        // Inline command: misal "Hey Mark, tolong putar musik"
+        handleVoiceTranscript(command.trim())
+      } else {
+        // Panggilan nama saja: "Hey Mark" -> jeda sejenak (200ms) untuk membersihkan sisa suara, lalu aktifkan mikrofon interaktif
+        setTimeout(() => {
+          startRecording()
+        }, 200)
+      }
+    },
+    [handleVoiceTranscript, startRecording]
+  )
+
+  const { isWakeWordRunning } = useWakeWord({
+    isInteractiveMicActive: isRecording,
+    isAgentBusy: isLoading || isAgentBusy,
+    onWakeWordTriggered: handleWakeWordTriggered
   })
 
   const location = useLocation()

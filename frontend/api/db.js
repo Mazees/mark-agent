@@ -129,6 +129,25 @@ db.version(22).stores({
   chatTurns: 'pairId, sessionId, timestamp'
 })
 
+db.version(23).stores({
+  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity, localWhisperModel, wakeWordEnabled, wakeWordKeyword'
+}).upgrade(tx => {
+  return tx.table('config').toCollection().modify(config => {
+    config.wakeWordEnabled = config.wakeWordEnabled ?? false
+    config.wakeWordKeyword = config.wakeWordKeyword ?? 'hey-mark'
+  })
+})
+
+db.version(24).stores({
+  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity, wakeWordEnabled, wakeWordKeyword'
+}).upgrade(tx => {
+  return tx.table('config').toCollection().modify(config => {
+    delete config.localWhisperModel
+    delete config.groqApiKey
+    delete config.groqModel
+  })
+})
+
 // --- VALIDATION ---
 const VALID_TYPES = ['profile', 'preference', 'notes', 'learn'];
 
@@ -254,8 +273,11 @@ export async function getAllConfig() {
       if (data[0].windowOpacity === undefined) {
         data[0].windowOpacity = 0.85
       }
-      if (!data[0].localWhisperModel) {
-        data[0].localWhisperModel = 'web-speech'
+      if (data[0].wakeWordEnabled === undefined) {
+        data[0].wakeWordEnabled = false
+      }
+      if (!data[0].wakeWordKeyword) {
+        data[0].wakeWordKeyword = 'hey-mark'
       }
     }
     return data || []

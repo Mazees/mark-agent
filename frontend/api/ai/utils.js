@@ -109,6 +109,7 @@ export const playVoice = async (text, onStart, onEnd) => {
       }
 
       window.isMarkSpeaking = true
+      window.dispatchEvent(new CustomEvent('mark-speaking-started'))
       if (onStart) onStart()
 
       // 6. Mainkan dan tunggu sampai audio selesai diputar
@@ -116,6 +117,7 @@ export const playVoice = async (text, onStart, onEnd) => {
         source.onended = () => {
           window.isMarkSpeaking = false
           window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+          window.dispatchEvent(new CustomEvent('mark-speaking-ended'))
           if (animationId) cancelAnimationFrame(animationId)
           if (onEnd) onEnd()
           resolve()
@@ -124,6 +126,7 @@ export const playVoice = async (text, onStart, onEnd) => {
         updateIntensity()
       })
     } else {
+      window.dispatchEvent(new CustomEvent('mark-speaking-ended'))
       if (onStart) onStart()
       if (onEnd) onEnd()
     }
@@ -131,6 +134,7 @@ export const playVoice = async (text, onStart, onEnd) => {
     console.error('[playVoice] Gagal memutar suara TTS:', error)
     window.isMarkSpeaking = false
     window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+    window.dispatchEvent(new CustomEvent('mark-speaking-ended'))
     if (onStart) onStart()
     if (onEnd) onEnd()
   }
