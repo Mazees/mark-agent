@@ -79,8 +79,40 @@ pub fn update_global_shortcut(app: AppHandle, shortcut_str: String) -> Result<()
 pub fn sync_config(app: AppHandle, config: serde_json::Value) -> Result<(), String> {
     if let Some(shortcut_val) = config.get("shortcutKey").and_then(|v| v.as_str()) {
         if !shortcut_val.trim().is_empty() {
-            let _ = update_global_shortcut(app, shortcut_val.to_string());
+            let _ = update_global_shortcut(app.clone(), shortcut_val.to_string());
         }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn show_pc_overlay_window(
+    app: AppHandle,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pc-overlay") {
+        if let (Some(w), Some(h)) = (width, height) {
+            let _ = window.set_size(tauri::LogicalSize::new(w, h));
+        }
+        let _ = window.show();
+        let _ = window.set_always_on_top(true);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn hide_pc_overlay_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pc-overlay") {
+        let _ = window.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn resize_pc_overlay_window(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pc-overlay") {
+        let _ = window.set_size(tauri::LogicalSize::new(width, height));
     }
     Ok(())
 }

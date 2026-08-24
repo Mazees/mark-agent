@@ -38,13 +38,10 @@ import {
   togglePlugin,
   deletePlugin
 } from './plugins/plugin-loader.js'
-import {
-  connectGoogle,
-  disconnectGoogle,
-  getGoogleStatus
-} from './google/google-service.js'
+import { connectGoogle, disconnectGoogle, getGoogleStatus } from './google/google-service.js'
 import { setBrowserEventEmitter } from './browser-agent.js'
 import { generateEmbedding, generateEmbeddingBatch } from './services/vector-service.js'
+import { setPCEventBridge, triggerEmergencyStop, resolveAskUserPC } from './pc-agent.js'
 
 // Setup stdio JSON RPC interface
 const rl = readline.createInterface({
@@ -62,11 +59,12 @@ function emitEvent(event, payload) {
   process.stdout.write(message + '\n')
 }
 
-// Connect browser automation events to Tauri / React bridge
+// Connect browser & PC automation events to Tauri / React bridge
 try {
   setBrowserEventEmitter(emitEvent)
+  setPCEventBridge(emitEvent)
 } catch (e) {
-  console.error('[NodeEngine] Browser emitter init error:', e)
+  console.error('[NodeEngine] Emitter init error:', e)
 }
 
 // Mock window event bridge that redirects webContents.send(...) to stdout emitEvent(...)
@@ -104,6 +102,19 @@ rl.on('line', async (line) => {
     switch (action) {
       case 'ping': {
         sendResponse(id, true, { status: 'alive', uptime: process.uptime() })
+        break
+      }
+
+      // --- PC Automation Emergency Stop & User Prompt Response ---
+      case 'triggerPCEmergencyStop': {
+        const res = triggerEmergencyStop(payload?.reason)
+        sendResponse(id, true, res)
+        break
+      }
+
+      case 'resolveAskUserPC': {
+        const res = resolveAskUserPC(payload?.response)
+        sendResponse(id, true, { success: res })
         break
       }
 

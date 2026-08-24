@@ -22,6 +22,22 @@
         "decorations": false,
         "transparent": true,
         "shadow": false
+      },
+      {
+        "label": "pc-overlay",
+        "title": "MARK PC Overlay",
+        "url": "/#/pc-overlay",
+        "width": 420,
+        "height": 76,
+        "y": 24,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {

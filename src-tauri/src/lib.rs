@@ -43,6 +43,9 @@ pub fn run() {
             cmd_window::show_notification,
             cmd_window::sync_config,
             cmd_window::update_global_shortcut,
+            cmd_window::show_pc_overlay_window,
+            cmd_window::hide_pc_overlay_window,
+            cmd_window::resize_pc_overlay_window,
             cmd_screenshot::take_screenshot,
             cmd_node_bridge::node_invoke,
         ])
@@ -119,7 +122,7 @@ pub fn run() {
                 })
                 .build(handle)?;
 
-            // Register Global Shortcut Ctrl+Alt+M
+            // Register Global Shortcut Ctrl+Alt+M (Live Audio / Mic Toggle)
             let shortcut: Shortcut = "Ctrl+Alt+M".parse().unwrap();
             let app_handle = app.handle().clone();
             app.global_shortcut()
@@ -132,6 +135,22 @@ pub fn run() {
                         }
                     }
                 })?;
+
+            // Register Global Shortcut Ctrl+Shift+S (PC Automation Emergency Stop)
+            if let Ok(stop_shortcut) = "Ctrl+Shift+S".parse::<Shortcut>() {
+                let app_handle_for_stop = app.handle().clone();
+                let node_state_for_stop = node_state.clone();
+                let _ = app.global_shortcut().on_shortcut(stop_shortcut, move |_app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        log::info!("[GlobalShortcut] Emergency Stop Ctrl+Shift+S triggered!");
+                        let _ = app_handle_for_stop.emit("pc-emergency-stop", ());
+                        let node_state = node_state_for_stop.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = node_state.send_request("triggerPCEmergencyStop", serde_json::json!({})).await;
+                        });
+                    }
+                });
+            }
 
             // Listen to window state changes (maximize/unmaximize)
             if let Some(window) = app.get_webview_window("main") {

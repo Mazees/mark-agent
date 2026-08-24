@@ -202,7 +202,11 @@ export const useMarkPlan = ({
       }
       // 3. Music Control
       else if (tool.startsWith('music')) {
-        resultString = await handleMusic(tool, query, targetSetChatData)
+        try {
+          resultString = await handleMusic(tool, query, targetSetChatData)
+        } catch (musicErr) {
+          resultString = `[ERROR] Gagal memproses musik: ${musicErr.message}`
+        }
       }
       // 4. Memory Vector Search
       else if (tool === 'memory-search') {
@@ -743,10 +747,16 @@ export const useMarkPlan = ({
     activeRunningSessionIdRef.current = activeSessionNum
 
     if (!tgContext && activeSessionsRef.current.has(activeSessionNum)) {
-      console.log(
-        `[useMarkPlan] Menolak prompt masuk untuk Sesi ${activeSessionNum} karena sedang berjalan (Lock active).`
-      )
-      return
+      const existing = activeSessionsRef.current.get(activeSessionNum)
+      if (existing?.abortController) {
+        console.log(
+          `[useMarkPlan] Membatalkan sesi ${activeSessionNum} sebelumnya untuk memproses input baru: "${userInput}"`
+        )
+        try {
+          existing.abortController.abort()
+        } catch (_) {}
+      }
+      activeSessionsRef.current.delete(activeSessionNum)
     }
 
     const sessionAbortController = new AbortController()

@@ -12,12 +12,14 @@ import RelationalGrowth from './pages/RelationalGrowth'
 import GoogleWorkspace from './pages/GoogleWorkspace'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
+import PCOverlayPage from './pages/PCOverlayPage'
 import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { ChatProvider } from './contexts/ChatContext'
 import { YoutubeMusicProvider } from './contexts/YoutubeMusicContext'
 import { ApprovalProvider } from './contexts/ApprovalContext'
 import { YoutubeMusicPlayer } from './components/YoutubeMusicPlayer'
 import { GlobalCameraManager } from './components/GlobalCameraManager'
+import { PCOverlay } from './components/pc/PCOverlay'
 import { getAllConfig } from './api/db'
 import { initOramaIndices, hydrateFromDexie } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
@@ -151,6 +153,11 @@ const WindowControls = () => {
 const MainLayout = () => {
   const location = useLocation()
   const isHome = location.pathname === '/'
+  const isPCOverlay = location.pathname === '/pc-overlay'
+
+  if (isPCOverlay) {
+    return <PCOverlayPage />
+  }
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-transparent rounded-xl">
@@ -295,6 +302,7 @@ function App() {
             <div style={{ display: isStandalone ? 'none' : 'block' }}>
               <YoutubeMusicPlayer />
             </div>
+            <PCOverlay />
             <GlobalCameraManager />
             <webview
               id="global-ai-search-webview"

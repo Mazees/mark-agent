@@ -19,6 +19,7 @@ import { useVAD } from '../hooks/useVAD'
 import { useWakeWord } from '../hooks/useWakeWord'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
 import { db, setSessionWorkspace } from '../api/db'
+import { cleanSpokenCommand } from '../api/wakeWord'
 
 const MarkHome = () => {
   const chatContext = useChat()
@@ -106,13 +107,17 @@ const MarkHome = () => {
     }
   }, [])
 
-  const handleVoiceTranscript = (text) => {
-    stopRecording()
-    const prefixedText = `(Mikrofon) ${text}`
-    setMessage(prefixedText)
-    setIsSpeak(true) // Sets global state
-    handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true }) // Pass forceSpeak option
-  }
+  const handleVoiceTranscript = React.useCallback(
+    (text) => {
+      console.log('[MarkHome] handleVoiceTranscript called with text:', text)
+      if (!text || !text.trim()) return
+      const prefixedText = `(Mikrofon) ${text.trim()}`
+      setMessage(prefixedText)
+      setIsSpeak(true)
+      handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
+    },
+    [handlePlanningCommand, setMessage, setIsSpeak]
+  )
 
   const {
     isRecording,
@@ -121,23 +126,51 @@ const MarkHome = () => {
     toggleRecording,
     startRecording,
     stopRecording,
-    toastMessage
+    toastMessage,
+    sttLang,
+    setSttLang
   } = useVAD({
     onTranscript: handleVoiceTranscript
   })
+
+  // Dengarkan shortcut global (Ctrl+Alt+M) untuk toggle mic manual
+  useEffect(() => {
+    if (window.api?.onTriggerLiveAudio) {
+      const unlisten = window.api.onTriggerLiveAudio(() => {
+        toggleRecording()
+      })
+      return () => {
+        if (typeof unlisten === 'function') unlisten()
+      }
+    }
+  }, [toggleRecording])
+
+  // Dengarkan Emergency Stop PC Automation (Ctrl+Shift+S)
+  useEffect(() => {
+    if (window.api?.onPCEmergencyStop) {
+      const unlisten = window.api.onPCEmergencyStop(() => {
+        console.log('[MarkHome] Emergency Stop (Ctrl+Shift+S) triggered! Aborting agent plan...')
+        handleStop()
+      })
+      return () => {
+        if (typeof unlisten === 'function') unlisten()
+      }
+    }
+  }, [handleStop])
 
   // Integrasi Panggilan Suara Wake Word ("Hey Mark" / "Halo Mark")
   const handleWakeWordTriggered = React.useCallback(
     ({ command, wakePhrase }) => {
       console.log('[MarkHome] Wake word detected:', wakePhrase, 'Command:', command)
-      if (command && command.trim()) {
+      const cleanCmd = cleanSpokenCommand(command)
+      if (cleanCmd && cleanCmd.length >= 2) {
         // Inline command: misal "Hey Mark, tolong putar musik"
-        handleVoiceTranscript(command.trim())
+        handleVoiceTranscript(cleanCmd)
       } else {
-        // Panggilan nama saja: "Hey Mark" -> jeda sejenak (200ms) untuk membersihkan sisa suara, lalu aktifkan mikrofon interaktif
+        // Panggilan nama saja: "Hey Mark" -> jeda sejenak untuk membersihkan sisa suara, lalu aktifkan mikrofon interaktif
         setTimeout(() => {
           startRecording()
-        }, 200)
+        }, 250)
       }
     },
     [handleVoiceTranscript, startRecording]
@@ -148,22 +181,6 @@ const MarkHome = () => {
     isAgentBusy: isLoading || isAgentBusy,
     onWakeWordTriggered: handleWakeWordTriggered
   })
-
-  const location = useLocation()
-  const hasAutoStartedRef = useRef(false)
-
-  useEffect(() => {
-    if (location.state?.autoToggleMic) {
-      if (hasAutoStartedRef.current !== location.state.autoToggleMic) {
-        hasAutoStartedRef.current = location.state.autoToggleMic
-        if (isLoading || isAgentBusy) {
-          console.warn('[VAD] Ignored toggle because agent is busy')
-        } else {
-          toggleRecording()
-        }
-      }
-    }
-  }, [location.state?.autoToggleMic, toggleRecording, isLoading, isAgentBusy])
 
   // Handle music widget exit animation
   useEffect(() => {
@@ -262,13 +279,15 @@ const MarkHome = () => {
   }, [chatData, isLoading, isSpeak, setOrbStatus])
 
   const handleSubmit = (e, text) => {
-    if (chatContext.handleSubmit) {
-      chatContext.handleSubmit(e, text)
-    } else {
-      const sendText = typeof text === 'string' && text.trim() ? text.trim() : message.trim()
-      if (sendText) {
-        handlePlanningCommand(sendText)
-      }
+    if (e && typeof e.preventDefault === 'function') e.preventDefault()
+    const sendText =
+      typeof text === 'string' && text.trim()
+        ? text.trim()
+        : typeof e === 'string' && e.trim()
+          ? e.trim()
+          : message.trim()
+    if (sendText) {
+      handlePlanningCommand(sendText)
     }
   }
   const mood = currentResponse?.mood || 'neutral'

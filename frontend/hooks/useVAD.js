@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   startWebSpeechRecognition,
   stopWebSpeechRecognition,
-  isWebSpeechSupported
+  isWebSpeechSupported,
+  DEFAULT_LANGUAGE
 } from '../api/webSpeech'
 import { getAllConfig } from '../api/db'
 
@@ -13,6 +14,7 @@ export const useVAD = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [audioIntensity, setAudioIntensity] = useState(0)
   const [toastMessage, setToastMessage] = useState('')
+  const [sttLang, setSttLang] = useState(DEFAULT_LANGUAGE)
 
   const streamRef = useRef(null)
   const audioContextRef = useRef(null)
@@ -20,13 +22,42 @@ export const useVAD = ({
   const isStartingRef = useRef(false)
   const isRecordingRef = useRef(false)
   const isProcessingSpeechRef = useRef(false)
+  const lastTranscriptRef = useRef('')
+  const silenceTimerRef = useRef(null)
+  const inactivityTimerRef = useRef(null)
   const onTranscriptRef = useRef(onTranscript)
+  const sttLangRef = useRef(sttLang)
+
+  // Durasi jeda hening sebelum auto-submit (2.8 detik untuk jeda bicara alami yang nyaman)
+  const POST_SPEECH_SILENCE_MS = 2800
+  // Durasi inaktivitas jika belum ada suara sama sekali (12 detik)
+  const INACTIVITY_TIMEOUT_MS = 12000
 
   useEffect(() => {
     onTranscriptRef.current = onTranscript
   }, [onTranscript])
 
-  const stopVADCleanup = useCallback(() => {
+  useEffect(() => {
+    sttLangRef.current = sttLang
+  }, [sttLang])
+
+  const clearTimers = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current)
+      inactivityTimerRef.current = null
+    }
+  }, [])
+
+  const stopVADCleanup = useCallback((shouldSubmitPending = false) => {
+    clearTimers()
+
+    const pendingText = lastTranscriptRef.current ? lastTranscriptRef.current.trim() : ''
+    lastTranscriptRef.current = ''
+
     stopWebSpeechRecognition()
 
     if (processorRef.current) {
@@ -50,52 +81,71 @@ export const useVAD = ({
 
     isRecordingRef.current = false
     isProcessingSpeechRef.current = false
+    window.isVADRecording = false
     setIsRecording(false)
     isStartingRef.current = false
     setIsProcessing(false)
     setAudioIntensity(0)
     setToastMessage('')
-  }, [])
 
-  const restartRecognition = useCallback(() => {
+    if (shouldSubmitPending && pendingText && pendingText.length >= 1) {
+      if (onTranscriptRef.current) {
+        console.log('[VAD] Submitting spoken transcript:', pendingText)
+        onTranscriptRef.current(pendingText)
+      }
+    }
+  }, [clearTimers])
+
+  const restartRecognition = useCallback(async () => {
     if (!isRecordingRef.current) return
     if (window.isMarkSpeaking || isProcessingSpeechRef.current) return
 
     if (isWebSpeechSupported()) {
-      startWebSpeechRecognition({
-        lang: 'id-ID',
-        continuous: false,
+      const ok = await startWebSpeechRecognition({
+        lang: sttLangRef.current || DEFAULT_LANGUAGE,
+        continuous: true,
         onInterim: (interim) => {
-          if (interim && interim.trim()) {
-            setToastMessage(`Mendengarkan: "${interim}"`)
+          if (!interim || !interim.trim()) return
+
+          const clean = interim.trim()
+          lastTranscriptRef.current = clean
+          setToastMessage(`Mendengarkan: "${clean}"`)
+
+          // Batalkan timer inaktivitas karena user sedang aktif berbicara
+          if (inactivityTimerRef.current) {
+            clearTimeout(inactivityTimerRef.current)
+            inactivityTimerRef.current = null
           }
+
+          // Reset silence timer: beri jeda 2.8 detik hening setelah user berhenti berbicara
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+          silenceTimerRef.current = setTimeout(() => {
+            if (isRecordingRef.current && lastTranscriptRef.current) {
+              console.log('[VAD] Silence window reached (2.8s). Auto-submitting transcript...')
+              stopVADCleanup(true)
+            }
+          }, POST_SPEECH_SILENCE_MS)
         },
         onResult: (finalText) => {
-          if (finalText && finalText.trim()) {
-            // Bersihkan panggilan nama Mark di awal kalimat
-            const stripped = finalText.replace(
-              /^\s*(?:hey|hei|halo|hello|helo|hai|hi|woi|oi|bro)?\s*(?:mbak|mak|makh|marg|mart|marck|marc|mac|mag|mark|smart)\b/gi,
-              ''
-            ).replace(/^[,:\-–—\s]+/, '').trim()
+          if (!finalText || !finalText.trim()) return
 
-            // Jika user hanya mengucapkan "Mark" / "Halo Mark" tanpa perintah lanjutan, jangan matikan mic dan jangan kirim prompt kosong
-            if (!stripped || stripped.length < 2) {
-              console.log('[VAD] Ignored solo wake word in interactive mic:', finalText)
-              return
-            }
+          const clean = finalText.trim()
+          lastTranscriptRef.current = clean
+          setToastMessage(`Mendengarkan: "${clean}"`)
 
-            const cleanText = finalText.replace(
-              /\b(mbak|mak|makh|marg|mart|marck|marc|mac|mag)\b/gi,
-              'Mark'
-            )
-
-            // Matikan mikrofon interaktif seketika setelah kalimat perintah valid selesai terucap
-            stopVADCleanup()
-
-            if (onTranscriptRef.current) {
-              onTranscriptRef.current(cleanText.trim())
-            }
+          if (inactivityTimerRef.current) {
+            clearTimeout(inactivityTimerRef.current)
+            inactivityTimerRef.current = null
           }
+
+          // Jangan langsung matikan mic saat jeda klausa, beri waktu jeda bicara 2.8 detik
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+          silenceTimerRef.current = setTimeout(() => {
+            if (isRecordingRef.current && lastTranscriptRef.current) {
+              console.log('[VAD] Speech sentence finalized with silence. Submitting...')
+              stopVADCleanup(true)
+            }
+          }, POST_SPEECH_SILENCE_MS)
         },
         onError: (err) => {
           if (err.message !== 'no-speech' && err.message !== 'aborted') {
@@ -103,7 +153,7 @@ export const useVAD = ({
           }
         },
         onEnd: () => {
-          // Jika recognition mati secara alami oleh timeout Edge, restart jika user masih dalam mode record
+          // Jika recognition selesai oleh OS timeout dan user masih dalam mode record, hidupkan kembali
           if (
             isRecordingRef.current &&
             !window.isMarkSpeaking &&
@@ -121,6 +171,14 @@ export const useVAD = ({
           }
         }
       })
+
+      if (!ok && isRecordingRef.current) {
+        setTimeout(() => {
+          if (isRecordingRef.current && !lastTranscriptRef.current) {
+            stopVADCleanup(false)
+          }
+        }, 4000)
+      }
     }
   }, [stopVADCleanup])
 
@@ -129,11 +187,20 @@ export const useVAD = ({
     isStartingRef.current = true
 
     try {
-      stopVADCleanup()
+      window.dispatchEvent(new CustomEvent('interactive-mic-starting'))
+      stopVADCleanup(false)
       isStartingRef.current = true
+      lastTranscriptRef.current = ''
+      window.isVADRecording = true
 
-      const config = await getAllConfig()
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      const config = await getAllConfig().catch(() => [])
       const micId = config[0]?.micDeviceId
+      const configuredLang = config[0]?.sttLanguage || DEFAULT_LANGUAGE
+      sttLangRef.current = configuredLang
+      setSttLang(configuredLang)
+
       const audioSettings = {
         echoCancellation: false,
         noiseSuppression: false,
@@ -185,32 +252,38 @@ export const useVAD = ({
         setAudioIntensity(Math.max(0, normalized))
       }
 
+      // Mulai Inactivity Watchdog Timer: 12 detik jika tidak ada suara sama sekali, tutup mic otomatis
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current)
+      inactivityTimerRef.current = setTimeout(() => {
+        if (isRecordingRef.current && !lastTranscriptRef.current) {
+          console.log('[VAD] Inactivity timeout (no speech detected for 12s). Auto-closing mic...')
+          stopVADCleanup(false)
+        }
+      }, INACTIVITY_TIMEOUT_MS)
+
       // Mulai recognition
       restartRecognition()
 
       isStartingRef.current = false
     } catch (error) {
       console.error('[VAD] Error starting mic:', error)
-      stopVADCleanup()
+      stopVADCleanup(false)
       setToastMessage('Gagal mengakses mikrofon.')
       setTimeout(() => setToastMessage(''), 5000)
     }
   }, [stopVADCleanup, restartRecognition])
 
-  useEffect(() => {
-    window.isVADRecording = isRecording
-  }, [isRecording])
-
   const toggleRecording = useCallback(() => {
     if (isRecordingRef.current) {
-      stopVADCleanup()
+      // Jika user klik tombol mic atau shortcut untuk mematikan, kirim ucapan yang tertangkap
+      stopVADCleanup(true)
     } else {
       startVADRecording()
     }
   }, [stopVADCleanup, startVADRecording])
 
   useEffect(() => {
-    return () => stopVADCleanup()
+    return () => stopVADCleanup(false)
   }, [stopVADCleanup])
 
   return {
@@ -219,7 +292,9 @@ export const useVAD = ({
     audioIntensity,
     toggleRecording,
     startRecording: startVADRecording,
-    stopRecording: stopVADCleanup,
-    toastMessage
+    stopRecording: () => stopVADCleanup(true),
+    toastMessage,
+    sttLang,
+    setSttLang
   }
 }

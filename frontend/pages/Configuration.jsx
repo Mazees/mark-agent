@@ -89,6 +89,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     tgBotToken: '',
     tgAdminIds: '',
     micDeviceId: 'default',
+    sttLanguage: 'id-ID',
     awarenessEnabled: true,
     cameraDeviceId: 'default',
     cameraEnabled: true
@@ -263,6 +264,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
         aiProvider: data[0].aiProvider || 'gemini-web',
         geminiWebModel: data[0].geminiWebModel || 'gemini-3.6-flash',
         micDeviceId: data[0].micDeviceId || 'default',
+        sttLanguage: data[0].sttLanguage || 'id-ID',
         awarenessEnabled: data[0].awarenessEnabled ?? true
       }))
     }
@@ -905,17 +907,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                 Audio & Voice Engine
               </h2>
 
-              {/* STT Engine Info */}
-              <div className="space-y-1.5 p-4 rounded-xl bg-base-200/50 border border-base-content/10">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">Voice Speech-to-Text (STT)</p>
-                  <span className="badge badge-primary badge-sm font-mono font-bold">Edge Native (0 MB RAM)</span>
-                </div>
-                <p className="text-xs opacity-60">
-                  MARK menggunakan <strong>Web Speech API</strong> bawaan Microsoft Edge di Windows. Bekerja secara instan dan bebas lag tanpa memerlukan unduhan model AI lokal atau API key.
-                </p>
-              </div>
-
               {/* Wake Word Hands-Free Section */}
               <div className="space-y-3 p-4 rounded-xl bg-base-200/50 border border-base-content/10">
                 <div className="flex items-center justify-between">
@@ -990,6 +981,22 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Speech Recognition Language (STT) */}
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold">Bahasa Dikte Suara (STT Language)</p>
+                <select
+                  className="select select-bordered w-full"
+                  value={config.sttLanguage || 'id-ID'}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, sttLanguage: e.target.value }))}
+                >
+                  <option value="id-ID">Bahasa Indonesia (id-ID) - Rekomendasi</option>
+                  <option value="en-US">English (en-US)</option>
+                </select>
+                <p className="text-xs text-base-content/60">
+                  Bahasa yang digunakan oleh Microsoft Edge Speech Recognition saat Anda mendikte suara.
+                </p>
               </div>
 
               {/* TTS Rate */}

@@ -259,13 +259,7 @@ export const useMarkAgent = () => {
       typeof textPrompt === 'string' ? textPrompt.trim() : typeof e === 'string' ? e.trim() : ''
     if (!textToSend) return
 
-    if (isLoading || isAgentBusy) {
-      if (handleIntervention) {
-        handleIntervention(textToSend)
-      }
-    } else {
-      handlePlanningCommand(textToSend)
-    }
+    handlePlanningCommand(textToSend)
   }
 
   return {

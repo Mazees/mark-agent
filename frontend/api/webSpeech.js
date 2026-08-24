@@ -1,14 +1,10 @@
 // Web Speech API (Microsoft Edge Native STT in Tauri v2 / WebView2)
 
-let recognition = null
+let currentRecognition = null
 let isListening = false
 let isStarting = false
-let activeCallbacks = {
-  onResult: null,
-  onInterim: null,
-  onError: null,
-  onEnd: null
-}
+
+export const DEFAULT_LANGUAGE = 'id-ID'
 
 export function isWebSpeechSupported() {
   return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
@@ -32,27 +28,30 @@ export async function startWebSpeechRecognition({
     return false
   }
 
-  if (isStarting) return false
+  if (isStarting) {
+    return false
+  }
   isStarting = true
 
-  // Jika sudah ada recognition aktif, hentikan dulu dan beri jeda untuk Windows Audio Session
-  if (recognition) {
+  // Hentikan instance aktif sebelumnya dan beri jeda untuk Windows Audio Session
+  if (currentRecognition) {
     stopWebSpeechRecognition()
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await new Promise((resolve) => setTimeout(resolve, 200))
   }
 
   const SpeechClass = getSpeechRecognitionClass()
   try {
     const instance = new SpeechClass()
-    instance.lang = lang
+    instance.lang = lang || DEFAULT_LANGUAGE
     instance.continuous = continuous
     instance.interimResults = true
     instance.maxAlternatives = 1
 
-    activeCallbacks = { onResult, onInterim, onError, onEnd }
-    recognition = instance
+    currentRecognition = instance
 
     instance.onresult = (event) => {
+      if (currentRecognition !== instance) return
+
       let finalTranscript = ''
       let interimTranscript = ''
 
@@ -66,58 +65,69 @@ export async function startWebSpeechRecognition({
         }
       }
 
-      if (interimTranscript && activeCallbacks.onInterim) {
-        activeCallbacks.onInterim(interimTranscript)
+      if (interimTranscript && onInterim) {
+        onInterim(interimTranscript)
       }
 
-      if (finalTranscript && activeCallbacks.onResult) {
-        activeCallbacks.onResult(finalTranscript)
+      if (finalTranscript && onResult) {
+        onResult(finalTranscript)
       }
     }
 
     instance.onerror = (event) => {
-      // Abaikan error normal saat hening (no-speech) atau saat sengaja di-abort
+      if (currentRecognition !== instance) return
+
       if (event.error === 'no-speech' || event.error === 'aborted') {
         return
       }
       console.warn('[WebSpeech] Recognition error:', event.error)
-      if (activeCallbacks.onError) {
-        activeCallbacks.onError(new Error(event.error || 'Speech recognition error'))
+      if (onError) {
+        onError(new Error(event.error || 'Speech recognition error'))
       }
     }
 
     instance.onend = () => {
-      if (recognition === instance) {
-        recognition = null
+      if (currentRecognition === instance) {
+        currentRecognition = null
         isListening = false
       }
-      if (activeCallbacks.onEnd) {
-        activeCallbacks.onEnd()
+      if (onEnd) {
+        onEnd()
       }
     }
 
-    instance.start()
+    // Coba start dengan proteksi retry jika Windows Audio masih melepaskan session sebelumnya
+    try {
+      instance.start()
+    } catch (startErr) {
+      if (startErr.name === 'InvalidStateError') {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        instance.start()
+      } else {
+        throw startErr
+      }
+    }
+
     isListening = true
-    isStarting = false
     return true
   } catch (err) {
-    // Tangani WindowsError (0x8007139F - Invalid State) secara aman
-    if (err.name !== 'InvalidStateError') {
-      console.warn('[WebSpeech] Safe catch on start recognition:', err.message || err)
+    console.warn('[WebSpeech] Start catch:', err.message || err)
+    if (currentRecognition) {
+      currentRecognition = null
     }
-    recognition = null
     isListening = false
-    isStarting = false
     if (onError) onError(err)
     return false
+  } finally {
+    isStarting = false
   }
 }
 
 export function stopWebSpeechRecognition() {
-  if (recognition) {
+  if (currentRecognition) {
     try {
-      const target = recognition
-      recognition = null
+      const target = currentRecognition
+      currentRecognition = null
       target.onresult = null
       target.onerror = null
       target.onend = null

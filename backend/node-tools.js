@@ -4,6 +4,8 @@ import os from 'os'
 import { exec } from 'child_process'
 import util from 'util'
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
+import ytSearch from 'yt-search'
+import { YoutubeTranscript } from 'youtube-transcript-plus'
 
 export const _getOSMeta = () =>
   'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
@@ -1772,6 +1774,120 @@ export const NATIVE_TOOLS = {
       } catch (e) {
         const errPath = path.join(os.homedir(), 'Desktop', 'tg_debug.txt')
         fs.appendFileSync(errPath, `CRASH: ${e.stack}\n`)
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  // ----------------------------------------------------------------------
+  // YOUTUBE & MUSIC TOOLS
+  // ----------------------------------------------------------------------
+  'search-music': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        if (!query || !query.trim()) return { success: true, data: [] }
+        const r = await ytSearch(query.trim())
+        const videos = r?.videos || []
+        const results = videos.slice(0, 15).map((v) => ({
+          id: v.videoId,
+          videoId: v.videoId,
+          title: v.title,
+          artist: v.author?.name || 'Unknown Artist',
+          duration: v.timestamp || v.duration?.toString() || '',
+          thumbnail: v.thumbnail || v.image || '',
+          url: v.url
+        }))
+        return { success: true, data: results }
+      } catch (e) {
+        console.warn('[search-music] error:', e.message)
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  'music-search': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        if (!query || !query.trim()) return { success: true, data: [] }
+        const r = await ytSearch(query.trim())
+        const videos = r?.videos || []
+        const results = videos.slice(0, 15).map((v) => ({
+          id: v.videoId,
+          videoId: v.videoId,
+          title: v.title,
+          artist: v.author?.name || 'Unknown Artist',
+          duration: v.timestamp || v.duration?.toString() || '',
+          thumbnail: v.thumbnail || v.image || '',
+          url: v.url
+        }))
+        return { success: true, data: results }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  'music-play': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        if (!query || !query.trim()) return { success: true, data: [] }
+        const r = await ytSearch(query.trim())
+        const videos = r?.videos || []
+        const results = videos.slice(0, 15).map((v) => ({
+          id: v.videoId,
+          videoId: v.videoId,
+          title: v.title,
+          artist: v.author?.name || 'Unknown Artist',
+          duration: v.timestamp || v.duration?.toString() || '',
+          thumbnail: v.thumbnail || v.image || '',
+          url: v.url
+        }))
+        return { success: true, data: results }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  'youtube-search': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        if (!query || !query.trim()) return { success: true, data: [] }
+        const r = await ytSearch(query.trim())
+        const videos = r?.videos || []
+        const results = videos.slice(0, 15).map((v) => ({
+          id: v.videoId,
+          videoId: v.videoId,
+          title: v.title,
+          artist: v.author?.name || 'Unknown Artist',
+          duration: v.timestamp || v.duration?.toString() || '',
+          thumbnail: v.thumbnail || v.image || '',
+          url: v.url,
+          views: v.views,
+          ago: v.ago
+        }))
+        return { success: true, data: results }
+      } catch (e) {
+        console.warn('[youtube-search] error:', e.message)
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  'youtube-transcript': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        if (!query || !query.trim()) return { success: false, error: 'Query atau URL YouTube diperlukan.' }
+        const transcript = await YoutubeTranscript.fetchTranscript(query.trim())
+        const text = transcript.map((t) => t.text).join(' ')
+        return { success: true, data: text }
+      } catch (e) {
+        console.warn('[youtube-transcript] error:', e.message)
         return { success: false, error: e.message }
       }
     }

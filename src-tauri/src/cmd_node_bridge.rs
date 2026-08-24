@@ -25,6 +25,55 @@ impl NodeBridgeState {
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+
+    pub async fn send_request(
+        &self,
+        action: &str,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let req_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::SeqCst);
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut map = self.pending_requests.lock().unwrap();
+            map.insert(req_id, tx);
+        }
+
+        let request_json = serde_json::json!({
+            "id": req_id,
+            "action": action,
+            "payload": payload
+        });
+
+        let mut request_str = request_json.to_string();
+        request_str.push('\n');
+
+        {
+            let mut writer_lock = self.stdin_writer.lock().await;
+            if let Some(ref mut stdin) = *writer_lock {
+                stdin
+                    .write_all(request_str.as_bytes())
+                    .await
+                    .map_err(|e| format!("Gagal menulis ke Node engine: {}", e))?;
+                stdin
+                    .flush()
+                    .await
+                    .map_err(|e| format!("Gagal flush ke Node engine: {}", e))?;
+            } else {
+                return Err("Node.js engine tidak aktif".to_string());
+            }
+        }
+
+        match tokio::time::timeout(Duration::from_secs(180), rx).await {
+            Ok(Ok(response_json)) => Ok(response_json),
+            Ok(Err(_)) => Err("Koneksi channel Node engine terputus".to_string()),
+            Err(_) => {
+                let mut map = self.pending_requests.lock().unwrap();
+                map.remove(&req_id);
+                Err(format!("Request timeout untuk aksi '{}'", action))
+            }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -129,63 +178,23 @@ pub async fn node_invoke(
     payload: Option<serde_json::Value>,
 ) -> Result<NodeResponse, String> {
     let state = app.state::<Arc<NodeBridgeState>>();
-    let req_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::SeqCst);
+    let response_json = state
+        .send_request(&action, payload.unwrap_or(serde_json::Value::Null))
+        .await?;
 
-    let (tx, rx) = oneshot::channel();
-    {
-        let mut map = state.pending_requests.lock().unwrap();
-        map.insert(req_id, tx);
-    }
+    let success = response_json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let data = response_json.get("data").cloned();
+    let error = response_json
+        .get("error")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
-    let request_json = serde_json::json!({
-        "id": req_id,
-        "action": action,
-        "payload": payload.unwrap_or(serde_json::Value::Null)
-    });
-
-    let mut request_str = request_json.to_string();
-    request_str.push('\n');
-
-    {
-        let mut writer_lock = state.stdin_writer.lock().await;
-        if let Some(ref mut stdin) = *writer_lock {
-            stdin
-                .write_all(request_str.as_bytes())
-                .await
-                .map_err(|e| format!("Gagal menulis ke Node engine: {}", e))?;
-            stdin
-                .flush()
-                .await
-                .map_err(|e| format!("Gagal flush ke Node engine: {}", e))?;
-        } else {
-            return Err("Node.js engine tidak aktif".to_string());
-        }
-    }
-
-    // Await response with timeout (180s for heavy AI operations)
-    match tokio::time::timeout(Duration::from_secs(180), rx).await {
-        Ok(Ok(response_json)) => {
-            let success = response_json
-                .get("success")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let data = response_json.get("data").cloned();
-            let error = response_json
-                .get("error")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
-            Ok(NodeResponse {
-                success,
-                data,
-                error,
-            })
-        }
-        Ok(Err(_)) => Err("Koneksi channel Node engine terputus".to_string()),
-        Err(_) => {
-            let mut map = state.pending_requests.lock().unwrap();
-            map.remove(&req_id);
-            Err(format!("Request timeout (180s) untuk aksi '{}'", action))
-        }
-    }
+    Ok(NodeResponse {
+        success,
+        data,
+        error,
+    })
 }

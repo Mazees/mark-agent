@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   startWebSpeechRecognition,
   stopWebSpeechRecognition,
-  isWebSpeechSupported
+  isWebSpeechSupported,
+  DEFAULT_LANGUAGE
 } from '../api/webSpeech'
 import { detectWakeWord } from '../api/wakeWord'
 import { playWakeChime } from '../api/audioFeedback'
@@ -19,6 +20,8 @@ export const useWakeWord = ({
   const isEnabledRef = useRef(false)
   const keywordRef = useRef('hey-mark')
   const isPassiveListeningRef = useRef(false)
+  const isTriggeredRef = useRef(false)
+  const restartTimerRef = useRef(null)
   const onTriggerRef = useRef(onWakeWordTriggered)
   const isInteractiveMicRef = useRef(isInteractiveMicActive)
   const isAgentBusyRef = useRef(isAgentBusy)
@@ -33,6 +36,11 @@ export const useWakeWord = ({
   }, [isInteractiveMicActive, isAgentBusy])
 
   const stopPassiveListener = useCallback(() => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = null
+    }
+
     if (isPassiveListeningRef.current) {
       console.log('[WakeWord] Stopping passive listener...')
       stopWebSpeechRecognition()
@@ -44,55 +52,60 @@ export const useWakeWord = ({
 
   const startPassiveListener = useCallback(async () => {
     if (!isEnabledRef.current) return
-    if (isInteractiveMicRef.current || isAgentBusyRef.current || window.isMarkSpeaking) {
+    if (isInteractiveMicRef.current || isAgentBusyRef.current || window.isMarkSpeaking || window.isVADRecording) {
       stopPassiveListener()
       return
     }
     if (isPassiveListeningRef.current) return
     if (!isWebSpeechSupported()) return
 
+    isTriggeredRef.current = false
     isPassiveListeningRef.current = true
     setIsWakeWordRunning(true)
     setWakeWordStatus('listening_wake_word')
     console.log('[WakeWord] Passive listener started. Listening for wake keyword:', keywordRef.current)
 
     startWebSpeechRecognition({
-      lang: 'id-ID',
+      lang: DEFAULT_LANGUAGE,
       continuous: true,
       onInterim: (interim) => {
-        if (!isEnabledRef.current || !isPassiveListeningRef.current) return
-        if (window.isMarkSpeaking || isInteractiveMicRef.current || isAgentBusyRef.current) return
+        if (!isEnabledRef.current || !isPassiveListeningRef.current || isTriggeredRef.current) return
+        if (window.isMarkSpeaking || isInteractiveMicRef.current || isAgentBusyRef.current || window.isVADRecording) return
 
-        console.log('[WakeWord] Interim heard:', interim)
         const result = detectWakeWord(interim, keywordRef.current)
         if (result.detected) {
+          isTriggeredRef.current = true
           console.log('[WakeWord] Wake word detected in interim!', result)
           stopPassiveListener()
           playWakeChime()
-          if (onTriggerRef.current) {
-            onTriggerRef.current({
-              command: result.command,
-              wakePhrase: result.wakePhrase
-            })
-          }
+          setTimeout(() => {
+            if (onTriggerRef.current) {
+              onTriggerRef.current({
+                command: result.command,
+                wakePhrase: result.wakePhrase
+              })
+            }
+          }, 300)
         }
       },
       onResult: (finalText) => {
-        if (!isEnabledRef.current || !isPassiveListeningRef.current) return
-        if (window.isMarkSpeaking || isInteractiveMicRef.current || isAgentBusyRef.current) return
+        if (!isEnabledRef.current || !isPassiveListeningRef.current || isTriggeredRef.current) return
+        if (window.isMarkSpeaking || isInteractiveMicRef.current || isAgentBusyRef.current || window.isVADRecording) return
 
-        console.log('[WakeWord] Final speech heard:', finalText)
         const result = detectWakeWord(finalText, keywordRef.current)
         if (result.detected) {
+          isTriggeredRef.current = true
           console.log('[WakeWord] Wake word detected in final!', result)
           stopPassiveListener()
           playWakeChime()
-          if (onTriggerRef.current) {
-            onTriggerRef.current({
-              command: result.command,
-              wakePhrase: result.wakePhrase
-            })
-          }
+          setTimeout(() => {
+            if (onTriggerRef.current) {
+              onTriggerRef.current({
+                command: result.command,
+                wakePhrase: result.wakePhrase
+              })
+            }
+          }, 300)
         }
       },
       onError: (err) => {
@@ -104,19 +117,28 @@ export const useWakeWord = ({
         isPassiveListeningRef.current = false
         setIsWakeWordRunning(false)
 
+        if (restartTimerRef.current) {
+          clearTimeout(restartTimerRef.current)
+          restartTimerRef.current = null
+        }
+
         // Loop continuous listening saat dalam mode standby (selama Mark tidak bicara dan mic utama mati)
         if (
           isEnabledRef.current &&
           !isInteractiveMicRef.current &&
+          !window.isVADRecording &&
           !isAgentBusyRef.current &&
-          !window.isMarkSpeaking
+          !window.isMarkSpeaking &&
+          !isTriggeredRef.current
         ) {
-          setTimeout(() => {
+          restartTimerRef.current = setTimeout(() => {
             if (
               isEnabledRef.current &&
               !isInteractiveMicRef.current &&
+              !window.isVADRecording &&
               !isAgentBusyRef.current &&
-              !window.isMarkSpeaking
+              !window.isMarkSpeaking &&
+              !isTriggeredRef.current
             ) {
               startPassiveListener()
             }
@@ -137,7 +159,7 @@ export const useWakeWord = ({
           keywordRef.current = keyword
           console.log('[WakeWord] Config updated via event:', { enabled, keyword })
 
-          if (enabled && !isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking) {
+          if (enabled && !isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking && !window.isVADRecording) {
             startPassiveListener()
           } else {
             stopPassiveListener()
@@ -154,7 +176,7 @@ export const useWakeWord = ({
         keywordRef.current = keyword
         console.log('[WakeWord] Config loaded from DB:', { enabled, keyword })
 
-        if (enabled && !isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking) {
+        if (enabled && !isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking && !window.isVADRecording) {
           startPassiveListener()
         } else {
           stopPassiveListener()
@@ -169,9 +191,9 @@ export const useWakeWord = ({
   // Dengarkan saat Mark selesai berbicara atau menjawab untuk re-arm Wake Word
   useEffect(() => {
     const handleReArm = () => {
-      if (isEnabledRef.current && !isInteractiveMicRef.current) {
+      if (isEnabledRef.current && !isInteractiveMicRef.current && !window.isVADRecording) {
         setTimeout(() => {
-          if (isEnabledRef.current && !isInteractiveMicRef.current && !window.isMarkSpeaking) {
+          if (isEnabledRef.current && !isInteractiveMicRef.current && !window.isVADRecording && !window.isMarkSpeaking) {
             console.log('[WakeWord] Re-arming passive listener after speech/plan...')
             startPassiveListener()
           }
@@ -186,12 +208,14 @@ export const useWakeWord = ({
     window.addEventListener('mark-speaking-ended', handleReArm)
     window.addEventListener('mark-plan-completed', handleReArm)
     window.addEventListener('mark-speaking-started', handleSpeechStart)
+    window.addEventListener('interactive-mic-starting', stopPassiveListener)
     window.addEventListener('wake-word-config-changed', refreshWakeWordConfig)
 
     return () => {
       window.removeEventListener('mark-speaking-ended', handleReArm)
       window.removeEventListener('mark-plan-completed', handleReArm)
       window.removeEventListener('mark-speaking-started', handleSpeechStart)
+      window.removeEventListener('interactive-mic-starting', stopPassiveListener)
       window.removeEventListener('wake-word-config-changed', refreshWakeWordConfig)
     }
   }, [refreshWakeWordConfig, startPassiveListener, stopPassiveListener])
@@ -200,9 +224,9 @@ export const useWakeWord = ({
   useEffect(() => {
     if (isInteractiveMicActive || isAgentBusy) {
       stopPassiveListener()
-    } else if (isEnabledRef.current && !window.isMarkSpeaking) {
+    } else if (isEnabledRef.current && !window.isMarkSpeaking && !window.isVADRecording) {
       setTimeout(() => {
-        if (!isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking) {
+        if (!isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking && !window.isVADRecording) {
           startPassiveListener()
         }
       }, 400)

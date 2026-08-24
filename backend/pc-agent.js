@@ -5,11 +5,23 @@
 import { spawn } from 'child_process'
 import path, { join } from 'path'
 import { fileURLToPath } from 'url'
-import { app, BrowserWindow, globalShortcut, screen } from './electron-compat.js'
 import fs from 'fs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+let pcEventBridge = null
+export function setPCEventBridge(bridge) {
+  pcEventBridge = bridge
+}
+
+function emitPCEvent(event, data) {
+  if (pcEventBridge) {
+    try {
+      pcEventBridge(event, data)
+    } catch (_) {}
+  }
+}
 
 let lastReadResult = null
 let lastReadTimestamp = 0
@@ -19,7 +31,6 @@ let daemonProcess = null
 let daemonReady = false
 let pendingResolve = null
 let daemonBuffer = ''
-let overlayWindow = null
 let activeChildProcess = null
 let isStoppedByUser = false
 let lastStopTime = 0
@@ -195,79 +206,19 @@ function getOverlayHTML() {
 </html>`
 }
 
-function showPCOverlay() {
+function showPCOverlay(action = 'Mengontrol Desktop', detail = '') {
   if (overlayHideTimeout) {
     clearTimeout(overlayHideTimeout)
     overlayHideTimeout = null
   }
-  if (isStopActive() || pendingAskResolve) return
+  if (isStopActive()) return
 
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.showInactive()
-    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-    try {
-      overlayWindow.webContents.executeJavaScript('if (typeof resetBanner === "function") resetBanner();')
-    } catch (err) {}
-    return
-  }
-
-  try {
-    const display = screen.getPrimaryDisplay()
-    const { width } = display.workAreaSize
-    const winWidth = 340
-    const winHeight = 72
-    overlayWindow = new BrowserWindow({
-      width: winWidth,
-      height: winHeight,
-      x: Math.floor((width - winWidth) / 2),
-      y: 24,
-      alwaysOnTop: true,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      focusable: false,
-      skipTaskbar: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true
-      }
-    })
-    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-    overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getOverlayHTML())}`)
-
-    overlayWindow.on('page-title-updated', (event, title) => {
-      if (title.startsWith('MARK_PC_STOP_CLICKED:')) {
-        triggerEmergencyStop()
-      } else if (title.startsWith('MARK_PC_STOP_REASON:')) {
-        const reason = title.replace('MARK_PC_STOP_REASON:', '').trim()
-        lastStopReason = reason
-        if (pendingAskResolve) {
-          const resolveFn = pendingAskResolve
-          pendingAskResolve = null
-          resolveFn(reason)
-        }
-        hidePCOverlay()
-      } else if (title.startsWith('MARK_PC_ABORT_SESSION')) {
-        closePCSession()
-        if (pendingAskResolve) {
-          const resolveFn = pendingAskResolve
-          pendingAskResolve = null
-          resolveFn("SISTEM: USER MEMBATALKAN OTOMASI PC. SEGERA BERHENTI DARI LOOP.")
-        }
-      }
-    })
-
-    try {
-      globalShortcut.unregister('CommandOrControl+Shift+S')
-      globalShortcut.register('CommandOrControl+Shift+S', () => {
-        triggerEmergencyStop()
-      })
-    } catch (err) {
-      console.warn('[PC-Agent] Could not register Ctrl+Shift+S global shortcut:', err.message)
-    }
-  } catch (err) {
-    console.warn('[PC-Agent] Could not create overlay window:', err.message)
-  }
+  emitPCEvent('pc-overlay-show', {
+    status: 'running',
+    action,
+    detail,
+    isSessionOpen
+  })
 }
 
 function hidePCOverlay() {
@@ -275,33 +226,13 @@ function hidePCOverlay() {
     clearTimeout(overlayHideTimeout)
     overlayHideTimeout = null
   }
+  if (isSessionOpen) return
 
-  if (isSessionOpen) {
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      try {
-        overlayWindow.webContents.executeJavaScript(`
-          if (typeof resetBanner === "function") resetBanner();
-        `)
-        overlayWindow.setSize(340, 72)
-        overlayWindow.setFocusable(false)
-      } catch (err) {}
-    }
-    return
-  }
-
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    try {
-      overlayWindow.close()
-    } catch (err) {}
-  }
-  overlayWindow = null
-  try {
-    globalShortcut.unregister('CommandOrControl+Shift+S')
-  } catch (err) {}
+  emitPCEvent('pc-overlay-hide', {})
 }
 
 function scheduleHidePCOverlay() {
-  if (isSessionOpen) return // Do not auto-hide if session is explicitly open
+  if (isSessionOpen) return
   if (overlayHideTimeout) {
     clearTimeout(overlayHideTimeout)
   }
@@ -312,7 +243,7 @@ function scheduleHidePCOverlay() {
   }, 1800)
 }
 
-function triggerEmergencyStop() {
+export function triggerEmergencyStop(reason) {
   if (activeChildProcess) {
     try {
       activeChildProcess.kill()
@@ -332,17 +263,29 @@ function triggerEmergencyStop() {
   }
   isStoppedByUser = true
   lastStopTime = Date.now()
-  lastStopReason = 'User menekan tombol eksekusi Stop (Ctrl+Shift+S).'
+  lastStopReason = reason || 'User menekan tombol eksekusi Stop (Ctrl+Shift+S).'
 
-  // AI akan menerima status "stopped_by_user", lalu AI yang akan
-  // memanggil "os-ask" untuk menanyakan alasan user (yang mana baru memunculkan modal).
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    try {
-      overlayWindow.webContents.executeJavaScript(`
-        document.getElementById('banner-subtitle').innerHTML = '<strong style="color: #ef4444;">STOPPED! Menunggu AI...</strong>';
-      `)
-    } catch (err) {}
+  if (pendingAskResolve) {
+    const resolveFn = pendingAskResolve
+    pendingAskResolve = null
+    resolveFn('SISTEM: USER MEMBATALKAN OTOMASI PC MELALUI EMERGENCY STOP (Ctrl+Shift+S).')
   }
+
+  emitPCEvent('pc-emergency-stop', { reason: lastStopReason })
+  emitPCEvent('pc-overlay-status', { status: 'stopped', message: lastStopReason })
+
+  return { success: true, reason: lastStopReason }
+}
+
+export function resolveAskUserPC(response) {
+  if (pendingAskResolve) {
+    const resolveFn = pendingAskResolve
+    pendingAskResolve = null
+    resolveFn(response)
+    emitPCEvent('pc-overlay-hide', {})
+    return true
+  }
+  return false
 }
 
 /**
@@ -446,28 +389,20 @@ export async function askUserPC(query = '') {
     })
   }
   isStoppedByUser = false
-  showPCOverlay()
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    try {
-      overlayWindow.setFocusable(true)
-      overlayWindow.show()
-      overlayWindow.setSize(420, 360)
-      const cleanMsg = query.replace(/'/g, "\\'").replace(/"/g, '\\"')
-      overlayWindow.webContents.executeJavaScript(
-        `showAskModal("❓ MARK Needs Your Help", "${cleanMsg}", "#3b82f6")`
-      )
-    } catch (err) {}
-  }
+
+  emitPCEvent('pc-overlay-ask', {
+    question: query,
+    title: 'MARK Membutuhkan Masukan Anda'
+  })
+
   const comment = await new Promise((resolve) => {
     pendingAskResolve = (val) => resolve(val)
   })
-  
-  // Restart mouse locker because the automation is resuming
-  // (unless the user clicked cancel, which closes the session)
+
   if (isSessionOpen) {
     startMouseLocker()
   }
-  
+
   return JSON.stringify({
     status: 'success',
     user_response: comment

@@ -55,11 +55,25 @@ export function detectWakeWord(transcript, keywordSetting = 'hey-mark') {
   const afterWakeText = transcript.substring(matchIndex + matchLength).trim()
 
   // Bersihkan tanda baca awal seperti koma, titik dua, tanda hubung
-  const cleanCommand = afterWakeText.replace(/^[,:\-–—\s]+/, '').trim()
+  const cleanCommand = cleanSpokenCommand(afterWakeText)
 
   return {
     detected: true,
     wakePhrase,
     command: cleanCommand
   }
+}
+
+export function cleanSpokenCommand(text) {
+  if (!text || typeof text !== 'string') return ''
+  // Hapus semua variasi sapaan + nama Mark di awal atau seluruh teks
+  const stripped = text
+    .replace(
+      /^\s*(?:hey|hei|halo|hello|helo|hai|hi|woi|oi|bro)?\s*(?:mbak|mak|makh|marg|mart|marck|marc|mac|mag|mark|smart)\b/gi,
+      ''
+    )
+    .replace(/^[,:\-–—\s]+/, '')
+    .trim()
+
+  return stripped
 }

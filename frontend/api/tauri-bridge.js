@@ -170,6 +170,61 @@ export const tauriApi = {
     }
   },
 
+  // --- PC Automation & Emergency Stop ---
+  triggerPCEmergencyStop: async (reason = 'User clicked STOP') => {
+    try {
+      return await invoke('node_invoke', {
+        action: 'triggerPCEmergencyStop',
+        payload: { reason }
+      })
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  },
+  resolveAskUserPC: async (response) => {
+    try {
+      return await invoke('node_invoke', {
+        action: 'resolveAskUserPC',
+        payload: { response }
+      })
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
+  },
+  onPCOverlayShow: (callback) => {
+    const unlistenPromise = listen('pc-overlay-show', (event) => callback(event.payload))
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
+    }
+  },
+  onPCOverlayHide: (callback) => {
+    const unlistenPromise = listen('pc-overlay-hide', (event) => callback(event.payload))
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
+    }
+  },
+  onPCOverlayAsk: (callback) => {
+    const unlistenPromise = listen('pc-overlay-ask', (event) => callback(event.payload))
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
+    }
+  },
+  onPCEmergencyStop: (callback) => {
+    const unlistenPromise = listen('pc-emergency-stop', (event) => callback(event.payload))
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
+    }
+  },
+  showPCOverlayWindow: (width, height) => {
+    return invoke('show_pc_overlay_window', { width, height }).catch(() => {})
+  },
+  hidePCOverlayWindow: () => {
+    return invoke('hide_pc_overlay_window').catch(() => {})
+  },
+  resizePCOverlayWindow: (width, height) => {
+    return invoke('resize_pc_overlay_window', { width, height }).catch(() => {})
+  },
+
   // --- Awareness Engine ---
   getActivityBuffer: async () => {
     try {
@@ -193,6 +248,12 @@ export const tauriApi = {
 
   // --- Voice, Audio & Shortcuts ---
   onLiveAudioShortcut: (callback) => {
+    const unlistenPromise = listen('trigger-live-audio', (event) => callback(null, event.payload))
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
+    }
+  },
+  onTriggerLiveAudio: (callback) => {
     const unlistenPromise = listen('trigger-live-audio', (event) => callback(null, event.payload))
     return () => {
       unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
