@@ -62,6 +62,22 @@ export const loadWhisper = async (onProgress) => {
   return promise;
 };
 
+export const unloadWhisper = () => {
+  if (worker) {
+    try {
+      worker.terminate();
+    } catch (e) {
+      console.warn('[Whisper] Worker terminate error:', e);
+    }
+    worker = null;
+    isLoaded = false;
+    isDownloading = false;
+    loadPromise = null;
+    requestResolvers.clear();
+    console.log('[Whisper] Local Whisper model unloaded and RAM freed.');
+  }
+};
+
 export const transcribeAudioLocal = async (pcmBuffer, onProgress) => {
   if (!isLoaded) {
     await loadWhisper(onProgress);

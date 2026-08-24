@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { transcribeAudioLocal } from '../api/localWhisper'
+import { transcribeAudioLocal, unloadWhisper } from '../api/localWhisper'
 import { transcribeAudioGroq } from '../api/groq'
 import { getAllConfig } from '../api/db'
 
@@ -90,7 +90,8 @@ export const useVAD = ({
         const sttEngine = config[0]?.localWhisperModel || 'whisper-small'
         let text = ''
 
-        if (sttEngine === 'groq-whisper') {
+        if (sttEngine && sttEngine.startsWith('groq')) {
+          unloadWhisper()
           setToastMessage('Mentranskrip via Groq API...')
           text = await transcribeAudioGroq(trimmedAudio)
           setToastMessage('')
@@ -238,7 +239,8 @@ export const useVAD = ({
             const sttEngine = config[0]?.localWhisperModel || 'whisper-small'
             let text = ''
 
-            if (sttEngine === 'groq-whisper') {
+            if (sttEngine && sttEngine.startsWith('groq')) {
+              unloadWhisper()
               setToastMessage('Mentranskrip via Groq API...')
               text = await transcribeAudioGroq(pendingAudio)
               setToastMessage('')

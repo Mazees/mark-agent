@@ -217,76 +217,65 @@ function App() {
         console.error('[App] Failed to init Orama:', e)
       }
 
-      // 1.5 Load Embeddings Model
+      // 1.5 Warmup Node.js Native Vector Memory Engine
       try {
-        setLoadingText('Memuat Memori Kognitif...')
         const { getExtractor } = await import('./api/vectorMemory')
-        let memStats = {}
-        await getExtractor((info) => {
-          if (info.status === 'initiate') {
-            memStats[info.file] = { loaded: 0, total: info.total || 0 }
-          } else if (info.status === 'progress') {
-            if (memStats[info.file]) {
-              memStats[info.file].loaded = info.loaded
-              memStats[info.file].total = info.total
-            }
-            const values = Object.values(memStats)
-            const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
-            const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
-            if (totalBytes > 0) {
-              const percent = Math.round((loadedBytes / totalBytes) * 100)
-              const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
-              const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
-              setLoadingText(`Mengunduh Memori AI... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
-            }
-          } else if (info.status === 'done' || info.status === 'ready') {
-            setLoadingText('Membangunkan Mark...')
-          }
-        })
+        getExtractor()
       } catch (e) {
-        console.error('[App] Failed to load Transformers:', e)
-      }
-
-      // 1.6 Load Local STT (Whisper) Model
-      try {
-        setLoadingText('Memuat Voice Engine...')
-        const { loadWhisper } = await import('./api/localWhisper')
-        let sttStats = {}
-        await loadWhisper((info) => {
-          if (info.status === 'initiate') {
-            sttStats[info.file] = { loaded: 0, total: info.total || 0 }
-          } else if (info.status === 'progress') {
-            if (sttStats[info.file]) {
-              sttStats[info.file].loaded = info.loaded
-              sttStats[info.file].total = info.total
-            }
-            const values = Object.values(sttStats)
-            const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
-            const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
-            if (totalBytes > 0) {
-              const percent = Math.round((loadedBytes / totalBytes) * 100)
-              const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
-              const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
-              setLoadingText(`Mengunduh Voice Engine... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
-            }
-          } else if (info.status === 'done' || info.status === 'ready') {
-            setLoadingText('Membangunkan Mark...')
-          }
-        })
-      } catch (e) {
-        console.error('[App] Failed to load Whisper STT:', e)
+        console.error('[App] Failed to warmup vector memory:', e)
       }
 
       // 2. Load config
       const data = await getAllConfig()
+      const userConfig = data?.[0]
       if (!data || data.length === 0) {
         setHasConfig(false)
       } else {
         setHasConfig(true)
         if (window.api && window.api.syncConfig) {
-          window.api.syncConfig(data[0])
+          window.api.syncConfig(userConfig)
         }
       }
+
+      // 1.6 Load Local STT (Whisper) Model HANYA jika diset ke mode lokal (bukan groq-whisper / groq-whisper-turbo)
+      const isLocalSTT = userConfig?.localWhisperModel && !userConfig.localWhisperModel.startsWith('groq')
+      if (isLocalSTT) {
+        try {
+          setLoadingText('Memuat Voice Engine...')
+          const { loadWhisper } = await import('./api/localWhisper')
+          let sttStats = {}
+          await loadWhisper((info) => {
+            if (info.status === 'initiate') {
+              sttStats[info.file] = { loaded: 0, total: info.total || 0 }
+            } else if (info.status === 'progress') {
+              if (sttStats[info.file]) {
+                sttStats[info.file].loaded = info.loaded
+                sttStats[info.file].total = info.total
+              }
+              const values = Object.values(sttStats)
+              const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
+              const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
+              if (totalBytes > 0) {
+                const percent = Math.round((loadedBytes / totalBytes) * 100)
+                const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
+                const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
+                setLoadingText(`Mengunduh Voice Engine... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
+              }
+            } else if (info.status === 'done' || info.status === 'ready') {
+              setLoadingText('Membangunkan Mark...')
+            }
+          })
+        } catch (e) {
+          console.error('[App] Failed to load Whisper STT:', e)
+        }
+      } else {
+        // Jika memakai Cloud (Groq Whisper), pastikan worker lokal tidak ada di RAM
+        try {
+          const { unloadWhisper } = await import('./api/localWhisper')
+          unloadWhisper()
+        } catch (e) {}
+      }
+
       setIsChecking(false)
     }
     checkConfig()

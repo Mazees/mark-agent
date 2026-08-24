@@ -48,6 +48,38 @@ export const tauriApi = {
     }
   },
 
+  // --- Vector Embedding Engine (Node.js Native Bridge) ---
+  generateEmbedding: async (text) => {
+    try {
+      const res = await invoke('node_invoke', {
+        action: 'generateEmbedding',
+        payload: { text }
+      })
+      if (res.success && res.data?.vector) {
+        return res.data.vector
+      }
+      return null
+    } catch (e) {
+      console.error('[TauriBridge] generateEmbedding error:', e)
+      return null
+    }
+  },
+  generateEmbeddingBatch: async (items) => {
+    try {
+      const res = await invoke('node_invoke', {
+        action: 'generateEmbeddingBatch',
+        payload: { items }
+      })
+      if (res.success && res.data?.results) {
+        return res.data.results
+      }
+      return []
+    } catch (e) {
+      console.error('[TauriBridge] generateEmbeddingBatch error:', e)
+      return []
+    }
+  },
+
   // --- AI Bridge (Routed through Node.js Engine) ---
   fetchAI: async (params) => {
     try {

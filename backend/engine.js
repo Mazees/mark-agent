@@ -44,11 +44,11 @@ import {
   getGoogleStatus
 } from './google/google-service.js'
 import { setBrowserEventEmitter } from './browser-agent.js'
+import { generateEmbedding, generateEmbeddingBatch } from './services/vector-service.js'
 
 // Setup stdio JSON RPC interface
 const rl = readline.createInterface({
   input: process.stdin,
-  output: process.stdout,
   terminal: false
 })
 
@@ -285,6 +285,21 @@ rl.on('line', async (line) => {
         const needs = typeof tool.needsApproval === 'function' ? tool.needsApproval(query) : !!tool.needsApproval
         const message = needs && tool.approvalMessage ? tool.approvalMessage(query) : null
         sendResponse(id, true, { needsApproval: needs, message })
+        break
+      }
+
+      // --- Vector Embedding Engine (Node.js Native) ---
+      case 'generateEmbedding': {
+        const { text } = payload || {}
+        const vector = await generateEmbedding(text)
+        sendResponse(id, true, { vector })
+        break
+      }
+
+      case 'generateEmbeddingBatch': {
+        const { items } = payload || {}
+        const results = await generateEmbeddingBatch(items)
+        sendResponse(id, true, { results })
         break
       }
 
