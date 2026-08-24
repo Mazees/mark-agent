@@ -52,7 +52,15 @@ pub async fn start_node_engine(app: AppHandle, state: Arc<NodeBridgeState>) -> R
 
     log::info!("[NodeBridge] Memulai Node.js backend engine di path: {}", engine_path);
 
-    let mut child = Command::new("node")
+    let mut cmd = Command::new("node");
+
+    // Di mode development (debug build), aktifkan flag --watch bawaan Node.js
+    // sehingga setiap perubahan di folder backend/ akan otomatis me-reload engine tanpa restart aplikasi.
+    if cfg!(debug_assertions) {
+        cmd.arg("--watch");
+    }
+
+    let mut child = cmd
         .arg(&engine_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

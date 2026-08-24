@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from './electron-compat.js'
+import puppeteer from 'puppeteer-core'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -9,17 +9,79 @@ export const _getBrowserSign = () =>
 // Map of sessionId -> SessionState
 // Mendukung multi-session browser independen untuk Lead Agent & parallel Sub-Agents
 const sessions = new Map()
+let sharedBrowser = null
+let eventEmitterCallback = null
 
-function getSession(sessionId = 'default') {
-  return sessions.get(sessionId) || null
+export function setBrowserEventEmitter(emitter) {
+  eventEmitterCallback = emitter
+}
+
+function emitPreview(payload) {
+  if (typeof eventEmitterCallback === 'function') {
+    eventEmitterCallback('browser-preview', payload)
+  }
+}
+
+function findBrowserExecutable() {
+  const candidates = [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.EDGE_BIN,
+    process.env.CHROME_BIN
+  ].filter(Boolean)
+
+  for (const executablePath of candidates) {
+    if (fs.existsSync(executablePath)) {
+      return executablePath
+    }
+  }
+  return null
+}
+
+async function getOrLaunchBrowser() {
+  if (sharedBrowser && sharedBrowser.connected) {
+    return sharedBrowser
+  }
+
+  const executablePath = findBrowserExecutable()
+  if (!executablePath) {
+    throw new Error('Tidak dapat menemukan Microsoft Edge atau Google Chrome di sistem Windows ini.')
+  }
+
+  const userDataDir = path.join(os.tmpdir(), 'mark-browser-agent-profile')
+
+  sharedBrowser = await puppeteer.launch({
+    executablePath,
+    headless: false, // Jendela browser nyata (off-screen) agar bypass anti-bot dan bisa dipanggil ke layar
+    userDataDir,
+    ignoreDefaultArgs: ['--enable-automation'],
+    defaultViewport: null,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-infobars',
+      '--window-size=1280,850',
+      '--window-position=-3000,-3000', // Sembunyi off-screen saat awal navigasi
+      '--lang=id-ID,id,en-US,en'
+    ]
+  })
+
+  sharedBrowser.on('disconnected', () => {
+    sharedBrowser = null
+  })
+
+  return sharedBrowser
 }
 
 function resetSessionIdleTimeout(session) {
   if (!session) return
   if (session.idleTimeout) clearTimeout(session.idleTimeout)
   session.idleTimeout = setTimeout(() => {
-    console.log(`[BROWSER AGENT] Session ${session.id} idle for 5 minutes, destroying hidden window to save RAM...`)
-    closeBrowser(session.id)
+    console.error(`[BROWSER AGENT] Session ${session.id} idle for 5 minutes, destroying page to save RAM...`)
+    closeBrowser(session.id).catch(() => {})
   }, 5 * 60 * 1000)
 }
 
@@ -146,126 +208,102 @@ const DOM_PARSER_SCRIPT = `
 })()
 `
 
-function getOrCreateBrowser(sessionId = 'default') {
+async function setupStealthMode(page) {
+  try {
+    await page.evaluateOnNewDocument(() => {
+      delete Object.getPrototypeOf(navigator).webdriver
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+      })
+
+      window.chrome = {
+        app: { isInstalled: false },
+        runtime: {
+          OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install' },
+          PlatformArch: { X86_64: 'x86-64' },
+          PlatformOs: { WIN: 'win' }
+        }
+      }
+
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+      })
+
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['id-ID', 'id', 'en-US', 'en']
+      })
+    })
+
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
+    )
+  } catch (err) {
+    // Non-fatal
+  }
+}
+
+async function captureAndEmitPreview(page, sessionId) {
+  try {
+    const session = sessions.get(sessionId)
+    const screenshotBuffer = await page.screenshot({
+      type: 'jpeg',
+      quality: 50,
+      encoding: 'base64'
+    })
+    const url = page.url()
+    const title = await page.title().catch(() => url)
+    const thumbnail = `data:image/jpeg;base64,${screenshotBuffer}`
+
+    emitPreview({
+      sessionId,
+      url,
+      title,
+      thumbnail,
+      isWindowVisible: session?.isWindowVisible || false
+    })
+  } catch (err) {
+    // Non-critical if capture fails during page close or reload
+  }
+}
+
+async function getOrCreateSession(sessionId = 'default') {
   let session = sessions.get(sessionId)
-  if (session && session.window && !session.window.isDestroyed()) {
+  if (session && session.page && !session.page.isClosed()) {
     resetSessionIdleTimeout(session)
     return session
   }
 
-  const browserWindow = new BrowserWindow({
-    show: false,
-    width: 1280,
-    height: 800,
-    title: `Mark Browser (${sessionId})`,
-    autoHideMenuBar: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true
-    }
-  })
+  const browser = await getOrLaunchBrowser()
+  let context = browser.defaultBrowserContext()
 
-  browserWindow.webContents.setMaxListeners(50)
-
-  // Cegah website buka window baru (pop-up atau target="_blank")
-  browserWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (browserWindow && !browserWindow.isDestroyed()) {
-      browserWindow.loadURL(url)
+  if (sessionId !== 'default' && typeof browser.createBrowserContext === 'function') {
+    try {
+      context = await browser.createBrowserContext()
+    } catch (e) {
+      context = browser.defaultBrowserContext()
     }
-    return { action: 'deny' }
-  })
+  }
+
+  const page = await context.newPage()
+  await page.setViewport({ width: 1280, height: 800 })
+  await setupStealthMode(page)
 
   session = {
     id: sessionId,
-    window: browserWindow,
+    context,
+    page,
+    isWindowVisible: false,
     activeAskUser: false,
     activeAskUserMessage: '',
-    globalAskUserResolve: null,
-    isForceClosing: false,
-    idleTimeout: null
+    globalAskUserResolve: null
   }
+
   sessions.set(sessionId, session)
 
-  browserWindow.on('close', (event) => {
-    if (!session.isForceClosing) {
-      event.preventDefault()
-
-      if (session.globalAskUserResolve) {
-        session.globalAskUserResolve('User aborted the action by hiding the browser.')
-        session.globalAskUserResolve = null
-        session.activeAskUser = false
-        session.activeAskUserMessage = ''
-      }
-
-      browserWindow.webContents
-        .capturePage()
-        .then((image) => {
-          const thumbnail = image.resize({ width: 800 }).toDataURL()
-          const url = browserWindow.webContents.getURL()
-          const title = browserWindow.getTitle()
-
-          browserWindow.hide()
-
-          BrowserWindow.getAllWindows().forEach((win) => {
-            if (win !== browserWindow && !win.isDestroyed()) {
-              win.webContents.send('browser:preview', { sessionId, url, title, thumbnail })
-            }
-          })
-        })
-        .catch(() => {
-          browserWindow.hide()
-        })
-    }
-  })
-
-  browserWindow.on('closed', () => {
+  page.on('close', () => {
     if (session.idleTimeout) clearTimeout(session.idleTimeout)
     sessions.delete(sessionId)
-  })
-
-  browserWindow.webContents.on('did-finish-load', () => {
-    if (session.activeAskUser && !browserWindow.isDestroyed()) {
-      executeAction({ action: 'unblock', value: session.activeAskUserMessage, isReinject: true }, sessionId).catch(
-        () => null
-      )
-    }
-  })
-
-  browserWindow.on('page-title-updated', (event, title) => {
-    if (title.startsWith('MARK_UNBLOCK_DONE:') && session.globalAskUserResolve) {
-      event.preventDefault()
-      const comment = title.substring(18)
-      session.globalAskUserResolve(comment)
-      session.globalAskUserResolve = null
-      session.activeAskUser = false
-      session.activeAskUserMessage = ''
-
-      if (!browserWindow.isDestroyed()) {
-        browserWindow.webContents
-          .executeJavaScript(
-            `
-            const b = document.getElementById('mark-user-blocker');
-            if (b) {
-              b.style.width = '100vw';
-              b.style.height = '100vh';
-              b.style.top = '0';
-              b.style.left = '0';
-              b.style.bottom = 'auto';
-              b.style.right = 'auto';
-              b.style.background = 'rgba(0,0,0,0.1)';
-              b.style.pointerEvents = 'auto';
-              b.style.display = 'flex';
-              b.style.justifyContent = 'center';
-              b.style.alignItems = 'flex-start';
-              b.style.paddingTop = '24px';
-              b.innerHTML = \`<div style="background: rgba(25, 54, 45, 0.9); backdrop-filter: blur(8px); border: 1px solid rgba(31, 184, 84, 0.4); border-radius: 30px; padding: 10px 20px; display: flex; align-items: center; gap: 10px; color: #1fb854; font-family: system-ui, sans-serif; font-weight: 600; font-size: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4); pointer-events: none;"><svg class="mark-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg><span class="mark-pulse">Mark is working...</span></div>\`;
-            }
-          `
-          )
-          .catch(() => {})
-      }
-    }
+    emitPreview({ sessionId, closed: true })
   })
 
   resetSessionIdleTimeout(session)
@@ -273,140 +311,185 @@ function getOrCreateBrowser(sessionId = 'default') {
 }
 
 export async function navigateTo(url, sessionId = 'default') {
-  const session = getOrCreateBrowser(sessionId)
-  const browserWindow = session.window
+  const session = await getOrCreateSession(sessionId)
+  const page = session.page
 
-  if (browserWindow.webContents.isLoading()) {
-    browserWindow.webContents.stop()
+  try {
+    await page.goto(url, {
+      waitUntil: ['domcontentloaded', 'networkidle2'],
+      timeout: 45000
+    })
+  } catch (e) {
+    console.error(`[BrowserAgent ${sessionId}] Goto warning/timeout:`, e.message)
   }
 
-  await Promise.race([
-    browserWindow.loadURL(url),
-    new Promise((resolve) => setTimeout(resolve, 60000))
-  ]).catch((e) => console.error(`[BrowserAgent ${sessionId}] Error/Timeout loading URL:`, e))
-
-  await new Promise((resolve) => setTimeout(resolve, 2000))
-
+  await new Promise((resolve) => setTimeout(resolve, 1500))
   return await readDOM(sessionId)
 }
 
 export async function closeBrowser(sessionId = 'default') {
-  if (sessionId === 'all') {
+  const targetId = !sessionId || sessionId.trim() === '' ? 'default' : sessionId.trim()
+
+  if (targetId === 'all') {
     for (const [id, s] of sessions.entries()) {
       if (s.idleTimeout) clearTimeout(s.idleTimeout)
-      if (s.window && !s.window.isDestroyed()) {
-        s.isForceClosing = true
-        s.window.close()
-      }
+      try {
+        if (s.page && !s.page.isClosed()) await s.page.close()
+      } catch (e) {}
     }
     sessions.clear()
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('browser:preview', null)
-      }
-    })
+    if (sharedBrowser) {
+      try {
+        await sharedBrowser.close()
+      } catch (e) {}
+      sharedBrowser = null
+    }
+    emitPreview(null)
     return 'Semua sesi browser berhasil ditutup.'
   }
 
-  const session = sessions.get(sessionId)
-  if (session && session.window && !session.window.isDestroyed()) {
+  const session = sessions.get(targetId)
+  if (session) {
     if (session.idleTimeout) clearTimeout(session.idleTimeout)
-    session.isForceClosing = true
-    session.window.close()
-    sessions.delete(sessionId)
-    session.isForceClosing = false
-    session.activeAskUser = false
-    session.activeAskUserMessage = ''
+    try {
+      if (session.page && !session.page.isClosed()) {
+        await session.page.close()
+      }
+    } catch (e) {}
+    sessions.delete(targetId)
+
     if (session.globalAskUserResolve) {
       session.globalAskUserResolve('User aborted the action by closing the browser.')
       session.globalAskUserResolve = null
     }
 
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('browser:preview', { sessionId, closed: true })
-      }
-    })
+    emitPreview({ sessionId: targetId, closed: true })
 
-    return `Browser sesi [${sessionId}] berhasil ditutup.`
+    // Jika sudah tidak ada sesi lain yang aktif, matikan seluruh proses browser
+    if (sessions.size === 0 && sharedBrowser) {
+      try {
+        await sharedBrowser.close()
+      } catch (e) {}
+      sharedBrowser = null
+    }
+
+    return `Browser sesi [${targetId}] berhasil ditutup.`
   }
-  return `Browser sesi [${sessionId}] memang sudah tertutup.`
+
+  // Jika session tidak ditemukan namun sharedBrowser masih hidup, tutup browser
+  if (sharedBrowser) {
+    try {
+      await sharedBrowser.close()
+    } catch (e) {}
+    sharedBrowser = null
+    emitPreview(null)
+    return 'Browser berhasil ditutup.'
+  }
+
+  return `Browser sesi [${targetId}] memang sudah tertutup.`
 }
 
 export async function readDOM(sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) {
+  const session = sessions.get(sessionId)
+  if (!session || !session.page || session.page.isClosed()) {
     return `[ERROR] Browser sesi [${sessionId}] belum dibuka. Gunakan browser-navigate dulu.`
   }
+
   resetSessionIdleTimeout(session)
-  const browserWindow = session.window
+  const page = session.page
 
-  const result = await browserWindow.webContents.executeJavaScript(DOM_PARSER_SCRIPT)
-
+  let result = ''
   try {
-    const image = await browserWindow.webContents.capturePage()
-    const thumbnail = image.resize({ width: 800 }).toDataURL()
-    const url = browserWindow.webContents.getURL()
-    const title = browserWindow.getTitle()
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (win !== browserWindow && !win.isDestroyed()) {
-        win.webContents.send('browser:preview', { sessionId, url, title, thumbnail })
-      }
-    })
+    result = await page.evaluate(DOM_PARSER_SCRIPT)
   } catch (e) {
-    console.error(`[BrowserAgent ${sessionId}] Failed to capture browser preview:`, e)
+    result = `[ERROR Evaluasi DOM]: ${e.message}`
   }
+
+  // Broadcast preview screenshot asynchronously
+  captureAndEmitPreview(page, sessionId)
 
   return result
 }
 
-export function showBrowser(sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (session && session.window && !session.window.isDestroyed()) {
-    const browserWindow = session.window
-    if (browserWindow.isMinimized()) browserWindow.restore()
-    browserWindow.show()
-    browserWindow.focus()
-    browserWindow.setAlwaysOnTop(true)
-    browserWindow.setAlwaysOnTop(false)
+// Menampilkan jendela fisik ke layar (saat user klik "Buka Jendela")
+export async function showBrowser(sessionId = 'default') {
+  const session = sessions.get(sessionId)
+  if (session && session.page && !session.page.isClosed()) {
+    try {
+      const cdp = await session.page.createCDPSession()
+      const { windowId } = await cdp.send('Browser.getWindowForTarget')
+      await cdp.send('Browser.setWindowBounds', {
+        windowId,
+        bounds: { left: 80, top: 60, width: 1280, height: 850, windowState: 'normal' }
+      })
+      await session.page.bringToFront()
+      await session.page.evaluate(() => {
+        window.focus()
+      }).catch(() => {})
+      session.isWindowVisible = true
+
+      emitPreview({
+        sessionId,
+        url: session.page.url(),
+        title: await session.page.title().catch(() => ''),
+        isWindowVisible: true
+      })
+    } catch (e) {
+      console.error(`[BrowserAgent ${sessionId}] showBrowser error:`, e.message)
+    }
+  }
+}
+
+// Menyembunyikan kembali jendela fisik ke offscreen (tanpa mematikan browser)
+export async function hideBrowser(sessionId = 'default') {
+  const session = sessions.get(sessionId)
+  if (session && session.page && !session.page.isClosed()) {
+    try {
+      const cdp = await session.page.createCDPSession()
+      const { windowId } = await cdp.send('Browser.getWindowForTarget')
+      await cdp.send('Browser.setWindowBounds', {
+        windowId,
+        bounds: { left: -3000, top: -3000, width: 1280, height: 850, windowState: 'normal' }
+      })
+      session.isWindowVisible = false
+
+      captureAndEmitPreview(session.page, sessionId)
+    } catch (e) {
+      console.error(`[BrowserAgent ${sessionId}] hideBrowser error:`, e.message)
+    }
   }
 }
 
 export async function executeAction(data, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) {
+  const session = sessions.get(sessionId)
+  if (!session || !session.page || session.page.isClosed()) {
     return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
   }
   resetSessionIdleTimeout(session)
-  const browserWindow = session.window
+  const page = session.page
   const { action, id, value, direction } = data
 
   if (action === 'click') {
     try {
-      await browserWindow.webContents.executeJavaScript(
-        `(() => {
-          const el = document.querySelector('[data-mark-id="${id}"]');
-          if (!el) return 'Elemen dengan ID ${id} tidak ditemukan.';
-          
-          el.scrollIntoView({ behavior: 'instant', block: 'center' });
+      await page.evaluate(
+        (targetId) => {
+          const el = document.querySelector(`[data-mark-id="${targetId}"]`)
+          if (!el) return 'Elemen tidak ditemukan'
+
+          el.scrollIntoView({ behavior: 'instant', block: 'center' })
 
           if (!document.getElementById('mark-cursor-style')) {
-            const style = document.createElement('style');
-            style.id = 'mark-cursor-style';
-            style.textContent = \`
+            const style = document.createElement('style')
+            style.id = 'mark-cursor-style'
+            style.textContent = `
               #mark-cursor {
                 position: fixed;
                 width: 24px;
                 height: 24px;
                 pointer-events: none;
                 z-index: 2147483647;
-                transition: left 0.5s cubic-bezier(0.22, 1, 0.36, 1), 
-                            top 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+                transition: left 0.4s cubic-bezier(0.22, 1, 0.36, 1), top 0.4s cubic-bezier(0.22, 1, 0.36, 1);
                 filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-              }
-              #mark-cursor svg {
-                width: 100%;
-                height: 100%;
               }
               .mark-click-ripple {
                 position: fixed;
@@ -423,105 +506,101 @@ export async function executeAction(data, sessionId = 'default') {
                 0% { transform: scale(0.5); opacity: 1; }
                 100% { transform: scale(3); opacity: 0; }
               }
-            \`;
-            document.head.appendChild(style);
+            `
+            document.head.appendChild(style)
           }
 
-          let cursor = document.getElementById('mark-cursor');
+          let cursor = document.getElementById('mark-cursor')
           if (!cursor) {
-            cursor = document.createElement('div');
-            cursor.id = 'mark-cursor';
-            cursor.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M5 3l14 8-6 2-4 6-4-16z" fill="#19362d" stroke="#1fb854" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-            cursor.style.left = '50%';
-            cursor.style.top = '50%';
-            document.body.appendChild(cursor);
+            cursor = document.createElement('div')
+            cursor.id = 'mark-cursor'
+            cursor.innerHTML =
+              '<svg viewBox="0 0 24 24" fill="none"><path d="M5 3l14 8-6 2-4 6-4-16z" fill="#19362d" stroke="#1fb854" stroke-width="1.5" stroke-linejoin="round"/></svg>'
+            cursor.style.left = '50%'
+            cursor.style.top = '50%'
+            document.body.appendChild(cursor)
           }
-          cursor.style.display = 'block';
+          cursor.style.display = 'block'
 
-          const rect = el.getBoundingClientRect();
-          const targetX = rect.left + rect.width / 2;
-          const targetY = rect.top + rect.height / 2;
+          const rect = el.getBoundingClientRect()
+          const targetX = rect.left + rect.width / 2
+          const targetY = rect.top + rect.height / 2
 
-          cursor.style.left = targetX + 'px';
-          cursor.style.top = targetY + 'px';
+          cursor.style.left = targetX + 'px'
+          cursor.style.top = targetY + 'px'
 
-          return new Promise(resolve => {
-            setTimeout(() => {
-              const ripple = document.createElement('div');
-              ripple.className = 'mark-click-ripple';
-              ripple.style.left = (targetX - 10) + 'px';
-              ripple.style.top = (targetY - 10) + 'px';
-              document.body.appendChild(ripple);
-              setTimeout(() => ripple.remove(), 600);
+          const ripple = document.createElement('div')
+          ripple.className = 'mark-click-ripple'
+          ripple.style.left = targetX - 10 + 'px'
+          ripple.style.top = targetY - 10 + 'px'
+          document.body.appendChild(ripple)
+          setTimeout(() => ripple.remove(), 600)
 
-              el.click();
-              setTimeout(() => { cursor.style.display = 'none'; }, 1000);
-              resolve('Berhasil klik elemen ${id}.');
-            }, 550);
-          });
-        })()`
+          el.click()
+          setTimeout(() => {
+            cursor.style.display = 'none'
+          }, 600)
+        },
+        id
       )
     } catch (e) {
-      if (!e.message.includes('destroyed')) throw e
+      console.error(`[BrowserAgent ${sessionId}] Click error:`, e.message)
     }
-    await new Promise((resolve) => setTimeout(resolve, 2500))
+
+    await new Promise((resolve) => setTimeout(resolve, 2000))
     return await readDOM(sessionId)
   }
 
   if (action === 'type') {
     try {
-      await browserWindow.webContents.executeJavaScript(
-        `(() => {
-          const el = document.querySelector('[data-mark-id="${id}"]');
-          if (!el) return 'Elemen dengan ID ${id} tidak ditemukan.';
-          el.scrollIntoView({ behavior: 'instant', block: 'center' });
-          el.focus();
+      await page.evaluate(
+        (targetId, text) => {
+          const el = document.querySelector(`[data-mark-id="${targetId}"]`)
+          if (!el) return 'Elemen tidak ditemukan'
+          el.scrollIntoView({ behavior: 'instant', block: 'center' })
+          el.focus()
 
-          const text = '${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}';
-          
-          const proto = el.tagName === 'TEXTAREA'
-            ? window.HTMLTextAreaElement.prototype
-            : window.HTMLInputElement.prototype;
-          const nativeValueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          const proto =
+            el.tagName === 'TEXTAREA'
+              ? window.HTMLTextAreaElement.prototype
+              : window.HTMLInputElement.prototype
+          const nativeValueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
           if (nativeValueSetter) {
-            nativeValueSetter.call(el, text);
+            nativeValueSetter.call(el, text)
           } else {
-            el.value = text;
+            el.value = text
           }
 
-          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+          el.dispatchEvent(new Event('change', { bubbles: true }))
 
           if (!el.value || el.value !== text) {
-            el.value = '';
-            el.focus();
-            document.execCommand('insertText', false, text);
+            el.value = ''
+            el.focus()
+            document.execCommand('insertText', false, text)
           }
-
-          return 'Berhasil ketik di elemen ${id}.';
-        })()`
+        },
+        id,
+        value || ''
       )
     } catch (e) {
-      if (!e.message.includes('destroyed')) throw e
+      console.error(`[BrowserAgent ${sessionId}] Type error:`, e.message)
     }
+
     await new Promise((resolve) => setTimeout(resolve, 1000))
     return await readDOM(sessionId)
   }
 
   if (action === 'scroll') {
     const scrollAmount = direction === 'up' ? -600 : 600
-    await browserWindow.webContents.executeJavaScript(
-      `window.scrollBy({ top: ${scrollAmount}, behavior: 'smooth' })`
-    )
+    await page.evaluate((amt) => {
+      window.scrollBy({ top: amt, behavior: 'smooth' })
+    }, scrollAmount)
     await new Promise((resolve) => setTimeout(resolve, 1000))
     return await readDOM(sessionId)
   }
 
   if (action === 'unblock') {
-    if (!browserWindow.isDestroyed()) {
-      browserWindow.show()
-      browserWindow.focus()
-    }
     try {
       const isReinject = data.isReinject
       if (!isReinject) {
@@ -532,68 +611,61 @@ export async function executeAction(data, sessionId = 'default') {
       }
       const aiMessage = session.activeAskUserMessage
 
-      await browserWindow.webContents.executeJavaScript(
-        `(() => {
-          let blocker = document.getElementById('mark-user-blocker');
-          if (!blocker) {
-            blocker = document.createElement('div');
-            blocker.id = 'mark-user-blocker';
-            document.body.appendChild(blocker);
-          }
-          blocker.style.position = 'fixed';
-          blocker.style.zIndex = '2147483647';
-          blocker.style.width = 'auto';
-          blocker.style.height = 'auto';
-          blocker.style.bottom = '24px';
-          blocker.style.right = '24px';
-          blocker.style.top = 'auto';
-          blocker.style.left = 'auto';
-          blocker.style.background = 'transparent';
-          blocker.style.pointerEvents = 'none';
-          
-          if (!document.getElementById('mark-placeholder-style')) {
-            const style = document.createElement('style');
-            style.id = 'mark-placeholder-style';
-            style.textContent = '#mark-user-input::placeholder { color: rgba(248, 250, 252, 0.5); }';
-            document.head.appendChild(style);
-          }
-          
-          blocker.innerHTML = \`
-            <div style="background: rgba(25, 54, 45, 0.95); backdrop-filter: blur(12px); padding: 20px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 16px; pointer-events: auto; font-family: system-ui, sans-serif; width: 340px; border: 1px solid rgba(31, 184, 84, 0.3);">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1fb854" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                  <path d="M2 17l10 5 10-5"></path>
-                  <path d="M2 12l10 5 10-5"></path>
-                </svg>
-                <div style="font-weight: 600; color: #f8fafc; font-size: 15px; letter-spacing: 0.5px;">Mark paused for input</div>
-              </div>
-              
-              <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border-left: 3px solid #1fb854;">
-                \${aiMessage}
-              </div>
-              
-              <input type="text" id="mark-user-input" placeholder="Add a comment for Mark (optional)..." style="background: rgba(15, 23, 42, 0.6); color: #f8fafc; padding: 12px 14px; border: 1px solid rgba(31, 184, 84, 0.4); border-radius: 8px; font-size: 13px; outline: none; transition: all 0.2s;" onfocus="this.style.borderColor='#1fb854'; this.style.boxShadow='0 0 0 2px rgba(31, 184, 84, 0.2)';" onblur="this.style.borderColor='rgba(31, 184, 84, 0.4)'; this.style.boxShadow='none';"/>
-              
-              <button id="mark-btn-selesai" style="background: #1fb854; color: #0f172a; padding: 12px; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#22c55e'; this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1fb854'; this.style.transform='translateY(0)';">
-                Resume Automation
-              </button>
-            </div>
-          \`;
-          
-          document.getElementById('mark-btn-selesai').onclick = () => {
-            const comment = document.getElementById('mark-user-input').value;
-            const originalTitle = document.title;
-            document.title = 'MARK_UNBLOCK_DONE:' + (comment.trim() || 'User telah menyelesaikan aksi manual (tidak ada komentar).');
-            setTimeout(() => { document.title = originalTitle; }, 100);
-          };
-          
-          document.getElementById('mark-user-input').addEventListener('keypress', function (e) {
-              if (e.key === 'Enter') document.getElementById('mark-btn-selesai').click();
-          });
+      // Bring browser to front so user can interact
+      await showBrowser(sessionId)
 
-        })()`
-      )
+      await page.evaluate((msg) => {
+        let blocker = document.getElementById('mark-user-blocker')
+        if (!blocker) {
+          blocker = document.createElement('div')
+          blocker.id = 'mark-user-blocker'
+          document.body.appendChild(blocker)
+        }
+        blocker.style.position = 'fixed'
+        blocker.style.zIndex = '2147483647'
+        blocker.style.width = 'auto'
+        blocker.style.height = 'auto'
+        blocker.style.bottom = '24px'
+        blocker.style.right = '24px'
+        blocker.style.top = 'auto'
+        blocker.style.left = 'auto'
+        blocker.style.background = 'transparent'
+        blocker.style.pointerEvents = 'none'
+
+        blocker.innerHTML = `
+          <div style="background: rgba(25, 54, 45, 0.95); backdrop-filter: blur(12px); padding: 20px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 16px; pointer-events: auto; font-family: system-ui, sans-serif; width: 340px; border: 1px solid rgba(31, 184, 84, 0.3);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1fb854" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                <path d="M2 17l10 5 10-5"></path>
+                <path d="M2 12l10 5 10-5"></path>
+              </svg>
+              <div style="font-weight: 600; color: #f8fafc; font-size: 15px; letter-spacing: 0.5px;">Mark paused for input</div>
+            </div>
+            
+            <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border-left: 3px solid #1fb854;">
+              ${msg}
+            </div>
+            
+            <input type="text" id="mark-user-input" placeholder="Add a comment for Mark (optional)..." style="background: rgba(15, 23, 42, 0.6); color: #f8fafc; padding: 12px 14px; border: 1px solid rgba(31, 184, 84, 0.4); border-radius: 8px; font-size: 13px; outline: none; transition: all 0.2s;" onfocus="this.style.borderColor='#1fb854'; this.style.boxShadow='0 0 0 2px rgba(31, 184, 84, 0.2)';" onblur="this.style.borderColor='rgba(31, 184, 84, 0.4)'; this.style.boxShadow='none';"/>
+            
+            <button id="mark-btn-selesai" style="background: #1fb854; color: #0f172a; padding: 12px; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#22c55e'; this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1fb854'; this.style.transform='translateY(0)';">
+              Resume Automation
+            </button>
+          </div>
+        `
+
+        document.getElementById('mark-btn-selesai').onclick = () => {
+          const comment = document.getElementById('mark-user-input').value
+          const originalTitle = document.title
+          document.title =
+            'MARK_UNBLOCK_DONE:' +
+            (comment.trim() || 'User telah menyelesaikan aksi manual (tidak ada komentar).')
+          setTimeout(() => {
+            document.title = originalTitle
+          }, 100)
+        }
+      }, aiMessage)
 
       if (isReinject) return 'reinjected'
 
@@ -609,15 +681,13 @@ export async function executeAction(data, sessionId = 'default') {
   }
 
   if (action === 'finish') {
-    await browserWindow.webContents
-      .executeJavaScript(
-        `(() => {
-        const blocker = document.getElementById('mark-user-blocker');
-        if (blocker) blocker.remove();
-        const style = document.getElementById('mark-blocker-style');
-        if (style) style.remove();
-      })()`
-      )
+    await page
+      .evaluate(() => {
+        const blocker = document.getElementById('mark-user-blocker')
+        if (blocker) blocker.remove()
+        const style = document.getElementById('mark-blocker-style')
+        if (style) style.remove()
+      })
       .catch(() => {})
     return 'Browser unlocked.'
   }
@@ -626,11 +696,15 @@ export async function executeAction(data, sessionId = 'default') {
 }
 
 export async function executeScript(script, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
+  const session = sessions.get(sessionId)
+  if (!session || !session.page || session.page.isClosed())
+    return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
   resetSessionIdleTimeout(session)
   try {
-    const result = await session.window.webContents.executeJavaScript(`(async () => { ${script} })()`)
+    const result = await session.page.evaluate(async (code) => {
+      const fn = new Function(`return (async () => { ${code} })()`)
+      return await fn()
+    }, script)
     return JSON.stringify(result) || 'Eksekusi script berhasil tanpa return value.'
   } catch (e) {
     return `[ERROR] Gagal eksekusi script: ${e.message}`
@@ -638,16 +712,17 @@ export async function executeScript(script, sessionId = 'default') {
 }
 
 export async function extractData(selector, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
+  const session = sessions.get(sessionId)
+  if (!session || !session.page || session.page.isClosed())
+    return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
   resetSessionIdleTimeout(session)
   try {
-    const result = await session.window.webContents.executeJavaScript(`
-      (() => {
-        const els = document.querySelectorAll('${selector.replace(/'/g, "\\'")}');
-        return Array.from(els).map(el => el.innerText || el.textContent).filter(t => t.trim().length > 0);
-      })()
-    `)
+    const result = await session.page.evaluate((sel) => {
+      const els = document.querySelectorAll(sel)
+      return Array.from(els)
+        .map((el) => el.innerText || el.textContent)
+        .filter((t) => t.trim().length > 0)
+    }, selector)
     return JSON.stringify(result, null, 2)
   } catch (e) {
     return `[ERROR] Gagal ekstrak data: ${e.message}`
@@ -655,18 +730,19 @@ export async function extractData(selector, sessionId = 'default') {
 }
 
 export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
+  const session = sessions.get(sessionId)
+  if (!session || !session.page || session.page.isClosed())
+    return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
   resetSessionIdleTimeout(session)
   try {
-    const image = await session.window.webContents.capturePage()
-    const buffer = image.toPNG()
     const savePath = path.join(os.homedir(), 'Documents', 'Mark Workspace', filename)
-    
     const dir = path.dirname(savePath)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    
-    fs.writeFileSync(savePath, buffer)
+
+    await session.page.screenshot({
+      path: savePath,
+      fullPage: false
+    })
     return `Screenshot berhasil disimpan di: ${savePath}`
   } catch (e) {
     return `[ERROR] Gagal mengambil screenshot: ${e.message}`
@@ -674,21 +750,18 @@ export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'd
 }
 
 export async function downloadFile(url, filename, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
+  const session = sessions.get(sessionId)
+  if (!session || !session.page || session.page.isClosed())
+    return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
   resetSessionIdleTimeout(session)
-  return new Promise((resolve) => {
-    session.window.webContents.session.once('will-download', (event, item) => {
-      const savePath = path.join(os.homedir(), 'Downloads', filename || item.getFilename())
-      item.setSavePath(savePath)
-      item.once('done', (event, state) => {
-        if (state === 'completed') {
-          resolve(`Download selesai dan disimpan di: ${savePath}`)
-        } else {
-          resolve(`[ERROR] Download gagal dengan status: ${state}`)
-        }
-      })
-    })
-    session.window.webContents.downloadURL(url)
-  })
+  try {
+    const savePath = path.join(os.homedir(), 'Downloads', filename || path.basename(url))
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    const arrayBuffer = await response.arrayBuffer()
+    await fs.promises.writeFile(savePath, Buffer.from(arrayBuffer))
+    return `Download selesai dan disimpan di: ${savePath}`
+  } catch (err) {
+    return `[ERROR] Download gagal: ${err.message}`
+  }
 }

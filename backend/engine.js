@@ -43,6 +43,7 @@ import {
   disconnectGoogle,
   getGoogleStatus
 } from './google/google-service.js'
+import { setBrowserEventEmitter } from './browser-agent.js'
 
 // Setup stdio JSON RPC interface
 const rl = readline.createInterface({
@@ -59,6 +60,13 @@ function sendResponse(id, success, data = null, error = null) {
 function emitEvent(event, payload) {
   const message = JSON.stringify({ event, payload })
   process.stdout.write(message + '\n')
+}
+
+// Connect browser automation events to Tauri / React bridge
+try {
+  setBrowserEventEmitter(emitEvent)
+} catch (e) {
+  console.error('[NodeEngine] Browser emitter init error:', e)
 }
 
 // Mock window event bridge that redirects webContents.send(...) to stdout emitEvent(...)

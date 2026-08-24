@@ -232,33 +232,37 @@ export const tauriApi = {
   },
 
   // --- Multi-Session Browser Automation ---
-  browserNavigate: async (url) => {
+  browserNavigate: async (url, sessionId = 'default') => {
     try {
       const res = await invoke('node_invoke', {
         action: 'executeNativeTool',
-        payload: { toolName: 'browser-navigate', query: url }
+        payload: { toolName: 'browser-navigate', query: url, config: { sessionId } }
       })
       return res.data
     } catch (e) {
       return `[ERROR] ${e.message}`
     }
   },
-  browserReadDom: async () => {
+  browserReadDom: async (sessionId = 'default') => {
     try {
       const res = await invoke('node_invoke', {
         action: 'executeNativeTool',
-        payload: { toolName: 'browser-read-dom', query: '' }
+        payload: { toolName: 'browser-read', query: '', config: { sessionId } }
       })
       return res.data
     } catch (e) {
       return `[ERROR] ${e.message}`
     }
   },
-  browserAction: async (data) => {
+  browserAction: async (data, sessionId = 'default') => {
     try {
       const res = await invoke('node_invoke', {
         action: 'executeNativeTool',
-        payload: { toolName: 'browser-action', query: JSON.stringify(data) }
+        payload: {
+          toolName: 'browser-action',
+          query: typeof data === 'string' ? data : JSON.stringify(data),
+          config: { sessionId }
+        }
       })
       return res.data
     } catch (e) {
@@ -269,7 +273,7 @@ export const tauriApi = {
     try {
       const res = await invoke('node_invoke', {
         action: 'executeNativeTool',
-        payload: { toolName: 'browser-close', query: sessionId }
+        payload: { toolName: 'browser-close', query: sessionId, config: { sessionId } }
       })
       return res.data
     } catch (e) {
@@ -282,7 +286,22 @@ export const tauriApi = {
       unlistenPromise.then((unlisten) => unlisten()).catch(() => {})
     }
   },
-  showBrowserWindow: (sessionId = 'default') => {},
+  showBrowserWindow: async (sessionId = 'default') => {
+    try {
+      await invoke('node_invoke', {
+        action: 'executeNativeTool',
+        payload: { toolName: 'browser-show', query: sessionId, config: { sessionId } }
+      })
+    } catch (e) {}
+  },
+  hideBrowserWindow: async (sessionId = 'default') => {
+    try {
+      await invoke('node_invoke', {
+        action: 'executeNativeTool',
+        payload: { toolName: 'browser-hide', query: sessionId, config: { sessionId } }
+      })
+    } catch (e) {}
+  },
 
   // --- PC Automation (Win32 / PowerShell Daemon) ---
   osRead: async () => {

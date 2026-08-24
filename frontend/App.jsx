@@ -71,12 +71,16 @@ const WindowControls = () => {
   }, [])
 
   return (
-    <div className="absolute top-0 left-0 right-0 h-10 z-[9999] [-webkit-app-region:drag] flex items-center justify-between px-4 pointer-events-none text-white">
+    <div
+      data-tauri-drag-region
+      className="absolute top-0 left-0 right-0 h-10 z-[9999] [-webkit-app-region:drag] flex items-center justify-between px-4 text-white select-none pointer-events-auto cursor-grab active:cursor-grabbing"
+    >
       {/* Invisible left spacer to balance the right controls */}
-      <div className="flex-1"></div>
+      <div data-tauri-drag-region className="flex-1"></div>
 
       {/* Center Drag Grip */}
       <div
+        data-tauri-drag-region
         className="flex items-center justify-center opacity-30 hover:opacity-100 transition-opacity gap-2"
         title="Tahan dan geser untuk memindahkan"
       >
