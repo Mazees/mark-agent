@@ -159,10 +159,11 @@ export const useWakeWord = ({
           keywordRef.current = keyword
           console.log('[WakeWord] Config updated via event:', { enabled, keyword })
 
+          stopPassiveListener()
           if (enabled && !isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking && !window.isVADRecording) {
-            startPassiveListener()
-          } else {
-            stopPassiveListener()
+            setTimeout(() => {
+              startPassiveListener()
+            }, 300)
           }
           return
         }
@@ -176,10 +177,11 @@ export const useWakeWord = ({
         keywordRef.current = keyword
         console.log('[WakeWord] Config loaded from DB:', { enabled, keyword })
 
+        stopPassiveListener()
         if (enabled && !isInteractiveMicRef.current && !isAgentBusyRef.current && !window.isMarkSpeaking && !window.isVADRecording) {
-          startPassiveListener()
-        } else {
-          stopPassiveListener()
+          setTimeout(() => {
+            startPassiveListener()
+          }, 300)
         }
       } catch (e) {
         console.warn('[WakeWord] Failed to load config:', e)

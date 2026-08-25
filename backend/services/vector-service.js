@@ -1,4 +1,11 @@
-import { pipeline } from '@huggingface/transformers'
+import { pipeline, env } from '@huggingface/transformers'
+import path from 'path'
+import os from 'os'
+
+// Pastikan direktori cache Transformers.js selalu berada di folder user yang dapat ditulis
+try {
+  env.cacheDir = path.join(os.homedir(), '.cache', 'mark-transformers')
+} catch (_) {}
 
 let extractor = null
 let isInitializing = false

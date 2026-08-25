@@ -22,12 +22,6 @@ import { GlobalCameraManager } from './components/GlobalCameraManager'
 import { getAllConfig } from './api/db'
 import { initOramaIndices, hydrateFromDexie } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
-import { env } from '@huggingface/transformers'
-
-// Global Transformers.js configuration
-env.allowLocalModels = false
-env.useBrowserCache = true
-env.useFSCache = false
 
 const GlobalListener = () => {
   const navigate = useNavigate()
@@ -48,7 +42,18 @@ const GlobalListener = () => {
       })
     }
 
+    const handleKeyDown = (e) => {
+      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i'))) {
+        e.preventDefault()
+        if (window.api?.toggleDevtools) {
+          window.api.toggleDevtools()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+
     return () => {
+      window.removeEventListener('keydown', handleKeyDown)
       if (window.api?.removeLiveAudioShortcut) {
         window.api.removeLiveAudioShortcut()
       }

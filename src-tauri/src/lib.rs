@@ -33,7 +33,11 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["pc-overlay"])
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             cmd_window::window_minimize,
             cmd_window::window_maximize,
@@ -46,27 +50,26 @@ pub fn run() {
             cmd_window::show_pc_overlay_window,
             cmd_window::hide_pc_overlay_window,
             cmd_window::resize_pc_overlay_window,
+            cmd_window::toggle_devtools,
             cmd_screenshot::take_screenshot,
             cmd_node_bridge::node_invoke,
         ])
         .setup(move |app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
+            if let Some(overlay) = app.get_webview_window("pc-overlay") {
+                let _ = overlay.hide();
             }
 
-            // Start Node.js background engine
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )?;
+
+            // Start Node.js background engine with supervisor
             let app_handle_for_node = app.handle().clone();
             let node_state_for_spawner = node_state.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) =
-                    cmd_node_bridge::start_node_engine(app_handle_for_node, node_state_for_spawner).await
-                {
-                    log::error!("[NodeBridge] Gagal memulai Node engine: {}", e);
-                }
+                cmd_node_bridge::start_node_engine(app_handle_for_node, node_state_for_spawner).await;
             });
 
             // Setup System Tray Menu

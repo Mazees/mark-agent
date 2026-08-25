@@ -116,3 +116,13 @@ pub fn resize_pc_overlay_window(app: AppHandle, width: f64, height: f64) -> Resu
     }
     Ok(())
 }
+
+#[tauri::command]
+pub fn toggle_devtools(window: WebviewWindow) -> Result<(), String> {
+    if window.is_devtools_open() {
+        window.close_devtools();
+    } else {
+        window.open_devtools();
+    }
+    Ok(())
+}

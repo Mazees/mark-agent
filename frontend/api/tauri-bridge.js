@@ -615,6 +615,13 @@ export const tauriApi = {
   workspaceEnsure: async (workspaceRoot) => {
     const res = await invoke('node_invoke', { action: 'executeNativeTool', payload: { toolName: 'workspace-ensure', query: workspaceRoot } })
     return res.data
+  },
+
+  // --- Developer Tools ---
+  toggleDevtools: async () => {
+    try {
+      await invoke('toggle_devtools')
+    } catch (_) {}
   }
 }
 

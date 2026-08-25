@@ -1,6 +1,6 @@
 {
   "name": "mark",
-  "version": "6.0.0",
+  "version": "5.0.0",
   "type": "module",
   "description": "Mark: Metacognitive Artificial Relational Knowledge AI",
   "author": "Mazees",
@@ -10,6 +10,7 @@
     "build": "node scripts/tauri-runner.js build",
     "dev:vite": "vite",
     "build:vite": "vite build",
+    "build:backend": "node scripts/build-backend.js",
     "preview": "vite preview",
     "format": "prettier --write .",
     "lint": "eslint --cache ."

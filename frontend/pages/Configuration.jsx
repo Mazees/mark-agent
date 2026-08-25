@@ -362,6 +362,15 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
       chatContext.setConfig([config])
     }
 
+    window.dispatchEvent(
+      new CustomEvent('wake-word-config-changed', {
+        detail: {
+          enabled: Boolean(config.wakeWordEnabled),
+          keyword: config.wakeWordKeyword || 'hey-mark'
+        }
+      })
+    )
+
     if (isFirstSetup && onSetupComplete) {
       onSetupComplete()
     } else {

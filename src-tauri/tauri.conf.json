@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Mark Agent",
-  "version": "6.0.0",
+  "version": "5.0.0",
   "identifier": "com.mark.agent",
   "build": {
     "frontendDist": "../out/renderer",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev:vite",
-    "beforeBuildCommand": "npm run build:vite"
+    "beforeBuildCommand": "npm run build:vite && npm run build:backend"
   },
   "app": {
     "windows": [
@@ -46,9 +46,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "resources": {
-      "../backend": "backend",
+      "../out/backend": "backend",
       "../resources": "resources",
       "../package.json": "package.json"
     },
