@@ -22,7 +22,7 @@ import {
   openPCSession,
   closePCSession,
   isPCSessionOpen
-} from './pc-agent.js'
+} from '../server/tools/pc-agent.js'
 
 import {
   searchFiles,

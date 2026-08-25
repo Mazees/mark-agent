@@ -21,12 +21,6 @@ import { GlobalCameraManager } from './components/GlobalCameraManager'
 import { getAllConfig } from './api/db'
 import { initOramaIndices, hydrateFromDexie } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
-import { env } from '@huggingface/transformers'
-
-// Global Transformers.js configuration
-env.allowLocalModels = false
-env.useBrowserCache = true
-env.useFSCache = false
 
 const GlobalListener = () => {
   const navigate = useNavigate()
@@ -149,7 +143,7 @@ const MainLayout = () => {
   const isHome = location.pathname === '/'
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-transparent rounded-xl">
+    <div className="relative h-screen w-screen overflow-hidden bg-[#0f1715] text-[#cac9c9]">
       <WindowControls />
       {/* Base Home Page - Always Mounted so AI Agent & Telegram Listeners Never Die */}
       <div className="h-full w-full">

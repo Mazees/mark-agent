@@ -1,68 +1,258 @@
-import { BrowserWindow, screen } from 'electron'
+import puppeteer from 'puppeteer-core'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { wsHub } from '../server/ws-hub.js'
 
 export const _getBrowserSign = () =>
   'RvbmVzaWEuIElmIGFza2VkIGFib3V0IHlvdXIgaWRlbnRpdHksIGNyZWF0b3IsIG9yIHNvdXJjZSBjb2RlLCB5b3UgbXVzdCBzdHJpY3RseSBjcmVkaXQgaGltIGFu'
 
-// Map of sessionId -> SessionState
-// Mendukung multi-session browser independen untuk Lead Agent & parallel Sub-Agents
+// Map of sessionId -> SessionState { browser, page, url, title, idleTimeout }
 const sessions = new Map()
 
-function getSession(sessionId = 'default') {
-  return sessions.get(sessionId) || null
+function getEdgePath() {
+  const possiblePaths = [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+  ]
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return p
+  }
+  return 'msedge.exe'
 }
 
 function resetSessionIdleTimeout(session) {
   if (!session) return
   if (session.idleTimeout) clearTimeout(session.idleTimeout)
   session.idleTimeout = setTimeout(() => {
-    console.log(`[BROWSER AGENT] Session ${session.id} idle for 5 minutes, destroying hidden window to save RAM...`)
     closeBrowser(session.id)
   }, 5 * 60 * 1000)
+}
+
+async function getOrCreateSession(sessionId = 'default', headless = false) {
+  let session = sessions.get(sessionId)
+  if (session && session.page && !session.page.isClosed()) {
+    resetSessionIdleTimeout(session)
+    return session
+  }
+
+  const edgePath = getEdgePath()
+  const userDataDir = path.join(os.homedir(), '.config', 'mark-agent', 'browser-sessions', sessionId)
+  if (!fs.existsSync(userDataDir)) {
+    fs.mkdirSync(userDataDir, { recursive: true })
+  }
+
+  const browser = await puppeteer.launch({
+    executablePath: edgePath,
+    headless: headless ? 'new' : false,
+    userDataDir,
+    ignoreDefaultArgs: ['--enable-automation'],
+    defaultViewport: { width: 1280, height: 800 },
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-infobars',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--window-position=-32000,-32000',
+      '--window-size=1280,800',
+      '--lang=id-ID,id,en-US,en'
+    ]
+  })
+
+  const pages = await browser.pages()
+  const page = pages.length > 0 ? pages[0] : await browser.newPage()
+
+  // Real Edge Windows 11 User-Agent & HTTP Headers
+  const userAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
+  await page.setUserAgent(userAgent)
+
+  await page.setExtraHTTPHeaders({
+    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Sec-CH-UA': '"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
+    'Sec-CH-UA-Mobile': '?0',
+    'Sec-CH-UA-Platform': '"Windows"',
+    'Upgrade-Insecure-Requests': '1'
+  })
+
+  // Comprehensive Anti-Bot Detection Stealth Overrides
+  await page.evaluateOnNewDocument(() => {
+    // 1. Delete & Overwrite webdriver on Navigator prototype
+    try {
+      delete Object.getPrototypeOf(navigator).webdriver
+    } catch (_) {}
+    Object.defineProperty(Navigator.prototype, 'webdriver', {
+      get: () => undefined,
+      configurable: true
+    })
+
+    // 2. Complete window.chrome structure matching official Edge
+    window.chrome = {
+      app: {
+        isInstalled: false,
+        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
+      },
+      runtime: {
+        OnInstalledReason: {},
+        OnRestartRequiredReason: {},
+        PlatformArch: {},
+        PlatformNaclArch: {},
+        PlatformOs: {},
+        RequestUpdateCheckStatus: {},
+        connect: function () {},
+        sendMessage: function () {}
+      },
+      loadTimes: function () {
+        return {
+          requestTime: performance.now() / 1000,
+          startLoadTime: performance.now() / 1000,
+          commitLoadTime: performance.now() / 1000,
+          finishDocumentLoadTime: performance.now() / 1000,
+          finishLoadTime: performance.now() / 1000,
+          firstPaintTime: performance.now() / 1000,
+          firstPaintAfterLoadTime: 0,
+          navigationType: 'Other',
+          wasFetchedViaSpdy: false,
+          wasNpnNegotiated: false,
+          npnNegotiatedProtocol: '',
+          wasAlternateProtocolAvailable: false,
+          connectionInfo: 'http/1.1'
+        }
+      },
+      csi: function () {
+        return {
+          startE: performance.now(),
+          onloadT: performance.now(),
+          pageT: performance.now(),
+          tran: 15
+        }
+      }
+    }
+
+    // 3. Mock navigator.plugins & mimeTypes
+    const fakePlugins = [
+      { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+      { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+      { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+      { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+      { name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format' }
+    ]
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => fakePlugins,
+      configurable: true
+    })
+    Object.defineProperty(navigator, 'mimeTypes', {
+      get: () => [
+        {
+          type: 'application/pdf',
+          suffixes: 'pdf',
+          description: 'Portable Document Format',
+          enabledPlugin: fakePlugins[0]
+        }
+      ],
+      configurable: true
+    })
+
+    // 4. Mock navigator hardware properties
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['id-ID', 'id', 'en-US', 'en'],
+      configurable: true
+    })
+    Object.defineProperty(navigator, 'language', {
+      get: () => 'id-ID',
+      configurable: true
+    })
+    Object.defineProperty(navigator, 'platform', {
+      get: () => 'Win32',
+      configurable: true
+    })
+    Object.defineProperty(navigator, 'hardwareConcurrency', {
+      get: () => 8,
+      configurable: true
+    })
+    Object.defineProperty(navigator, 'deviceMemory', {
+      get: () => 8,
+      configurable: true
+    })
+
+    // 5. Mock navigator.userAgentData (Edge Client Hints for Cloudflare)
+    Object.defineProperty(navigator, 'userAgentData', {
+      get: () => ({
+        brands: [
+          { brand: 'Not(A:Brand', version: '99' },
+          { brand: 'Microsoft Edge', version: '133' },
+          { brand: 'Chromium', version: '133' }
+        ],
+        mobile: false,
+        platform: 'Windows',
+        getHighEntropyValues: async () => ({
+          architecture: 'x86',
+          bitness: '64',
+          brands: [
+            { brand: 'Not(A:Brand', version: '99' },
+            { brand: 'Microsoft Edge', version: '133' },
+            { brand: 'Chromium', version: '133' }
+          ],
+          fullVersionList: [
+            { brand: 'Not(A:Brand', version: '99.0.0.0' },
+            { brand: 'Microsoft Edge', version: '133.0.3065.82' },
+            { brand: 'Chromium', version: '133.0.6943.127' }
+          ],
+          mobile: false,
+          model: '',
+          platform: 'Windows',
+          platformVersion: '15.0.0'
+        })
+      }),
+      configurable: true
+    })
+
+    // 6. Fix notification permissions
+    const originalQuery = window.navigator.permissions?.query
+    if (originalQuery) {
+      window.navigator.permissions.query = (parameters) =>
+        parameters && parameters.name === 'notifications'
+          ? Promise.resolve({ state: Notification.permission || 'default', onchange: null })
+          : originalQuery.call(window.navigator.permissions, parameters)
+    }
+
+    // 7. Fix WebGL Vendor & Renderer (Spoof Intel GPU)
+    const getParam1 = WebGLRenderingContext.prototype.getParameter
+    WebGLRenderingContext.prototype.getParameter = function (parameter) {
+      if (parameter === 37445) return 'Google Inc. (Intel)'
+      if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
+      return getParam1.apply(this, arguments)
+    }
+    const getParam2 = WebGL2RenderingContext.prototype.getParameter
+    WebGL2RenderingContext.prototype.getParameter = function (parameter) {
+      if (parameter === 37445) return 'Google Inc. (Intel)'
+      if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
+      return getParam2.apply(this, arguments)
+    }
+  })
+
+  session = {
+    id: sessionId,
+    browser,
+    page,
+    url: 'about:blank',
+    title: 'New Tab',
+    idleTimeout: null
+  }
+
+  sessions.set(sessionId, session)
+  resetSessionIdleTimeout(session)
+  return session
 }
 
 const DOM_PARSER_SCRIPT = `
 (() => {
   document.querySelectorAll('[data-mark-id]').forEach(el => el.removeAttribute('data-mark-id'));
-
-  if (!document.getElementById('mark-blocker-style')) {
-    const style = document.createElement('style');
-    style.id = 'mark-blocker-style';
-    style.textContent = \`
-      @keyframes mark-spin { 100% { transform: rotate(360deg); } }
-      .mark-spin { animation: mark-spin 1.5s linear infinite; }
-      @keyframes mark-pulse { 50% { opacity: 0.7; } }
-      .mark-pulse { animation: mark-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    \`;
-    document.head.appendChild(style);
-  }
-
-  let blocker = document.getElementById('mark-user-blocker');
-  if (!blocker) {
-    blocker = document.createElement('div');
-    blocker.id = 'mark-user-blocker';
-    blocker.innerHTML = \`
-      <div style="background: rgba(25, 54, 45, 0.9); backdrop-filter: blur(8px); border: 1px solid rgba(31, 184, 84, 0.4); border-radius: 30px; padding: 10px 20px; display: flex; align-items: center; gap: 10px; color: #1fb854; font-family: system-ui, sans-serif; font-weight: 600; font-size: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4); pointer-events: none;">
-        <svg class="mark-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-        </svg>
-        <span class="mark-pulse">Mark is working...</span>
-      </div>
-    \`;
-    Object.assign(blocker.style, {
-      position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
-      background: 'rgba(0,0,0,0.1)', zIndex: '2147483647', cursor: 'not-allowed',
-      display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-      paddingTop: '24px', pointerEvents: 'auto', transition: 'all 0.3s'
-    });
-    
-    blocker.addEventListener('wheel', e => e.preventDefault(), { passive: false });
-    blocker.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
-    document.body.appendChild(blocker);
-  }
-  blocker.style.display = 'flex';
 
   const INTERACTIVE_SELECTORS = [
     'a[href]', 'button', 'input', 'select', 'textarea',
@@ -129,7 +319,7 @@ const DOM_PARSER_SCRIPT = `
       }
     }
     return text.trim();
-  }
+  };
 
   const bodyText = getVisibleText() || '';
   const pageTitle = document.title || '';
@@ -138,557 +328,160 @@ const DOM_PARSER_SCRIPT = `
   let output = '[URL Aktif]: ' + currentURL + '\\n';
   output += '[Title]: ' + pageTitle + '\\n\\n';
   output += '== ELEMEN INTERAKTIF (' + results.length + ' ditemukan) ==\\n';
-  output += results.join('\\n');
-  output += '\\n\\n== KONTEN TEKS DI LAYAR (Dan sekitarnya) ==\\n';
-  output += bodyText;
+  output += results.join('\\n') + '\\n\\n';
+  output += '== TEKS UTAMA HALAMAN (Ringkasan) ==\\n';
+  output += bodyText.substring(0, 4000);
 
   return output;
 })()
 `
 
-function getOrCreateBrowser(sessionId = 'default') {
-  let session = sessions.get(sessionId)
-  if (session && session.window && !session.window.isDestroyed()) {
-    resetSessionIdleTimeout(session)
-    return session
-  }
-
-  const browserWindow = new BrowserWindow({
-    show: false,
-    width: 1280,
-    height: 800,
-    title: `Mark Browser (${sessionId})`,
-    autoHideMenuBar: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true
+async function broadcastPreview(session) {
+  try {
+    const screenshotBuf = await session.page.screenshot({ encoding: 'base64' })
+    if (wsHub) {
+      const dataUri = `data:image/png;base64,${screenshotBuf}`
+      wsHub.broadcast('browser:preview', {
+        sessionId: session.id,
+        thumbnail: dataUri,
+        preview: dataUri,
+        title: session.title || 'Browser Session',
+        url: session.url || 'about:blank'
+      })
     }
-  })
-
-  browserWindow.webContents.setMaxListeners(50)
-
-  // Cegah website buka window baru (pop-up atau target="_blank")
-  browserWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (browserWindow && !browserWindow.isDestroyed()) {
-      browserWindow.loadURL(url)
-    }
-    return { action: 'deny' }
-  })
-
-  session = {
-    id: sessionId,
-    window: browserWindow,
-    activeAskUser: false,
-    activeAskUserMessage: '',
-    globalAskUserResolve: null,
-    isForceClosing: false,
-    idleTimeout: null
-  }
-  sessions.set(sessionId, session)
-
-  browserWindow.on('close', (event) => {
-    if (!session.isForceClosing) {
-      event.preventDefault()
-
-      if (session.globalAskUserResolve) {
-        session.globalAskUserResolve('User aborted the action by hiding the browser.')
-        session.globalAskUserResolve = null
-        session.activeAskUser = false
-        session.activeAskUserMessage = ''
-      }
-
-      browserWindow.webContents
-        .capturePage()
-        .then((image) => {
-          const thumbnail = image.resize({ width: 800 }).toDataURL()
-          const url = browserWindow.webContents.getURL()
-          const title = browserWindow.getTitle()
-
-          browserWindow.hide()
-
-          BrowserWindow.getAllWindows().forEach((win) => {
-            if (win !== browserWindow && !win.isDestroyed()) {
-              win.webContents.send('browser:preview', { sessionId, url, title, thumbnail })
-            }
-          })
-        })
-        .catch(() => {
-          browserWindow.hide()
-        })
-    }
-  })
-
-  browserWindow.on('closed', () => {
-    if (session.idleTimeout) clearTimeout(session.idleTimeout)
-    sessions.delete(sessionId)
-  })
-
-  browserWindow.webContents.on('did-finish-load', () => {
-    if (session.activeAskUser && !browserWindow.isDestroyed()) {
-      executeAction({ action: 'unblock', value: session.activeAskUserMessage, isReinject: true }, sessionId).catch(
-        () => null
-      )
-    }
-  })
-
-  browserWindow.on('page-title-updated', (event, title) => {
-    if (title.startsWith('MARK_UNBLOCK_DONE:') && session.globalAskUserResolve) {
-      event.preventDefault()
-      const comment = title.substring(18)
-      session.globalAskUserResolve(comment)
-      session.globalAskUserResolve = null
-      session.activeAskUser = false
-      session.activeAskUserMessage = ''
-
-      if (!browserWindow.isDestroyed()) {
-        browserWindow.webContents
-          .executeJavaScript(
-            `
-            const b = document.getElementById('mark-user-blocker');
-            if (b) {
-              b.style.width = '100vw';
-              b.style.height = '100vh';
-              b.style.top = '0';
-              b.style.left = '0';
-              b.style.bottom = 'auto';
-              b.style.right = 'auto';
-              b.style.background = 'rgba(0,0,0,0.1)';
-              b.style.pointerEvents = 'auto';
-              b.style.display = 'flex';
-              b.style.justifyContent = 'center';
-              b.style.alignItems = 'flex-start';
-              b.style.paddingTop = '24px';
-              b.innerHTML = \`<div style="background: rgba(25, 54, 45, 0.9); backdrop-filter: blur(8px); border: 1px solid rgba(31, 184, 84, 0.4); border-radius: 30px; padding: 10px 20px; display: flex; align-items: center; gap: 10px; color: #1fb854; font-family: system-ui, sans-serif; font-weight: 600; font-size: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4); pointer-events: none;"><svg class="mark-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg><span class="mark-pulse">Mark is working...</span></div>\`;
-            }
-          `
-          )
-          .catch(() => {})
-      }
-    }
-  })
-
-  resetSessionIdleTimeout(session)
-  return session
+  } catch (_) {}
 }
 
 export async function navigateTo(url, sessionId = 'default') {
-  const session = getOrCreateBrowser(sessionId)
-  const browserWindow = session.window
-
-  if (browserWindow.webContents.isLoading()) {
-    browserWindow.webContents.stop()
+  const session = await getOrCreateSession(sessionId)
+  let targetUrl = url.trim()
+  if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+    targetUrl = 'https://' + targetUrl
   }
 
-  await Promise.race([
-    browserWindow.loadURL(url),
-    new Promise((resolve) => setTimeout(resolve, 60000))
-  ]).catch((e) => console.error(`[BrowserAgent ${sessionId}] Error/Timeout loading URL:`, e))
+  await session.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
+  session.url = session.page.url()
+  session.title = await session.page.title()
 
-  await new Promise((resolve) => setTimeout(resolve, 2000))
+  await broadcastPreview(session)
 
-  return await readDOM(sessionId)
-}
-
-export async function closeBrowser(sessionId = 'default') {
-  if (sessionId === 'all') {
-    for (const [id, s] of sessions.entries()) {
-      if (s.idleTimeout) clearTimeout(s.idleTimeout)
-      if (s.window && !s.window.isDestroyed()) {
-        s.isForceClosing = true
-        s.window.close()
-      }
-    }
-    sessions.clear()
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('browser:preview', null)
-      }
-    })
-    return 'Semua sesi browser berhasil ditutup.'
-  }
-
-  const session = sessions.get(sessionId)
-  if (session && session.window && !session.window.isDestroyed()) {
-    if (session.idleTimeout) clearTimeout(session.idleTimeout)
-    session.isForceClosing = true
-    session.window.close()
-    sessions.delete(sessionId)
-    session.isForceClosing = false
-    session.activeAskUser = false
-    session.activeAskUserMessage = ''
-    if (session.globalAskUserResolve) {
-      session.globalAskUserResolve('User aborted the action by closing the browser.')
-      session.globalAskUserResolve = null
-    }
-
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('browser:preview', { sessionId, closed: true })
-      }
-    })
-
-    return `Browser sesi [${sessionId}] berhasil ditutup.`
-  }
-  return `Browser sesi [${sessionId}] memang sudah tertutup.`
+  return `Berhasil membuka ${session.url} (Judul: "${session.title}"). Gunakan 'browser-read' untuk melihat isi dan elemen interaktif.`
 }
 
 export async function readDOM(sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) {
-    return `[ERROR] Browser sesi [${sessionId}] belum dibuka. Gunakan browser-navigate dulu.`
-  }
-  resetSessionIdleTimeout(session)
-  const browserWindow = session.window
+  const session = await getOrCreateSession(sessionId)
+  const result = await session.page.evaluate(DOM_PARSER_SCRIPT)
 
-  const result = await browserWindow.webContents.executeJavaScript(DOM_PARSER_SCRIPT)
+  session.url = session.page.url()
+  session.title = await session.page.title()
 
-  try {
-    const image = await browserWindow.webContents.capturePage()
-    const thumbnail = image.resize({ width: 800 }).toDataURL()
-    const url = browserWindow.webContents.getURL()
-    const title = browserWindow.getTitle()
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (win !== browserWindow && !win.isDestroyed()) {
-        win.webContents.send('browser:preview', { sessionId, url, title, thumbnail })
-      }
-    })
-  } catch (e) {
-    console.error(`[BrowserAgent ${sessionId}] Failed to capture browser preview:`, e)
-  }
+  await broadcastPreview(session)
 
   return result
 }
 
-export function showBrowser(sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (session && session.window && !session.window.isDestroyed()) {
-    const browserWindow = session.window
-    if (browserWindow.isMinimized()) browserWindow.restore()
-    browserWindow.show()
-    browserWindow.focus()
-    browserWindow.setAlwaysOnTop(true)
-    browserWindow.setAlwaysOnTop(false)
-  }
-}
-
 export async function executeAction(data, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) {
-    return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
-  }
-  resetSessionIdleTimeout(session)
-  const browserWindow = session.window
+  const session = await getOrCreateSession(sessionId)
   const { action, id, value, direction } = data
 
   if (action === 'click') {
-    try {
-      await browserWindow.webContents.executeJavaScript(
-        `(() => {
-          const el = document.querySelector('[data-mark-id="${id}"]');
-          if (!el) return 'Elemen dengan ID ${id} tidak ditemukan.';
-          
-          el.scrollIntoView({ behavior: 'instant', block: 'center' });
-
-          if (!document.getElementById('mark-cursor-style')) {
-            const style = document.createElement('style');
-            style.id = 'mark-cursor-style';
-            style.textContent = \`
-              #mark-cursor {
-                position: fixed;
-                width: 24px;
-                height: 24px;
-                pointer-events: none;
-                z-index: 2147483647;
-                transition: left 0.5s cubic-bezier(0.22, 1, 0.36, 1), 
-                            top 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-              }
-              #mark-cursor svg {
-                width: 100%;
-                height: 100%;
-              }
-              .mark-click-ripple {
-                position: fixed;
-                width: 20px;
-                height: 20px;
-                border-radius: 50%;
-                background: rgba(56, 189, 248, 0.4);
-                border: 2px solid rgba(56, 189, 248, 0.8);
-                pointer-events: none;
-                z-index: 999998;
-                animation: mark-ripple 0.6s ease-out forwards;
-              }
-              @keyframes mark-ripple {
-                0% { transform: scale(0.5); opacity: 1; }
-                100% { transform: scale(3); opacity: 0; }
-              }
-            \`;
-            document.head.appendChild(style);
-          }
-
-          let cursor = document.getElementById('mark-cursor');
-          if (!cursor) {
-            cursor = document.createElement('div');
-            cursor.id = 'mark-cursor';
-            cursor.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M5 3l14 8-6 2-4 6-4-16z" fill="#19362d" stroke="#1fb854" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-            cursor.style.left = '50%';
-            cursor.style.top = '50%';
-            document.body.appendChild(cursor);
-          }
-          cursor.style.display = 'block';
-
-          const rect = el.getBoundingClientRect();
-          const targetX = rect.left + rect.width / 2;
-          const targetY = rect.top + rect.height / 2;
-
-          cursor.style.left = targetX + 'px';
-          cursor.style.top = targetY + 'px';
-
-          return new Promise(resolve => {
-            setTimeout(() => {
-              const ripple = document.createElement('div');
-              ripple.className = 'mark-click-ripple';
-              ripple.style.left = (targetX - 10) + 'px';
-              ripple.style.top = (targetY - 10) + 'px';
-              document.body.appendChild(ripple);
-              setTimeout(() => ripple.remove(), 600);
-
-              el.click();
-              setTimeout(() => { cursor.style.display = 'none'; }, 1000);
-              resolve('Berhasil klik elemen ${id}.');
-            }, 550);
-          });
-        })()`
-      )
-    } catch (e) {
-      if (!e.message.includes('destroyed')) throw e
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2500))
-    return await readDOM(sessionId)
+    const selector = `[data-mark-id="${id}"]`
+    await session.page.waitForSelector(selector, { timeout: 8000 })
+    await session.page.click(selector)
+    await new Promise((r) => setTimeout(r, 1000))
+    await broadcastPreview(session)
+    return `Berhasil klik elemen [${id}]. Gunakan 'browser-read' untuk melihat perubahan halaman.`
   }
 
   if (action === 'type') {
-    try {
-      await browserWindow.webContents.executeJavaScript(
-        `(() => {
-          const el = document.querySelector('[data-mark-id="${id}"]');
-          if (!el) return 'Elemen dengan ID ${id} tidak ditemukan.';
-          el.scrollIntoView({ behavior: 'instant', block: 'center' });
-          el.focus();
-
-          const text = '${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}';
-          
-          const proto = el.tagName === 'TEXTAREA'
-            ? window.HTMLTextAreaElement.prototype
-            : window.HTMLInputElement.prototype;
-          const nativeValueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-          if (nativeValueSetter) {
-            nativeValueSetter.call(el, text);
-          } else {
-            el.value = text;
-          }
-
-          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-
-          if (!el.value || el.value !== text) {
-            el.value = '';
-            el.focus();
-            document.execCommand('insertText', false, text);
-          }
-
-          return 'Berhasil ketik di elemen ${id}.';
-        })()`
-      )
-    } catch (e) {
-      if (!e.message.includes('destroyed')) throw e
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    return await readDOM(sessionId)
+    const selector = `[data-mark-id="${id}"]`
+    await session.page.waitForSelector(selector, { timeout: 8000 })
+    await session.page.click(selector)
+    await session.page.type(selector, value || '', { delay: 30 })
+    await broadcastPreview(session)
+    return `Berhasil mengetik "${value}" pada elemen [${id}].`
   }
 
   if (action === 'scroll') {
-    const scrollAmount = direction === 'up' ? -600 : 600
-    await browserWindow.webContents.executeJavaScript(
-      `window.scrollBy({ top: ${scrollAmount}, behavior: 'smooth' })`
-    )
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    return await readDOM(sessionId)
+    const delta = direction === 'up' ? -500 : 500
+    await session.page.evaluate((d) => window.scrollBy({ top: d, behavior: 'smooth' }), delta)
+    await new Promise((r) => setTimeout(r, 600))
+    await broadcastPreview(session)
+    return `Berhasil scroll ${direction}. Gunakan 'browser-read' untuk membaca elemen terbaru.`
   }
 
   if (action === 'unblock') {
-    if (!browserWindow.isDestroyed()) {
-      browserWindow.show()
-      browserWindow.focus()
-    }
-    try {
-      const isReinject = data.isReinject
-      if (!isReinject) {
-        session.activeAskUser = true
-        session.activeAskUserMessage = value
-          ? value.replace(/'/g, "\\'").replace(/\n/g, '<br>')
-          : 'Please complete the required manual action...'
-      }
-      const aiMessage = session.activeAskUserMessage
-
-      await browserWindow.webContents.executeJavaScript(
-        `(() => {
-          let blocker = document.getElementById('mark-user-blocker');
-          if (!blocker) {
-            blocker = document.createElement('div');
-            blocker.id = 'mark-user-blocker';
-            document.body.appendChild(blocker);
-          }
-          blocker.style.position = 'fixed';
-          blocker.style.zIndex = '2147483647';
-          blocker.style.width = 'auto';
-          blocker.style.height = 'auto';
-          blocker.style.bottom = '24px';
-          blocker.style.right = '24px';
-          blocker.style.top = 'auto';
-          blocker.style.left = 'auto';
-          blocker.style.background = 'transparent';
-          blocker.style.pointerEvents = 'none';
-          
-          if (!document.getElementById('mark-placeholder-style')) {
-            const style = document.createElement('style');
-            style.id = 'mark-placeholder-style';
-            style.textContent = '#mark-user-input::placeholder { color: rgba(248, 250, 252, 0.5); }';
-            document.head.appendChild(style);
-          }
-          
-          blocker.innerHTML = \`
-            <div style="background: rgba(25, 54, 45, 0.95); backdrop-filter: blur(12px); padding: 20px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 16px; pointer-events: auto; font-family: system-ui, sans-serif; width: 340px; border: 1px solid rgba(31, 184, 84, 0.3);">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1fb854" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                  <path d="M2 17l10 5 10-5"></path>
-                  <path d="M2 12l10 5 10-5"></path>
-                </svg>
-                <div style="font-weight: 600; color: #f8fafc; font-size: 15px; letter-spacing: 0.5px;">Mark paused for input</div>
-              </div>
-              
-              <div style="font-size: 13px; color: #94a3b8; line-height: 1.5; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border-left: 3px solid #1fb854;">
-                \${aiMessage}
-              </div>
-              
-              <input type="text" id="mark-user-input" placeholder="Add a comment for Mark (optional)..." style="background: rgba(15, 23, 42, 0.6); color: #f8fafc; padding: 12px 14px; border: 1px solid rgba(31, 184, 84, 0.4); border-radius: 8px; font-size: 13px; outline: none; transition: all 0.2s;" onfocus="this.style.borderColor='#1fb854'; this.style.boxShadow='0 0 0 2px rgba(31, 184, 84, 0.2)';" onblur="this.style.borderColor='rgba(31, 184, 84, 0.4)'; this.style.boxShadow='none';"/>
-              
-              <button id="mark-btn-selesai" style="background: #1fb854; color: #0f172a; padding: 12px; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#22c55e'; this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1fb854'; this.style.transform='translateY(0)';">
-                Resume Automation
-              </button>
-            </div>
-          \`;
-          
-          document.getElementById('mark-btn-selesai').onclick = () => {
-            const comment = document.getElementById('mark-user-input').value;
-            const originalTitle = document.title;
-            document.title = 'MARK_UNBLOCK_DONE:' + (comment.trim() || 'User telah menyelesaikan aksi manual (tidak ada komentar).');
-            setTimeout(() => { document.title = originalTitle; }, 100);
-          };
-          
-          document.getElementById('mark-user-input').addEventListener('keypress', function (e) {
-              if (e.key === 'Enter') document.getElementById('mark-btn-selesai').click();
-          });
-
-        })()`
-      )
-
-      if (isReinject) return 'reinjected'
-
-      return new Promise((resolve) => {
-        session.globalAskUserResolve = async (comment) => {
-          const newDOM = await readDOM(sessionId)
-          resolve(`[LAPORAN USER]: ${comment}\n\n[DOM TERBARU SETELAH USER INTERAKSI]:\n${newDOM}`)
-        }
-      })
-    } catch (e) {
-      return `[ERROR] Gagal menunggu respon user: ${e.message}`
-    }
+    await broadcastPreview(session)
+    return `Mode user unblock: ${value}`
   }
 
-  if (action === 'finish') {
-    await browserWindow.webContents
-      .executeJavaScript(
-        `(() => {
-        const blocker = document.getElementById('mark-user-blocker');
-        if (blocker) blocker.remove();
-        const style = document.getElementById('mark-blocker-style');
-        if (style) style.remove();
-      })()`
-      )
-      .catch(() => {})
-    return 'Browser unlocked.'
-  }
-
-  return '[ERROR] Action tidak dikenal.'
+  return `Aksi ${action} tidak dikenali.`
 }
 
-export async function executeScript(script, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
-  resetSessionIdleTimeout(session)
-  try {
-    const result = await session.window.webContents.executeJavaScript(`(async () => { ${script} })()`)
-    return JSON.stringify(result) || 'Eksekusi script berhasil tanpa return value.'
-  } catch (e) {
-    return `[ERROR] Gagal eksekusi script: ${e.message}`
-  }
+export async function executeScript(code, sessionId = 'default') {
+  const session = await getOrCreateSession(sessionId)
+  const res = await session.page.evaluate(code)
+  await broadcastPreview(session)
+  return typeof res === 'string' ? res : JSON.stringify(res)
 }
 
 export async function extractData(selector, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
-  resetSessionIdleTimeout(session)
-  try {
-    const result = await session.window.webContents.executeJavaScript(`
-      (() => {
-        const els = document.querySelectorAll('${selector.replace(/'/g, "\\'")}');
-        return Array.from(els).map(el => el.innerText || el.textContent).filter(t => t.trim().length > 0);
-      })()
-    `)
-    return JSON.stringify(result, null, 2)
-  } catch (e) {
-    return `[ERROR] Gagal ekstrak data: ${e.message}`
-  }
+  const session = await getOrCreateSession(sessionId)
+  const text = await session.page.$$eval(selector, (els) => els.map((e) => e.innerText.trim()).filter(Boolean))
+  return JSON.stringify(text)
 }
 
 export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
-  resetSessionIdleTimeout(session)
-  try {
-    const image = await session.window.webContents.capturePage()
-    const buffer = image.toPNG()
-    const savePath = path.join(os.homedir(), 'Documents', 'Mark Workspace', filename)
-    
-    const dir = path.dirname(savePath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    
-    fs.writeFileSync(savePath, buffer)
-    return `Screenshot berhasil disimpan di: ${savePath}`
-  } catch (e) {
-    return `[ERROR] Gagal mengambil screenshot: ${e.message}`
-  }
+  const session = await getOrCreateSession(sessionId)
+  const outPath = path.isAbsolute(filename) ? filename : path.join(os.homedir(), 'Desktop', filename)
+  await session.page.screenshot({ path: outPath, fullPage: false })
+  return `Screenshot berhasil disimpan ke ${outPath}`
 }
 
 export async function downloadFile(url, filename, sessionId = 'default') {
-  const session = getSession(sessionId)
-  if (!session || !session.window || session.window.isDestroyed()) return `[ERROR] Browser sesi [${sessionId}] belum dibuka.`
-  resetSessionIdleTimeout(session)
-  return new Promise((resolve) => {
-    session.window.webContents.session.once('will-download', (event, item) => {
-      const savePath = path.join(os.homedir(), 'Downloads', filename || item.getFilename())
-      item.setSavePath(savePath)
-      item.once('done', (event, state) => {
-        if (state === 'completed') {
-          resolve(`Download selesai dan disimpan di: ${savePath}`)
-        } else {
-          resolve(`[ERROR] Download gagal dengan status: ${state}`)
-        }
+  const session = await getOrCreateSession(sessionId)
+  const outPath = path.join(os.homedir(), 'Downloads', filename)
+  const viewSource = await session.page.goto(url)
+  fs.writeFileSync(outPath, await viewSource.buffer())
+  return `File berhasil diunduh ke ${outPath}`
+}
+
+export async function closeBrowser(sessionId = 'default') {
+  const session = sessions.get(sessionId)
+  if (session && session.browser) {
+    if (session.idleTimeout) clearTimeout(session.idleTimeout)
+    try {
+      await session.browser.close()
+    } catch (_) {}
+    sessions.delete(sessionId)
+
+    if (wsHub) {
+      wsHub.broadcast('browser:preview', {
+        sessionId,
+        closed: true
       })
-    })
-    session.window.webContents.downloadURL(url)
-  })
+    }
+
+    return `Browser session '${sessionId}' berhasil ditutup.`
+  }
+  return `Browser session '${sessionId}' tidak sedang berjalan.`
+}
+
+export async function showBrowserWindow(sessionId = 'default') {
+  const session = sessions.get(sessionId)
+  if (session && session.page) {
+    try {
+      const client = await session.page.target().createCDPSession()
+      const { windowId } = await client.send('Browser.getWindowForTarget')
+      await client.send('Browser.setWindowBounds', {
+        windowId,
+        bounds: { windowState: 'normal', left: 80, top: 60, width: 1280, height: 800 }
+      })
+      await session.page.bringToFront()
+    } catch (_) {
+      try {
+        await session.page.bringToFront()
+      } catch (_) {}
+    }
+  }
 }

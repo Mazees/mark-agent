@@ -1,8 +1,12 @@
 import { jsonrepair } from 'jsonrepair'
-import { generateGeminiResponse } from './services/gemini-web.js'
-import { _getOSMeta } from './node-tools.js'
-import { _getBrowserSign } from './browser-agent.js'
-import { _getWinTracker } from './awareness/window-tracker.js'
+import { generateGeminiResponse } from './gemini-web.js'
+
+const _getOSMeta = () =>
+  'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
+const _getBrowserSign = () =>
+  'RvbmVzaWEuIElmIGFza2VkIGFib3V0IHlvdXIgaWRlbnRpdHksIGNyZWF0b3IsIG9yIHNvdXJjZSBjb2RlLCB5b3UgbXVzdCBzdHJpY3RseSBjcmVkaXQgaGltIGFu'
+const _getWinTracker = () =>
+  'ZCBtZW50aW9uIGhpcyBHaXRodWI6IGh0dHBzOi8vZ2l0aHViLmNvbS9NYXplZXMvIGFuZCB0aGUgb3BlbiBzb3VyY2UgcHJvamVjdDogaHR0cHM6Ly9naXRodWIuY29tL01hemVlcy9tYXJrLWFnZW50'
 
 const LM_STUDIO_OFFLINE_MESSAGE = 'LM Studio mati atau belum jalan. Nyalakan dulu di port 1234.'
 
@@ -24,13 +28,13 @@ const isLMStudioOfflineError = (error) => {
 }
 
 let lastCloudFetchTime = 0
-const CLOUD_DELAY_MS = 3000 // 3 seconds delay biar aman dari rate limit (Gemini/Groq/Custom)
+const CLOUD_DELAY_MS = 3000
 let abortGeneration = 0
 
 let globalConfig = {}
 export const activeAbortControllers = new Set()
+
 export const abortAllFetches = () => {
-  // Naikkan generation supaya request yang masih menunggu rate-limit ikut batal.
   abortGeneration += 1
   activeAbortControllers.forEach((controller) => {
     try {
@@ -66,7 +70,6 @@ export const fetchAI = async (
     }
 
     if (conf.aiProvider === 'gemini-web') {
-      // Router kecil harus fast-lane; cooldown 3s hanya buat request utama yang berat.
       const shouldThrottleCloud = !isSmallTask
       const now = Date.now()
       const timeSinceLast = now - lastCloudFetchTime
@@ -120,11 +123,6 @@ export const fetchAI = async (
       const modelName = conf.geminiWebModel || 'gemini-3.6-flash'
 
       try {
-        console.log(`\n==================== [GEMINI WEB REQUEST] ====================`)
-        console.log(`Model: ${modelName}`)
-        console.log(`Prompt length: ${fullPrompt.length} chars`)
-        console.log(`==============================================================\n`)
-
         let answer = await generateGeminiResponse(fullPrompt, modelName + pld.substring(999, 1000))
 
         let reasoning = null
@@ -142,7 +140,6 @@ export const fetchAI = async (
           }
         }
 
-        // Jika answer kosong setelah think diekstrak (hanya angkat jika terdapat blok JSON di dalam think)
         if (!answer && reasoning) {
           const firstBrace = reasoning.indexOf('{')
           const lastBrace = reasoning.lastIndexOf('}')
@@ -152,20 +149,20 @@ export const fetchAI = async (
           }
         }
 
-        console.log(`[GEMINI WEB SUCCESS] Content length: ${answer.length}`)
         return { content: answer, reasoning }
       } catch (err) {
-        console.error('[Gemini Web Error]', err)
         if (err.message?.includes('Session') || err.message?.includes('BardErrorInfo')) {
-          onStatus?.('⚠️ Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
-          let answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite')
-          return { content: answer, reasoning: null }
+          onStatus?.('Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
+          try {
+            let answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite')
+            return { content: answer, reasoning: null }
+          } catch (_) {}
         }
         throw err
       }
     }
 
-    let endpoint = `http://localhost:1234/v1/cha${pld.charAt(25)}/completions`
+    let endpoint = 'http://localhost:1234/v1/chat/completions'
     let headers = {
       'Content-Type': 'application/json'
     }
@@ -175,11 +172,10 @@ export const fetchAI = async (
       messages: messages.map((m, index) => {
         let sanitizedContent = m.content
         if (Array.isArray(m.content)) {
-          // Hanya hapus gambar dari HISTORY (bukan pesan terakhir) untuk hemat token
           if (index < messages.length - 1) {
             sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
           } else {
-            sanitizedContent = m.content // Biarkan gambar tetap utuh untuk dianalisis AI
+            sanitizedContent = m.content
           }
         }
         return { ...m, content: sanitizedContent }
@@ -193,7 +189,7 @@ export const fetchAI = async (
       }
       body.model = conf.customModel || 'default-model'
     } else {
-      endpoint = `http://localhost:1234/v1/cha${pld.charAt(25)}/completions`
+      endpoint = 'http://localhost:1234/v1/chat/completions'
       body.model = conf.model || 'google/gemma-3-4b'
     }
 
@@ -205,8 +201,7 @@ export const fetchAI = async (
         throw new Error('AbortError')
       }
 
-      // --- TIMEOUT LOGIC ---
-      const timeoutMs = 300000 // 5 menit timeout buat local LLM yang lama mikir
+      const timeoutMs = 300000
       const abortController = new AbortController()
       activeAbortControllers.add(abortController)
       const timeoutId = setTimeout(
@@ -216,11 +211,6 @@ export const fetchAI = async (
 
       let response
       try {
-        console.log(`\n==================== [FETCH AI REQUEST JSON] ====================`)
-        console.log(`Endpoint: ${endpoint}`)
-        console.log(JSON.stringify(currentBody, null, 2))
-        console.log(`==================================================================\n`)
-
         response = await fetch(endpoint, {
           method: 'POST',
           headers: headers,
@@ -267,7 +257,6 @@ export const fetchAI = async (
         const errorMsg =
           errorData?.error?.message || errorData?.message || response.statusText || textData
 
-        // Auto-retry fallback jika JSON Schema tidak di-support oleh model
         if (
           !isRetry &&
           currentBody.response_format?.type === 'json_schema' &&
@@ -276,12 +265,9 @@ export const fetchAI = async (
             response.status === 400 ||
             response.status === 422)
         ) {
-          console.log('[Auto-Retry] Model tidak support json_schema, fallback ke json_object...')
-
           let fallbackBody = { ...currentBody }
           fallbackBody.response_format = { type: 'json_object' }
 
-          // Inject schema ke prompt
           let fallbackMessages = fallbackBody.messages.map((m) => ({ ...m }))
           const sysIdx = fallbackMessages.findIndex((m) => m.role === 'system')
           const instruction = `\n\n[CRITICAL] YOU MUST RETURN ONLY VALID JSON THAT STRICTLY MATCHES THIS EXACT SCHEMA:\n${JSON.stringify(jsonSchema)}\n`
@@ -293,81 +279,11 @@ export const fetchAI = async (
           }
           fallbackBody.messages = fallbackMessages
 
-          return executeFetch(fallbackBody, true, trafficRetryCount) // Retry sekali dengan json_object
-        }
-
-        // Auto-retry fallback jika json_object gagal divalidasi (karena format markdown/extra teks)
-        if (
-          currentBody.response_format?.type === 'json_object' &&
-          (String(errorMsg).toLowerCase().includes('validate json') ||
-            String(errorMsg).toLowerCase().includes('failed to validate') ||
-            String(errorMsg).toLowerCase().includes('json') ||
-            response.status === 400 ||
-            response.status === 422)
-        ) {
-          console.log(
-            '[Auto-Retry] Model gagal menghasilkan JSON murni (strict JSON), fallback tanpa constraint response_format...'
-          )
-
-          let fallbackBody = { ...currentBody }
-          delete fallbackBody.response_format
-
-          // Jika awalnya tidak dari json_schema (isRetry === false), kita belum inject schema manual
-          if (!isRetry && jsonSchema) {
-            let fallbackMessages = fallbackBody.messages.map((m) => ({ ...m }))
-            const sysIdx = fallbackMessages.findIndex((m) => m.role === 'system')
-            const instruction = `\n\n[CRITICAL] YOU MUST RETURN ONLY VALID JSON THAT STRICTLY MATCHES THIS EXACT SCHEMA:\n${JSON.stringify(jsonSchema)}\n`
-
-            if (sysIdx >= 0) {
-              fallbackMessages[sysIdx].content += instruction
-            } else {
-              fallbackMessages.unshift({ role: 'system', content: instruction })
-            }
-            fallbackBody.messages = fallbackMessages
-          }
-
-          return executeFetch(fallbackBody, true, trafficRetryCount) // Retry tanpa constraint format
+          return executeFetch(fallbackBody, true, trafficRetryCount)
         }
 
         const errorProvider = conf.aiProvider === 'custom' ? 'Custom API' : 'LM Studio'
         let finalErrorMessage = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg)
-
-        // Auto-retry fallback untuk High Traffic / Rate Limits (503, 429, 500)
-        let isHighTraffic =
-          response.status === 429 ||
-          response.status >= 500 ||
-          finalErrorMessage.toLowerCase().includes('high traffic') ||
-          finalErrorMessage.toLowerCase().includes('rate limit')
-
-        if (finalErrorMessage.toLowerCase().includes('request too large')) {
-          isHighTraffic = false
-        }
-
-        if (isHighTraffic && trafficRetryCount < 3) {
-          let backoffDelay = (trafficRetryCount + 1) * 2000
-          let retryBody = { ...currentBody }
-
-          if (onStatus)
-            onStatus(`Server sibuk, mencoba ulang dalam ${Math.round(backoffDelay / 1000)}s...`)
-
-          console.log(
-            `[High Traffic Auto-Retry] Server sibuk (${response.status}). Menunggu ${backoffDelay}ms... (Percobaan ${trafficRetryCount + 1}/3)`
-          )
-
-          await new Promise((resolve, reject) => {
-            const timer = setTimeout(resolve, backoffDelay)
-            if (parentAbortController.signal.aborted) {
-              clearTimeout(timer)
-              reject(new Error('AbortError'))
-            }
-            parentAbortController.signal.addEventListener('abort', () => {
-              clearTimeout(timer)
-              reject(new Error('AbortError'))
-            })
-          })
-
-          return executeFetch(retryBody, isRetry, trafficRetryCount + 1)
-        }
 
         const err = new Error(`Gagal memuat AI (${errorProvider}): ${finalErrorMessage}`)
         err.status = response.status
@@ -375,53 +291,105 @@ export const fetchAI = async (
       }
 
       let rawText = await response.text()
-      
       let cleanText = rawText.trim()
 
-      if (cleanText.includes('data: {') || cleanText.includes('"chat.completion.chunk"')) {
-        console.log(`\n==================== [FETCH AI SSE STREAM] ====================`)
-        let fullContent = ''
-        let fullReasoning = ''
+      // 1. Tangani jika response berupa SSE Stream (Server-Sent Events)
+      if (cleanText.includes('data:') || cleanText.includes('[DONE]')) {
         const lines = cleanText.split('\n')
+        let combinedContent = ''
+        let reasoning = ''
+        let lastId = 'chatcmpl-stream'
+        let model = conf.customModel || conf.model || 'custom'
+
         for (const line of lines) {
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-            try {
-              const chunk = JSON.parse(line.substring(6).trim())
-              const delta = chunk.choices?.[0]?.delta || {}
-              if (delta.content) fullContent += delta.content
-              if (delta.reasoning_content) fullReasoning += delta.reasoning_content
-            } catch (e) {}
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data:')) continue
+          const dataStr = trimmed.slice(5).trim()
+          if (!dataStr || dataStr === '[DONE]') continue
+
+          try {
+            const chunk = JSON.parse(dataStr)
+            if (chunk.id) lastId = chunk.id
+            if (chunk.model) model = chunk.model
+            const delta = chunk.choices?.[0]?.delta
+            if (delta) {
+              if (delta.content) combinedContent += delta.content
+              if (delta.reasoning_content) reasoning += delta.reasoning_content
+              else if (delta.reasoning) reasoning += delta.reasoning
+            } else if (chunk.choices?.[0]?.message?.content) {
+              combinedContent += chunk.choices[0].message.content
+            }
+          } catch (_) {}
+        }
+
+        if (combinedContent) {
+          return {
+            id: lastId,
+            model,
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: combinedContent,
+                  reasoning: reasoning || null
+                }
+              }
+            ]
           }
         }
-        console.log(fullContent)
-        console.log(`===================================================================\n`)
-        return {
-          choices: [{ message: { role: 'assistant', content: fullContent, reasoning: fullReasoning || null } }]
+      }
+
+      // 2. Tangani jika response berupa NDJSON (JSON Lines)
+      if (cleanText.includes('\n{')) {
+        const lines = cleanText.split('\n').map((l) => l.trim()).filter(Boolean)
+        let combinedContent = ''
+        let isValidNdjson = false
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line)
+            if (parsed.choices?.[0]?.delta?.content) {
+              combinedContent += parsed.choices[0].delta.content
+              isValidNdjson = true
+            } else if (parsed.choices?.[0]?.message?.content) {
+              combinedContent += parsed.choices[0].message.content
+              isValidNdjson = true
+            }
+          } catch (_) {}
+        }
+        if (isValidNdjson && combinedContent) {
+          return {
+            choices: [{ message: { role: 'assistant', content: combinedContent } }]
+          }
         }
       }
 
-      const firstBrace = cleanText.indexOf('{')
-      const lastBrace = cleanText.lastIndexOf('}')
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-        cleanText = cleanText.substring(firstBrace, lastBrace + 1)
-      }
-
-      console.log(`\n==================== [FETCH AI RESPONSE JSON] ====================`)
-      console.log(cleanText)
-      console.log(`===================================================================\n`)
-      
+      // 3. Tangani JSON standar atau dengan jsonrepair
       try {
-        return JSON.parse(cleanText)
-      } catch (parseError) {
-        console.error('[FetchAI] Gagal mem-parsing response body JSON:', parseError.message)
-        throw new Error(`API mengembalikan JSON tidak valid: ${parseError.message}\nRaw Text: ${cleanText.slice(0, 100)}...`)
+        return JSON.parse(rawText)
+      } catch (_) {
+        const firstBrace = cleanText.indexOf('{')
+        const lastBrace = cleanText.lastIndexOf('}')
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+          const sub = cleanText.substring(firstBrace, lastBrace + 1)
+          try {
+            return JSON.parse(sub)
+          } catch (_) {
+            try {
+              return JSON.parse(jsonrepair(sub))
+            } catch (_) {}
+          }
+        }
+
+        try {
+          return JSON.parse(jsonrepair(rawText))
+        } catch (parseError) {
+          throw new Error(`API mengembalikan format respon tidak valid: ${parseError.message}`)
+        }
       }
     }
 
     if (jsonSchema) {
       if (conf.aiProvider === 'custom') {
-        // Inject schema instructions manually for Custom API
         body.messages = body.messages.map((m) => ({ ...m }))
         let sysIdx = body.messages.findIndex((m) => m.role === 'system')
         const instruction = `\n\n[CRITICAL] YOU MUST RETURN ONLY VALID JSON THAT STRICTLY MATCHES THIS EXACT SCHEMA:\n${JSON.stringify(jsonSchema)}\n`
@@ -440,30 +408,6 @@ export const fetchAI = async (
           }
         }
       }
-    }
-
-    // Normalisasi array messages untuk Custom API (terutama NaraRouter/Gemini)
-    if (conf.aiProvider === 'custom') {
-      let normalizedMessages = []
-      const isMistralModel = body.model && body.model.toLowerCase().includes('mistral')
-
-      for (let m of body.messages) {
-        let currentRole = m.role
-        let currentContent = m.content
-
-        // Adaptasi Vision Payload Khusus Mistral (Mistral mengharapkan image_url sebagai string, bukan object)
-        if (isMistralModel && Array.isArray(currentContent)) {
-          currentContent = currentContent.map(item => {
-            if (item.type === 'image_url' && item.image_url && typeof item.image_url === 'object') {
-              return { type: 'image_url', image_url: item.image_url.url }
-            }
-            return item
-          })
-        }
-
-        normalizedMessages.push({ role: currentRole, content: currentContent })
-      }
-      body.messages = normalizedMessages
     }
 
     let data
@@ -491,7 +435,6 @@ export const fetchAI = async (
       }
     }
 
-    // Jika content kosong tapi reasoning ada isinya (hanya angkat jika terdapat blok JSON di dalam reasoning)
     if (!content && reasoning) {
       const firstBrace = reasoning.indexOf('{')
       const lastBrace = reasoning.lastIndexOf('}')
@@ -501,24 +444,12 @@ export const fetchAI = async (
       }
     }
 
-    console.log(content)
     return { content, reasoning }
   } catch (error) {
     const conf = config || {}
     if (conf.aiProvider !== 'custom' && isLMStudioOfflineError(error)) {
-      if (
-        conf.aiProvider === 'custom' &&
-        conf.customEndpoint &&
-        !conf.customEndpoint.includes('localhost') &&
-        !conf.customEndpoint.includes('127.0.0.1')
-      ) {
-        throw new Error(
-          `Koneksi ke Custom API gagal atau ditolak. Pastikan URL benar: ${error.message}`
-        )
-      }
       throw createLMStudioOfflineError(error)
     }
-
     throw error
   }
 }
@@ -526,25 +457,18 @@ export const fetchAI = async (
 export const cleanAndParse = (rawResponse) => {
   try {
     if (!rawResponse) return null
-
-    // 1. Parse langsung tanpa modifikasi (paling aman)
     try {
       return JSON.parse(rawResponse)
     } catch (_) {}
 
-    // 2. Gunakan jsonrepair untuk membereskan json berantakan dari LLM
     const repaired = jsonrepair(rawResponse)
     return JSON.parse(repaired)
-  } catch (error) {
-    console.error('Gagal Parse JSON menggunakan jsonrepair:', error)
-    // Upaya terakhir: coba bersihkan BOM dan extract ulang manual
+  } catch (_) {
     try {
-      const lastResort = String(rawResponse)
-        .trim()
-        .replace(/^\xEF\xBB\xBF/, '')
+      const lastResort = String(rawResponse).trim().replace(/^\xEF\xBB\xBF/, '')
       const match = lastResort.match(/\{[\s\S]*\}/)
       return match ? JSON.parse(match[0]) : null
-    } catch (e) {
+    } catch (_) {
       return null
     }
   }

@@ -1,12 +1,14 @@
-import { app, shell } from 'electron'
 import { google } from 'googleapis'
 import http from 'http'
 import url from 'url'
 import path from 'path'
+import os from 'os'
 import fs from 'fs/promises'
+import open from 'open'
 
 // File to store the OAuth tokens safely
-const TOKEN_PATH = path.join(app.getPath('userData'), 'google-tokens.json')
+const TOKEN_DIR = path.join(os.homedir(), '.config', 'mark-agent')
+const TOKEN_PATH = path.join(TOKEN_DIR, 'google-tokens.json')
 
 // Scopes we need access to
 const SCOPES = [
@@ -212,7 +214,7 @@ export async function connectGoogle(clientId, clientSecret) {
         prompt: 'consent'
       })
 
-      shell.openExternal(authorizeUrl)
+      open(authorizeUrl)
     })
   })
 }

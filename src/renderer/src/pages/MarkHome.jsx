@@ -287,9 +287,9 @@ const MarkHome = () => {
 
   return (
     <div
-      className="h-screen text-white overflow-hidden relative transition-colors duration-1000 bg-transparent rounded-xl border border-white/5 shadow-2xl"
+      className="h-screen text-white overflow-hidden relative transition-colors duration-1000 bg-[#0f1715] border border-white/5 shadow-2xl"
       style={{
-        backgroundColor: `color-mix(in srgb, ${bgGlowColor} 12%, rgba(0,0,0,${config?.[0]?.windowOpacity ?? 0.85}))`
+        backgroundColor: `color-mix(in srgb, ${bgGlowColor} 14%, #0f1715)`
       }}
     >
       <style>{`

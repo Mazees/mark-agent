@@ -47,6 +47,14 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+html, body, #root {
+  background-color: #0f1715;
+  color: #cac9c9;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
 button {
   cursor: pointer;
 }

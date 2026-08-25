@@ -1,12 +1,10 @@
 import { Telegraf, Input } from 'telegraf'
-import { app, ipcMain } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import yts from 'yt-search'
 import { execFile } from 'child_process'
 import ffmpeg from 'ffmpeg-static'
-import { desktopCapturer } from 'electron'
 import { getGlobalConfig, abortAllFetches, activeAbortControllers } from '../ai-bridge.js'
 
 let bot = null
@@ -393,7 +391,8 @@ const adminChatIdsSet = new Set()
 const usernameToChatIdMap = new Map()
 const pendingBroadcastQueue = []
 
-const CHAT_IDS_FILE = path.join(app.getPath('userData'), 'tg_chat_ids.json')
+const CHAT_IDS_DIR = path.join(os.homedir(), '.config', 'mark-agent')
+const CHAT_IDS_FILE = path.join(CHAT_IDS_DIR, 'tg_chat_ids.json')
 
 const loadSavedChatIds = () => {
   try {
@@ -491,159 +490,165 @@ export const sendTelegramToAdmins = async (text) => {
 }
 
 // IPC Handlers
-ipcMain.removeAllListeners('tg:broadcast-to-admins')
-ipcMain.on('tg:broadcast-to-admins', async (event, text) => {
-  await sendTelegramToAdmins(text)
-})
-ipcMain.removeAllListeners('tg:agent-execution-done')
-ipcMain.on('tg:agent-execution-done', async (event, data) => {
-  const { chatId, result, msgId } = data
-  const reqObj = pendingRequestsMap.get(msgId)
-  let replyText = result?.answer || 'Selesai diproses.'
+export function registerTelegramIpcHandlers(ipcMain, desktopCapturer) {
+  if (!ipcMain) return
 
-  const uiReplyPayload = {
-    id: Date.now(),
-    chatId: chatId,
-    sender: 'Mark',
-    text: reqObj?.text || '',
-    reply: replyText,
-    toolsUsed: result?.toolsUsed || [],
-    time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-    type: 'outgoing'
-  }
+  ipcMain.removeAllListeners('tg:broadcast-to-admins')
+  ipcMain.on('tg:broadcast-to-admins', async (event, text) => {
+    await sendTelegramToAdmins(text)
+  })
 
-  uiMessageHistory.push(uiReplyPayload)
-  if (uiMessageHistory.length > MAX_UI_HISTORY) uiMessageHistory.shift()
+  ipcMain.removeAllListeners('tg:agent-execution-done')
+  ipcMain.on('tg:agent-execution-done', async (event, data) => {
+    const { chatId, result, msgId } = data
+    const reqObj = pendingRequestsMap.get(msgId)
+    let replyText = result?.answer || 'Selesai diproses.'
 
-  if (botWindow && !botWindow.isDestroyed()) {
-    botWindow.webContents.send('tg:reply-sent', uiReplyPayload)
-  }
+    const uiReplyPayload = {
+      id: Date.now(),
+      chatId: chatId,
+      sender: 'Mark',
+      text: reqObj?.text || '',
+      reply: replyText,
+      toolsUsed: result?.toolsUsed || [],
+      time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      type: 'outgoing'
+    }
 
-  if (bot && chatId) {
-    if (reqObj?.loadingMsgId) {
+    uiMessageHistory.push(uiReplyPayload)
+    if (uiMessageHistory.length > MAX_UI_HISTORY) uiMessageHistory.shift()
+
+    if (botWindow && !botWindow.isDestroyed()) {
+      botWindow.webContents.send('tg:reply-sent', uiReplyPayload)
+    }
+
+    if (bot && chatId) {
+      if (reqObj?.loadingMsgId) {
+        try {
+          await bot.telegram.deleteMessage(chatId, reqObj.loadingMsgId)
+        } catch (e) {}
+      }
       try {
-        await bot.telegram.deleteMessage(chatId, reqObj.loadingMsgId)
-      } catch (e) {}
-    }
-    try {
-      await bot.telegram.sendMessage(chatId, replyText, { parse_mode: 'Markdown' })
-    } catch (e) {
-      await bot.telegram.sendMessage(chatId, replyText).catch(() => {})
-    }
-  }
-
-  pendingRequestsMap.delete(msgId)
-})
-
-ipcMain.removeHandler('tg:send-message')
-ipcMain.handle('tg:send-message', async (event, { chatId, text }) => {
-  return await sendTelegramMessage(chatId, text)
-})
-
-ipcMain.removeAllListeners('tg:trigger-screenshot')
-ipcMain.on('tg:trigger-screenshot', async (event, { chatId } = {}) => {
-  if (!bot || currentStatus !== 'connected') return
-
-  const targetChatIds = new Set()
-  if (chatId) {
-    targetChatIds.add(chatId)
-  } else {
-    const config = getGlobalConfig()
-    const adminInputs = (config.tgAdminIds || '')
-      .split(',')
-      .map((id) => id.trim().toLowerCase().replace(/^@/, ''))
-      .filter(Boolean)
-
-    adminChatIdsSet.forEach((id) => targetChatIds.add(id))
-    for (const input of adminInputs) {
-      if (/^\d+$/.test(input)) {
-        targetChatIds.add(input)
-      } else if (usernameToChatIdMap.has(input)) {
-        targetChatIds.add(usernameToChatIdMap.get(input))
+        await bot.telegram.sendMessage(chatId, replyText, { parse_mode: 'Markdown' })
+      } catch (e) {
+        await bot.telegram.sendMessage(chatId, replyText).catch(() => {})
       }
     }
-  }
 
-  if (targetChatIds.size === 0) {
-    console.warn('[Telegram Screenshot] Gagal: Tidak ada Chat ID admin yang ditemukan.')
-    return
-  }
+    pendingRequestsMap.delete(msgId)
+  })
 
-  try {
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 }
-    })
-    for (const targetId of targetChatIds) {
-      for (const [index, source] of sources.entries()) {
-        const imageBuffer = source.thumbnail.toPNG()
-        const tempPath = path.join(app.getPath('temp'), `tg-ss-${Date.now()}-${index}.png`)
-        fs.writeFileSync(tempPath, imageBuffer)
-        await bot.telegram.sendPhoto(
-          targetId,
-          { source: tempPath },
-          { caption: `📸 Layar ${index + 1} (${source.name})` }
-        )
-        fs.unlink(tempPath, () => {})
+  ipcMain.removeHandler('tg:send-message')
+  ipcMain.handle('tg:send-message', async (event, { chatId, text }) => {
+    return await sendTelegramMessage(chatId, text)
+  })
+
+  ipcMain.removeAllListeners('tg:trigger-screenshot')
+  ipcMain.on('tg:trigger-screenshot', async (event, { chatId } = {}) => {
+    if (!bot || currentStatus !== 'connected') return
+
+    const targetChatIds = new Set()
+    if (chatId) {
+      targetChatIds.add(chatId)
+    } else {
+      const config = getGlobalConfig()
+      const adminInputs = (config.tgAdminIds || '')
+        .split(',')
+        .map((id) => id.trim().toLowerCase().replace(/^@/, ''))
+        .filter(Boolean)
+
+      adminChatIdsSet.forEach((id) => targetChatIds.add(id))
+      for (const input of adminInputs) {
+        if (/^\d+$/.test(input)) {
+          targetChatIds.add(input)
+        } else if (usernameToChatIdMap.has(input)) {
+          targetChatIds.add(usernameToChatIdMap.get(input))
+        }
       }
     }
-  } catch (err) {
-    console.error('[Telegram] Gagal mengirim screenshot:', err)
-  }
-})
 
-ipcMain.removeAllListeners('tg:trigger-music-download')
-ipcMain.on('tg:trigger-music-download', async (event, { chatId, query }) => {
-  if (!bot || !chatId || !query) return
-  try {
-    const searchResult = await yts(query)
-    const video = searchResult.videos[0]
-    if (!video) {
-      await bot.telegram.sendMessage(chatId, `❌ Lagu "${query}" tidak ditemukan di YouTube.`)
+    if (targetChatIds.size === 0) {
+      console.warn('[Telegram Screenshot] Gagal: Tidak ada Chat ID admin yang ditemukan.')
       return
     }
-    const tempPath = path.join(app.getPath('temp'), `tg-audio-${Date.now()}.mp3`)
-    const unpackFfmpeg = ffmpeg.replace('app.asar', 'app.asar.unpacked')
-    const unpackYtdl = unpackFfmpeg.replace(
-      /ffmpeg-static[\\/]ffmpeg\.exe/i,
-      'youtube-dl-exec\\bin\\yt-dlp.exe'
-    )
 
-    await new Promise((resolve, reject) => {
-      execFile(
-        unpackYtdl,
-        [
-          video.url,
-          '--extract-audio',
-          '--audio-format',
-          'mp3',
-          '--ffmpeg-location',
-          unpackFfmpeg,
-          '--output',
-          tempPath
-        ],
-        (err, stdout, stderr) => {
-          if (err) reject(err)
-          else resolve()
+    if (!desktopCapturer) return
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1920, height: 1080 }
+      })
+      for (const targetId of targetChatIds) {
+        for (const [index, source] of sources.entries()) {
+          const imageBuffer = source.thumbnail.toPNG()
+          const tempPath = path.join(os.tmpdir(), `tg-ss-${Date.now()}-${index}.png`)
+          fs.writeFileSync(tempPath, imageBuffer)
+          await bot.telegram.sendPhoto(
+            targetId,
+            { source: tempPath },
+            { caption: `📸 Layar ${index + 1} (${source.name})` }
+          )
+          fs.unlink(tempPath, () => {})
         }
+      }
+    } catch (err) {
+      console.error('[Telegram] Gagal mengirim screenshot:', err)
+    }
+  })
+
+  ipcMain.removeAllListeners('tg:trigger-music-download')
+  ipcMain.on('tg:trigger-music-download', async (event, { chatId, query }) => {
+    if (!bot || !chatId || !query) return
+    try {
+      const searchResult = await yts(query)
+      const video = searchResult.videos[0]
+      if (!video) {
+        await bot.telegram.sendMessage(chatId, `❌ Lagu "${query}" tidak ditemukan di YouTube.`)
+        return
+      }
+      const tempPath = path.join(os.tmpdir(), `tg-audio-${Date.now()}.mp3`)
+      const unpackFfmpeg = ffmpeg.replace('app.asar', 'app.asar.unpacked')
+      const unpackYtdl = unpackFfmpeg.replace(
+        /ffmpeg-static[\\/]ffmpeg\.exe/i,
+        'youtube-dl-exec\\bin\\yt-dlp.exe'
       )
-    })
 
-    await bot.telegram.sendAudio(
-      chatId,
-      { source: tempPath },
-      { title: video.title, performer: video.author?.name || 'YouTube' }
-    )
-    fs.unlink(tempPath, () => {})
-  } catch (err) {
-    console.error('[Telegram] Error music download:', err)
-    await bot.telegram.sendMessage(chatId, `❌ Gagal download lagu: ${err.message}`)
-  }
-})
+      await new Promise((resolve, reject) => {
+        execFile(
+          unpackYtdl,
+          [
+            video.url,
+            '--extract-audio',
+            '--audio-format',
+            'mp3',
+            '--ffmpeg-location',
+            unpackFfmpeg,
+            '--output',
+            tempPath
+          ],
+          (err) => {
+            if (err) reject(err)
+            else resolve()
+          }
+        )
+      })
 
-ipcMain.removeAllListeners('tg:trigger-music-ui')
-ipcMain.on('tg:trigger-music-ui', (event, { command, query }) => {
-  if (botWindow && !botWindow.isDestroyed()) {
-    botWindow.webContents.send('execute-music-command-tg', command, query)
-  }
-})
+      await bot.telegram.sendAudio(
+        chatId,
+        { source: tempPath },
+        { title: video.title, performer: video.author?.name || 'YouTube' }
+      )
+      fs.unlink(tempPath, () => {})
+    } catch (err) {
+      console.error('[Telegram] Error music download:', err)
+      await bot.telegram.sendMessage(chatId, `❌ Gagal download lagu: ${err.message}`)
+    }
+  })
+
+  ipcMain.removeAllListeners('tg:trigger-music-ui')
+  ipcMain.on('tg:trigger-music-ui', (event, { command, query }) => {
+    if (botWindow && !botWindow.isDestroyed()) {
+      botWindow.webContents.send('execute-music-command-tg', command, query)
+    }
+  })
+}
