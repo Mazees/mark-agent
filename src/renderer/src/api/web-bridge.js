@@ -187,23 +187,6 @@ export const webApi = {
     return json.data || []
   },
 
-  // Database Backup & Restore API (SQLite server-side)
-  exportDatabase: async () => {
-    const res = await fetch(`${API_BASE}/api/db/export`)
-    const json = await res.json()
-    return json.data
-  },
-
-  restoreDatabase: async (dumpData, overwrite = true) => {
-    const res = await fetch(`${API_BASE}/api/db/restore`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dumpData, overwrite })
-    })
-    const json = await res.json()
-    return json
-  },
-
   onDatabaseRestored: (callback) => {
     addWebListener('db:restored', callback)
     return () => removeWebListener('db:restored', callback)
@@ -480,6 +463,15 @@ export const webApi = {
       return json.data || []
     } catch (_) {
       return []
+    }
+  },
+
+  clearActivityBuffer: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/awareness/clear-buffer`, { method: 'POST' })
+      return await res.json()
+    } catch (_) {
+      return { success: false }
     }
   },
 

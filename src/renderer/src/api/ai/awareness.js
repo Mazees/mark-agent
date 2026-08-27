@@ -43,7 +43,7 @@ export const getAwarenessResponse = async (
 ${await getPersonaPrompt('owner', conf.personality)}
 
 # AKTIVITAS OS USER (REAL-TIME SAAT INI):
-${buffer && buffer.length > 0 ? buffer.map((b) => `- [${b.time}] ${b.app}${b.title ? ' — ' + b.title : ''}`).join('\n') : 'Tidak ada aktivitas tercatat (Pengguna hanya membuka aplikasi Mark / desktop statis).'}
+${buffer && buffer.length > 0 ? buffer.map((b) => `- [${b.timestamp || b.time || 'Baru Saja'}] ${b.app}${b.title ? ' — ' + b.title : ''}`).join('\n') : 'Tidak ada aktivitas tercatat (Pengguna hanya membuka aplikasi Mark / desktop statis).'}
 PENTING - ATURAN AKTIVITAS AKTUAL:
 Daftar # AKTIVITAS OS USER di atas adalah SATU-SATUNYA kebenaran mutlak aktivitas fisik PC pengguna SAAT INI (REAL-TIME).
 JANGAN TERKECUH oleh obrolan lama di riwayat chat! Jika di riwayat chat bawah kalian sempat membahas game (misal: Tekken), ngoding, atau aplikasi lain kemarin/jam lalu, tetapi aplikasi tersebut TIDAK TERDAFTAR di # AKTIVITAS OS USER di atas, berarti pengguna SUDAH TIDAK MELAKUKANNYA LAGI! DILARANG KERAS mengira pengguna masih bermain game atau melakukan aktivitas lama tersebut.

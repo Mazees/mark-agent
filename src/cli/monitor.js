@@ -116,6 +116,8 @@ export async function runMonitor(portOverride) {
           logActivity('result', payload.tool, payload.observation)
         } else if (event === 'chat:receive') {
           logActivity('agent', 'Menerima pesan dari WebUI', payload.message)
+        } else if (event === 'awareness:entry') {
+          logActivity('agent', 'Active Window', `[${payload.app}] ${payload.title}`)
         } else if (event === 'browser:preview' && !payload.closed) {
           logActivity('tool', 'Browser Preview', `${payload.title || ''} (${payload.url || ''})`)
         }

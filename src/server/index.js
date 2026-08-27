@@ -32,6 +32,7 @@ import {
 } from '../main/plugins/plugin-loader.js'
 import {
   getActivityBuffer,
+  clearActivityBuffer,
   getSystemIdleSeconds,
   startOsActivityTracking
 } from './tools/awareness-tracker.js'
@@ -81,7 +82,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 wsHub.init(server)
 initOramaIndices().catch(() => {})
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
-startOsActivityTracking(60000)
+startOsActivityTracking(10000)
 
 // Daftarkan listener event chat dan abort dari WebSocket
 wsHub.on('chat:send', async (payload) => {
@@ -579,6 +580,11 @@ app.post('/api/plugins/execute', async (req, res) => {
 // 5j. Awareness Engine API (Zero-Electron)
 app.get('/api/awareness/activity-buffer', (_req, res) => {
   res.json({ success: true, data: getActivityBuffer() })
+})
+
+app.post('/api/awareness/clear-buffer', (_req, res) => {
+  clearActivityBuffer()
+  res.json({ success: true })
 })
 
 app.get('/api/awareness/idle-time', async (_req, res) => {
