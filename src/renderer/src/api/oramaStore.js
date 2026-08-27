@@ -16,16 +16,17 @@ export async function initOramaIndices() {
       summary: 'string',
       memory: 'string',
       timestamp: 'number',
-      dexieId: 'number',
+      dbId: 'string',
       vector: `vector[${VECTOR_SIZE}]`
     }
   })
+
   archiveIndex = await create({
     schema: {
       summary: 'string',
       topic: 'string',
       timestamp: 'number',
-      dexieId: 'number',       // Referensi ke ID di Dexie
+      dbId: 'string',
       vector: `vector[${VECTOR_SIZE}]`
     }
   })
@@ -36,7 +37,7 @@ export async function initOramaIndices() {
       chunkIndex: 'number',
       content: 'string',
       timestamp: 'number',
-      dexieId: 'number',
+      dbId: 'string',
       vector: `vector[${VECTOR_SIZE}]`
     }
   })
@@ -44,7 +45,7 @@ export async function initOramaIndices() {
   turnPairIndex = await create({
     schema: {
       pairId: 'string',
-      sessionId: 'number',
+      sessionId: 'string',
       sessionTitle: 'string',
       userText: 'string',
       aiText: 'string',
@@ -55,8 +56,8 @@ export async function initOramaIndices() {
   })
 }
 
-// Dipanggil saat app start: load semua data Dexie ke Orama
-export async function hydrateFromDexie(onProgress) {
+// Dipanggil saat app start: load semua data dari SQLite database ke Orama
+export async function hydrateFromDb(onProgress) {
   const { db } = await import('./db')
 
   // 1. CHAT TURNS HYDRATION & SMART MIGRATION
@@ -82,12 +83,12 @@ export async function hydrateFromDexie(onProgress) {
                 ? Date.parse(rawTs)
                 : Number(rawTs) || Date.now()
           return {
-            pairId: String(t.pairId || ''),
-            sessionId: Number(t.sessionId) || 1,
-            sessionTitle: String(t.sessionTitle || 'Session'),
-            userText: String(t.userText || ''),
-            aiText: String(t.aiText || ''),
-            combinedText: String(t.combinedText || ''),
+            pairId: String(t.pairId || t.id || ''),
+            sessionId: String(t.sessionId || t.session_id || '1'),
+            sessionTitle: String(t.sessionTitle || t.session_title || 'Session'),
+            userText: String(t.userText || t.user_text || ''),
+            aiText: String(t.aiText || t.ai_text || ''),
+            combinedText: String(t.combinedText || t.combined_text || ''),
             timestamp: numericTs,
             vector: t.vector
           }
@@ -96,7 +97,7 @@ export async function hydrateFromDexie(onProgress) {
         await insertMultiple(turnPairIndex, validTurns)
         validTurnsCount = validTurns.length
       }
-      console.log(`[Orama] Kondisi 2: Hydrated ${validTurnsCount} turn pairs from Dexie`)
+      console.log(`[Orama] Kondisi 2: Hydrated ${validTurnsCount} turn pairs from database`)
     } else {
       console.log('[Orama] Kondisi 3: Fresh install, no chat turns to migrate')
     }
@@ -118,10 +119,10 @@ export async function hydrateFromDexie(onProgress) {
     }
     if (a.vector && a.vector.length === VECTOR_SIZE) {
       validArchives.push({
-        summary: a.summary,
-        topic: a.topic || 'General',
-        timestamp: a.timestamp || Date.now(),
-        dexieId: a.id,
+        summary: String(a.summary || ''),
+        topic: String(a.topic || 'General'),
+        timestamp: Number(a.timestamp) || Date.now(),
+        dbId: String(a.id || ''),
         vector: a.vector
       })
     }
@@ -143,11 +144,11 @@ export async function hydrateFromDexie(onProgress) {
     }
     if (d.vector && d.vector.length === VECTOR_SIZE) {
       validDocs.push({
-        docName: d.docName,
-        chunkIndex: d.chunkIndex,
-        content: d.content,
-        timestamp: d.timestamp || Date.now(),
-        dexieId: d.id,
+        docName: String(d.docName || d.doc_name || ''),
+        chunkIndex: Number(d.chunkIndex ?? d.chunk_index ?? 0),
+        content: String(d.content || ''),
+        timestamp: Number(d.timestamp) || Date.now(),
+        dbId: String(d.id || ''),
         vector: d.vector
       })
     }
@@ -169,11 +170,11 @@ export async function hydrateFromDexie(onProgress) {
     }
     if (m.vector && m.vector.length === VECTOR_SIZE) {
       validMemories.push({
-        type: m.type || 'notes',
-        summary: m.summary || '',
-        memory: m.memory || '',
-        timestamp: Date.now(),
-        dexieId: m.id,
+        type: String(m.type || 'notes'),
+        summary: String(m.summary || ''),
+        memory: String(m.memory || ''),
+        timestamp: Number(m.created_at || m.timestamp) || Date.now(),
+        dbId: String(m.id || ''),
         vector: m.vector
       })
     }
@@ -201,7 +202,6 @@ export async function searchArchives(queryVector, limit = 3) {
       similarity: 0.25,
       limit
     })
-    console.log(`[Orama] Found ${results.hits.length} archives. Scores:`, results.hits.map(h => h.score))
     return results.hits.map(hit => hit.document)
   } catch (err) {
     console.error('[Orama] Error in searchArchives:', err)
@@ -211,12 +211,8 @@ export async function searchArchives(queryVector, limit = 3) {
 
 // Vector search di dokumen RAG
 export async function searchDocuments(queryText, queryVector, limit = 5) {
-  if (!documentIndex) {
-    console.log('[Orama] documentIndex is null!')
-    return []
-  }
+  if (!documentIndex) return []
   try {
-    console.log(`[Orama] Searching documents for: "${queryText}", vector length: ${queryVector?.length}`)
     const results = await search(documentIndex, {
       term: queryText,
       mode: 'hybrid',
@@ -224,7 +220,6 @@ export async function searchDocuments(queryText, queryVector, limit = 5) {
       similarity: 0.25,
       limit
     })
-    console.log(`[Orama] Found ${results.hits.length} documents. Scores:`, results.hits.map(h => h.score))
     return results.hits.map(hit => hit.document)
   } catch (error) {
     console.error('[Orama] Error in searchDocuments:', error)
@@ -232,21 +227,35 @@ export async function searchDocuments(queryText, queryVector, limit = 5) {
   }
 }
 
-// Insert baru (dipanggil setelah Dexie.add)
+// Insert baru (dipanggil setelah penyimpanan arsip)
 export async function insertArchiveToOrama(data) {
   if (!archiveIndex) return
-  await insert(archiveIndex, data)
+  await insert(archiveIndex, {
+    summary: String(data.summary || ''),
+    topic: String(data.topic || 'General'),
+    timestamp: Number(data.timestamp) || Date.now(),
+    dbId: String(data.dbId || data.id || ''),
+    vector: data.vector
+  })
 }
 
 export async function insertDocumentChunksToOrama(chunks) {
-  if (!documentIndex) return
-  await insertMultiple(documentIndex, chunks)
+  if (!documentIndex || !Array.isArray(chunks)) return
+  const validChunks = chunks.map((c) => ({
+    docName: String(c.docName || c.doc_name || ''),
+    chunkIndex: Number(c.chunkIndex ?? c.chunk_index ?? 0),
+    content: String(c.content || ''),
+    timestamp: Number(c.timestamp) || Date.now(),
+    dbId: String(c.dbId || c.id || ''),
+    vector: c.vector
+  }))
+  await insertMultiple(documentIndex, validChunks)
 }
 
-export async function deleteArchiveFromOrama(dexieId) {
-  if (!archiveIndex || !dexieId) return
+export async function deleteArchiveFromOrama(dbId) {
+  if (!archiveIndex || !dbId) return
   try {
-    const res = await search(archiveIndex, { where: { dexieId: Number(dexieId) } })
+    const res = await search(archiveIndex, { where: { dbId: String(dbId) } })
     if (res.hits.length > 0) {
       for (let h of res.hits) {
         await remove(archiveIndex, h.id)
@@ -278,12 +287,12 @@ export async function insertTurnPairToOrama(data) {
           : Number(rawTs) || Date.now()
 
     await insert(turnPairIndex, {
-      pairId: String(data.pairId || ''),
-      sessionId: Number(data.sessionId) || 1,
-      sessionTitle: String(data.sessionTitle || 'Session'),
-      userText: String(data.userText || ''),
-      aiText: String(data.aiText || ''),
-      combinedText: String(data.combinedText || ''),
+      pairId: String(data.pairId || data.id || ''),
+      sessionId: String(data.sessionId || data.session_id || '1'),
+      sessionTitle: String(data.sessionTitle || data.session_title || 'Session'),
+      userText: String(data.userText || data.user_text || ''),
+      aiText: String(data.aiText || data.ai_text || ''),
+      combinedText: String(data.combinedText || data.combined_text || ''),
       timestamp: numericTs,
       vector: data.vector
     })
@@ -307,12 +316,12 @@ export async function insertBatchTurnPairsToOrama(turns) {
               : Number(rawTs) || Date.now()
 
         return {
-          pairId: String(t.pairId || ''),
-          sessionId: Number(t.sessionId) || 1,
-          sessionTitle: String(t.sessionTitle || 'Session'),
-          userText: String(t.userText || ''),
-          aiText: String(t.aiText || ''),
-          combinedText: String(t.combinedText || ''),
+          pairId: String(t.pairId || t.id || ''),
+          sessionId: String(t.sessionId || t.session_id || '1'),
+          sessionTitle: String(t.sessionTitle || t.session_title || 'Session'),
+          userText: String(t.userText || t.user_text || ''),
+          aiText: String(t.aiText || t.ai_text || ''),
+          combinedText: String(t.combinedText || t.combined_text || ''),
           timestamp: numericTs,
           vector: t.vector
         }
@@ -350,7 +359,7 @@ export async function deleteTurnPairsBySessionFromOrama(sessionId) {
   if (!turnPairIndex || !sessionId) return
   try {
     const results = await search(turnPairIndex, {
-      where: { sessionId: Number(sessionId) }
+      where: { sessionId: String(sessionId) }
     })
     if (results.hits.length > 0) {
       const ids = results.hits.map((h) => h.id)
@@ -373,7 +382,7 @@ export async function searchMemoriesInOrama(queryText, queryVector, limit = 5, f
       similarity: threshold,
       limit: limit * 4
     })
-    let hits = results.hits.map(hit => ({ ...hit.document, id: hit.document.dexieId, score: hit.score }))
+    let hits = results.hits.map(hit => ({ ...hit.document, id: hit.document.dbId, score: hit.score }))
     if (filterTypes) {
       const typesArr = Array.isArray(filterTypes) ? filterTypes : [filterTypes]
       hits = hits.filter(h => typesArr.includes(h.type))
@@ -390,11 +399,11 @@ export async function insertMemoryToOrama(data) {
   if (!memoryIndex || !data.vector || data.vector.length !== VECTOR_SIZE) return
   try {
     await insert(memoryIndex, {
-      type: data.type || 'notes',
-      summary: data.summary || '',
-      memory: data.memory || '',
-      timestamp: Date.now(),
-      dexieId: data.id,
+      type: String(data.type || 'notes'),
+      summary: String(data.summary || ''),
+      memory: String(data.memory || ''),
+      timestamp: Number(data.created_at || data.timestamp) || Date.now(),
+      dbId: String(data.id || data.dbId || ''),
       vector: data.vector
     })
   } catch (err) {
@@ -402,16 +411,16 @@ export async function insertMemoryToOrama(data) {
   }
 }
 
-export async function updateMemoryInOrama(dexieId, data) {
+export async function updateMemoryInOrama(dbId, data) {
   if (!memoryIndex) return
-  await deleteMemoryFromOrama(dexieId)
-  await insertMemoryToOrama({ ...data, id: dexieId })
+  await deleteMemoryFromOrama(dbId)
+  await insertMemoryToOrama({ ...data, id: String(dbId), dbId: String(dbId) })
 }
 
-export async function deleteMemoryFromOrama(dexieId) {
-  if (!memoryIndex || !dexieId) return
+export async function deleteMemoryFromOrama(dbId) {
+  if (!memoryIndex || !dbId) return
   try {
-    const res = await search(memoryIndex, { where: { dexieId: Number(dexieId) } })
+    const res = await search(memoryIndex, { where: { dbId: String(dbId) } })
     if (res.hits.length > 0) {
       for (let h of res.hits) {
         await remove(memoryIndex, h.id)
@@ -436,7 +445,7 @@ export async function findSimilarMemoryClusters(threshold = 0.60) {
     let memories = results.hits
       .map(hit => ({
         ...hit.document,
-        id: hit.document.dexieId
+        id: hit.document.dbId
       }))
       .filter(m => m.type === 'profile' || m.type === 'preference')
 
@@ -459,19 +468,10 @@ export async function findSimilarMemoryClusters(threshold = 0.60) {
         limit: 20
       })
 
-      if (simResults.hits.length > 1) {
-        console.log(
-          '[Orama Groomer] Kandidat mirip untuk:',
-          mem.memory,
-          '-> scores:',
-          simResults.hits.map(h => `${h.score.toFixed(2)} (${h.document.memory.slice(0, 30)}...)`)
-        )
-      }
-
       const similarHits = simResults.hits
         .map(hit => ({
           ...hit.document,
-          id: hit.document.dexieId,
+          id: hit.document.dbId,
           score: hit.score
         }))
         .filter(
@@ -537,66 +537,56 @@ export async function searchDocumentWithOrama(rawText, searchQuery, limit = 5) {
           }
           return { chunk: c, score }
         })
-        const matching = scored
-          .filter((s) => s.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .map((s) => s.chunk)
-
-        if (matching.length > 0) {
-          candidateChunks = matching.slice(0, 20)
-        } else {
-          const step = Math.max(1, Math.floor(chunks.length / 20))
-          candidateChunks = []
-          for (let i = 0; i < chunks.length && candidateChunks.length < 20; i += step) {
-            candidateChunks.push(chunks[i])
-          }
-        }
+        scored.sort((a, b) => b.score - a.score)
+        candidateChunks = scored.slice(0, 20).map((s) => s.chunk)
       } else {
         candidateChunks = chunks.slice(0, 20)
       }
     }
 
-    // 3. Create in-memory Orama instance
-    const tempDb = await create({
+    // 3. Generate query vector
+    const queryVector = await generateVector(searchQuery)
+    if (!queryVector || queryVector.length !== VECTOR_SIZE) {
+      return candidateChunks.slice(0, limit)
+    }
+
+    // 4. Create ephemeral in-memory Orama index
+    const tempIndex = await create({
       schema: {
         content: 'string',
         vector: `vector[${VECTOR_SIZE}]`
       }
     })
 
-    // 4. Generate vectors and insert with Event-Loop yielding
-    for (let i = 0; i < candidateChunks.length; i++) {
-      const vec = await generateVector(candidateChunks[i])
-      if (vec && vec.length === VECTOR_SIZE) {
-        await insert(tempDb, {
-          content: candidateChunks[i],
-          vector: vec
-        })
-      }
-      // Yield back to Electron Event Loop every 2 chunks to keep UI responsive
-      if (i % 2 === 0) {
-        await new Promise((r) => setTimeout(r, 0))
-      }
-    }
+    // 5. Generate embeddings for candidate chunks
+    const chunkVectors = await Promise.all(
+      candidateChunks.map(async (c) => {
+        const v = await generateVector(c)
+        return { content: c, vector: v }
+      })
+    )
 
-    // 5. Generate query vector and search
-    const queryVec = await generateVector(searchQuery)
-    if (!queryVec || queryVec.length !== VECTOR_SIZE) return []
+    const validDocs = chunkVectors.filter((d) => d.vector && d.vector.length === VECTOR_SIZE)
+    if (validDocs.length === 0) return candidateChunks.slice(0, limit)
 
-    const searchRes = await search(tempDb, {
+    await insertMultiple(tempIndex, validDocs)
+
+    // 6. Execute Hybrid Search
+    const searchRes = await search(tempIndex, {
       term: searchQuery,
       mode: 'hybrid',
-      vector: { value: queryVec, property: 'vector' },
-      similarity: 0.15,
-      limit: limit
+      vector: { value: queryVector, property: 'vector' },
+      similarity: 0.25,
+      limit
     })
 
-    return searchRes.hits.map((h) => ({
-      content: h.document.content,
-      score: h.score
-    }))
+    if (searchRes.hits && searchRes.hits.length > 0) {
+      return searchRes.hits.map((h) => h.document.content)
+    }
+
+    return candidateChunks.slice(0, limit)
   } catch (err) {
-    console.error('[Orama] Error in searchDocumentWithOrama:', err)
+    console.error('[Orama] Ephemeral searchDocumentWithOrama error:', err)
     return []
   }
 }

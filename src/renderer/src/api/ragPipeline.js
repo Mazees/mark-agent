@@ -51,8 +51,8 @@ export async function ingestDocument(file, onProgress) {
   // 2. Chunking
   const chunks = splitTextIntoChunks(rawText, 500, 50)
 
-  // 3. Embed + Simpan (Dexie & Orama)
-  const dexieRecords = []
+  // 3. Embed + Simpan (Database & Orama)
+  const dbRecords = []
 
   for (let i = 0; i < chunks.length; i++) {
     const vector = await generateVector(chunks[i])
@@ -65,22 +65,22 @@ export async function ingestDocument(file, onProgress) {
       timestamp: Date.now(),
       vector
     }
-    dexieRecords.push(record)
+    dbRecords.push(record)
 
     if (onProgress) {
       onProgress(Math.round(((i + 1) / chunks.length) * 100))
     }
   }
 
-  if (dexieRecords.length === 0) {
+  if (dbRecords.length === 0) {
     throw new Error('Gagal mengekstrak vektor dari dokumen.')
   }
 
-  // Bulk insert ke Dexie
-  const ids = await bulkInsertDocuments(dexieRecords)
+  // Bulk insert ke SQLite Database
+  const ids = await bulkInsertDocuments(dbRecords)
 
-  // Bulk insert ke Orama (dengan dexieId)
-  const oramaData = dexieRecords.map((r, i) => ({ ...r, dexieId: ids[i] }))
+  // Bulk insert ke Orama (dengan dbId)
+  const oramaData = dbRecords.map((r, i) => ({ ...r, dbId: String(ids[i]) }))
   await insertDocumentChunksToOrama(oramaData)
 
   return { fileName: file.name, totalChunks: chunks.length, totalCharacters: rawText.length }

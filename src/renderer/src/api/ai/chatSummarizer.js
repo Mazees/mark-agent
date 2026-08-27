@@ -49,8 +49,8 @@ Aturan:
     const timestamp = Date.now()
     const topic = activeTopic || 'Obrolan Umum'
 
-    // 1. Simpan ke IndexedDB
-    const dexieId = await insertChatArchive({
+    // 1. Simpan ke SQLite Database
+    const dbId = await insertChatArchive({
       summary,
       timestamp,
       topic,
@@ -62,7 +62,7 @@ Aturan:
       summary,
       topic,
       timestamp,
-      dexieId,
+      dbId: String(dbId),
       vector
     })
 

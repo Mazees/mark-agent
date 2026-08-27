@@ -47,6 +47,82 @@ async function apiDelete(path) {
 }
 
 /**
+ * Collection Proxy untuk chaining Dexie-like queries:
+ * where().equals(), anyOf(), filter(), sortBy(), limit(), reverse(), toArray(), delete(), first()
+ */
+class CollectionProxy {
+  constructor(tableProxy, filterFn = null, sortField = null, isReverse = false, limitCount = null) {
+    this.tableProxy = tableProxy
+    this.filterFn = filterFn
+    this.sortField = sortField
+    this.isReverse = isReverse
+    this.limitCount = limitCount
+  }
+
+  filter(fn) {
+    const prev = this.filterFn
+    const combined = prev ? (item) => prev(item) && fn(item) : fn
+    return new CollectionProxy(this.tableProxy, combined, this.sortField, this.isReverse, this.limitCount)
+  }
+
+  sortBy(field) {
+    return new CollectionProxy(this.tableProxy, this.filterFn, field, this.isReverse, this.limitCount)
+  }
+
+  reverse() {
+    return new CollectionProxy(this.tableProxy, this.filterFn, this.sortField, !this.isReverse, this.limitCount)
+  }
+
+  limit(count) {
+    return new CollectionProxy(this.tableProxy, this.filterFn, this.sortField, this.isReverse, count)
+  }
+
+  async toArray() {
+    let all = await this.tableProxy.toArray()
+    if (this.filterFn) {
+      all = all.filter(this.filterFn)
+    }
+    if (this.sortField) {
+      const sf = this.sortField
+      all = all.slice().sort((a, b) => {
+        const valA = a[sf] ?? ''
+        const valB = b[sf] ?? ''
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return valA - valB
+        }
+        return String(valA).localeCompare(String(valB))
+      })
+    }
+    if (this.isReverse) {
+      all.reverse()
+    }
+    if (typeof this.limitCount === 'number' && this.limitCount > 0) {
+      all = all.slice(0, this.limitCount)
+    }
+    return all
+  }
+
+  async first() {
+    const list = await this.limit(1).toArray()
+    return list[0] || null
+  }
+
+  async count() {
+    const list = await this.toArray()
+    return list.length
+  }
+
+  async delete() {
+    const list = await this.toArray()
+    for (const item of list) {
+      const id = item[this.tableProxy.idField] || item.id || item.pairId
+      if (id) await this.tableProxy.delete(id)
+    }
+    return list.length
+  }
+}
+
+/**
  * Tabel Proxy untuk kompatibilitas kode lama yang memanggil `db.namaTabel`
  */
 class TableProxy {
@@ -108,47 +184,22 @@ class TableProxy {
 
   where(field) {
     return {
-      equals: (val) => ({
-        toArray: async () => {
-          const all = await this.toArray()
-          return all.filter((item) => String(item[field]) === String(val))
-        },
-        delete: async () => {
-          const all = await this.toArray()
-          const matched = all.filter((item) => String(item[field]) === String(val))
-          for (const m of matched) {
-            const id = m[this.idField] || m.id || m.pairId
-            if (id) await this.delete(id)
-          }
-          return matched.length
-        },
-        first: async () => {
-          const all = await this.toArray()
-          return all.find((item) => String(item[field]) === String(val)) || null
-        }
-      }),
-      equalsIgnoreCase: (val) => ({
-        first: async () => {
-          const all = await this.toArray()
-          return all.find((item) => String(item[field] || '').toLowerCase() === String(val || '').toLowerCase()) || null
-        }
-      })
+      equals: (val) => {
+        return new CollectionProxy(this, (item) => String(item[field]) === String(val))
+      },
+      equalsIgnoreCase: (val) => {
+        const lowerVal = String(val || '').toLowerCase()
+        return new CollectionProxy(this, (item) => String(item[field] || '').toLowerCase() === lowerVal)
+      },
+      anyOf: (values) => {
+        const set = new Set((Array.isArray(values) ? values : [values]).map((v) => String(v)))
+        return new CollectionProxy(this, (item) => set.has(String(item[field])))
+      }
     }
   }
 
   orderBy(field) {
-    return {
-      reverse: () => ({
-        toArray: async () => {
-          const all = await this.toArray()
-          return all.sort((a, b) => (b[field] || 0) - (a[field] || 0))
-        }
-      }),
-      toArray: async () => {
-        const all = await this.toArray()
-        return all.sort((a, b) => (a[field] || 0) - (b[field] || 0))
-      }
-    }
+    return new CollectionProxy(this, null, field, false, null)
   }
 }
 
@@ -167,7 +218,14 @@ export const db = {
   subagentMessages: new TableProxy('/api/subagents/messages'),
   learnedSkills: new TableProxy('/api/skills'),
   agentTasks: new TableProxy('/api/tasks'),
-  agentTaskSteps: new TableProxy('/api/tasks/steps')
+  agentTaskSteps: new TableProxy('/api/tasks/steps'),
+  transaction: async (...args) => {
+    // Penanganan db.transaction(mode, ...tables, callback)
+    const callback = args[args.length - 1]
+    if (typeof callback === 'function') {
+      return await callback()
+    }
+  }
 }
 
 // --- VALIDATION ---
@@ -217,36 +275,208 @@ export async function getMainThread() {
   }
 }
 
-// --- UPDATE ---
-export async function updateMemory(data, maybeMemory, maybeType) {
+// --- SESSIONS & CHAT DATA HELPERS ---
+export async function getAllSessions() {
   try {
-    let id, memoryText, typeStr, summaryStr
-    if (typeof data === 'object' && data !== null) {
-      id = data.id
-      memoryText = data.memory || ''
-      typeStr = data.type
-      summaryStr = data.summary || ''
-    } else {
-      id = Number(data)
-      memoryText = String(maybeMemory || '')
-      typeStr = maybeType || 'profile'
-      summaryStr = ''
+    return await db.sessions.toArray()
+  } catch (error) {
+    console.error('Error getAllSessions:', error)
+    return []
+  }
+}
+
+export async function getSession(id) {
+  try {
+    return await db.sessions.get(id)
+  } catch (error) {
+    console.error(`Error getSession ${id}:`, error)
+    return null
+  }
+}
+
+export async function createSession(title = 'Percakapan Baru') {
+  try {
+    const id = Date.now()
+    const session = { id, title, data: [], timestamp: Date.now() }
+    await db.sessions.put(session)
+    return session
+  } catch (error) {
+    console.error('Error createSession:', error)
+    return null
+  }
+}
+
+export async function saveSession(id, data, title = null) {
+  try {
+    const existing = await db.sessions.get(id)
+    const session = {
+      ...(existing || { id }),
+      data: Array.isArray(data) ? data : [],
+      ...(title ? { title } : {}),
+      timestamp: Date.now()
+    }
+    await db.sessions.put(session)
+    return session
+  } catch (error) {
+    console.error(`Error saveSession ${id}:`, error)
+  }
+}
+
+export async function deleteSession(id) {
+  try {
+    await db.sessions.delete(id)
+    return { success: true }
+  } catch (error) {
+    console.error(`Error deleteSession ${id}:`, error)
+    return { success: false, error: error.message }
+  }
+}
+
+export async function renameSession(id, title) {
+  try {
+    const existing = await db.sessions.get(id)
+    if (existing) {
+      await db.sessions.put({ ...existing, title, timestamp: Date.now() })
+    }
+  } catch (error) {
+    console.error(`Error renameSession ${id}:`, error)
+  }
+}
+
+export async function getChatData(sessionId = 1) {
+  try {
+    const session = await db.sessions.get(sessionId)
+    return session && Array.isArray(session.data) ? session.data : []
+  } catch (error) {
+    console.error(`Error getChatData ${sessionId}:`, error)
+    return []
+  }
+}
+
+export async function setSessionWorkspace(sessionId, workspace) {
+  try {
+    const existing = await db.sessions.get(sessionId)
+    if (existing) {
+      await db.sessions.put({ ...existing, workspace, timestamp: Date.now() })
+    }
+  } catch (error) {
+    console.error(`Error setSessionWorkspace ${sessionId}:`, error)
+  }
+}
+
+// Bulk insert chatTurns
+export async function bulkInsertTurns(turns) {
+  try {
+    if (!Array.isArray(turns) || turns.length === 0) return []
+    const res = await db.chatTurns.bulkPut(turns)
+    return res
+  } catch (error) {
+    console.error('Error bulkInsertTurns:', error)
+    return []
+  }
+}
+
+export async function saveBatchChatTurns(turns) {
+  return await bulkInsertTurns(turns)
+}
+
+export async function saveChatTurn(turn) {
+  try {
+    const res = await db.chatTurns.put(turn)
+    return res
+  } catch (error) {
+    console.error('Error saveChatTurn:', error)
+    return null
+  }
+}
+
+// Bulk insert documents
+export async function bulkInsertDocuments(documents) {
+  try {
+    if (!Array.isArray(documents) || documents.length === 0) return []
+    const res = await db.documents.bulkPut(documents)
+    return res?.data?.map((d) => d.id) || documents.map((_, i) => i + 1)
+  } catch (error) {
+    console.error('Error bulkInsertDocuments:', error)
+    return []
+  }
+}
+
+export async function deleteDocumentByName(docName) {
+  try {
+    const docs = await db.documents.where('docName').equals(docName).toArray()
+    for (let d of docs) {
+      await db.documents.delete(d.id)
+    }
+  } catch (error) {
+    console.error('Error deleteDocumentByName:', error)
+  }
+}
+
+export async function getAllDocuments() {
+  try {
+    return await db.documents.toArray()
+  } catch (error) {
+    console.error('Error getAllDocuments:', error)
+    return []
+  }
+}
+
+export async function getAllChatArchives() {
+  try {
+    return await db.chatArchive.toArray()
+  } catch (error) {
+    console.error('Error getAllChatArchives:', error)
+    return []
+  }
+}
+
+export async function insertChatArchive(data) {
+  try {
+    const record = await db.chatArchive.put(data)
+    return record?.id || record
+  } catch (error) {
+    console.error('Error insertChatArchive:', error)
+  }
+}
+
+export async function deleteChatArchive(id) {
+  try {
+    await db.chatArchive.delete(id)
+  } catch (error) {
+    console.error('Error deleteChatArchive:', error)
+  }
+}
+
+export async function updateMemory(id, data) {
+  try {
+    const existing = await db.memory.get(id)
+    if (!existing) {
+      console.warn(`[DB Proxy] Memory dengan ID ${id} tidak ditemukan untuk diupdate.`)
+      return
     }
 
-    const newMemoryText = memoryText.trim()
-    const type = getValidType(typeStr)
+    const memoryText = (data.memory || existing.memory).trim()
+    const type = getValidType(data.type || existing.type)
+    const summary = data.summary || existing.summary || ''
 
-    let updatePayload = {
-      id,
-      type: type,
-      summary: summaryStr,
-      memory: newMemoryText,
-      vector: (await generateVector(newMemoryText)) || []
+    let vector = existing.vector
+    if (data.memory && data.memory !== existing.memory) {
+      vector = (await generateVector(memoryText)) || existing.vector
     }
 
-    if (id) {
-      await db.memory.put(updatePayload)
-      updateMemoryInOrama(id, { ...updatePayload, id: id }).catch(console.error)
+    const updatedRecord = {
+      ...existing,
+      type,
+      summary,
+      memory: memoryText,
+      vector,
+      updated_at: Date.now()
+    }
+
+    await db.memory.put(updatedRecord)
+    if (vector && vector.length === 384) {
+      updateMemoryInOrama(id, updatedRecord).catch(console.error)
       console.log(`[DB Proxy] Memory ID ${id} berhasil di-update.`)
     }
   } catch (error) {
@@ -327,11 +557,9 @@ export async function addAlwaysAllowedPath(pathToAdd) {
     const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
     const currentList = Array.isArray(currentConfig.alwaysAllowedPaths) ? currentConfig.alwaysAllowedPaths : []
-
     if (!currentList.includes(pathToAdd)) {
       const updatedList = [...currentList, pathToAdd]
-      const newConfig = { ...currentConfig, alwaysAllowedPaths: updatedList }
-      await saveConfiguration(newConfig)
+      await saveConfiguration({ ...currentConfig, alwaysAllowedPaths: updatedList })
       return updatedList
     }
     return currentList
@@ -343,13 +571,12 @@ export async function addAlwaysAllowedPath(pathToAdd) {
 
 export async function removeAlwaysAllowedPath(pathToRemove) {
   try {
+    if (!pathToRemove) return []
     const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
     const currentList = Array.isArray(currentConfig.alwaysAllowedPaths) ? currentConfig.alwaysAllowedPaths : []
-
     const updatedList = currentList.filter((p) => p !== pathToRemove)
-    const newConfig = { ...currentConfig, alwaysAllowedPaths: updatedList }
-    await saveConfiguration(newConfig)
+    await saveConfiguration({ ...currentConfig, alwaysAllowedPaths: updatedList })
     return updatedList
   } catch (error) {
     console.error('Error in removeAlwaysAllowedPath logic:', error)
@@ -357,382 +584,77 @@ export async function removeAlwaysAllowedPath(pathToRemove) {
   }
 }
 
-export async function getAllSessionTitle() {
-  try {
-    const data = await db.sessions.toArray()
-    data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-    return data || []
-  } catch (error) {
-    console.error('Error in getAllSessionTitle logic:', error)
-    return []
-  }
-}
-
-export async function getAllSessions() {
-  try {
-    const sessions = await db.sessions.toArray()
-    if (!sessions || sessions.length === 0) {
-      const defaultSession = { id: '1', title: 'Main Thread', data: [], timestamp: Date.now() }
-      await db.sessions.put(defaultSession)
-      return [defaultSession]
-    }
-    const hasMain = sessions.some((s) => String(s.id) === '1')
-    if (!hasMain) {
-      await db.sessions.put({ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() })
-      sessions.unshift({ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() })
-    }
-    sessions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-    return sessions
-  } catch (error) {
-    console.error('Error in getAllSessions:', error)
-    return [{ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() }]
-  }
-}
-
-export async function getChatData(id) {
-  try {
-    const session = await db.sessions.get(id)
-    return session?.data || []
-  } catch (error) {
-    console.error('Error in getChatData logic:', error)
-    return []
-  }
-}
-
-export async function getSession(id) {
-  try {
-    return await db.sessions.get(id)
-  } catch (error) {
-    console.error('Error in getSession:', error)
-    return null
-  }
-}
-
-export async function createSession(title = 'Percakapan Baru', initialData = []) {
-  try {
-    const timestamp = Date.now()
-    const id = `session_${timestamp}_${Math.random().toString(36).slice(2, 6)}`
-    const session = { id, title: title.trim() || 'Percakapan Baru', data: initialData, timestamp }
-    await db.sessions.put(session)
-    return session
-  } catch (error) {
-    console.error('Error in createSession:', error)
-    throw error
-  }
-}
-
-export async function saveSession(id, data, title = null, workspaceRoot = null) {
-  try {
-    const existing = await db.sessions.get(id)
-    const updatePayload = {
-      id: String(id),
-      data: data,
-      timestamp: Date.now()
-    }
-    if (title) {
-      updatePayload.title = title
-    } else if (existing?.title) {
-      updatePayload.title = existing.title
-    } else {
-      updatePayload.title = String(id) === '1' ? 'Main Thread' : 'Percakapan Baru'
-    }
-    if (workspaceRoot !== null && workspaceRoot !== undefined) {
-      updatePayload.workspaceRoot = workspaceRoot
-    } else if (existing?.workspaceRoot) {
-      updatePayload.workspaceRoot = existing.workspaceRoot
-    }
-    await db.sessions.put(updatePayload)
-    return true
-  } catch (error) {
-    console.error('Error in saveSession:', error)
-    return false
-  }
-}
-
-export async function setSessionWorkspace(id, workspaceRoot) {
-  try {
-    const existing = await db.sessions.get(id)
-    if (existing) {
-      existing.workspaceRoot = workspaceRoot
-      existing.timestamp = Date.now()
-      await db.sessions.put(existing)
-      return true
-    } else {
-      await db.sessions.put({
-        id: String(id),
-        title: String(id) === '1' ? 'Main Thread' : 'Percakapan Baru',
-        data: [],
-        workspaceRoot,
-        timestamp: Date.now()
-      })
-      return true
-    }
-  } catch (e) {
-    console.error('Error in setSessionWorkspace:', e)
-    return false
-  }
-}
-
-export async function deleteSession(id) {
-  try {
-    if (String(id) === '1') {
-      await db.sessions.put({ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() })
-      await db.chatTurns.where('sessionId').equals('1').delete()
-      return true
-    }
-    await db.sessions.delete(id)
-    await db.chatTurns.where('sessionId').equals(String(id)).delete()
-    return true
-  } catch (error) {
-    console.error('Error in deleteSession:', error)
-    return false
-  }
-}
-
-export async function renameSession(id, newTitle) {
-  try {
-    const existing = await db.sessions.get(id)
-    if (existing) {
-      existing.title = newTitle.trim() || existing.title
-      existing.timestamp = Date.now()
-      await db.sessions.put(existing)
-      return true
-    }
-    return false
-  } catch (error) {
-    console.error('Error in renameSession:', error)
-    return false
-  }
-}
-
-// --- CHAT ARCHIVE CRUD ---
-export async function insertChatArchive(data) {
-  try {
-    return await db.chatArchive.add(data)
-  } catch (error) {
-    console.error('Error in insertChatArchive:', error)
-    throw error
-  }
-}
-
-export async function getAllChatArchives() {
-  try {
-    return await db.chatArchive.toArray()
-  } catch (error) {
-    console.error('Error in getAllChatArchives:', error)
-    return []
-  }
-}
-
-export async function deleteChatArchive(id) {
-  try {
-    await db.chatArchive.delete(id)
-  } catch (error) {
-    console.error('Error in deleteChatArchive:', error)
-    throw error
-  }
-}
-
-// --- DOCUMENTS CRUD ---
-export async function bulkInsertDocuments(chunks) {
-  try {
-    return await db.documents.bulkAdd(chunks)
-  } catch (error) {
-    console.error('Error in bulkInsertDocuments:', error)
-    throw error
-  }
-}
-
-export async function getAllDocuments() {
-  try {
-    return await db.documents.toArray()
-  } catch (error) {
-    console.error('Error in getAllDocuments:', error)
-    return []
-  }
-}
-
-export async function deleteDocumentByName(docName) {
-  try {
-    const chunks = await db.documents.where('docName').equals(docName).toArray()
-    for (const chunk of chunks) {
-      if (chunk.id) await db.documents.delete(chunk.id)
-    }
-    return chunks.map((c) => c.id)
-  } catch (error) {
-    console.error('Error in deleteDocumentByName:', error)
-    throw error
-  }
-}
-
-// --- CORE MEMORY ---
-export async function getCoreMemory() {
-  try {
-    const profiles = await db.memory.where('type').equals('profile').toArray()
-    if (profiles && profiles.length > 0) {
-      return profiles.map((p) => `- ${p.summary || p.memory}`).join('\n')
-    }
-  } catch (error) {
-    console.error('Error in getCoreMemory:', error)
-  }
-  return 'Tidak ada profil user.'
-}
-
-// --- RELATIONSHIPS ---
-const DEFAULT_TRAITS = {
-  warmth: 0.5,
-  sarcasm_level: 0.5,
-  trust: 0.5,
-  energy: 0.5,
-  obedience: 0.5,
-  evalCount: 0,
-  lastChatIndex: 0,
-  reasoning: 'Baseline netral — belum ada evaluasi.'
-}
-
+// --- RELATIONSHIP 4D ---
 export async function getRelationship(userId = 'owner') {
   try {
-    const data = await db.relationships.get(userId)
-    if (!data) {
-      return { userId, ...DEFAULT_TRAITS, lastEvaluation: null }
-    }
-    return data
+    const rel = await db.relationships.get(userId)
+    return (
+      rel || {
+        userId,
+        warmth: 0.5,
+        sarcasm_level: 0.5,
+        trust: 0.5,
+        energy: 0.5,
+        obedience: 0.5,
+        evalCount: 0,
+        lastChatIndex: 0
+      }
+    )
   } catch (error) {
-    console.error('[DB Proxy] Error getRelationship:', error)
-    return { userId, ...DEFAULT_TRAITS, lastEvaluation: null }
+    console.error('Error in getRelationship logic:', error)
+    return {
+      userId,
+      warmth: 0.5,
+      sarcasm_level: 0.5,
+      trust: 0.5,
+      energy: 0.5,
+      obedience: 0.5,
+      evalCount: 0,
+      lastChatIndex: 0
+    }
   }
 }
 
 export async function saveRelationship(data) {
   try {
-    await db.relationships.put(data)
-    console.log(`[DB Proxy] Relationship saved for ${data.userId}:`, data)
+    const userId = data.userId || 'owner'
+    const record = { ...data, userId }
+    await db.relationships.put(record)
+    return record
   } catch (error) {
-    console.error('[DB Proxy] Error saveRelationship:', error)
+    console.error('Error in saveRelationship logic:', error)
   }
 }
 
 // --- LEARNED SKILLS ---
-export async function saveLearnedSkill({ name, description, content }) {
-  try {
-    const cleanName = (name || '').toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/^-+|-+$/g, '')
-    if (!cleanName || !content) return null
-
-    const existing = await db.learnedSkills.where('name').equalsIgnoreCase(cleanName).first()
-    const id = existing?.id || `learned_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-
-    const skillData = {
-      id,
-      name: cleanName,
-      description: description || 'Prosedur teknis teruji buatan Mark',
-      content: content.trim(),
-      createdAt: existing?.createdAt || Date.now(),
-      updatedAt: Date.now()
-    }
-
-    await db.learnedSkills.put(skillData)
-    return skillData
-  } catch (err) {
-    console.error('[DB Proxy] Error saveLearnedSkill:', err)
-    return null
-  }
-}
-
-export async function getLearnedSkill(name) {
-  try {
-    if (!name) return null
-    const cleanName = name.toLowerCase().trim()
-    return await db.learnedSkills.where('name').equalsIgnoreCase(cleanName).first()
-  } catch (err) {
-    console.error('[DB Proxy] Error getLearnedSkill:', err)
-    return null
-  }
-}
-
 export async function getAllLearnedSkills() {
   try {
-    return await db.learnedSkills.orderBy('createdAt').reverse().toArray()
-  } catch (err) {
-    console.error('[DB Proxy] Error getAllLearnedSkills:', err)
+    return await db.learnedSkills.toArray()
+  } catch (error) {
+    console.error('Error in getAllLearnedSkills logic:', error)
     return []
   }
 }
 
-export async function deleteLearnedSkill(idOrName) {
+export async function saveLearnedSkill(skill) {
   try {
-    if (!idOrName) return false
-    const existing =
-      (await db.learnedSkills.get(idOrName)) ||
-      (await db.learnedSkills.where('name').equalsIgnoreCase(idOrName).first())
-    if (existing) {
-      await db.learnedSkills.delete(existing.id)
-      return true
-    }
-    return false
-  } catch (err) {
-    console.error('[DB Proxy] Error deleteLearnedSkill:', err)
-    return false
+    const id = skill.id || `skill_${Date.now()}`
+    const record = { ...skill, id, updatedAt: Date.now() }
+    await db.learnedSkills.put(record)
+    return record
+  } catch (error) {
+    console.error('Error in saveLearnedSkill logic:', error)
   }
 }
 
-// --- CHAT TURNS ---
-export async function saveChatTurn(turnData) {
+export async function deleteLearnedSkill(id) {
   try {
-    if (!turnData || !turnData.pairId) return null
-    await db.chatTurns.put(turnData)
-    return turnData
-  } catch (err) {
-    console.error('[DB Proxy] Error saveChatTurn:', err)
-    return null
+    await db.learnedSkills.delete(id)
+    return { success: true }
+  } catch (error) {
+    console.error('Error in deleteLearnedSkill logic:', error)
+    return { success: false, error: error.message }
   }
 }
 
-export async function saveBatchChatTurns(turnsArray) {
-  try {
-    if (!Array.isArray(turnsArray) || turnsArray.length === 0) return 0
-    await db.chatTurns.bulkPut(turnsArray)
-    return turnsArray.length
-  } catch (err) {
-    console.error('[DB Proxy] Error saveBatchChatTurns:', err)
-    return 0
-  }
-}
 
-export async function getAllChatTurns() {
-  try {
-    const data = await db.chatTurns.toArray()
-    return data || []
-  } catch (err) {
-    console.error('[DB Proxy] Error getAllChatTurns:', err)
-    return []
-  }
-}
-
-export async function getChatTurnsBySession(sessionId) {
-  try {
-    if (!sessionId) return []
-    return await db.chatTurns.where('sessionId').equals(String(sessionId)).toArray()
-  } catch (err) {
-    console.error('[DB Proxy] Error getChatTurnsBySession:', err)
-    return []
-  }
-}
-
-export async function deleteChatTurnsBySession(sessionId) {
-  try {
-    if (!sessionId) return 0
-    return await db.chatTurns.where('sessionId').equals(String(sessionId)).delete()
-  } catch (err) {
-    console.error('[DB Proxy] Error deleteChatTurnsBySession:', err)
-    return 0
-  }
-}
-
-export async function getChatTurnCount() {
-  try {
-    return await db.chatTurns.count()
-  } catch (err) {
-    console.error('[DB Proxy] Error getChatTurnCount:', err)
-    return 0
-  }
-}

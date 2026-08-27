@@ -19,7 +19,7 @@ import { ApprovalProvider } from './contexts/ApprovalContext'
 import { YoutubeMusicPlayer } from './components/YoutubeMusicPlayer'
 import { GlobalCameraManager } from './components/GlobalCameraManager'
 import { getAllConfig } from './api/db'
-import { initOramaIndices, hydrateFromDexie } from './api/oramaStore'
+import { initOramaIndices, hydrateFromDb } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
 
 const GlobalListener = () => {
@@ -106,11 +106,11 @@ function App() {
 
   useEffect(() => {
     const checkConfig = async () => {
-      // 1. Init Orama and Hydrate from Dexie
+      // 1. Init Orama and Hydrate from Database
       try {
         setLoadingText('Memuat Knowledge Base...')
         await initOramaIndices()
-        await hydrateFromDexie((current, total) => {
+        await hydrateFromDb((current, total) => {
           setLoadingText(`Mengindeks memori percakapan lama (${current}/${total})...`)
         })
         // Recovery saat boot: task yang terputus tidak boleh tetap berstatus running.
