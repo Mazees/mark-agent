@@ -49,7 +49,7 @@ const ChatStudio = () => {
   } = chatContext || {}
 
   const [sessions, setSessions] = useState([])
-  const [activeSessionId, setActiveSessionId] = useState(1)
+  const [activeSessionId, setActiveSessionId] = useState('1')
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')
@@ -76,16 +76,16 @@ const ChatStudio = () => {
   }, [])
 
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
-  const currentDisplayMessages = activeSessionId === 1 ? mainChatData || [] : activeSessionData
+  const currentDisplayMessages = String(activeSessionId) === '1' ? mainChatData || [] : activeSessionData
 
   const isCurrentLoading =
-    runningSessionIds.map(Number).includes(Number(activeSessionId)) ||
-    (Number(activeSessionId) === 1 && !runningSessionIds.length && (isMainLoading || isAgentBusy))
+    runningSessionIds.map(String).includes(String(activeSessionId)) ||
+    (String(activeSessionId) === '1' && !runningSessionIds.length && (isMainLoading || isAgentBusy))
 
   // Sync active session data for custom sessions (id > 1)
   useEffect(() => {
     setVisibleMessageCount(30)
-    if (activeSessionId === 1) return
+    if (String(activeSessionId) === '1') return
     let isCancelled = false
     getChatData(activeSessionId).then((data) => {
       if (!isCancelled) {
@@ -235,7 +235,7 @@ const ChatStudio = () => {
   const handleStopSession = () => {
     if (handleStop) handleStop(activeSessionId)
     if (window.api && window.api.browserClose) {
-      window.api.browserClose({ sessionId: activeSessionId === 1 ? 'main' : `workspace-${activeSessionId}` }).catch(() => {})
+      window.api.browserClose({ sessionId: String(activeSessionId) === '1' ? 'main' : `workspace-${activeSessionId}` }).catch(() => {})
     }
     setIsLocalLoading(false)
   }
@@ -244,13 +244,13 @@ const ChatStudio = () => {
     (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || {
-    id: 1,
+  const activeSessionObj = sessions.find((s) => String(s.id) === String(activeSessionId)) || {
+    id: '1',
     title: 'Main Thread'
   }
 
   return (
-    <div className="h-screen w-screen pt-10 bg-base-300 flex flex-col overflow-hidden text-base-content select-none">
+    <div className="h-screen w-screen bg-base-300 flex flex-col overflow-hidden text-base-content select-none">
       {/* Top Navigation Bar */}
       <div
         className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-200/80 backdrop-blur-xl shrink-0 z-30 relative select-none"
@@ -316,12 +316,12 @@ const ChatStudio = () => {
             <div
               role="button"
               tabIndex={0}
-              onClick={() => setActiveSessionId(1)}
+              onClick={() => setActiveSessionId('1')}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setActiveSessionId(1)
+                if (e.key === 'Enter' || e.key === ' ') setActiveSessionId('1')
               }}
               className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/item cursor-pointer ${
-                activeSessionId === 1
+                String(activeSessionId) === '1'
                   ? 'bg-primary/20 border border-primary/40 text-white shadow-sm'
                   : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
               }`}
@@ -329,7 +329,7 @@ const ChatStudio = () => {
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
                   className={`w-2 h-2 rounded-full shrink-0 ${
-                    runningSessionIds.map(Number).includes(1) ||
+                    runningSessionIds.map(String).includes('1') ||
                     (!runningSessionIds.length && (isMainLoading || isAgentBusy))
                       ? 'bg-warning animate-ping'
                       : 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
@@ -348,11 +348,11 @@ const ChatStudio = () => {
             </div>
 
             {filteredSessions
-              .filter((s) => s.id !== 1)
+              .filter((s) => String(s.id) !== '1')
               .map((s) => {
-                const isActive = activeSessionId === s.id
-                const isEditing = editingSessionId === s.id
-                const isThisSessionRunning = runningSessionIds.map(Number).includes(Number(s.id))
+                const isActive = String(activeSessionId) === String(s.id)
+                const isEditing = String(editingSessionId) === String(s.id)
+                const isThisSessionRunning = runningSessionIds.map(String).includes(String(s.id))
 
                 return (
                   <div

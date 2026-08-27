@@ -172,11 +172,24 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               res = { success: false, error: 'IPC executeNativeTool tidak tersedia.' }
             }
 
-            const resultStr = res.success
-              ? typeof res.data === 'string'
-                ? res.data
-                : JSON.stringify(res.data)
-              : `[ERROR] ${res.error}`
+            let resultStr = ''
+            if (res.success) {
+              if (res.data !== undefined) {
+                resultStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+              } else if (res.output !== undefined) {
+                resultStr = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
+              } else if (res.result !== undefined) {
+                resultStr = typeof res.result === 'string' ? res.result : JSON.stringify(res.result)
+              } else if (res.content !== undefined) {
+                resultStr = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+              } else if (res.contents !== undefined) {
+                resultStr = typeof res.contents === 'string' ? res.contents : JSON.stringify(res.contents)
+              } else {
+                resultStr = res.message || 'Success'
+              }
+            } else {
+              resultStr = `[ERROR] ${res.message || res.error || 'Unknown error'}`
+            }
 
             observations.push(`[${act.tool}] ${resultStr}`)
           } catch (err) {

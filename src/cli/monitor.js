@@ -2,7 +2,7 @@ import readline from 'readline'
 import http from 'http'
 import { WebSocket } from 'ws'
 import { colors as c, drawBox } from './theme.js'
-import { launchUI } from '../server/launcher.js'
+import { launchUI, closeUI } from '../server/launcher.js'
 
 const SERVER_URL = process.env.MARK_SERVER_URL || 'http://localhost:3000'
 const WS_URL = process.env.MARK_WS_URL || 'ws://localhost:3000/stream'
@@ -67,22 +67,41 @@ export function logActivity(type, title, detail = '') {
   console.log(` ${c.darkGray}${time}${c.reset}  ${badge}  ${c.white}${title}${c.reset}${cleanDetail}`)
 }
 
-export async function runMonitor() {
-  const isAlive = await checkServerHealth()
+export async function runMonitor(portOverride) {
+  let serverPort = portOverride || Number(process.env.PORT) || 3000
+  let serverUrl = `http://localhost:${serverPort}`
+  let wsUrl = `ws://localhost:${serverPort}/stream`
+
+  let isAlive = await new Promise((resolve) => {
+    http.get(`${serverUrl}/api/health`, (res) => resolve(res.statusCode === 200)).on('error', () => resolve(false))
+  })
+
   if (!isAlive) {
-    await import('../server/index.js')
+    const serverModule = await import('../server/index.js')
+    serverPort = serverModule.activePort || serverPort
+    serverUrl = `http://localhost:${serverPort}`
+    wsUrl = `ws://localhost:${serverPort}/stream`
     await new Promise((resolve) => setTimeout(resolve, 600))
   }
 
-  const config = await fetchConfig()
+  const config = await (async () => {
+    try {
+      const res = await fetch(`${serverUrl}/api/config`)
+      const data = await res.json()
+      return data.config || {}
+    } catch (_) {
+      return {}
+    }
+  })()
+
   printMonitorHeader(config)
 
-  logActivity('agent', 'MARK Server aktif di port 3000')
+  logActivity('agent', `MARK Server aktif di port ${serverPort}`)
   logActivity('agent', 'Membuka antarmuka WebUI Microsoft Edge...')
 
   // Connect WebSocket live streaming
   try {
-    const ws = new WebSocket(WS_URL)
+    const ws = new WebSocket(wsUrl)
     ws.on('open', () => {
       logActivity('agent', 'Engine siap menerima input dari WebUI')
     })
@@ -116,12 +135,21 @@ export async function runMonitor() {
 
     if (key.name === 'q' || (key.ctrl && key.name === 'c')) {
       console.log(`\n ${c.yellow}●${c.reset} ${c.gray}Mematikan MARK Core Engine. Sampai jumpa!${c.reset}\n`)
+      closeUI()
       process.exit(0)
     } else if (key.name === 'u' || key.name === 'o') {
       logActivity('agent', 'Membuka kembali jendela WebUI...')
-      await launchUI({ port: 3000, mode: 'app' })
+      await launchUI({ port: serverPort, mode: 'app' })
     } else if (key.name === 'c') {
-      const currentConfig = await fetchConfig()
+      const currentConfig = await (async () => {
+        try {
+          const res = await fetch(`${serverUrl}/api/config`)
+          const data = await res.json()
+          return data.config || {}
+        } catch (_) {
+          return {}
+        }
+      })()
       printMonitorHeader(currentConfig)
     }
   })

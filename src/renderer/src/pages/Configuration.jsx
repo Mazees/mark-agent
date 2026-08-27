@@ -593,9 +593,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     setConfig((prev) => ({ ...prev, tgAdminIds: e.target.value }))
 
   return (
-    <div
-      className="h-screen text-white overflow-hidden relative font-['Poppins',sans-serif] bg-base-300 rounded-xl border border-white/5 shadow-2xl"
-    >
+    <div className="h-screen text-white overflow-hidden relative font-['Poppins',sans-serif] bg-base-300 rounded-xl border border-white/5 shadow-2xl">
       {/* Background Ambience */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,oklch(var(--n))_0%,transparent_70%)] opacity-20 pointer-events-none" />
       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 pointer-events-none" />
@@ -1038,7 +1036,9 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                 >
                   <option value="whisper-small">Local Offline (Whisper Small)</option>
                   <option value="groq-whisper">Groq API Cloud (Whisper Large-v3)</option>
-                  <option value="groq-whisper-turbo">Groq API Cloud (Whisper Large-v3 Turbo)</option>
+                  <option value="groq-whisper-turbo">
+                    Groq API Cloud (Whisper Large-v3 Turbo)
+                  </option>
                 </select>
                 <p className="text-xs opacity-40">
                   Pilih "Groq API Cloud" untuk transkripsi via internet yang sangat ringan di
@@ -1248,7 +1248,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                   <div>
                     <p className="text-sm font-semibold">Pencadangan & Migrasi Database</p>
                     <p className="text-xs opacity-50 mt-0.5">
-                      Simpan atau pulihkan seluruh database SQLite/Dexie (Memori MMS, sesi, turn pairs, hubungan 4D, & RAG).
+                      Simpan atau pulihkan seluruh penyimpanan Mark (termasuk chat history, pengaturan, dan data lainnya) dalam format JSON. Gunakan fitur ini untuk migrasi ke perangkat lain atau sebagai cadangan.
                     </p>
                   </div>
 
@@ -1314,7 +1314,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                           <line x1="12" y1="3" x2="12" y2="15" />
                         </svg>
                       )}
-                      Restore Database (V4/V5 JSON)
+                      Restore Database
                     </button>
                   </div>
                 </div>

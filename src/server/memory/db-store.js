@@ -24,7 +24,7 @@ sqlite.exec(`
   CREATE TABLE IF NOT EXISTS config (
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER
   );
 
   -- 2. Cognitive Memory Store (MMS)
@@ -90,8 +90,11 @@ sqlite.exec(`
     trust REAL DEFAULT 0.5,
     energy REAL DEFAULT 0.5,
     obedience REAL DEFAULT 0.8,
+    reasoning TEXT,
+    new_relational_memory TEXT,
     last_evaluation INTEGER,
-    eval_count INTEGER DEFAULT 0
+    eval_count INTEGER DEFAULT 0,
+    last_chat_index INTEGER DEFAULT 0
   );
 
   -- 8. Sub-Agents
@@ -100,9 +103,11 @@ sqlite.exec(`
     name TEXT NOT NULL,
     role TEXT DEFAULT '',
     goal TEXT DEFAULT '',
+    allowed_tools TEXT,
     status TEXT DEFAULT 'running',
     turn_count INTEGER DEFAULT 0,
     parent_session_id TEXT DEFAULT '1',
+    final_answer TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER
   );
@@ -114,6 +119,8 @@ sqlite.exec(`
     sender TEXT NOT NULL,
     role TEXT DEFAULT 'assistant',
     content TEXT NOT NULL,
+    thought TEXT,
+    action TEXT,
     timestamp INTEGER NOT NULL
   );
 
@@ -134,8 +141,17 @@ sqlite.exec(`
     mode TEXT DEFAULT 'ephemeral',
     title TEXT DEFAULT '',
     objective TEXT DEFAULT '',
+    current_step_index INTEGER DEFAULT 0,
+    active_step_id TEXT,
+    constraints TEXT,
+    context_summary TEXT,
+    artifact_root TEXT,
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 2,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER
+    updated_at INTEGER,
+    completed_at INTEGER,
+    error TEXT
   );
 
   -- 12. Agent Task Steps
@@ -144,8 +160,20 @@ sqlite.exec(`
     task_id TEXT NOT NULL,
     step_index INTEGER DEFAULT 0,
     title TEXT DEFAULT '',
+    objective TEXT DEFAULT '',
+    deliverable TEXT DEFAULT '',
+    acceptance_criteria TEXT,
     status TEXT DEFAULT 'pending',
-    updated_at INTEGER
+    input_summary TEXT,
+    output_summary TEXT,
+    artifact_path TEXT,
+    validation TEXT,
+    content_hash TEXT,
+    attempts INTEGER DEFAULT 0,
+    started_at INTEGER,
+    completed_at INTEGER,
+    updated_at INTEGER,
+    error TEXT
   );
 
   -- Indeks untuk pencarian cepat
@@ -153,20 +181,70 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_chat_turns_timestamp ON chat_turns(timestamp);
   CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
   CREATE INDEX IF NOT EXISTS idx_subagent_messages_subagent ON subagent_messages(subagent_id);
+  CREATE INDEX IF NOT EXISTS idx_agent_task_steps_task ON agent_task_steps(task_id);
 `)
 
-// Auto-migration untuk kolom baru jika tabel sudah ada sebelumnya
-try {
-  const chatTurnsCols = sqlite.prepare(`PRAGMA table_info(chat_turns)`).all().map(c => c.name)
-  if (!chatTurnsCols.includes('created_at')) {
-    sqlite.exec(`ALTER TABLE chat_turns ADD COLUMN created_at INTEGER`)
+// Helper migrasi kolom otomatis jika tabel SQLite sudah ada dari versi sebelumnya
+function ensureTableColumns(tableName, requiredColumns) {
+  try {
+    const existingCols = sqlite.prepare(`PRAGMA table_info(${tableName})`).all().map((c) => c.name)
+    for (const [colName, colType] of Object.entries(requiredColumns)) {
+      if (!existingCols.includes(colName)) {
+        sqlite.exec(`ALTER TABLE ${tableName} ADD COLUMN ${colName} ${colType}`)
+      }
+    }
+  } catch (err) {
+    console.warn(`[DB Store] Auto-migration error on ${tableName}:`, err.message)
   }
-  if (!chatTurnsCols.includes('updated_at')) {
-    sqlite.exec(`ALTER TABLE chat_turns ADD COLUMN updated_at INTEGER`)
-  }
-} catch (err) {
-  console.warn('[DB Store] Error running migration on chat_turns:', err.message)
 }
+
+ensureTableColumns('chat_turns', {
+  created_at: 'INTEGER',
+  updated_at: 'INTEGER'
+})
+
+ensureTableColumns('relationships', {
+  reasoning: 'TEXT',
+  new_relational_memory: 'TEXT',
+  last_chat_index: 'INTEGER DEFAULT 0'
+})
+
+ensureTableColumns('subagents', {
+  allowed_tools: 'TEXT',
+  final_answer: 'TEXT'
+})
+
+ensureTableColumns('subagent_messages', {
+  thought: 'TEXT',
+  action: 'TEXT'
+})
+
+ensureTableColumns('agent_tasks', {
+  current_step_index: 'INTEGER DEFAULT 0',
+  active_step_id: 'TEXT',
+  constraints: 'TEXT',
+  context_summary: 'TEXT',
+  artifact_root: 'TEXT',
+  retry_count: 'INTEGER DEFAULT 0',
+  max_retries: 'INTEGER DEFAULT 2',
+  completed_at: 'INTEGER',
+  error: 'TEXT'
+})
+
+ensureTableColumns('agent_task_steps', {
+  objective: 'TEXT',
+  deliverable: 'TEXT',
+  acceptance_criteria: 'TEXT',
+  input_summary: 'TEXT',
+  output_summary: 'TEXT',
+  artifact_path: 'TEXT',
+  validation: 'TEXT',
+  content_hash: 'TEXT',
+  attempts: 'INTEGER DEFAULT 0',
+  started_at: 'INTEGER',
+  completed_at: 'INTEGER',
+  error: 'TEXT'
+})
 
 /**
  * Generic Table Helper untuk menyediakan API CRUD fleksibel
@@ -181,10 +259,11 @@ class SqliteTable {
     if (!row) return null
     const res = { ...row }
     for (const key of Object.keys(res)) {
-      if (key === 'vector' || key === 'data') {
-        if (typeof res[key] === 'string') {
+      if (typeof res[key] === 'string') {
+        const str = res[key].trim()
+        if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
           try {
-            res[key] = JSON.parse(res[key])
+            res[key] = JSON.parse(str)
           } catch (_) {}
         }
       }
@@ -195,10 +274,8 @@ class SqliteTable {
   _serializeJsonFields(obj) {
     const res = { ...obj }
     for (const key of Object.keys(res)) {
-      if (key === 'vector' || key === 'data') {
-        if (typeof res[key] === 'object' && res[key] !== null) {
-          res[key] = JSON.stringify(res[key])
-        }
+      if (typeof res[key] === 'object' && res[key] !== null) {
+        res[key] = JSON.stringify(res[key])
       }
     }
     return res
@@ -215,20 +292,44 @@ class SqliteTable {
   }
 
   insert(item) {
+    const raw = { ...item }
+    // Normalisasi alias primary key lama dari Dexie (pairId -> id)
+    let id = raw.id !== undefined && raw.id !== null ? raw.id : (raw.pairId || raw.userId || `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
+    if (id === 1 || id === 1.0 || id === '1' || id === '1.0' || id === '1.00') {
+      id = '1'
+    }
+    delete raw.id
+    delete raw.pairId // Hapus key lama agar tidak mencoba insert ke kolom yang tidak ada
+
+    if (raw.sessionId === 1 || raw.sessionId === 1.0 || raw.sessionId === '1' || raw.sessionId === '1.0' || raw.sessionId === '1.00') {
+      raw.sessionId = '1'
+    }
+
+    // Penanganan khusus untuk tabel config jika item berupa objek key-value langsung (bukan { id, data })
+    if (this.tableName === 'config' && raw.data === undefined) {
+      raw.data = { ...raw }
+    }
+
     const record = {
-      id: item.id || item.pairId || item.userId || `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      createdAt: item.createdAt || item.timestamp || Date.now(),
-      ...item
+      id: String(id),
+      createdAt: raw.createdAt || raw.timestamp || Date.now(),
+      updatedAt: raw.updatedAt || Date.now(),
+      ...raw
     }
 
     const serialized = this._serializeJsonFields(record)
-    const keys = Object.keys(serialized)
-    const placeholders = keys.map(() => '?').join(', ')
-    const values = Object.values(serialized)
+    // Filter hanya field yang ada di skema kolom tabel
+    const tableCols = sqlite.prepare(`PRAGMA table_info(${this.tableName})`).all().map(c => c.name)
+    const validEntries = Object.entries(serialized)
+      .map(([k, v]) => [this._toSnake(k), v])
+      .filter(([colName]) => tableCols.includes(colName))
 
-    // Mapping camelCase to snake_case jika diperlukan atau gunakan nama kolom asli
+    const keys = validEntries.map(([k]) => k)
+    const placeholders = keys.map(() => '?').join(', ')
+    const values = validEntries.map(([, v]) => v)
+
     const stmt = sqlite.prepare(`
-      INSERT OR REPLACE INTO ${this.tableName} (${keys.map(k => this._toSnake(k)).join(', ')})
+      INSERT OR REPLACE INTO ${this.tableName} (${keys.join(', ')})
       VALUES (${placeholders})
     `)
 
@@ -342,16 +443,21 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
     memories: dbStore.memories,
     sessions: dbStore.sessions,
     chatTurns: dbStore.chatTurns,
+    chat_turns: dbStore.chatTurns,
     chatArchive: dbStore.chatArchives,
     chatArchives: dbStore.chatArchives,
+    chat_archives: dbStore.chatArchives,
     documents: dbStore.documents,
     relationships: dbStore.relationships,
     subagents: dbStore.subagents,
     subagent_messages: dbStore.subagentMessages,
     subagentMessages: dbStore.subagentMessages,
     learnedSkills: dbStore.learnedSkills,
+    learned_skills: dbStore.learnedSkills,
     agentTasks: dbStore.agentTasks,
-    agentTaskSteps: dbStore.agentTaskSteps
+    agent_tasks: dbStore.agentTasks,
+    agentTaskSteps: dbStore.agentTaskSteps,
+    agent_task_steps: dbStore.agentTaskSteps
   }
 
   const restoreTransaction = sqlite.transaction(() => {
@@ -366,6 +472,17 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
         }
         results[key] = items.length
       }
+    }
+
+    // Jika dump memuat config, sinkronisasikan juga ke config.json server
+    const restoredConfig = rawTables.config
+    if (Array.isArray(restoredConfig) && restoredConfig.length > 0) {
+      try {
+        const confObj = restoredConfig[0]
+        const finalConf = confObj.data ? (typeof confObj.data === 'string' ? JSON.parse(confObj.data) : confObj.data) : confObj
+        const cfgPath = path.join(CONFIG_DIR, 'config.json')
+        fs.writeFileSync(cfgPath, JSON.stringify(finalConf, null, 2), 'utf-8')
+      } catch (_) {}
     }
   })
 

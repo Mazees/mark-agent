@@ -623,12 +623,19 @@ export const useMarkPlan = ({
         }
 
         if (res && res.success) {
-          resultString =
-            res.data !== undefined
-              ? typeof res.data === 'string'
-                ? res.data
-                : JSON.stringify(res.data)
-              : res.message || 'Success'
+          if (res.data !== undefined) {
+            resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+          } else if (res.output !== undefined) {
+            resultString = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
+          } else if (res.result !== undefined) {
+            resultString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result)
+          } else if (res.content !== undefined) {
+            resultString = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+          } else if (res.contents !== undefined) {
+            resultString = typeof res.contents === 'string' ? res.contents : JSON.stringify(res.contents)
+          } else {
+            resultString = res.message || 'Success'
+          }
 
           // Pemotongan isi dokumen jika terlalu panjang
           if (tool === 'read-document') {
@@ -636,7 +643,7 @@ export const useMarkPlan = ({
             let fullText =
               typeof res.data === 'object' && res.data !== null
                 ? res.data.content || ''
-                : String(res.data || '')
+                : String(res.data || resultString || '')
             if (fullText && fullText.length > 2500) {
               resultString = `${fullText.slice(0, 2500)}\n\n[DOKUMEN DIPOTONG (Total: ${fullText.length} karakter). Gunakan read-document dengan query "${parts[0]}||kata_kunci" untuk pencarian spesifik]`
             }

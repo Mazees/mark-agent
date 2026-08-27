@@ -168,6 +168,7 @@ export const fetchAI = async (
     }
 
     let body = {
+      stream: false,
       temperature: Number(conf.temperature) || 0,
       messages: messages.map((m, index) => {
         let sanitizedContent = m.content
@@ -293,7 +294,52 @@ export const fetchAI = async (
       let rawText = await response.text()
       let cleanText = rawText.trim()
 
-      // 1. Tangani jika response berupa SSE Stream (Server-Sent Events)
+      // 1. Tangani jika response berupa JSON Array dari chunk completion (misal: [{"id": "...", "object": "chat.completion.chunk", ...}])
+      if (cleanText.startsWith('[') && cleanText.endsWith(']')) {
+        try {
+          const parsedArray = JSON.parse(cleanText)
+          if (Array.isArray(parsedArray) && parsedArray.length > 0) {
+            let combinedContent = ''
+            let reasoning = ''
+            let lastId = parsedArray[0]?.id || 'chatcmpl-array-stream'
+            let model = parsedArray[0]?.model || conf.customModel || conf.model || 'custom'
+            let isChunkArray = false
+
+            for (const item of parsedArray) {
+              if (item?.object === 'chat.completion.chunk' || item?.choices?.[0]?.delta) {
+                isChunkArray = true
+                const delta = item.choices?.[0]?.delta
+                if (delta) {
+                  if (delta.content) combinedContent += delta.content
+                  if (delta.reasoning_content) reasoning += delta.reasoning_content
+                  else if (delta.reasoning) reasoning += delta.reasoning
+                }
+              } else if (item?.choices?.[0]?.message?.content) {
+                isChunkArray = true
+                combinedContent += item.choices[0].message.content
+              }
+            }
+
+            if (isChunkArray && combinedContent) {
+              return {
+                id: lastId,
+                model,
+                choices: [
+                  {
+                    message: {
+                      role: 'assistant',
+                      content: combinedContent,
+                      reasoning: reasoning || null
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 2. Tangani jika response berupa SSE Stream (Server-Sent Events)
       if (cleanText.includes('data:') || cleanText.includes('[DONE]')) {
         const lines = cleanText.split('\n')
         let combinedContent = ''
@@ -416,10 +462,57 @@ export const fetchAI = async (
     } finally {
       activeAbortControllers.delete(parentAbortController)
     }
-    const message = data.choices[0].message
 
-    let content = message.content || ''
-    let reasoning = message.reasoning || message.reasoning_content || null
+    if (!data) {
+      throw new Error('API tidak mengembalikan data respon.')
+    }
+
+    // Defensive extraction untuk message & choices (mengakomodasi berbagai format OpenAI-compatible API)
+    let processedData = data
+    if (Array.isArray(processedData)) {
+      let combinedContent = ''
+      let combinedReasoning = ''
+      for (const item of processedData) {
+        const delta = item.choices?.[0]?.delta || item.choices?.[0]?.message
+        if (delta) {
+          if (delta.content) combinedContent += delta.content
+          if (delta.reasoning_content) combinedReasoning += delta.reasoning_content
+          else if (delta.reasoning) combinedReasoning += delta.reasoning
+        }
+      }
+      processedData = {
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: combinedContent,
+              reasoning: combinedReasoning || null
+            }
+          }
+        ]
+      }
+    }
+
+    const choice = Array.isArray(processedData.choices) && processedData.choices.length > 0 ? processedData.choices[0] : null
+    const message = choice?.message || choice?.delta || (processedData.message ? processedData.message : (processedData.response ? { content: processedData.response } : (processedData.result ? { content: processedData.result } : null)))
+
+    let content = ''
+    let reasoning = null
+
+    if (message) {
+      content = typeof message === 'string' ? message : (message.content || message.text || '')
+      reasoning = message.reasoning || message.reasoning_content || null
+    } else if (typeof processedData === 'string') {
+      content = processedData
+    } else if (processedData.content || processedData.text || processedData.response || processedData.result) {
+      content = processedData.content || processedData.text || processedData.response || processedData.result || ''
+      reasoning = processedData.reasoning || processedData.reasoning_content || null
+    } else if (processedData.error) {
+      const errMsg = typeof processedData.error === 'object' ? (processedData.error.message || JSON.stringify(processedData.error)) : processedData.error
+      throw new Error(`API mengembalikan error: ${errMsg}`)
+    } else {
+      throw new Error(`Format data API tidak dikenali atau kosong. Balasan mentah: ${JSON.stringify(processedData).slice(0, 150)}`)
+    }
 
     if (!reasoning && content.includes('<think>')) {
       const match = content.match(/<think>([\s\S]*?)<\/think>/)

@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "start": "node bin/mark.js",
-    "dev:server": "node src/server/index.js",
+    "dev": "node bin/mark.js --dev",
+    "dev:server": "node src/server/index.js --dev",
     "dev:ui": "vite",
     "build:ui": "vite build",
     "cli": "node bin/mark.js"

@@ -228,6 +228,12 @@ app.post('/api/sessions', (req, res) => {
   res.json({ success: true, data: record })
 })
 
+app.post('/api/sessions/batch', (req, res) => {
+  const items = req.body || []
+  const records = dbStore.sessions.insertBatch(items)
+  res.json({ success: true, count: records.length, data: records })
+})
+
 app.delete('/api/sessions/:id', (req, res) => {
   const { id } = req.params
   const success = dbStore.sessions.delete(id)
@@ -854,7 +860,9 @@ const rootDir = path.resolve(__dirname, '../../')
 const rendererDir = path.resolve(__dirname, '../renderer')
 
 async function setupWebUIServing() {
-  if (fs.existsSync(path.join(staticDir, 'index.html'))) {
+  const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
+
+  if (!isDev && fs.existsSync(path.join(staticDir, 'index.html'))) {
     app.use(express.static(staticDir))
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/stream')) return next()
@@ -867,8 +875,7 @@ async function setupWebUIServing() {
         root: rendererDir,
         configFile: path.join(rootDir, 'vite.config.js'),
         server: { middlewareMode: true, hmr: { port: 24679 } },
-        appType: 'spa',
-        logLevel: 'silent'
+        appType: 'spa'
       })
       app.use(vite.middlewares)
 
@@ -884,7 +891,9 @@ async function setupWebUIServing() {
           next(e)
         }
       })
-    } catch (_) {}
+    } catch (err) {
+      console.error('[WebUI Setup Error]:', err)
+    }
   }
 }
 
@@ -900,7 +909,7 @@ function startServer(portToTry) {
 
 server.on('listening', async () => {
   const address = server.address()
-  activePort = typeof address === 'object' && address ? address.port : portToTry
+  activePort = typeof address === 'object' && address ? address.port : activePort
   console.log(`\n======================================================`)
   console.log(`  MARK Core Server V5.0.0 siap di http://localhost:${activePort}`)
   console.log(`======================================================\n`)

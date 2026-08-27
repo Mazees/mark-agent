@@ -8,9 +8,11 @@
 import { runMonitor } from '../src/cli/monitor.js'
 import { stopDaemon } from '../src/server/tools/pc-agent.js'
 import { server } from '../src/server/index.js'
+import { closeUI } from '../src/server/launcher.js'
 
 process.on('SIGINT', () => {
   console.log('\n\x1b[33m● Mematikan MARK Core Engine...\x1b[0m')
+  closeUI()
   stopDaemon()
   if (server) {
     server.close(() => {

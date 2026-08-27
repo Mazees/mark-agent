@@ -174,4 +174,4 @@ export async function searchDocuments(queryText, threshold = 0.3, limit = 4) {
   }
 }
 
-export { memoryIndex, archiveIndex, documentIndex, turnPairIndex }
+export { memoryIndex, archiveIndex, documentIndex, turnPairIndex, insertMultiple }

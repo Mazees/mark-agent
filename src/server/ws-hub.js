@@ -18,6 +18,13 @@ class WebSocketHub {
   init(server) {
     this.wss = new WebSocketServer({ server, path: '/stream' })
 
+    this.wss.on('error', (err) => {
+      // Delegasikan error EADDRINUSE ke HTTP Server listener agar auto-fallback berjalan
+      if (err.code !== 'EADDRINUSE') {
+        console.error('[WebSocket Hub Error]:', err)
+      }
+    })
+
     this.wss.on('connection', (ws) => {
       this.clients.add(ws)
 

@@ -51,7 +51,7 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
   } = chatContext || {}
 
   const [sessions, setSessions] = useState([])
-  const [activeSessionId, setActiveSessionId] = useState(1)
+  const [activeSessionId, setActiveSessionId] = useState('1')
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')
@@ -81,16 +81,16 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
   }, [isOpen])
 
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
-  const currentDisplayMessages = activeSessionId === 1 ? mainChatData || [] : activeSessionData
+  const currentDisplayMessages = String(activeSessionId) === '1' ? mainChatData || [] : activeSessionData
 
   const isCurrentLoading =
-    runningSessionIds.map(Number).includes(Number(activeSessionId)) ||
-    (Number(activeSessionId) === 1 && !runningSessionIds.length && (isMainLoading || isAgentBusy))
+    runningSessionIds.map(String).includes(String(activeSessionId)) ||
+    (String(activeSessionId) === '1' && !runningSessionIds.length && (isMainLoading || isAgentBusy))
 
   // Sync active session data for custom sessions (id > 1)
   useEffect(() => {
     setVisibleMessageCount(30)
-    if (!isOpen || activeSessionId === 1) return
+    if (!isOpen || String(activeSessionId) === '1') return
     let isCancelled = false
     getChatData(activeSessionId).then((data) => {
       if (!isCancelled) {
@@ -105,7 +105,7 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
   // Real-time live background sync across sessions
   useEffect(() => {
     const handleSessionUpdate = (e) => {
-      if (e.detail && e.detail.sessionId === activeSessionId) {
+      if (e.detail && String(e.detail.sessionId) === String(activeSessionId)) {
         setActiveSessionData(e.detail.data || [])
       }
     }
@@ -245,7 +245,7 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
   const handleStopSession = () => {
     if (handleStop) handleStop(activeSessionId)
     if (window.api && window.api.browserClose) {
-      window.api.browserClose({ sessionId: activeSessionId === 1 ? 'main' : `workspace-${activeSessionId}` }).catch(() => {})
+      window.api.browserClose({ sessionId: String(activeSessionId) === '1' ? 'main' : `workspace-${activeSessionId}` }).catch(() => {})
     }
     setIsLocalLoading(false)
   }
@@ -256,15 +256,15 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
     (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || {
-    id: 1,
+  const activeSessionObj = sessions.find((s) => String(s.id) === String(activeSessionId)) || {
+    id: '1',
     title: 'Main Thread'
   }
 
   return (
     <>
       {/* Full-Screen Chat Studio Workspace (Below Window Controls Bar) */}
-      <div className="fixed inset-0 pt-10 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
+      <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
         {/* === LEFT SIDEBAR: SESSIONS LIST === */}
         <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
           {/* Sidebar Header */}
@@ -326,12 +326,12 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
             <div
               role="button"
               tabIndex={0}
-              onClick={() => setActiveSessionId(1)}
+              onClick={() => setActiveSessionId('1')}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setActiveSessionId(1)
+                if (e.key === 'Enter' || e.key === ' ') setActiveSessionId('1')
               }}
               className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/item cursor-pointer ${
-                activeSessionId === 1
+                String(activeSessionId) === '1'
                   ? 'bg-primary/20 border border-primary/40 text-white shadow-sm'
                   : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
               }`}
@@ -339,7 +339,7 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
                   className={`w-2 h-2 rounded-full shrink-0 ${
-                    runningSessionIds.map(Number).includes(1) ||
+                    runningSessionIds.map(String).includes('1') ||
                     (!runningSessionIds.length && (isMainLoading || isAgentBusy))
                       ? 'bg-warning animate-ping'
                       : 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
@@ -359,11 +359,11 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
             </div>
 
             {filteredSessions
-              .filter((s) => s.id !== 1)
+              .filter((s) => String(s.id) !== '1')
               .map((s) => {
-                const isActive = activeSessionId === s.id
-                const isEditing = editingSessionId === s.id
-                const isThisSessionRunning = runningSessionIds.map(Number).includes(Number(s.id))
+                const isActive = String(activeSessionId) === String(s.id)
+                const isEditing = String(editingSessionId) === String(s.id)
+                const isThisSessionRunning = runningSessionIds.map(String).includes(String(s.id))
 
                 return (
                   <div

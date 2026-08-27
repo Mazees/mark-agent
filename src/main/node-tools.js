@@ -960,9 +960,11 @@ export const NATIVE_TOOLS = {
         const { stdout, stderr } = await execPromise(`powershell.exe -Command "${query}"`, {
           cwd: activeRoot
         })
+        const outputText = stdout.trim() || (stderr.trim() ? `[STDERR]: ${stderr.trim()}` : 'Perintah berhasil dieksekusi tanpa output teks.')
         return {
           success: true,
-          output: stdout.trim() || 'Perintah berhasil dieksekusi tanpa output teks.',
+          data: outputText,
+          output: outputText,
           error: stderr.trim() || null
         }
       } catch (error) {
@@ -1005,6 +1007,39 @@ export const NATIVE_TOOLS = {
     handler: async (query, config) => {
       const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
       return await gitRevert(activeRoot, query?.trim() || '')
+    }
+  },
+  'select-directory': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        const desc = (query || 'Pilih Folder Workspace Proyek').replace(/'/g, "''").replace(/"/g, '`"')
+        const script = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::EnableVisualStyles(); $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${desc}'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }`
+        const { stdout } = await execPromise(`powershell.exe -NoProfile -STA -Command "${script}"`)
+        const selectedPath = stdout.trim()
+        return {
+          success: true,
+          path: selectedPath || null,
+          data: selectedPath || null
+        }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+  'open-folder': {
+    needsApproval: false,
+    handler: async (query, config) => {
+      try {
+        let targetPath = query?.trim()
+        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        if (!targetPath) targetPath = activeRoot
+        else if (!path.isAbsolute(targetPath)) targetPath = path.join(activeRoot, targetPath)
+        await execPromise(`explorer.exe "${targetPath}"`)
+        return { success: true, message: `Folder dibuka: ${targetPath}` }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
     }
   },
   'run-task': {

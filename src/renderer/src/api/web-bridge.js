@@ -254,6 +254,18 @@ export const webApi = {
     return webApi.checkToolApproval(tool, query)
   },
 
+  selectDirectory: async (description = 'Pilih Folder Workspace Proyek') => {
+    try {
+      const res = await webApi.executeNativeTool('select-directory', description)
+      if (res && res.success && res.path) {
+        return res.path
+      }
+      return null
+    } catch (_) {
+      return null
+    }
+  },
+
   // Browser Automation Bridges
   browserNavigate: async (url) => webApi.executeNativeTool('browser-navigate', url),
   browserReadDom: async () => webApi.executeNativeTool('browser-read-dom', ''),
@@ -601,6 +613,25 @@ export const webApi = {
   listBackgroundTasks: async () => {
     const res = await fetch(`${API_BASE}/api/tasks/daemon/list`)
     return await res.json()
+  },
+
+  // 14. Database Backup & Restore API
+  exportDatabase: async () => {
+    const res = await fetch(`${API_BASE}/api/db/export`)
+    const json = await res.json()
+    return json.data || json
+  },
+  restoreDatabase: async (dumpData, overwrite = true) => {
+    const res = await fetch(`${API_BASE}/api/db/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dumpData, overwrite })
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal memulihkan database.')
+    }
+    return json
   },
 
   // Window Controls (WebUI App Mode)
