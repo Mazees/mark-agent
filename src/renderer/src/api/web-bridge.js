@@ -3,10 +3,25 @@
  * Menghubungkan antarmuka React secara langsung ke Node.js Core Backend via REST API & WebSocket.
  */
 
-const SERVER_HOST = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost'
-const SERVER_PORT = 3000
-const API_BASE = `http://${SERVER_HOST}:${SERVER_PORT}`
-const WS_BASE = `ws://${SERVER_HOST}:${SERVER_PORT}/stream`
+const isBrowser = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.startsWith('file:')
+
+export const SERVER_CONFIG = {
+  host: typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost',
+  port: typeof window !== 'undefined' && window.location?.port ? Number(window.location.port) || 3000 : 3000,
+  apiBase: isBrowser ? window.location.origin : 'http://localhost:3000',
+  wsProtocol: isBrowser && window.location.protocol === 'https:' ? 'wss:' : 'ws:',
+  wsHost: isBrowser ? window.location.host : 'localhost:3000',
+  get wsBase() {
+    return `${this.wsProtocol}//${this.wsHost}/stream`
+  }
+}
+
+export const SERVER_HOST = SERVER_CONFIG.host
+export const SERVER_PORT = SERVER_CONFIG.port
+export const API_BASE = SERVER_CONFIG.apiBase
+export const WS_PROTOCOL = SERVER_CONFIG.wsProtocol
+export const WS_HOST = SERVER_CONFIG.wsHost
+export const WS_BASE = SERVER_CONFIG.wsBase
 
 let ws = null
 const listeners = new Map()
@@ -166,6 +181,28 @@ export const webApi = {
     return json.data || []
   },
 
+  // Database Backup & Restore API (SQLite server-side)
+  exportDatabase: async () => {
+    const res = await fetch(`${API_BASE}/api/db/export`)
+    const json = await res.json()
+    return json.data
+  },
+
+  restoreDatabase: async (dumpData, overwrite = true) => {
+    const res = await fetch(`${API_BASE}/api/db/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dumpData, overwrite })
+    })
+    const json = await res.json()
+    return json
+  },
+
+  onDatabaseRestored: (callback) => {
+    addWebListener('db:restored', callback)
+    return () => removeWebListener('db:restored', callback)
+  },
+
   // 5. System Notifications & Windows
   showNotification: (title, body) => {
     if (typeof Notification !== 'undefined') {
@@ -244,15 +281,326 @@ export const webApi = {
   osFocusWindow: async (title) => webApi.executeNativeTool('os-focus-window', title),
   osAskUser: async (query) => webApi.executeNativeTool('os-ask', query),
 
-  // Plugins & Skills
-  getPlugins: async () => [],
-  getSkills: async () => [],
-  readSkill: async (name) => webApi.executeNativeTool('read-skill', name),
-  saveSkill: async (name, content) => webApi.executeNativeTool('write-file', `${name}||${content}`),
-  deleteSkill: async (name) => webApi.executeNativeTool('delete-file', name),
+  // 7. Pure Node.js Skills Engine
+  getSkills: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/skills`)
+      const json = await res.json()
+      return json.data || []
+    } catch (_) {
+      return []
+    }
+  },
+
+  getSkillTree: async (name) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/tree`)
+      const json = await res.json()
+      return json.data || []
+    } catch (_) {
+      return []
+    }
+  },
+
+  readSkillFile: async (name, filePath = 'SKILL.md') => {
+    try {
+      const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/file?filePath=${encodeURIComponent(filePath)}`)
+      const json = await res.json()
+      return json.data?.content || ''
+    } catch (_) {
+      return ''
+    }
+  },
+
+  readSkill: async (name) => {
+    return await webApi.readSkillFile(name, 'SKILL.md')
+  },
+
+  saveSkillFile: async (name, filePath, content) => {
+    const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath, content })
+    })
+    return await res.json()
+  },
+
+  saveSkill: async (name, content) => {
+    return await webApi.saveSkillFile(name, 'SKILL.md', content)
+  },
+
+  createSkillItem: async (name, itemPath, isFolder = false) => {
+    const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/item`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemPath, isFolder })
+    })
+    return await res.json()
+  },
+
+  renameSkillItem: async (name, oldPath, newPath) => {
+    const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath })
+    })
+    return await res.json()
+  },
+
+  deleteSkillItem: async (name, itemPath) => {
+    const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/item`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemPath })
+    })
+    return await res.json()
+  },
+
+  deleteSkill: async (name) => {
+    const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}`, {
+      method: 'DELETE'
+    })
+    return await res.json()
+  },
+
+  installSkill: async (fileOrBuffer, overrideName = null) => {
+    const body = fileOrBuffer instanceof File || fileOrBuffer instanceof Blob ? fileOrBuffer : new Blob([fileOrBuffer])
+    const url = overrideName ? `${API_BASE}/api/skills/install?name=${encodeURIComponent(overrideName)}` : `${API_BASE}/api/skills/install`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body
+    })
+    return await res.json()
+  },
+
   onSkillsUpdated: (cb) => {
     addWebListener('skills:updated', cb)
     return () => removeWebListener('skills:updated', cb)
+  },
+
+  // 8. Dynamic Plugins Engine
+  getPlugins: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/plugins`)
+      const json = await res.json()
+      return json.data || []
+    } catch (_) {
+      return []
+    }
+  },
+
+  reloadPlugins: async () => {
+    const res = await fetch(`${API_BASE}/api/plugins/reload`, { method: 'POST' })
+    const json = await res.json()
+    return json.data || []
+  },
+
+  createPlugin: async (payload) => {
+    const res = await fetch(`${API_BASE}/api/plugins/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    return await res.json()
+  },
+
+  togglePlugin: async (name, isEnabled) => {
+    const res = await fetch(`${API_BASE}/api/plugins/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, isEnabled })
+    })
+    return await res.json()
+  },
+
+  deletePlugin: async (name) => {
+    const res = await fetch(`${API_BASE}/api/plugins/${encodeURIComponent(name)}`, {
+      method: 'DELETE'
+    })
+    return await res.json()
+  },
+
+  executePluginAction: async (action, query) => {
+    const res = await fetch(`${API_BASE}/api/plugins/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, query })
+    })
+    return await res.json()
+  },
+
+  openPluginFolder: async () => {
+    return webApi.executeNativeTool('run-powershell', 'explorer.exe "$HOME\\Documents\\Mark Plugins"')
+  },
+
+  openSpecificFolder: async (folderPath) => {
+    return webApi.executeNativeTool('run-powershell', `explorer.exe "${folderPath}"`)
+  },
+
+  onPluginsUpdated: (cb) => {
+    addWebListener('plugins:updated', cb)
+    return () => removeWebListener('plugins:updated', cb)
+  },
+
+  // 9. Document RAG Binary Parser
+  parseDocument: async (arrayBuffer, isDocx = false) => {
+    const res = await fetch(`${API_BASE}/api/documents/parse?isDocx=${isDocx}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: arrayBuffer
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) throw new Error(json.error || 'Parse error')
+    return json.text
+  },
+
+  // 10. Awareness & OS Vision
+  getActivityBuffer: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/awareness/activity-buffer`)
+      const json = await res.json()
+      return json.data || []
+    } catch (_) {
+      return []
+    }
+  },
+
+  getSystemIdleSeconds: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/awareness/idle-time`)
+      const json = await res.json()
+      return json.idleSeconds || 0
+    } catch (_) {
+      return 0
+    }
+  },
+
+  takeScreenshot: async () => {
+    const res = await fetch(`${API_BASE}/api/os/screenshot`, { method: 'POST' })
+    const json = await res.json()
+    if (!json.success) throw new Error(json.error || 'Failed to capture screenshot')
+    return json.data
+  },
+
+  // 11. Google Workspace API
+  googleStatus: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/google/status`)
+      const json = await res.json()
+      return json
+    } catch (_) {
+      return { success: false, isConnected: false }
+    }
+  },
+  googleConnect: async (clientId, clientSecret) => {
+    const res = await fetch(`${API_BASE}/api/google/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, clientSecret })
+    })
+    return await res.json()
+  },
+  googleDisconnect: async () => {
+    const res = await fetch(`${API_BASE}/api/google/disconnect`, { method: 'POST' })
+    return await res.json()
+  },
+
+  // 12. Telegram Bot API & Listeners
+  tgGetStatus: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/telegram/status`)
+      return await res.json()
+    } catch (_) {
+      return { status: 'disconnected' }
+    }
+  },
+  tgGetHistory: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/telegram/history`)
+      const json = await res.json()
+      return json.data || []
+    } catch (_) {
+      return []
+    }
+  },
+  tgStart: async (token) => {
+    const res = await fetch(`${API_BASE}/api/telegram/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    })
+    return await res.json()
+  },
+  tgStop: async () => {
+    const res = await fetch(`${API_BASE}/api/telegram/stop`, { method: 'POST' })
+    return await res.json()
+  },
+  tgSendMessage: async (chatId, message) => {
+    const res = await fetch(`${API_BASE}/api/telegram/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, message })
+    })
+    return await res.json()
+  },
+  tgAgentExecutionDone: async (payload) => {
+    const res = await fetch(`${API_BASE}/api/telegram/agent-done`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    return await res.json()
+  },
+  tgBroadcastToAdmins: async (message) => {
+    const res = await fetch(`${API_BASE}/api/telegram/broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    })
+    return await res.json()
+  },
+  onTgConnection: (cb) => {
+    addWebListener('tg:connection', cb)
+    return () => removeWebListener('tg:connection', cb)
+  },
+  onTgThinking: (cb) => {
+    addWebListener('tg:thinking', cb)
+    return () => removeWebListener('tg:thinking', cb)
+  },
+  onTgMessage: (cb) => {
+    addWebListener('tg:message', cb)
+    return () => removeWebListener('tg:message', cb)
+  },
+  onTgReplySent: (cb) => {
+    addWebListener('tg:reply-sent', cb)
+    return () => removeWebListener('tg:reply-sent', cb)
+  },
+  onTgRequestAgentExecution: (cb) => {
+    addWebListener('tg:request-agent-execution', cb)
+    return () => removeWebListener('tg:request-agent-execution', cb)
+  },
+
+  // 13. Background Task Daemon API
+  spawnBackgroundTask: async (taskId, command, cwd) => {
+    const res = await fetch(`${API_BASE}/api/tasks/daemon/spawn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, command, cwd })
+    })
+    return await res.json()
+  },
+  readBackgroundTaskOutput: async (taskId, lines = 40) => {
+    const res = await fetch(`${API_BASE}/api/tasks/daemon/${encodeURIComponent(taskId)}/output?lines=${lines}`)
+    return await res.json()
+  },
+  killBackgroundTask: async (taskId) => {
+    const res = await fetch(`${API_BASE}/api/tasks/daemon/${encodeURIComponent(taskId)}/kill`, { method: 'POST' })
+    return await res.json()
+  },
+  listBackgroundTasks: async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/daemon/list`)
+    return await res.json()
   },
 
   // Window Controls (WebUI App Mode)

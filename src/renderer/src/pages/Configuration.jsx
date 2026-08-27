@@ -326,6 +326,100 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     URL.revokeObjectURL(url)
   }
 
+  // Backup & Restore Database
+  const [isExportingDb, setIsExportingDb] = useState(false)
+  const [isRestoringDb, setIsRestoringDb] = useState(false)
+  const fileInputRef = useRef(null)
+
+  const handleExportFullDatabase = async () => {
+    try {
+      setIsExportingDb(true)
+      let exportData
+      if (window.api && window.api.exportDatabase) {
+        exportData = await window.api.exportDatabase()
+      } else {
+        const memory = await db.memory.toArray()
+        const sessions = await db.sessions.toArray()
+        const configs = await db.config.toArray()
+        const chatArchive = await db.chatArchive.toArray()
+        const documents = await db.documents.toArray()
+        const relationships = await db.relationships.toArray()
+        const learnedSkills = await db.learnedSkills.toArray()
+        const chatTurns = await db.chatTurns.toArray()
+        exportData = {
+          app: 'MARK',
+          version: '4.x',
+          exportedAt: new Date().toISOString(),
+          tables: {
+            memory,
+            sessions,
+            config: configs,
+            chatArchive,
+            documents,
+            relationships,
+            learnedSkills,
+            chatTurns
+          }
+        }
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mark-full-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(`Gagal export database: ${err.message}`)
+    } finally {
+      setIsExportingDb(false)
+    }
+  }
+
+  const handleFileRestoreSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const result = await confirm({
+      title: 'Restore Database?',
+      message:
+        'Data saat ini akan ditimpa dengan data backup dari file JSON yang kamu pilih. Lanjutkan?',
+      isError: true,
+      confirmText: 'Ya, Restore Sekarang'
+    })
+
+    if (!result.isConfirmed) {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    setIsRestoringDb(true)
+    try {
+      const text = await file.text()
+      const dumpData = JSON.parse(text)
+
+      if (window.api && window.api.restoreDatabase) {
+        await window.api.restoreDatabase(dumpData, true)
+      } else if (dumpData.tables) {
+        for (const [tblName, rows] of Object.entries(dumpData.tables)) {
+          if (db[tblName] && Array.isArray(rows)) {
+            await db[tblName].clear()
+            await db[tblName].bulkAdd(rows)
+          }
+        }
+      }
+
+      alert('Database MARK berhasil dipulihkan / dimigrasikan!')
+      window.location.reload()
+    } catch (err) {
+      alert(`Gagal restore database: ${err.message}`)
+    } finally {
+      setIsRestoringDb(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const handleSaveConfiguration = async () => {
     // Validasi API Key
     if (!config.groqApiKey?.trim()) {
@@ -1145,6 +1239,82 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                     </button>
                     <button className="btn btn-soft btn-info btn-sm" onClick={handleExportChat}>
                       Export Chat ke JSON
+                    </button>
+                  </div>
+                </div>
+
+                {/* Database Backup & Restore */}
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <p className="text-sm font-semibold">Pencadangan & Migrasi Database</p>
+                    <p className="text-xs opacity-50 mt-0.5">
+                      Simpan atau pulihkan seluruh database SQLite/Dexie (Memori MMS, sesi, turn pairs, hubungan 4D, & RAG).
+                    </p>
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileRestoreSelect}
+                    accept=".json"
+                    className="hidden"
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-primary btn-sm gap-2"
+                      onClick={handleExportFullDatabase}
+                      disabled={isExportingDb || isRestoringDb}
+                    >
+                      {isExportingDb ? (
+                        <span className="loading loading-spinner loading-xs"></span>
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                      )}
+                      Backup Seluruh Database (JSON)
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-warning btn-sm gap-2"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isExportingDb || isRestoringDb}
+                    >
+                      {isRestoringDb ? (
+                        <span className="loading loading-spinner loading-xs"></span>
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                      )}
+                      Restore Database (V4/V5 JSON)
                     </button>
                   </div>
                 </div>

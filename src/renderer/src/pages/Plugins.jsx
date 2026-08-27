@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import 'driver.js/dist/driver.css'
 import { useEffect, useState } from 'react'
 import { useConfirm } from '../hooks/useConfirm'
+import { webApi } from '../api/web-bridge'
 
 export default function Plugins() {
   const navigate = useNavigate()
@@ -68,20 +69,26 @@ export default function Plugins() {
   }
 
   const loadData = async () => {
-    const data = await window.api.getPlugins()
+    const data = await webApi.getPlugins()
     setPlugins(data || [])
   }
 
   useEffect(() => {
     loadData()
+    const unsub = webApi.onPluginsUpdated(() => {
+      loadData()
+    })
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
   }, [])
 
   const handleOpenFolder = async () => {
-    await window.api.openPluginFolder()
+    await webApi.openPluginFolder()
   }
 
   const handleReload = async () => {
-    await window.api.reloadPlugins()
+    await webApi.reloadPlugins()
     loadData()
   }
 
@@ -516,7 +523,7 @@ export default function Plugins() {
                           }
                         }
 
-                        const res = await window.api.createPlugin(formData)
+                        const res = await webApi.createPlugin(formData)
                         if (res.success) {
                           setFormStatus({
                             success: true,
@@ -572,7 +579,7 @@ export default function Plugins() {
                         className="toggle toggle-primary toggle-sm mt-1"
                         checked={pl.isEnabled !== false}
                         onChange={async (e) => {
-                          await window.api.togglePlugin(pl.name, e.target.checked)
+                          await webApi.togglePlugin(pl.name, e.target.checked)
                           loadData()
                         }}
                       />
@@ -600,7 +607,7 @@ export default function Plugins() {
                     <div className="flex gap-2 w-full mt-6 pt-4 border-t border-base-content/10">
                       <button
                         className="btn btn-sm btn-outline flex-1"
-                        onClick={() => window.api.openSpecificFolder(pl.folderPath)}
+                        onClick={() => webApi.openSpecificFolder(pl.folderPath)}
                       >
                         Buka Folder
                       </button>

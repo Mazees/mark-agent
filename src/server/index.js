@@ -10,6 +10,49 @@ import { launchUI } from './launcher.js'
 import { runPlanning } from './agent/planner.js'
 import { initOramaIndices } from './memory/orama-store.js'
 import { dbStore } from './memory/db-store.js'
+import {
+  listAllSkills,
+  getSkillFileTree,
+  readSkillFileContent,
+  writeSkillFileContent,
+  createSkillItem,
+  renameSkillItem,
+  deleteSkillItem,
+  deleteFullSkill,
+  installSkillPackage,
+  getSkillsDirectory
+} from '../main/skills/skill-manager.js'
+import {
+  loadAllPlugins,
+  executePluginAction,
+  savePluginDefinition,
+  togglePluginState,
+  deletePlugin,
+  getPluginsDirectory
+} from '../main/plugins/plugin-loader.js'
+import {
+  getActivityBuffer,
+  getSystemIdleSeconds,
+  startOsActivityTracking
+} from './tools/awareness-tracker.js'
+import { captureDesktopScreenshotBase64 } from './tools/screen-service.js'
+import { connectGoogle, disconnectGoogle, getGoogleStatus } from '../main/google/google-service.js'
+import {
+  startTelegramBot,
+  stopTelegramBot,
+  getConnectionStatus as getTelegramStatus,
+  sendTelegramMessage,
+  sendTelegramToAdmins,
+  triggerTelegramMusicDownload,
+  finishAgentExecution,
+  uiMessageHistory as tgMessageHistory
+} from '../main/telegram/telegram-service.js'
+import {
+  spawnBackgroundTask,
+  readBackgroundTaskOutput,
+  killBackgroundTask,
+  listBackgroundTasks
+} from '../main/task-daemon.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,9 +76,11 @@ app.use(cors())
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
-// Inisialisasi WebSocket Hub & Orama
+// Inisialisasi WebSocket Hub, Orama, Plugins & Awareness Tracking
 wsHub.init(server)
 initOramaIndices().catch(() => {})
+loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
+startOsActivityTracking(60000)
 
 // Daftarkan listener event chat dan abort dari WebSocket
 wsHub.on('chat:send', async (payload) => {
@@ -133,7 +178,7 @@ app.post('/api/chat', async (req, res) => {
 })
 
 // 4. Memory API
-app.get('/api/memories', (req, res) => {
+app.get('/api/memories', (_req, res) => {
   res.json({ success: true, data: dbStore.memories.getAll() })
 })
 
@@ -143,9 +188,567 @@ app.post('/api/memories', (req, res) => {
   res.json({ success: true, data: record })
 })
 
+app.delete('/api/memories/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.memories.delete(id)
+  res.json({ success })
+})
+
 // 5. Chat Turns API
-app.get('/api/turns', (req, res) => {
+app.get('/api/turns', (_req, res) => {
   res.json({ success: true, data: dbStore.chatTurns.getAll() })
+})
+
+app.post('/api/turns', (req, res) => {
+  const item = req.body
+  const record = dbStore.chatTurns.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.post('/api/turns/batch', (req, res) => {
+  const items = req.body || []
+  const records = dbStore.chatTurns.insertBatch(items)
+  res.json({ success: true, count: records.length, data: records })
+})
+
+// 5b. Sessions API
+app.get('/api/sessions', (_req, res) => {
+  res.json({ success: true, data: dbStore.sessions.getAll() })
+})
+
+app.get('/api/sessions/:id', (req, res) => {
+  const { id } = req.params
+  const session = dbStore.sessions.getById(id)
+  res.json({ success: true, data: session })
+})
+
+app.post('/api/sessions', (req, res) => {
+  const item = req.body
+  const record = dbStore.sessions.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.delete('/api/sessions/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.sessions.delete(id)
+  res.json({ success })
+})
+
+// 5c. Chat Archives API
+app.get('/api/archives', (_req, res) => {
+  res.json({ success: true, data: dbStore.chatArchives.getAll() })
+})
+
+app.post('/api/archives', (req, res) => {
+  const item = req.body
+  const record = dbStore.chatArchives.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.delete('/api/archives/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.chatArchives.delete(id)
+  res.json({ success })
+})
+
+// 5d. Documents (RAG) API & Binary Parser
+app.get('/api/documents', (_req, res) => {
+  res.json({ success: true, data: dbStore.documents.getAll() })
+})
+
+app.post('/api/documents', (req, res) => {
+  const item = req.body
+  const record = dbStore.documents.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.post('/api/documents/batch', (req, res) => {
+  const items = req.body || []
+  const records = dbStore.documents.insertBatch(items)
+  res.json({ success: true, count: records.length, data: records })
+})
+
+app.delete('/api/documents/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.documents.delete(id)
+  res.json({ success })
+})
+
+app.post(
+  '/api/documents/parse',
+  express.raw({
+    type: ['application/octet-stream', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    limit: '50mb'
+  }),
+  async (req, res) => {
+    try {
+      const isDocx = req.query.isDocx === 'true'
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body)
+
+      if (!buffer || buffer.length === 0) {
+        return res.status(400).json({ success: false, error: 'Buffer dokumen kosong.' })
+      }
+
+      let extractedText = ''
+      if (isDocx) {
+        const mammothModule = await import('mammoth')
+        const extractRaw = mammothModule.extractRawText || mammothModule.default?.extractRawText
+        const result = await extractRaw({ buffer })
+        extractedText = result.value || ''
+      } else {
+        const pdfModule = await import('pdf-parse')
+        if (pdfModule.PDFParse) {
+          const parser = new pdfModule.PDFParse({ data: buffer })
+          const textRes = await parser.getText()
+          extractedText = typeof textRes === 'string' ? textRes : textRes?.text || ''
+        } else if (typeof pdfModule.default === 'function') {
+          const pdfData = await pdfModule.default(buffer)
+          extractedText = pdfData.text || ''
+        }
+      }
+
+      if (!extractedText.trim()) {
+        return res.status(422).json({ success: false, error: 'Tidak ada teks yang dapat diekstraksi dari dokumen.' })
+      }
+
+      res.json({ success: true, text: extractedText })
+    } catch (err) {
+      console.error('[Document Parser Error]:', err)
+      res.status(500).json({ success: false, error: `Gagal mem-parse dokumen: ${err.message}` })
+    }
+  }
+)
+
+// 5e. Relationships 4D API
+app.get('/api/relationships/:userId', (req, res) => {
+  const { userId } = req.params
+  const rel = dbStore.relationships.getById(userId)
+  res.json({ success: true, data: rel })
+})
+
+app.post('/api/relationships', (req, res) => {
+  const item = req.body
+  const record = dbStore.relationships.insert(item)
+  res.json({ success: true, data: record })
+})
+
+// 5f. Subagents & Messages API
+app.get('/api/subagents', (_req, res) => {
+  res.json({ success: true, data: dbStore.subagents.getAll() })
+})
+
+app.get('/api/subagents/:id', (req, res) => {
+  const { id } = req.params
+  const agent = dbStore.subagents.getById(id)
+  res.json({ success: true, data: agent })
+})
+
+app.post('/api/subagents', (req, res) => {
+  const item = req.body
+  const record = dbStore.subagents.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.delete('/api/subagents/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.subagents.delete(id)
+  res.json({ success })
+})
+
+app.get('/api/subagents/:id/messages', (req, res) => {
+  const { id } = req.params
+  const allMessages = dbStore.subagentMessages.getAll()
+  const agentMessages = allMessages.filter((m) => m.subagent_id === id || m.subagentId === id)
+  res.json({ success: true, data: agentMessages })
+})
+
+app.post('/api/subagents/messages', (req, res) => {
+  const item = req.body
+  const record = dbStore.subagentMessages.insert(item)
+  res.json({ success: true, data: record })
+})
+
+// 5g. Learned Skills Database API
+app.get('/api/learned-skills', (_req, res) => {
+  res.json({ success: true, data: dbStore.learnedSkills.getAll() })
+})
+
+app.post('/api/learned-skills', (req, res) => {
+  const item = req.body
+  const record = dbStore.learnedSkills.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.delete('/api/learned-skills/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.learnedSkills.delete(id)
+  res.json({ success })
+})
+
+// 5h. Pure Node.js Mark Skills File System API
+app.get('/api/skills', async (_req, res) => {
+  try {
+    const skills = await listAllSkills()
+    res.json({ success: true, data: skills })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.get('/api/skills/:name/tree', async (req, res) => {
+  const { name } = req.params
+  try {
+    const tree = await getSkillFileTree(name)
+    res.json({ success: true, data: tree })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.get('/api/skills/:name/file', async (req, res) => {
+  const { name } = req.params
+  const filePath = req.query.filePath || 'SKILL.md'
+  try {
+    const content = await readSkillFileContent(name, filePath)
+    res.json({ success: true, data: { content, filePath } })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/skills/:name/file', async (req, res) => {
+  const { name } = req.params
+  const { filePath = 'SKILL.md', content = '' } = req.body || {}
+  try {
+    await writeSkillFileContent(name, filePath, content)
+    wsHub.broadcast('skills:updated', { name, filePath, timestamp: Date.now() })
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/skills/:name/item', async (req, res) => {
+  const { name } = req.params
+  const { itemPath, isFolder = false } = req.body || {}
+  try {
+    await createSkillItem(name, itemPath, isFolder)
+    wsHub.broadcast('skills:updated', { name, itemPath, timestamp: Date.now() })
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/skills/:name/rename', async (req, res) => {
+  const { name } = req.params
+  const { oldPath, newPath } = req.body || {}
+  try {
+    const success = await renameSkillItem(name, oldPath, newPath)
+    wsHub.broadcast('skills:updated', { name, timestamp: Date.now() })
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.delete('/api/skills/:name/item', async (req, res) => {
+  const { name } = req.params
+  const itemPath = req.query.itemPath || req.body?.itemPath
+  try {
+    const success = await deleteSkillItem(name, itemPath)
+    wsHub.broadcast('skills:updated', { name, itemPath, timestamp: Date.now() })
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.delete('/api/skills/:name', async (req, res) => {
+  const { name } = req.params
+  try {
+    const success = await deleteFullSkill(name)
+    wsHub.broadcast('skills:updated', { name, timestamp: Date.now() })
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post(
+  '/api/skills/install',
+  express.raw({ type: 'application/zip', limit: '50mb' }),
+  async (req, res) => {
+    try {
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body)
+      const overrideName = req.query.name || null
+      const result = await installSkillPackage(buffer, overrideName)
+      wsHub.broadcast('skills:updated', { ...result, timestamp: Date.now() })
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message })
+    }
+  }
+)
+
+// 5i. Dynamic Plugin System API
+app.get('/api/plugins', async (_req, res) => {
+  try {
+    const plugins = await loadAllPlugins()
+    res.json({ success: true, data: plugins })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/plugins/reload', async (_req, res) => {
+  try {
+    const plugins = await loadAllPlugins()
+    wsHub.broadcast('plugins:updated', { timestamp: Date.now() })
+    res.json({ success: true, data: plugins })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/plugins/save', async (req, res) => {
+  try {
+    const manifest = await savePluginDefinition(req.body)
+    wsHub.broadcast('plugins:updated', { name: manifest.name, timestamp: Date.now() })
+    res.json({ success: true, data: manifest })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/plugins/toggle', async (req, res) => {
+  const { name, isEnabled } = req.body || {}
+  try {
+    const success = await togglePluginState(name, Boolean(isEnabled))
+    wsHub.broadcast('plugins:updated', { name, isEnabled, timestamp: Date.now() })
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.delete('/api/plugins/:name', async (req, res) => {
+  const { name } = req.params
+  try {
+    const success = await deletePlugin(name)
+    wsHub.broadcast('plugins:updated', { name, timestamp: Date.now() })
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/plugins/execute', async (req, res) => {
+  const { action, query } = req.body || {}
+  try {
+    const result = await executePluginAction(action, query)
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// 5j. Awareness Engine API (Zero-Electron)
+app.get('/api/awareness/activity-buffer', (_req, res) => {
+  res.json({ success: true, data: getActivityBuffer() })
+})
+
+app.get('/api/awareness/idle-time', async (_req, res) => {
+  try {
+    const idleSeconds = await getSystemIdleSeconds()
+    res.json({ success: true, idleSeconds })
+  } catch (_) {
+    res.json({ success: true, idleSeconds: 0 })
+  }
+})
+
+// 5k. Desktop OS Tools & Screen Capture API
+app.post('/api/os/screenshot', async (_req, res) => {
+  try {
+    const base64Data = await captureDesktopScreenshotBase64()
+    res.json({ success: true, data: base64Data })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// 5l. Agent Tasks & Steps API
+app.get('/api/tasks', (_req, res) => {
+  res.json({ success: true, data: dbStore.agentTasks.getAll() })
+})
+
+app.get('/api/tasks/:id', (req, res) => {
+  const { id } = req.params
+  const task = dbStore.agentTasks.getById(id)
+  res.json({ success: true, data: task })
+})
+
+app.post('/api/tasks', (req, res) => {
+  const item = req.body
+  const record = dbStore.agentTasks.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.delete('/api/tasks/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.agentTasks.delete(id)
+  res.json({ success })
+})
+
+app.get('/api/tasks/:id/steps', (req, res) => {
+  const { id } = req.params
+  const allSteps = dbStore.agentTaskSteps.getAll()
+  const taskSteps = allSteps.filter((s) => s.task_id === id || s.taskId === id)
+  res.json({ success: true, data: taskSteps })
+})
+
+app.post('/api/tasks/steps', (req, res) => {
+  const item = req.body
+  const record = dbStore.agentTaskSteps.insert(item)
+  res.json({ success: true, data: record })
+})
+
+// 5m. Background Task Daemon API
+app.post('/api/tasks/daemon/spawn', (req, res) => {
+  const { taskId, command, cwd } = req.body || {}
+  const result = spawnBackgroundTask(taskId, command, cwd)
+  res.json(result)
+})
+
+app.get('/api/tasks/daemon/:taskId/output', (req, res) => {
+  const { taskId } = req.params
+  const lineCount = parseInt(req.query.lines, 10) || 40
+  const result = readBackgroundTaskOutput(taskId, lineCount)
+  res.json(result)
+})
+
+app.post('/api/tasks/daemon/:taskId/kill', (req, res) => {
+  const { taskId } = req.params
+  const result = killBackgroundTask(taskId)
+  res.json(result)
+})
+
+app.get('/api/tasks/daemon/list', (_req, res) => {
+  const result = listBackgroundTasks()
+  res.json(result)
+})
+
+// 5n. Google Workspace OAuth API
+app.get('/api/google/status', async (_req, res) => {
+  try {
+    const isConnected = await getGoogleStatus()
+    res.json({ success: true, isConnected })
+  } catch (err) {
+    res.json({ success: false, isConnected: false, error: err.message })
+  }
+})
+
+app.post('/api/google/connect', async (req, res) => {
+  const { clientId, clientSecret } = req.body || {}
+  try {
+    const success = await connectGoogle(clientId, clientSecret)
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/google/disconnect', async (_req, res) => {
+  try {
+    const success = await disconnectGoogle()
+    res.json({ success })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// 5o. Telegram Bot Controller API
+app.get('/api/telegram/status', (_req, res) => {
+  res.json({ success: true, ...getTelegramStatus() })
+})
+
+app.get('/api/telegram/history', (_req, res) => {
+  res.json({ success: true, data: tgMessageHistory })
+})
+
+app.post('/api/telegram/start', async (req, res) => {
+  const { token } = req.body || {}
+  try {
+    await startTelegramBot(token)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/telegram/stop', (_req, res) => {
+  stopTelegramBot()
+  res.json({ success: true })
+})
+
+app.post('/api/telegram/send', async (req, res) => {
+  const { chatId, message } = req.body || {}
+  const result = await sendTelegramMessage(chatId, message)
+  res.json(result)
+})
+
+app.post('/api/telegram/agent-done', async (req, res) => {
+  try {
+    await finishAgentExecution(req.body || {})
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/telegram/broadcast', async (req, res) => {
+  const { message } = req.body || {}
+  try {
+    await sendTelegramToAdmins(message)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/telegram/download-music', async (req, res) => {
+  try {
+    await triggerTelegramMusicDownload(req.body || {})
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// 5m. Database Backup & Restore API (SQLite <-> WebUI / V4 Dexie Dump)
+app.get('/api/db/export', (_req, res) => {
+  try {
+    const dump = dbStore.exportFullDatabase()
+    res.json({ success: true, data: dump })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/db/restore', async (req, res) => {
+  const { dumpData, overwrite = true } = req.body || {}
+  if (!dumpData) {
+    return res.status(400).json({ success: false, error: 'dumpData tidak boleh kosong' })
+  }
+  try {
+    const result = dbStore.restoreFullDatabase(dumpData, { overwrite })
+    // Re-inisialisasi/Sinkronisasi indeks Orama jika diperlukan
+    initOramaIndices().catch(() => {})
+    wsHub.broadcast('db:restored', { timestamp: Date.now(), imported: result.imported })
+    res.json({ success: true, data: result })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 // 6. Vector Embedding API
@@ -288,12 +891,35 @@ async function setupWebUIServing() {
 // Inisialisasi penyajian WebUI
 await setupWebUIServing()
 
-// --- Start Server ---
-server.listen(PORT, async () => {
+// --- Start Server dengan Auto-Fallback Port jika terjadi EADDRINUSE ---
+let activePort = Number(PORT)
+
+function startServer(portToTry) {
+  server.listen(portToTry)
+}
+
+server.on('listening', async () => {
+  const address = server.address()
+  activePort = typeof address === 'object' && address ? address.port : portToTry
+  console.log(`\n======================================================`)
+  console.log(`  MARK Core Server V5.0.0 siap di http://localhost:${activePort}`)
+  console.log(`======================================================\n`)
+
   if (!process.argv.includes('--no-launch') && !process.argv.includes('--headless')) {
-    await launchUI({ port: PORT, mode: 'app' })
+    await launchUI({ port: activePort, mode: 'app' })
   }
 })
 
-export { app, server, wsHub, activeConfig }
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`[Port Manager] Port ${activePort} sedang digunakan aplikasi lain. Mencoba port ${activePort + 1}...`)
+    activePort += 1
+    setTimeout(() => startServer(activePort), 200)
+  } else {
+    console.error('[Server Error]', err)
+  }
+})
 
+startServer(activePort)
+
+export { app, server, wsHub, activeConfig, activePort }

@@ -1,140 +1,181 @@
-import Dexie from 'dexie'
+/**
+ * Client DB Layer (MARK SQLite Proxy Adapter)
+ * Menyediakan antarmuka async yang kompatibel dengan seluruh komponen UI/hooks,
+ * namun menyimpan data secara persisten dan terpusat di server SQLite backend.
+ */
 import { generateVector } from './vectorMemory'
 import { insertMemoryToOrama, updateMemoryInOrama, deleteMemoryFromOrama } from './oramaStore'
+import { API_BASE } from './web-bridge'
+export { SERVER_CONFIG, SERVER_HOST, SERVER_PORT, API_BASE } from './web-bridge'
 
-export const db = new Dexie('mark-db')
+// Helper fetch JSON
+async function apiGet(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`)
+    const json = await res.json()
+    return json.data ?? json
+  } catch (err) {
+    console.error(`[DB Proxy] GET ${path} error:`, err)
+    return null
+  }
+}
 
-db.version(1).stores({
-  // Index gabungan hanya [type+key] agar data lain (summary, confidence) bisa diubah
-  memory: '++id, [type+key], type, key, summary, memory, confidence',
-  sessions: '++id, title, data, timestamp',
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch'
-})
+async function apiPost(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    const json = await res.json()
+    return json.data ?? json
+  } catch (err) {
+    console.error(`[DB Proxy] POST ${path} error:`, err)
+    return null
+  }
+}
 
-db.version(2).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel'
-})
+async function apiDelete(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' })
+    const json = await res.json()
+    return json.success ?? false
+  } catch (err) {
+    console.error(`[DB Proxy] DELETE ${path} error:`, err)
+    return false
+  }
+}
 
-db.version(3).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider'
-})
+/**
+ * Tabel Proxy untuk kompatibilitas kode lama yang memanggil `db.namaTabel`
+ */
+class TableProxy {
+  constructor(endpoint, idField = 'id') {
+    this.endpoint = endpoint
+    this.idField = idField
+  }
 
-db.version(4).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel'
-})
+  async toArray() {
+    const data = await apiGet(this.endpoint)
+    return Array.isArray(data) ? data : []
+  }
 
-db.version(5).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel'
-})
+  async get(id) {
+    const item = await apiGet(`${this.endpoint}/${id}`)
+    return item || null
+  }
 
-db.version(6).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins'
-})
+  async add(item) {
+    const res = await apiPost(this.endpoint, item)
+    return res?.[this.idField] || res?.id
+  }
 
-db.version(7).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel'
-})
+  async put(item) {
+    return await apiPost(this.endpoint, item)
+  }
 
-db.version(8).stores({
-  chatArchive: '++id, summary, timestamp, topic',
-  documents: '++id, docName, chunkIndex, content, timestamp'
-})
+  async bulkAdd(items) {
+    return await apiPost(`${this.endpoint}/batch`, items)
+  }
 
-db.version(9).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel, awarenessEnabled'
-})
+  async bulkPut(items) {
+    return await apiPost(`${this.endpoint}/batch`, items)
+  }
 
-db.version(10).upgrade(async tx => {
-  // Reset all vectors to force re-indexing with the new multilingual MiniLM model
-  return tx.memory.toCollection().modify(mem => {
-    mem.vector = [];
-  });
-})
+  async delete(id) {
+    return await apiDelete(`${this.endpoint}/${id}`)
+  }
 
-db.version(11).upgrade(async tx => {
-  // Reset vectors for chatArchive and documents as well because of the model change
-  await tx.chatArchive.toCollection().modify(arc => {
-    arc.vector = [];
-  });
-  await tx.documents.toCollection().modify(doc => {
-    doc.vector = [];
-  });
-})
+  async update(id, updates) {
+    const existing = await this.get(id)
+    if (!existing) return null
+    return await this.put({ ...existing, ...updates })
+  }
 
-db.version(12).upgrade(async tx => {
-  // BUMP VERSION 12: Memastikan benar-benar terhapus (jika v11 ke-skip)
-  await tx.chatArchive.toCollection().modify(arc => {
-    arc.vector = [];
-  });
-  await tx.documents.toCollection().modify(doc => {
-    doc.vector = [];
-  });
-})
+  async count() {
+    const arr = await this.toArray()
+    return arr.length
+  }
 
-db.version(13).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled'
-})
+  async clear() {
+    const arr = await this.toArray()
+    for (const item of arr) {
+      const id = item[this.idField] || item.id || item.pairId
+      if (id) await this.delete(id)
+    }
+    return true
+  }
 
-db.version(14).stores({
-  relationships: 'userId, warmth, sarcasm_level, trust, energy, obedience, lastEvaluation, evalCount'
-})
+  where(field) {
+    return {
+      equals: (val) => ({
+        toArray: async () => {
+          const all = await this.toArray()
+          return all.filter((item) => String(item[field]) === String(val))
+        },
+        delete: async () => {
+          const all = await this.toArray()
+          const matched = all.filter((item) => String(item[field]) === String(val))
+          for (const m of matched) {
+            const id = m[this.idField] || m.id || m.pairId
+            if (id) await this.delete(id)
+          }
+          return matched.length
+        },
+        first: async () => {
+          const all = await this.toArray()
+          return all.find((item) => String(item[field]) === String(val)) || null
+        }
+      }),
+      equalsIgnoreCase: (val) => ({
+        first: async () => {
+          const all = await this.toArray()
+          return all.find((item) => String(item[field] || '').toLowerCase() === String(val || '').toLowerCase()) || null
+        }
+      })
+    }
+  }
 
-db.version(15).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel'
-})
+  orderBy(field) {
+    return {
+      reverse: () => ({
+        toArray: async () => {
+          const all = await this.toArray()
+          return all.sort((a, b) => (b[field] || 0) - (a[field] || 0))
+        }
+      }),
+      toArray: async () => {
+        const all = await this.toArray()
+        return all.sort((a, b) => (a[field] || 0) - (b[field] || 0))
+      }
+    }
+  }
+}
 
-db.version(16).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel'
-}).upgrade(async tx => {
-  return tx.table('config').toCollection().modify(config => {
-    config.tgBotToken = config.tgBotToken || ''
-    config.tgAdminIds = config.tgAdminIds || ''
-    delete config.waAdminNumber
-    delete config.waPendingAdmins
-    delete config.waApprovedAdmins
-  })
-})
-
-db.version(17).stores({
-  agentTasks: 'id, status, mode, updatedAt, createdAt',
-  agentTaskSteps: 'id, taskId, [taskId+index], status, updatedAt'
-})
-
-db.version(18).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity'
-}).upgrade(tx => {
-  return tx.table('config').toCollection().modify(config => {
-    config.windowOpacity = config.windowOpacity ?? 0.85
-  })
-})
-
-db.version(19).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity, localWhisperModel'
-}).upgrade(tx => {
-  return tx.table('config').toCollection().modify(config => {
-    config.localWhisperModel = config.localWhisperModel ?? 'whisper-small'
-  })
-})
-
-db.version(20).stores({
-  subagents: 'id, status, parentSessionId, createdAt, updatedAt',
-  subagent_messages: '++id, subagentId, sender, timestamp'
-})
-
-db.version(21).stores({
-  learnedSkills: 'id, name, createdAt, updatedAt'
-})
-
-db.version(22).stores({
-  chatTurns: 'pairId, sessionId, timestamp'
-})
+// Objek db proxy menggantikan Dexie instances
+export const db = {
+  config: new TableProxy('/api/config'),
+  memory: new TableProxy('/api/memories'),
+  memories: new TableProxy('/api/memories'),
+  sessions: new TableProxy('/api/sessions'),
+  chatTurns: new TableProxy('/api/turns', 'pairId'),
+  chatArchive: new TableProxy('/api/archives'),
+  documents: new TableProxy('/api/documents'),
+  relationships: new TableProxy('/api/relationships', 'userId'),
+  subagents: new TableProxy('/api/subagents'),
+  subagent_messages: new TableProxy('/api/subagents/messages'),
+  subagentMessages: new TableProxy('/api/subagents/messages'),
+  learnedSkills: new TableProxy('/api/skills'),
+  agentTasks: new TableProxy('/api/tasks'),
+  agentTaskSteps: new TableProxy('/api/tasks/steps')
+}
 
 // --- VALIDATION ---
-const VALID_TYPES = ['profile', 'preference', 'notes', 'learn'];
+const VALID_TYPES = ['profile', 'preference', 'notes', 'learn']
 
 function getValidType(type) {
-  const t = (type || '').toLowerCase().trim();
-  return VALID_TYPES.includes(t) ? t : 'notes';
+  const t = (type || '').toLowerCase().trim()
+  return VALID_TYPES.includes(t) ? t : 'notes'
 }
 
 // --- CREATE ---
@@ -144,13 +185,15 @@ export async function insertMemory(data) {
   const vector = (await generateVector(memoryText)) || []
 
   try {
-    const id = await db.memory.add({
+    const record = await db.memory.put({
       type: type,
       summary: data.summary || '',
       memory: memoryText,
       vector: vector
     })
+    const id = record?.id || record
     insertMemoryToOrama({ id, type, summary: data.summary || '', memory: memoryText, vector }).catch(console.error)
+    return id
   } catch (error) {
     console.error('Error Save Memory:', error)
   }
@@ -192,20 +235,19 @@ export async function updateMemory(data, maybeMemory, maybeType) {
 
     const newMemoryText = memoryText.trim()
     const type = getValidType(typeStr)
-    
+
     let updatePayload = {
+      id,
       type: type,
       summary: summaryStr,
       memory: newMemoryText,
       vector: (await generateVector(newMemoryText)) || []
     }
 
-    if (id && !isNaN(id)) {
-      await db.memory.update(id, updatePayload)
+    if (id) {
+      await db.memory.put(updatePayload)
       updateMemoryInOrama(id, { ...updatePayload, id: id }).catch(console.error)
-      console.log(`✅ Memory ID ${id} berhasil di-update.`)
-    } else {
-      console.warn('⚠️ Gagal update: ID tidak ditemukan.')
+      console.log(`[DB Proxy] Memory ID ${id} berhasil di-update.`)
     }
   } catch (error) {
     console.error('Error in updateMemory logic:', error)
@@ -215,15 +257,12 @@ export async function updateMemory(data, maybeMemory, maybeType) {
 // --- DELETE ---
 export async function deleteMemory(data) {
   try {
-    const id = typeof data === 'object' && data !== null ? data.id : Number(data)
-    if (id && !isNaN(id)) {
+    const id = typeof data === 'object' && data !== null ? data.id : String(data)
+    if (id) {
       await db.memory.delete(id)
       deleteMemoryFromOrama(id).catch(console.error)
-      console.log(`🗑️ Memory ID ${id} berhasil dihapus oleh Mark.`)
       return { success: true }
     }
-    
-    console.warn('⚠️ Gagal menghapus memory: ID tidak ditemukan dalam perintah delete.')
     return { success: false, error: 'ID is required for deletion' }
   } catch (error) {
     console.error('Error in deleteMemory logic:', error)
@@ -243,22 +282,16 @@ export async function getAllMemory() {
 
 export async function getAllConfig() {
   try {
-    const data = await db.config.toArray()
-    if (data && data.length > 0) {
-      if (!data[0].geminiWebModel) {
-        data[0].geminiWebModel = 'gemini-3.6-flash'
-      }
-      if (!data[0].aiProvider) {
-        data[0].aiProvider = 'gemini-web'
-      }
-      if (data[0].windowOpacity === undefined) {
-        data[0].windowOpacity = 0.85
-      }
-      if (!data[0].localWhisperModel) {
-        data[0].localWhisperModel = 'whisper-small'
-      }
+    const configData = await apiGet('/api/config')
+    if (configData) {
+      const conf = { ...configData, id: 1 }
+      if (!conf.geminiWebModel) conf.geminiWebModel = 'gemini-3.6-flash'
+      if (!conf.aiProvider) conf.aiProvider = 'gemini-web'
+      if (conf.windowOpacity === undefined) conf.windowOpacity = 0.85
+      if (!conf.localWhisperModel) conf.localWhisperModel = 'whisper-small'
+      return [conf]
     }
-    return data || []
+    return []
   } catch (error) {
     console.error('Error in getAllConfig logic:', error)
     return []
@@ -267,12 +300,9 @@ export async function getAllConfig() {
 
 export async function saveConfiguration(data) {
   try {
-    await db.config.put({ ...data, id: 1 })
-    if (window.api && window.api.syncConfig) {
-      window.api.syncConfig(data)
-    }
+    await apiPost('/api/config', data)
     window.dispatchEvent(new CustomEvent('config-updated', { detail: data }))
-    console.log('Configuration saved:', data)
+    console.log('[DB Proxy] Configuration saved:', data)
   } catch (error) {
     console.error('Error in saveConfiguration logic:', error)
   }
@@ -280,7 +310,7 @@ export async function saveConfiguration(data) {
 
 export async function getAlwaysAllowedPaths() {
   try {
-    const configs = await db.config.toArray()
+    const configs = await getAllConfig()
     if (configs && configs.length > 0 && Array.isArray(configs[0].alwaysAllowedPaths)) {
       return configs[0].alwaysAllowedPaths
     }
@@ -294,20 +324,14 @@ export async function getAlwaysAllowedPaths() {
 export async function addAlwaysAllowedPath(pathToAdd) {
   try {
     if (!pathToAdd) return []
-    const configs = await db.config.toArray()
+    const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
-    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths)
-      ? currentConfig.alwaysAllowedPaths
-      : []
+    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths) ? currentConfig.alwaysAllowedPaths : []
 
     if (!currentList.includes(pathToAdd)) {
       const updatedList = [...currentList, pathToAdd]
-      const newConfig = { ...currentConfig, id: 1, alwaysAllowedPaths: updatedList }
-      await db.config.put(newConfig)
-      if (window.api && window.api.syncConfig) {
-        window.api.syncConfig(newConfig)
-      }
-      window.dispatchEvent(new CustomEvent('config-updated', { detail: newConfig }))
+      const newConfig = { ...currentConfig, alwaysAllowedPaths: updatedList }
+      await saveConfiguration(newConfig)
       return updatedList
     }
     return currentList
@@ -319,19 +343,13 @@ export async function addAlwaysAllowedPath(pathToAdd) {
 
 export async function removeAlwaysAllowedPath(pathToRemove) {
   try {
-    const configs = await db.config.toArray()
+    const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
-    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths)
-      ? currentConfig.alwaysAllowedPaths
-      : []
+    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths) ? currentConfig.alwaysAllowedPaths : []
 
     const updatedList = currentList.filter((p) => p !== pathToRemove)
-    const newConfig = { ...currentConfig, id: 1, alwaysAllowedPaths: updatedList }
-    await db.config.put(newConfig)
-    if (window.api && window.api.syncConfig) {
-      window.api.syncConfig(newConfig)
-    }
-    window.dispatchEvent(new CustomEvent('config-updated', { detail: newConfig }))
+    const newConfig = { ...currentConfig, alwaysAllowedPaths: updatedList }
+    await saveConfiguration(newConfig)
     return updatedList
   } catch (error) {
     console.error('Error in removeAlwaysAllowedPath logic:', error)
@@ -354,28 +372,26 @@ export async function getAllSessions() {
   try {
     const sessions = await db.sessions.toArray()
     if (!sessions || sessions.length === 0) {
-      const defaultSession = { id: 1, title: 'Main Thread', data: [], timestamp: Date.now() }
+      const defaultSession = { id: '1', title: 'Main Thread', data: [], timestamp: Date.now() }
       await db.sessions.put(defaultSession)
       return [defaultSession]
     }
-    // Pastikan session id: 1 ada
-    const hasMain = sessions.some((s) => s.id === 1)
+    const hasMain = sessions.some((s) => String(s.id) === '1')
     if (!hasMain) {
-      await db.sessions.put({ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() })
-      sessions.unshift({ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() })
+      await db.sessions.put({ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() })
+      sessions.unshift({ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() })
     }
     sessions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
     return sessions
   } catch (error) {
     console.error('Error in getAllSessions:', error)
-    return [{ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() }]
+    return [{ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() }]
   }
 }
 
 export async function getChatData(id) {
   try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const session = await db.sessions.get(numId)
+    const session = await db.sessions.get(id)
     return session?.data || []
   } catch (error) {
     console.error('Error in getChatData logic:', error)
@@ -385,8 +401,7 @@ export async function getChatData(id) {
 
 export async function getSession(id) {
   try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    return await db.sessions.get(numId)
+    return await db.sessions.get(id)
   } catch (error) {
     console.error('Error in getSession:', error)
     return null
@@ -396,12 +411,10 @@ export async function getSession(id) {
 export async function createSession(title = 'Percakapan Baru', initialData = []) {
   try {
     const timestamp = Date.now()
-    const id = await db.sessions.add({
-      title: title.trim() || 'Percakapan Baru',
-      data: initialData,
-      timestamp
-    })
-    return { id, title, data: initialData, timestamp }
+    const id = `session_${timestamp}_${Math.random().toString(36).slice(2, 6)}`
+    const session = { id, title: title.trim() || 'Percakapan Baru', data: initialData, timestamp }
+    await db.sessions.put(session)
+    return session
   } catch (error) {
     console.error('Error in createSession:', error)
     throw error
@@ -410,10 +423,9 @@ export async function createSession(title = 'Percakapan Baru', initialData = [])
 
 export async function saveSession(id, data, title = null, workspaceRoot = null) {
   try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const existing = await db.sessions.get(numId)
+    const existing = await db.sessions.get(id)
     const updatePayload = {
-      id: numId,
+      id: String(id),
       data: data,
       timestamp: Date.now()
     }
@@ -422,7 +434,7 @@ export async function saveSession(id, data, title = null, workspaceRoot = null) 
     } else if (existing?.title) {
       updatePayload.title = existing.title
     } else {
-      updatePayload.title = numId === 1 ? 'Main Thread' : 'Percakapan Baru'
+      updatePayload.title = String(id) === '1' ? 'Main Thread' : 'Percakapan Baru'
     }
     if (workspaceRoot !== null && workspaceRoot !== undefined) {
       updatePayload.workspaceRoot = workspaceRoot
@@ -439,8 +451,7 @@ export async function saveSession(id, data, title = null, workspaceRoot = null) 
 
 export async function setSessionWorkspace(id, workspaceRoot) {
   try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const existing = await db.sessions.get(numId)
+    const existing = await db.sessions.get(id)
     if (existing) {
       existing.workspaceRoot = workspaceRoot
       existing.timestamp = Date.now()
@@ -448,8 +459,8 @@ export async function setSessionWorkspace(id, workspaceRoot) {
       return true
     } else {
       await db.sessions.put({
-        id: numId,
-        title: numId === 1 ? 'Main Thread' : 'Percakapan Baru',
+        id: String(id),
+        title: String(id) === '1' ? 'Main Thread' : 'Percakapan Baru',
         data: [],
         workspaceRoot,
         timestamp: Date.now()
@@ -464,23 +475,13 @@ export async function setSessionWorkspace(id, workspaceRoot) {
 
 export async function deleteSession(id) {
   try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    if (numId === 1) {
-      // Main Thread tidak boleh dihapus barisnya, hanya dikosongkan pesannya
-      await db.sessions.put({ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() })
-      await db.chatTurns.where('sessionId').equals(1).delete()
-      try {
-        const { deleteTurnPairsBySessionFromOrama } = await import('./oramaStore')
-        await deleteTurnPairsBySessionFromOrama(1)
-      } catch (_) {}
+    if (String(id) === '1') {
+      await db.sessions.put({ id: '1', title: 'Main Thread', data: [], timestamp: Date.now() })
+      await db.chatTurns.where('sessionId').equals('1').delete()
       return true
     }
-    await db.sessions.delete(numId)
-    await db.chatTurns.where('sessionId').equals(Number(numId)).delete()
-    try {
-      const { deleteTurnPairsBySessionFromOrama } = await import('./oramaStore')
-      await deleteTurnPairsBySessionFromOrama(numId)
-    } catch (_) {}
+    await db.sessions.delete(id)
+    await db.chatTurns.where('sessionId').equals(String(id)).delete()
     return true
   } catch (error) {
     console.error('Error in deleteSession:', error)
@@ -490,8 +491,7 @@ export async function deleteSession(id) {
 
 export async function renameSession(id, newTitle) {
   try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const existing = await db.sessions.get(numId)
+    const existing = await db.sessions.get(id)
     if (existing) {
       existing.title = newTitle.trim() || existing.title
       existing.timestamp = Date.now()
@@ -536,7 +536,7 @@ export async function deleteChatArchive(id) {
 // --- DOCUMENTS CRUD ---
 export async function bulkInsertDocuments(chunks) {
   try {
-    return await db.documents.bulkAdd(chunks, { allKeys: true })
+    return await db.documents.bulkAdd(chunks)
   } catch (error) {
     console.error('Error in bulkInsertDocuments:', error)
     throw error
@@ -555,9 +555,10 @@ export async function getAllDocuments() {
 export async function deleteDocumentByName(docName) {
   try {
     const chunks = await db.documents.where('docName').equals(docName).toArray()
-    const ids = chunks.map(c => c.id)
-    await db.documents.bulkDelete(ids)
-    return ids
+    for (const chunk of chunks) {
+      if (chunk.id) await db.documents.delete(chunk.id)
+    }
+    return chunks.map((c) => c.id)
   } catch (error) {
     console.error('Error in deleteDocumentByName:', error)
     throw error
@@ -569,7 +570,7 @@ export async function getCoreMemory() {
   try {
     const profiles = await db.memory.where('type').equals('profile').toArray()
     if (profiles && profiles.length > 0) {
-      return profiles.map(p => `- ${p.summary || p.memory}`).join('\n')
+      return profiles.map((p) => `- ${p.summary || p.memory}`).join('\n')
     }
   } catch (error) {
     console.error('Error in getCoreMemory:', error)
@@ -593,12 +594,11 @@ export async function getRelationship(userId = 'owner') {
   try {
     const data = await db.relationships.get(userId)
     if (!data) {
-      // Return default traits untuk user baru
       return { userId, ...DEFAULT_TRAITS, lastEvaluation: null }
     }
     return data
   } catch (error) {
-    console.error('[DB] Error getRelationship:', error)
+    console.error('[DB Proxy] Error getRelationship:', error)
     return { userId, ...DEFAULT_TRAITS, lastEvaluation: null }
   }
 }
@@ -606,22 +606,21 @@ export async function getRelationship(userId = 'owner') {
 export async function saveRelationship(data) {
   try {
     await db.relationships.put(data)
-    console.log(`[DB] Relationship saved for ${data.userId}:`, data)
+    console.log(`[DB Proxy] Relationship saved for ${data.userId}:`, data)
   } catch (error) {
-    console.error('[DB] Error saveRelationship:', error)
+    console.error('[DB Proxy] Error saveRelationship:', error)
   }
 }
 
-// --- LEARNED SKILLS (METASYSTEM SELF-IMPROVEMENT) ---
+// --- LEARNED SKILLS ---
 export async function saveLearnedSkill({ name, description, content }) {
   try {
     const cleanName = (name || '').toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/^-+|-+$/g, '')
     if (!cleanName || !content) return null
 
-    // Cek apakah skill dengan nama ini sudah ada (update) atau baru (create)
     const existing = await db.learnedSkills.where('name').equalsIgnoreCase(cleanName).first()
     const id = existing?.id || `learned_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-    
+
     const skillData = {
       id,
       name: cleanName,
@@ -632,10 +631,9 @@ export async function saveLearnedSkill({ name, description, content }) {
     }
 
     await db.learnedSkills.put(skillData)
-    console.log(`[DB] Learned skill saved: /${cleanName}`, skillData)
     return skillData
   } catch (err) {
-    console.error('[DB] Error saveLearnedSkill:', err)
+    console.error('[DB Proxy] Error saveLearnedSkill:', err)
     return null
   }
 }
@@ -646,7 +644,7 @@ export async function getLearnedSkill(name) {
     const cleanName = name.toLowerCase().trim()
     return await db.learnedSkills.where('name').equalsIgnoreCase(cleanName).first()
   } catch (err) {
-    console.error('[DB] Error getLearnedSkill:', err)
+    console.error('[DB Proxy] Error getLearnedSkill:', err)
     return null
   }
 }
@@ -655,7 +653,7 @@ export async function getAllLearnedSkills() {
   try {
     return await db.learnedSkills.orderBy('createdAt').reverse().toArray()
   } catch (err) {
-    console.error('[DB] Error getAllLearnedSkills:', err)
+    console.error('[DB Proxy] Error getAllLearnedSkills:', err)
     return []
   }
 }
@@ -663,29 +661,28 @@ export async function getAllLearnedSkills() {
 export async function deleteLearnedSkill(idOrName) {
   try {
     if (!idOrName) return false
-    const existing = (await db.learnedSkills.get(idOrName)) || (await db.learnedSkills.where('name').equalsIgnoreCase(idOrName).first())
+    const existing =
+      (await db.learnedSkills.get(idOrName)) ||
+      (await db.learnedSkills.where('name').equalsIgnoreCase(idOrName).first())
     if (existing) {
       await db.learnedSkills.delete(existing.id)
       return true
     }
     return false
   } catch (err) {
-    console.error('[DB] Error deleteLearnedSkill:', err)
+    console.error('[DB Proxy] Error deleteLearnedSkill:', err)
     return false
   }
 }
 
-// ==========================================================================
-// CHAT TURNS (TURN-PAIR VECTOR MEMORY)
-// ==========================================================================
-
+// --- CHAT TURNS ---
 export async function saveChatTurn(turnData) {
   try {
     if (!turnData || !turnData.pairId) return null
     await db.chatTurns.put(turnData)
     return turnData
   } catch (err) {
-    console.error('[DB] Error saveChatTurn:', err)
+    console.error('[DB Proxy] Error saveChatTurn:', err)
     return null
   }
 }
@@ -696,16 +693,17 @@ export async function saveBatchChatTurns(turnsArray) {
     await db.chatTurns.bulkPut(turnsArray)
     return turnsArray.length
   } catch (err) {
-    console.error('[DB] Error saveBatchChatTurns:', err)
+    console.error('[DB Proxy] Error saveBatchChatTurns:', err)
     return 0
   }
 }
 
 export async function getAllChatTurns() {
   try {
-    return await db.chatTurns.toArray()
+    const data = await db.chatTurns.toArray()
+    return data || []
   } catch (err) {
-    console.error('[DB] Error getAllChatTurns:', err)
+    console.error('[DB Proxy] Error getAllChatTurns:', err)
     return []
   }
 }
@@ -713,9 +711,9 @@ export async function getAllChatTurns() {
 export async function getChatTurnsBySession(sessionId) {
   try {
     if (!sessionId) return []
-    return await db.chatTurns.where('sessionId').equals(Number(sessionId)).toArray()
+    return await db.chatTurns.where('sessionId').equals(String(sessionId)).toArray()
   } catch (err) {
-    console.error('[DB] Error getChatTurnsBySession:', err)
+    console.error('[DB Proxy] Error getChatTurnsBySession:', err)
     return []
   }
 }
@@ -723,9 +721,9 @@ export async function getChatTurnsBySession(sessionId) {
 export async function deleteChatTurnsBySession(sessionId) {
   try {
     if (!sessionId) return 0
-    return await db.chatTurns.where('sessionId').equals(Number(sessionId)).delete()
+    return await db.chatTurns.where('sessionId').equals(String(sessionId)).delete()
   } catch (err) {
-    console.error('[DB] Error deleteChatTurnsBySession:', err)
+    console.error('[DB Proxy] Error deleteChatTurnsBySession:', err)
     return 0
   }
 }
@@ -734,8 +732,7 @@ export async function getChatTurnCount() {
   try {
     return await db.chatTurns.count()
   } catch (err) {
-    console.error('[DB] Error getChatTurnCount:', err)
+    console.error('[DB Proxy] Error getChatTurnCount:', err)
     return 0
   }
 }
-

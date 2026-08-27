@@ -1,385 +1,265 @@
 import fs from 'fs'
 import path from 'path'
-import { app, ipcMain, dialog } from 'electron'
+import os from 'os'
 import matter from 'gray-matter'
 import AdmZip from 'adm-zip'
 
-const getSkillDir = () => {
-  const dir = path.join(app.getPath('documents'), 'Mark Skills')
+export function getSkillsDirectory() {
+  const dir = path.join(os.homedir(), 'Documents', 'Mark Skills')
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
   return dir
 }
 
-let mainWin = null
-let skillWatcher = null
+export async function listAllSkills() {
+  const dir = getSkillsDirectory()
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+  const skills = []
 
-export const setupSkillWatcher = (window) => {
-  mainWin = window
-  try {
-    const dir = getSkillDir()
-    if (skillWatcher) {
-      skillWatcher.close()
-      skillWatcher = null
-    }
-    let debounceTimer = null
-    skillWatcher = fs.watch(dir, { recursive: true }, (eventType, filename) => {
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        if (mainWin && !mainWin.isDestroyed()) {
-          mainWin.webContents.send('skills-updated')
-        }
-      }, 300)
-    })
-  } catch (err) {
-    console.error('Failed to setup skill directory watcher:', err)
-  }
-}
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const skillFolderPath = path.join(dir, entry.name)
+      const skillMdPath = path.join(skillFolderPath, 'SKILL.md')
+      let name = entry.name
+      let description = 'Custom Mark Skill'
+      let author = 'User'
+      let tags = []
 
-export const notifySkillsUpdated = () => {
-  if (mainWin && !mainWin.isDestroyed()) {
-    mainWin.webContents.send('skills-updated')
-  }
-}
-
-export const setupSkillIPC = () => {
-  ipcMain.handle('get-skills', async () => {
-    try {
-      const dir = getSkillDir()
-      const files = await fs.promises.readdir(dir)
-      
-      const skills = []
-      for (const f of files) {
-        const fullPath = path.join(dir, f)
-        const stat = await fs.promises.stat(fullPath)
-
-        let isSkill = false
-        let name = ''
-        let filePath = ''
-        let description = 'Custom Mark Skill'
-
-        if (stat.isDirectory()) {
-          filePath = path.join(fullPath, 'SKILL.md')
-          if (fs.existsSync(filePath)) {
-            isSkill = true
-            name = f
-          }
-        } else if (f.endsWith('.md')) {
-          // Auto-migrate standalone .md to folder format
-          name = f.replace('.md', '')
-          const folderPath = path.join(dir, name)
-          if (!fs.existsSync(folderPath)) {
-            await fs.promises.mkdir(folderPath, { recursive: true })
-            const newFilePath = path.join(folderPath, 'SKILL.md')
-            await fs.promises.rename(fullPath, newFilePath)
-            filePath = newFilePath
-          } else {
-            // Folder already exists, just use the folder's SKILL.md and ignore the standalone file (or delete it)
-            filePath = path.join(folderPath, 'SKILL.md')
-          }
-          isSkill = true
-        }
-
-        if (isSkill) {
-          const content = await fs.promises.readFile(filePath, 'utf8')
-          try {
-            const parsed = matter(content)
-            if (parsed.data && parsed.data.description) {
-              description = parsed.data.description
-            }
-            if (parsed.data && parsed.data.name) {
-              name = parsed.data.name
-            }
-          } catch (err) {
-            console.error('Failed to parse YAML frontmatter for skill:', f, err)
-          }
-          skills.push({ name, description })
-        }
-      }
-      return skills
-    } catch (e) {
-      console.error('Failed to get skills', e)
-      return []
-    }
-  })
-
-  ipcMain.handle('read-skill', async (event, name) => {
-    try {
-      const dir = getSkillDir()
-      
-      // Check for folder-based skill
-      const folderPath = path.join(dir, name)
-      if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-        const skillFilePath = path.join(folderPath, 'SKILL.md')
-        if (fs.existsSync(skillFilePath)) {
-          return {
-            content: await fs.promises.readFile(skillFilePath, 'utf8'),
-            basePath: folderPath.replace(/\\/g, '/')
-          }
-        }
+      if (fs.existsSync(skillMdPath)) {
+        try {
+          const raw = await fs.promises.readFile(skillMdPath, 'utf-8')
+          const parsed = matter(raw)
+          if (parsed.data.name) name = parsed.data.name
+          if (parsed.data.description) description = parsed.data.description
+          if (parsed.data.author) author = parsed.data.author
+          if (Array.isArray(parsed.data.tags)) tags = parsed.data.tags
+        } catch (_) {}
       }
 
-      // Check for standalone .md file
-      const filePath = path.join(dir, `${name}.md`)
-      if (fs.existsSync(filePath)) {
-        return {
-          content: await fs.promises.readFile(filePath, 'utf8'),
-          basePath: dir.replace(/\\/g, '/')
-        }
-      }
-      return null
-    } catch (e) {
-      console.error('Failed to read skill', e)
-      return null
-    }
-  })
-
-  ipcMain.handle('save-skill', async (event, name, content) => {
-    try {
-      const dir = getSkillDir()
-      // Check if old standalone file exists
-      const oldStandalonePath = path.join(dir, `${name}.md`)
-      if (fs.existsSync(oldStandalonePath) && !fs.statSync(oldStandalonePath).isDirectory()) {
-        await fs.promises.writeFile(oldStandalonePath, content, 'utf8')
-        return true
-      }
-      // Otherwise, save in folder format
-      const folderPath = path.join(dir, name)
+      skills.push({
+        name,
+        folderName: entry.name,
+        description,
+        author,
+        tags,
+        path: skillFolderPath,
+        hasSkillMd: fs.existsSync(skillMdPath)
+      })
+    } else if (entry.name.endsWith('.md')) {
+      // Auto-migrate standalone .md to folder format
+      const cleanName = entry.name.replace('.md', '')
+      const folderPath = path.join(dir, cleanName)
+      const fullPath = path.join(dir, entry.name)
       if (!fs.existsSync(folderPath)) {
         await fs.promises.mkdir(folderPath, { recursive: true })
+        const newFilePath = path.join(folderPath, 'SKILL.md')
+        await fs.promises.rename(fullPath, newFilePath)
       }
-      const skillFilePath = path.join(folderPath, 'SKILL.md')
-      await fs.promises.writeFile(skillFilePath, content, 'utf8')
-      notifySkillsUpdated()
-      return true
-    } catch (e) {
-      console.error('Failed to save skill', e)
-      return false
+
+      const skillMdPath = path.join(folderPath, 'SKILL.md')
+      let name = cleanName
+      let description = 'Custom Mark Skill'
+      let author = 'User'
+      let tags = []
+      if (fs.existsSync(skillMdPath)) {
+        try {
+          const raw = await fs.promises.readFile(skillMdPath, 'utf-8')
+          const parsed = matter(raw)
+          if (parsed.data.name) name = parsed.data.name
+          if (parsed.data.description) description = parsed.data.description
+          if (parsed.data.author) author = parsed.data.author
+          if (Array.isArray(parsed.data.tags)) tags = parsed.data.tags
+        } catch (_) {}
+      }
+
+      skills.push({
+        name,
+        folderName: cleanName,
+        description,
+        author,
+        tags,
+        path: folderPath,
+        hasSkillMd: true
+      })
     }
-  })
+  }
+  return skills
+}
 
-  ipcMain.handle('delete-skill', async (event, name) => {
-    try {
-      const dir = getSkillDir()
-      const folderPath = path.join(dir, name)
-      if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-        await fs.promises.rm(folderPath, { recursive: true, force: true })
-        notifySkillsUpdated()
-        return true
-      }
-      const filePath = path.join(dir, `${name}.md`)
-      if (fs.existsSync(filePath)) {
-        await fs.promises.unlink(filePath)
-        notifySkillsUpdated()
-        return true
-      }
-      return false
-    } catch (e) {
-      console.error('Failed to delete skill', e)
-      return false
-    }
-  })
+export async function getSkillFileTree(skillFolderName) {
+  const dir = getSkillsDirectory()
+  const rootSkillPath = path.join(dir, skillFolderName)
+  if (!fs.existsSync(rootSkillPath)) return []
 
-  ipcMain.handle('show-open-dialog', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Mark Skill Package', extensions: ['zip'] }]
-    })
-    if (canceled) return []
-    return filePaths
-  })
+  async function walk(currentPath, relativePath = '') {
+    const entries = await fs.promises.readdir(currentPath, { withFileTypes: true })
+    const nodes = []
 
-  ipcMain.handle('install-skill', async (event, sourcePath) => {
-    try {
-      if (!sourcePath.endsWith('.zip')) {
-        throw new Error('Hanya mendukung file .zip')
-      }
+    for (const entry of entries) {
+      const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+      const entryFullPath = path.join(currentPath, entry.name)
 
-      const zip = new AdmZip(sourcePath)
-      const zipEntries = zip.getEntries()
-      
-      let hasSkillMd = false
-      for (const entry of zipEntries) {
-        if (entry.entryName.endsWith('SKILL.md')) {
-          hasSkillMd = true
-          break
-        }
-      }
-
-      if (!hasSkillMd) {
-        throw new Error('Invalid Skill Package: Tidak ditemukan file SKILL.md di dalam zip.')
-      }
-
-      // Check if all files are inside a single root folder
-      const firstEntry = zipEntries[0]
-      const firstPart = firstEntry ? firstEntry.entryName.split('/')[0] : ''
-      const isSingleRoot = firstPart && zipEntries.every(e => e.entryName.startsWith(firstPart + '/'))
-      
-      const dir = getSkillDir()
-      if (isSingleRoot) {
-        zip.extractAllTo(dir, true)
-      } else {
-        const zipName = path.basename(sourcePath, '.zip')
-        const targetPath = path.join(dir, zipName)
-        zip.extractAllTo(targetPath, true)
-      }
-
-      notifySkillsUpdated()
-      return true
-    } catch (e) {
-      console.error('Failed to install skill', e)
-      throw e
-    }
-  })
-
-  // === VSCODE-LIKE FILE MANAGER IPCs ===
-  const buildTree = (dirPath, basePath) => {
-    const result = []
-    const items = fs.readdirSync(dirPath)
-    for (const item of items) {
-      const itemPath = path.join(dirPath, item)
-      const stat = fs.statSync(itemPath)
-      const relativePath = path.relative(basePath, itemPath).replace(/\\/g, '/')
-      if (stat.isDirectory()) {
-        result.push({
-          name: item,
-          path: relativePath,
+      if (entry.isDirectory()) {
+        const children = await walk(entryFullPath, entryRelPath)
+        nodes.push({
+          name: entry.name,
+          path: entryRelPath,
           type: 'folder',
-          children: buildTree(itemPath, basePath)
+          children
         })
       } else {
-        result.push({
-          name: item,
-          path: relativePath,
+        nodes.push({
+          name: entry.name,
+          path: entryRelPath,
           type: 'file'
         })
       }
     }
-    // Sort: folders first, then files
-    return result.sort((a, b) => {
+
+    return nodes.sort((a, b) => {
       if (a.type === b.type) return a.name.localeCompare(b.name)
       return a.type === 'folder' ? -1 : 1
     })
   }
 
-  ipcMain.handle('get-skill-tree', async (event, name) => {
-    try {
-      const dir = getSkillDir()
-      const folderPath = path.join(dir, name)
-      if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-        return buildTree(folderPath, folderPath)
-      }
-      // If it's a standalone file, return a dummy tree
-      return [{ name: 'SKILL.md', path: 'SKILL.md', type: 'file' }]
-    } catch (e) {
-      console.error('Failed to get skill tree', e)
-      return []
+  return await walk(rootSkillPath)
+}
+
+export async function readSkillFileContent(skillFolderName, relativeFilePath) {
+  const dir = getSkillsDirectory()
+  const fullPath = path.resolve(dir, skillFolderName, relativeFilePath)
+  const rootSkillPath = path.resolve(dir, skillFolderName)
+
+  if (!fullPath.startsWith(rootSkillPath)) {
+    throw new Error('Akses direktori di luar batas skill dilarang.')
+  }
+
+  if (!fs.existsSync(fullPath)) {
+    return ''
+  }
+  return await fs.promises.readFile(fullPath, 'utf-8')
+}
+
+export async function writeSkillFileContent(skillFolderName, relativeFilePath, content) {
+  const dir = getSkillsDirectory()
+  const fullPath = path.resolve(dir, skillFolderName, relativeFilePath)
+  const rootSkillPath = path.resolve(dir, skillFolderName)
+
+  if (!fullPath.startsWith(rootSkillPath)) {
+    throw new Error('Akses direktori di luar batas skill dilarang.')
+  }
+
+  const parentDir = path.dirname(fullPath)
+  if (!fs.existsSync(parentDir)) {
+    await fs.promises.mkdir(parentDir, { recursive: true })
+  }
+
+  await fs.promises.writeFile(fullPath, content, 'utf-8')
+  return true
+}
+
+export async function createSkillItem(skillFolderName, relativePath, isFolder = false) {
+  const dir = getSkillsDirectory()
+  const fullPath = path.resolve(dir, skillFolderName, relativePath)
+  const rootSkillPath = path.resolve(dir, skillFolderName)
+
+  if (!fullPath.startsWith(rootSkillPath)) {
+    throw new Error('Akses direktori tidak valid.')
+  }
+
+  if (isFolder) {
+    if (!fs.existsSync(fullPath)) {
+      await fs.promises.mkdir(fullPath, { recursive: true })
     }
-  })
-
-  ipcMain.handle('read-skill-file', async (event, name, relativePath) => {
-    try {
-      const dir = getSkillDir()
-      // If standalone
-      const standalonePath = path.join(dir, `${name}.md`)
-      if (relativePath === 'SKILL.md' && fs.existsSync(standalonePath) && !fs.statSync(standalonePath).isDirectory()) {
-        return await fs.promises.readFile(standalonePath, 'utf8')
-      }
-      
-      const targetPath = path.join(dir, name, relativePath)
-      if (fs.existsSync(targetPath)) {
-        return await fs.promises.readFile(targetPath, 'utf8')
-      }
-      return ''
-    } catch (e) {
-      console.error('Failed to read skill file', e)
-      return ''
+  } else {
+    const parent = path.dirname(fullPath)
+    if (!fs.existsSync(parent)) {
+      await fs.promises.mkdir(parent, { recursive: true })
     }
-  })
-
-  ipcMain.handle('save-skill-file', async (event, name, relativePath, content) => {
-    try {
-      const dir = getSkillDir()
-      // Standalone fallback
-      const standalonePath = path.join(dir, `${name}.md`)
-      if (relativePath === 'SKILL.md' && fs.existsSync(standalonePath) && !fs.statSync(standalonePath).isDirectory()) {
-        await fs.promises.writeFile(standalonePath, content, 'utf8')
-        return true
-      }
-
-      const targetPath = path.join(dir, name, relativePath)
-      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
-      await fs.promises.writeFile(targetPath, content, 'utf8')
-      notifySkillsUpdated()
-      return true
-    } catch (e) {
-      console.error('Failed to save skill file', e)
-      return false
+    if (!fs.existsSync(fullPath)) {
+      await fs.promises.writeFile(fullPath, '', 'utf-8')
     }
-  })
+  }
+  return true
+}
 
-  ipcMain.handle('create-skill-item', async (event, name, relativePath, isFolder) => {
-    try {
-      const dir = getSkillDir()
-      // Force migration to folder if creating items
-      const standalonePath = path.join(dir, `${name}.md`)
-      const folderPath = path.join(dir, name)
-      if (fs.existsSync(standalonePath) && !fs.existsSync(folderPath)) {
-        await fs.promises.mkdir(folderPath, { recursive: true })
-        await fs.promises.rename(standalonePath, path.join(folderPath, 'SKILL.md'))
-      }
+export async function renameSkillItem(skillFolderName, oldRelativePath, newRelativePath) {
+  const dir = getSkillsDirectory()
+  const oldPath = path.resolve(dir, skillFolderName, oldRelativePath)
+  const newPath = path.resolve(dir, skillFolderName, newRelativePath)
+  const rootSkillPath = path.resolve(dir, skillFolderName)
 
-      const targetPath = path.join(dir, name, relativePath)
-      if (isFolder) {
-        await fs.promises.mkdir(targetPath, { recursive: true })
-      } else {
-        await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
-        await fs.promises.writeFile(targetPath, '', 'utf8')
-      }
-      notifySkillsUpdated()
-      return true
-    } catch (e) {
-      console.error('Failed to create skill item', e)
-      return false
+  if (!oldPath.startsWith(rootSkillPath) || !newPath.startsWith(rootSkillPath)) {
+    throw new Error('Akses direktori tidak valid.')
+  }
+
+  if (fs.existsSync(oldPath)) {
+    await fs.promises.rename(oldPath, newPath)
+    return true
+  }
+  return false
+}
+
+export async function deleteSkillItem(skillFolderName, relativePath) {
+  const dir = getSkillsDirectory()
+  const fullPath = path.resolve(dir, skillFolderName, relativePath)
+  const rootSkillPath = path.resolve(dir, skillFolderName)
+
+  if (!fullPath.startsWith(rootSkillPath)) {
+    throw new Error('Akses direktori tidak valid.')
+  }
+
+  if (fs.existsSync(fullPath)) {
+    const stat = await fs.promises.stat(fullPath)
+    if (stat.isDirectory()) {
+      await fs.promises.rm(fullPath, { recursive: true, force: true })
+    } else {
+      await fs.promises.unlink(fullPath)
     }
-  })
+    return true
+  }
+  return false
+}
 
-  ipcMain.handle('delete-skill-item', async (event, name, relativePath) => {
-    try {
-      const dir = getSkillDir()
-      const targetPath = path.join(dir, name, relativePath)
-      if (fs.existsSync(targetPath)) {
-        const stat = await fs.promises.stat(targetPath)
-        if (stat.isDirectory()) {
-          await fs.promises.rm(targetPath, { recursive: true, force: true })
-        } else {
-          await fs.promises.unlink(targetPath)
-        }
-        notifySkillsUpdated()
-        return true
-      }
-      return false
-    } catch (e) {
-      console.error('Failed to delete skill item', e)
-      return false
-    }
-  })
+export async function deleteFullSkill(skillFolderName) {
+  const dir = getSkillsDirectory()
+  const fullPath = path.resolve(dir, skillFolderName)
+  if (fs.existsSync(fullPath)) {
+    await fs.promises.rm(fullPath, { recursive: true, force: true })
+    return true
+  }
+  return false
+}
 
-  ipcMain.handle('rename-skill-item', async (event, name, oldRelativePath, newRelativePath) => {
-    try {
-      const dir = getSkillDir()
-      const oldPath = path.join(dir, name, oldRelativePath)
-      const newPath = path.join(dir, name, newRelativePath)
-      if (fs.existsSync(oldPath)) {
-        await fs.promises.rename(oldPath, newPath)
-        notifySkillsUpdated()
-        return true
-      }
-      return false
-    } catch (e) {
-      console.error('Failed to rename skill item', e)
-      return false
+export async function installSkillPackage(zipBuffer, overrideName = null) {
+  const dir = getSkillsDirectory()
+  const zip = new AdmZip(zipBuffer)
+  const entries = zip.getEntries()
+
+  let detectedName = overrideName
+  if (!detectedName) {
+    const skillEntry = entries.find((e) => e.entryName === 'SKILL.md' || e.entryName.endsWith('/SKILL.md'))
+    if (skillEntry) {
+      try {
+        const text = skillEntry.getData().toString('utf-8')
+        const parsed = matter(text)
+        if (parsed.data.name) detectedName = parsed.data.name
+      } catch (_) {}
     }
-  })
+  }
+
+  if (!detectedName) {
+    detectedName = `skill-${Date.now()}`
+  }
+
+  const cleanFolderName = detectedName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()
+  const targetFolder = path.join(dir, cleanFolderName)
+
+  if (!fs.existsSync(targetFolder)) {
+    fs.mkdirSync(targetFolder, { recursive: true })
+  }
+
+  zip.extractAllTo(targetFolder, true)
+  return { success: true, folderName: cleanFolderName }
 }

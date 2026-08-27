@@ -1,6 +1,7 @@
 import { generateVector } from './vectorMemory'
 import { bulkInsertDocuments, deleteDocumentByName, getAllDocuments } from './db'
 import { insertDocumentChunksToOrama, deleteDocumentFromOrama } from './oramaStore'
+import { webApi } from './web-bridge'
 
 function splitTextIntoChunks(text, chunkSize = 500, overlap = 50) {
   const chunks = []
@@ -23,7 +24,7 @@ export async function ingestDocument(file, onProgress) {
   // 0.5. Handling duplikat
   const existingDocs = await getAllDocuments()
   const isDuplicate = existingDocs.some(d => d.docName === file.name)
-  
+
   if (isDuplicate) {
     // Hapus dokumen lama dulu
     await deleteDocumentByName(file.name)
@@ -32,13 +33,13 @@ export async function ingestDocument(file, onProgress) {
 
   // 1. Ekstrak teks
   let rawText = ''
-  
+
   if (file.name.endsWith('.pdf')) {
     const buf = await file.arrayBuffer()
-    rawText = await window.api.parseDocument(buf, false)
+    rawText = await webApi.parseDocument(buf, false)
   } else if (file.name.endsWith('.docx')) {
     const buf = await file.arrayBuffer()
-    rawText = await window.api.parseDocument(buf, true)
+    rawText = await webApi.parseDocument(buf, true)
   } else {
     rawText = await file.text()
   }
@@ -65,7 +66,7 @@ export async function ingestDocument(file, onProgress) {
       vector
     }
     dexieRecords.push(record)
-    
+
     if (onProgress) {
       onProgress(Math.round(((i + 1) / chunks.length) * 100))
     }
