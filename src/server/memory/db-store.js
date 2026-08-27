@@ -58,7 +58,9 @@ sqlite.exec(`
     ai_text TEXT NOT NULL,
     combined_text TEXT,
     vector TEXT,
-    timestamp INTEGER NOT NULL
+    timestamp INTEGER,
+    created_at INTEGER,
+    updated_at INTEGER
   );
 
   -- 5. Chat Archives
@@ -152,6 +154,19 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
   CREATE INDEX IF NOT EXISTS idx_subagent_messages_subagent ON subagent_messages(subagent_id);
 `)
+
+// Auto-migration untuk kolom baru jika tabel sudah ada sebelumnya
+try {
+  const chatTurnsCols = sqlite.prepare(`PRAGMA table_info(chat_turns)`).all().map(c => c.name)
+  if (!chatTurnsCols.includes('created_at')) {
+    sqlite.exec(`ALTER TABLE chat_turns ADD COLUMN created_at INTEGER`)
+  }
+  if (!chatTurnsCols.includes('updated_at')) {
+    sqlite.exec(`ALTER TABLE chat_turns ADD COLUMN updated_at INTEGER`)
+  }
+} catch (err) {
+  console.warn('[DB Store] Error running migration on chat_turns:', err.message)
+}
 
 /**
  * Generic Table Helper untuk menyediakan API CRUD fleksibel

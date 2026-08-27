@@ -55,96 +55,12 @@ const GlobalListener = () => {
   return null
 }
 
-const WindowControls = () => {
-  const [isMax, setIsMax] = useState(false)
-
-  useEffect(() => {
-    if (window.api?.onWindowMaximized) {
-      window.api.onWindowMaximized((max) => setIsMax(max))
-    }
-  }, [])
-
-  return (
-    <div className="absolute top-0 left-0 right-0 h-10 z-[9999] [-webkit-app-region:drag] flex items-center justify-between px-4 pointer-events-none text-white">
-      {/* Invisible left spacer to balance the right controls */}
-      <div className="flex-1"></div>
-
-      {/* Center Drag Grip */}
-      <div
-        className="flex items-center justify-center opacity-30 hover:opacity-100 transition-opacity gap-2"
-        title="Tahan dan geser untuk memindahkan"
-      >
-        <svg
-          width="32"
-          height="32"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="9" r="1" />
-          <circle cx="19" cy="9" r="1" />
-          <circle cx="5" cy="9" r="1" />
-          <circle cx="12" cy="15" r="1" />
-          <circle cx="19" cy="15" r="1" />
-          <circle cx="5" cy="15" r="1" />
-        </svg>
-      </div>
-
-      {/* Right Controls */}
-      <div className="flex-1 flex justify-end gap-3 [-webkit-app-region:no-drag] opacity-50 hover:opacity-100 transition-opacity pointer-events-auto">
-        <button
-          onClick={() => window.api?.windowMinimize()}
-          className="text-white/70 hover:text-white transition-colors flex items-center justify-center p-2"
-          title="Minimize"
-        >
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M2 7h12v2H2z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => window.api?.windowMaximize()}
-          className="text-white/70 hover:text-white transition-colors flex items-center justify-center p-2"
-          title={isMax ? 'Restore' : 'Maximize'}
-        >
-          {isMax ? (
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" clipRule="evenodd" d="M4 4h7v7H4V4zm2 2v3h3V6H6z" />
-              <path d="M7 2h7v7h-2V4H7V2z" />
-            </svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" clipRule="evenodd" d="M2 2h12v12H2V2zm2 2v8h8V4H4z" />
-            </svg>
-          )}
-        </button>
-        <button
-          onClick={() => window.api?.windowClose()}
-          className="text-white/70 hover:text-red-500 transition-colors flex items-center justify-center p-2"
-          title="Close"
-        >
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M3.707 3.293a1 1 0 0 1 1.414 0L8 6.586l2.879-2.879a1 1 0 1 1 1.414 1.414L9.414 8l2.879 2.879a1 1 0 0 1-1.414 1.414L8 9.414l-2.879 2.879a1 1 0 1 1-1.414-1.414L6.586 8 3.707 5.121a1 1 0 0 1 0-1.414z"
-            />
-          </svg>
-        </button>
-      </div>
-    </div>
-  )
-}
-
 const MainLayout = () => {
   const location = useLocation()
   const isHome = location.pathname === '/'
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#0f1715] text-[#cac9c9]">
-      <WindowControls />
       {/* Base Home Page - Always Mounted so AI Agent & Telegram Listeners Never Die */}
       <div className="h-full w-full">
         <MarkHome />
@@ -285,7 +201,6 @@ function App() {
   if (isChecking) {
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-base-300 rounded-xl flex flex-col">
-        <WindowControls />
         <div className="flex-1 flex flex-col items-center justify-center gap-5">
           <span className="loading loading-infinity w-16 text-primary"></span>
           <p className="text-sm font-semibold tracking-[0.2em] text-white/40 uppercase animate-pulse text-center px-4">
