@@ -228,8 +228,16 @@ export const useMarkPlan = ({
       else if (tool === 'screenshot-to-tg') {
         if (window.api && window.api.tgTakeScreenshot) {
           const targetChatId = tgContext?.chatId || null
-          window.api.tgTakeScreenshot(targetChatId)
-          resultString = 'Screenshot layar PC berhasil diambil dan dikirimkan ke Telegram Admin.'
+          try {
+            const ssRes = await window.api.tgTakeScreenshot(targetChatId)
+            if (ssRes && ssRes.success === false) {
+              resultString = `Gagal mengirim screenshot ke Telegram: ${ssRes.error || 'Terjadi kesalahan'}`
+            } else {
+              resultString = 'Screenshot layar PC berhasil diambil dan dikirimkan ke Telegram Admin.'
+            }
+          } catch (e) {
+            resultString = `Gagal mengirim screenshot ke Telegram: ${e.message}`
+          }
         } else {
           resultString = 'Gagal: Fitur Telegram Bot belum tersedia.'
         }
@@ -238,7 +246,8 @@ export const useMarkPlan = ({
       else if (tool === 'analyze-screen') {
         try {
           const screens = await window.api.takeScreenshot()
-          if (screens && screens.length > 0) {
+          const screenArray = Array.isArray(screens) ? screens : screens ? [screens] : []
+          if (screenArray.length > 0) {
             targetSetChatData((prev) => [
               ...prev.filter((item) => !item.isThinking),
               { role: 'ai', content: 'Memproses Vision AI...', isThinking: true }
@@ -249,7 +258,10 @@ export const useMarkPlan = ({
                 type: 'text',
                 text: query || 'Jelaskan apa yang kamu lihat di layar ini secara ringkas.'
               },
-              { type: 'image_url', image_url: { url: screens[0] } }
+              ...screenArray.map((scr) => ({
+                type: 'image_url',
+                image_url: { url: scr }
+              }))
             ]
 
             const visionResponse = await fetchAI(
@@ -262,8 +274,8 @@ export const useMarkPlan = ({
                 ? visionResponse.content
                 : String(visionResponse)
 
-            console.log(`[Vision AI - analyze-screen] Hasil analisis:`, textContent)
-            resultString = `Hasil Analisis Layar:\n${textContent}`
+            console.log(`[Vision AI - analyze-screen] Hasil analisis (${screenArray.length} monitor):`, textContent)
+            resultString = `Hasil Analisis Layar (${screenArray.length} monitor):\n${textContent}`
           } else {
             resultString = 'Gagal mengambil screenshot layar untuk analisis.'
           }
@@ -749,7 +761,7 @@ export const useMarkPlan = ({
     const activeSessionNum = opts.sessionId ? Number(opts.sessionId) : 1
     activeRunningSessionIdRef.current = activeSessionNum
 
-    if (!tgContext && activeSessionsRef.current.has(activeSessionNum)) {
+    if (activeSessionsRef.current.has(activeSessionNum)) {
       console.log(
         `[useMarkPlan] Menolak prompt masuk untuk Sesi ${activeSessionNum} karena sedang berjalan (Lock active).`
       )

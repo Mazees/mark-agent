@@ -35,7 +35,7 @@ import {
   getSystemIdleSeconds,
   startOsActivityTracking
 } from './tools/awareness-tracker.js'
-import { captureDesktopScreenshotBase64 } from './tools/screen-service.js'
+import { captureDesktopScreenshotsBase64, captureDesktopScreenshotBase64 } from './tools/screen-service.js'
 import { connectGoogle, disconnectGoogle, getGoogleStatus } from '../main/google/google-service.js'
 import {
   startTelegramBot,
@@ -43,6 +43,7 @@ import {
   getConnectionStatus as getTelegramStatus,
   sendTelegramMessage,
   sendTelegramToAdmins,
+  sendTelegramScreenshot,
   triggerTelegramMusicDownload,
   finishAgentExecution,
   uiMessageHistory as tgMessageHistory
@@ -132,6 +133,22 @@ function saveConfig(newConfig) {
 }
 
 let activeConfig = loadConfig()
+
+// Auto-start Telegram Bot pada booting server jika token tersedia
+try {
+  const configs = dbStore.config.getAll()
+  const dbCfg = configs[0] || {}
+  const unpackedCfg = dbCfg.data && typeof dbCfg.data === 'object' ? { ...dbCfg, ...dbCfg.data } : dbCfg
+  const initialTgToken = unpackedCfg.tgBotToken || activeConfig.tgBotToken
+  if (initialTgToken && initialTgToken.trim()) {
+    console.log('[Telegram] Mengaktifkan bot secara otomatis dari konfigurasi server...')
+    startTelegramBot(initialTgToken.trim()).catch((err) => {
+      console.error('[Telegram] Gagal auto-start bot:', err.message)
+    })
+  }
+} catch (err) {
+  console.warn('[Telegram] Gagal membaca konfigurasi awal bot:', err.message)
+}
 
 // --- REST API Endpoints ---
 
@@ -576,8 +593,8 @@ app.get('/api/awareness/idle-time', async (_req, res) => {
 // 5k. Desktop OS Tools & Screen Capture API
 app.post('/api/os/screenshot', async (_req, res) => {
   try {
-    const base64Data = await captureDesktopScreenshotBase64()
-    res.json({ success: true, data: base64Data })
+    const screens = await captureDesktopScreenshotsBase64()
+    res.json({ success: true, data: screens })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }
@@ -717,6 +734,16 @@ app.post('/api/telegram/broadcast', async (req, res) => {
   try {
     await sendTelegramToAdmins(message)
     res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/telegram/screenshot', async (req, res) => {
+  const { chatId } = req.body || {}
+  try {
+    const result = await sendTelegramScreenshot(chatId)
+    res.json(result)
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }

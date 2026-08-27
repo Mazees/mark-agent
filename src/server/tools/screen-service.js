@@ -8,7 +8,7 @@ const execPromise = util.promisify(exec)
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-export async function captureDesktopScreenshotBase64() {
+export async function captureDesktopScreenshotsBase64() {
   if (process.platform !== 'win32') {
     throw new Error('Screen capture hanya didukung di lingkungan Windows.')
   }
@@ -24,14 +24,28 @@ export async function captureDesktopScreenshotBase64() {
       { maxBuffer: 50 * 1024 * 1024 }
     )
 
-    const base64Str = (stdout || '').trim()
-    if (!base64Str) {
+    const rawOutput = (stdout || '').trim()
+    if (!rawOutput) {
       throw new Error(stderr || 'Output screenshot kosong.')
     }
 
-    return `data:image/jpeg;base64,${base64Str}`
+    const base64List = rawOutput
+      .split('|||')
+      .map((str) => str.trim())
+      .filter(Boolean)
+
+    if (base64List.length === 0) {
+      throw new Error('Tidak ada gambar layar yang berhasil diambil.')
+    }
+
+    return base64List.map((b64) => `data:image/jpeg;base64,${b64}`)
   } catch (err) {
     console.error('[Screen Capture Error]:', err)
     throw new Error(`Gagal mengambil screenshot: ${err.message}`)
   }
+}
+
+export async function captureDesktopScreenshotBase64() {
+  const all = await captureDesktopScreenshotsBase64()
+  return all[0]
 }

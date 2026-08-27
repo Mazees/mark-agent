@@ -31,17 +31,21 @@ const GlobalListener = () => {
       navigate('/', { state: { autoToggleMic: Date.now() } })
     }
 
+    let unsubTg = null
     if (window.api?.onLiveAudioShortcut) {
       window.api.onLiveAudioShortcut(handleShortcut)
     }
 
     if (window.api?.onTgRequestAgentExecution) {
-      window.api.onTgRequestAgentExecution((data) => {
+      unsubTg = window.api.onTgRequestAgentExecution((data) => {
         window.dispatchEvent(new CustomEvent('tg-admin-message', { detail: data }))
       })
     }
 
     return () => {
+      if (typeof unsubTg === 'function') {
+        unsubTg()
+      }
       if (window.api?.removeLiveAudioShortcut) {
         window.api.removeLiveAudioShortcut()
       }

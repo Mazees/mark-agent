@@ -231,22 +231,25 @@ export const useMarkAgent = () => {
         .reverse()
         .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       if (lastAiMsg) {
-        window.api?.sendTgAgentExecutionDone({
-          chatId: activeTgRequestRef.current.chatId,
-          result: { answer: formatForTelegram(lastAiMsg.content) },
-          msgId: activeTgRequestRef.current.msgId
-        })
+        const currentReq = activeTgRequestRef.current
         activeTgRequestRef.current = null
         setInputSource('pc')
+        lastSyncedMsgIdRef.current = lastAiMsg.timestamp || lastAiMsg.content
+
+        window.api?.sendTgAgentExecutionDone({
+          chatId: currentReq.chatId,
+          result: { answer: formatForTelegram(lastAiMsg.content) },
+          msgId: currentReq.msgId
+        })
       }
-    } else if (!isAgentBusy && chatData.length > 0) {
+    } else if (!isAgentBusy && chatData.length > 0 && inputSource !== 'tg' && !activeTgRequestRef.current) {
       const lastAiMsg = [...chatData]
         .reverse()
         .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       const msgKey = lastAiMsg ? lastAiMsg.timestamp || lastAiMsg.content : null
       if (lastAiMsg && lastAiMsg.content && lastSyncedMsgIdRef.current !== msgKey) {
         lastSyncedMsgIdRef.current = msgKey
-        if (window.api?.tgBroadcastToAdmins && !lastAiMsg.isProactive) {
+        if (window.api?.tgBroadcastToAdmins && !lastAiMsg.isProactive && lastAiMsg.source !== 'telegram') {
           window.api.tgBroadcastToAdmins(`*Mark (PC)*:\n${lastAiMsg.content}`)
         }
       }

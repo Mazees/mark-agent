@@ -98,56 +98,30 @@ export const ApprovalProvider = ({ children }) => {
 
   useEffect(() => {
     // 1. Jalur Dedicated Command Accept
-    if (window.api?.onTgCommandAccept) {
-      window.api.onTgCommandAccept((data) => {
-        handleRemoteDecision('approve_once', data?.chatId)
-      })
-    }
+    const unsubAccept = window.api?.onTgCommandAccept
+      ? window.api.onTgCommandAccept((data) => {
+          handleRemoteDecision('approve_once', data?.chatId)
+        })
+      : null
 
     // 2. Jalur Dedicated Command Always
-    if (window.api?.onTgCommandAlways) {
-      window.api.onTgCommandAlways((data) => {
-        handleRemoteDecision('approve_always', data?.chatId)
-      })
-    }
+    const unsubAlways = window.api?.onTgCommandAlways
+      ? window.api.onTgCommandAlways((data) => {
+          handleRemoteDecision('approve_always', data?.chatId)
+        })
+      : null
 
     // 3. Jalur Dedicated Command Reject
-    if (window.api?.onTgCommandReject) {
-      window.api.onTgCommandReject((data) => {
-        handleRemoteDecision('reject', data?.chatId)
-      })
-    }
+    const unsubReject = window.api?.onTgCommandReject
+      ? window.api.onTgCommandReject((data) => {
+          handleRemoteDecision('reject', data?.chatId)
+        })
+      : null
 
-    // 4. Fallback Universal via onTgMessage
-    if (window.api?.onTgMessage) {
-      window.api.onTgMessage((msg) => {
-        const text = (msg?.text || '').trim().toLowerCase()
-        if (
-          text === '/always' ||
-          text === 'always' ||
-          text === '/selamanya' ||
-          text === 'selamanya' ||
-          text.startsWith('/always@')
-        ) {
-          handleRemoteDecision('approve_always', msg?.chatId)
-        } else if (
-          text === '/accept' ||
-          text === 'accept' ||
-          text === '/izinkan' ||
-          text === 'izinkan' ||
-          text.startsWith('/accept@')
-        ) {
-          handleRemoteDecision('approve_once', msg?.chatId)
-        } else if (
-          text === '/reject' ||
-          text === 'reject' ||
-          text === '/tolak' ||
-          text === 'tolak' ||
-          text.startsWith('/reject@')
-        ) {
-          handleRemoteDecision('reject', msg?.chatId)
-        }
-      })
+    return () => {
+      if (typeof unsubAccept === 'function') unsubAccept()
+      if (typeof unsubAlways === 'function') unsubAlways()
+      if (typeof unsubReject === 'function') unsubReject()
     }
   }, [handleRemoteDecision])
 

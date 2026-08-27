@@ -564,6 +564,9 @@ export const webApi = {
     })
     return await res.json()
   },
+  sendTgAgentExecutionDone: async (payload) => {
+    return await webApi.tgAgentExecutionDone(payload)
+  },
   tgBroadcastToAdmins: async (message) => {
     const res = await fetch(`${API_BASE}/api/telegram/broadcast`, {
       method: 'POST',
@@ -571,6 +574,26 @@ export const webApi = {
       body: JSON.stringify({ message })
     })
     return await res.json()
+  },
+  tgTakeScreenshot: async (chatId = null) => {
+    const res = await fetch(`${API_BASE}/api/telegram/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId })
+    })
+    return await res.json()
+  },
+  onTgCommandAccept: (cb) => {
+    addWebListener('tg:command-accept', cb)
+    return () => removeWebListener('tg:command-accept', cb)
+  },
+  onTgCommandAlways: (cb) => {
+    addWebListener('tg:command-always', cb)
+    return () => removeWebListener('tg:command-always', cb)
+  },
+  onTgCommandReject: (cb) => {
+    addWebListener('tg:command-reject', cb)
+    return () => removeWebListener('tg:command-reject', cb)
   },
   onTgConnection: (cb) => {
     addWebListener('tg:connection', cb)

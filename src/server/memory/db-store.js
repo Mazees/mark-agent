@@ -259,20 +259,15 @@ class SqliteTable {
     if (!row) return null
     const res = { ...row }
 
-    // Normalisasi snake_case ke camelCase untuk properti relasional & umum
-    if (res.user_id !== undefined && res.userId === undefined) res.userId = res.user_id
-    if (res.sarcasm_level !== undefined && res.sarcasm_level === undefined) res.sarcasm_level = res.sarcasm_level
-    if (res.last_evaluation !== undefined && res.lastEvaluation === undefined) res.lastEvaluation = res.last_evaluation
-    if (res.eval_count !== undefined && res.evalCount === undefined) res.evalCount = res.eval_count
-    if (res.last_chat_index !== undefined && res.lastChatIndex === undefined) res.lastChatIndex = res.last_chat_index
-    if (res.session_id !== undefined && res.sessionId === undefined) res.sessionId = res.session_id
-    if (res.session_title !== undefined && res.sessionTitle === undefined) res.sessionTitle = res.session_title
-    if (res.doc_name !== undefined && res.docName === undefined) res.docName = res.doc_name
-    if (res.chunk_index !== undefined && res.chunkIndex === undefined) res.chunkIndex = res.chunk_index
-    if (res.subagent_id !== undefined && res.subagentId === undefined) res.subagentId = res.subagent_id
-    if (res.parent_session_id !== undefined && res.parentSessionId === undefined) res.parentSessionId = res.parent_session_id
-    if (res.turn_count !== undefined && res.turnCount === undefined) res.turnCount = res.turn_count
-    if (res.task_id !== undefined && res.taskId === undefined) res.taskId = res.task_id
+    // Normalisasi otomatis snake_case ke camelCase untuk konsistensi di frontend
+    for (const key of Object.keys(row)) {
+      if (key.includes('_')) {
+        const camelKey = this._toCamel(key)
+        if (res[camelKey] === undefined) {
+          res[camelKey] = row[key]
+        }
+      }
+    }
 
     for (const key of Object.keys(res)) {
       if (typeof res[key] === 'string') {
@@ -386,6 +381,10 @@ class SqliteTable {
   count() {
     const res = sqlite.prepare(`SELECT COUNT(*) as count FROM ${this.tableName}`).get()
     return res?.count || 0
+  }
+
+  _toCamel(str) {
+    return str.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase())
   }
 
   _toSnake(str) {

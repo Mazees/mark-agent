@@ -30,7 +30,12 @@ const agent = new https.Agent({
 function getTelegramConfig() {
   try {
     const cfgs = dbStore.config.getAll()
-    return cfgs[0] || {}
+    const cfg = cfgs[0] || {}
+    // SQLite config table stores settings inside row.data object
+    if (cfg.data && typeof cfg.data === 'object') {
+      return { ...cfg, ...cfg.data }
+    }
+    return cfg
   } catch (_) {
     return {}
   }
@@ -180,6 +185,27 @@ export const startTelegramBot = async (token) => {
       }
     })
 
+    const isApprovalCommand = (cmdText) => {
+      const clean = (cmdText || '').trim().toLowerCase()
+      return (
+        clean === '/accept' ||
+        clean === 'accept' ||
+        clean === '/izinkan' ||
+        clean === 'izinkan' ||
+        clean.startsWith('/accept@') ||
+        clean === '/always' ||
+        clean === 'always' ||
+        clean === '/selamanya' ||
+        clean === 'selamanya' ||
+        clean.startsWith('/always@') ||
+        clean === '/reject' ||
+        clean === 'reject' ||
+        clean === '/tolak' ||
+        clean === 'tolak' ||
+        clean.startsWith('/reject@')
+      )
+    }
+
     bot.command('accept', (ctx) => {
       const chatId = String(ctx.chat?.id || ctx.from?.id || '')
       wsHub.broadcast('tg:command-accept', { chatId })
@@ -223,6 +249,19 @@ export const startTelegramBot = async (token) => {
       adminChatIdsSet.add(chatId)
       if (senderUsername) usernameToChatIdMap.set(senderUsername, chatId)
       saveChatIdsToFile()
+
+      // Jika teks adalah perintah approval (/accept, /always, /reject), jangan picu loop planning agent baru
+      if (isApprovalCommand(text)) {
+        const clean = text.trim().toLowerCase()
+        if (clean === '/accept' || clean === 'accept' || clean === '/izinkan' || clean === 'izinkan' || clean.startsWith('/accept@')) {
+          wsHub.broadcast('tg:command-accept', { chatId })
+        } else if (clean === '/always' || clean === 'always' || clean === '/selamanya' || clean === 'selamanya' || clean.startsWith('/always@')) {
+          wsHub.broadcast('tg:command-always', { chatId })
+        } else if (clean === '/reject' || clean === 'reject' || clean === '/tolak' || clean === 'tolak' || clean.startsWith('/reject@')) {
+          wsHub.broadcast('tg:command-reject', { chatId })
+        }
+        return
+      }
 
       const msgId = `${chatId}-${ctx.message.message_id}`
 
@@ -415,6 +454,67 @@ export const sendTelegramFile = async (chatId, filePath, caption = '') => {
   }
 }
 
+export const sendTelegramScreenshot = async (chatId = null) => {
+  if (!bot || currentStatus !== 'connected') {
+    return { success: false, error: 'Telegram Bot belum terhubung.' }
+  }
+  try {
+    const { captureDesktopScreenshotsBase64 } = await import('../../server/tools/screen-service.js')
+    const base64List = await captureDesktopScreenshotsBase64()
+
+    const targets = []
+    if (chatId) {
+      targets.push(String(chatId))
+    } else {
+      const config = getTelegramConfig()
+      const adminInputs = (config.tgAdminIds || '')
+        .split(',')
+        .map((id) => id.trim().toLowerCase().replace(/^@/, ''))
+        .filter(Boolean)
+
+      const targetChatIds = new Set(adminChatIdsSet)
+      for (const input of adminInputs) {
+        if (/^\d+$/.test(input)) {
+          targetChatIds.add(input)
+        } else if (usernameToChatIdMap.has(input)) {
+          targetChatIds.add(usernameToChatIdMap.get(input))
+        }
+      }
+      targets.push(...Array.from(targetChatIds))
+    }
+
+    if (targets.length === 0) {
+      return { success: false, error: 'Tidak ada target admin Telegram yang terdaftar.' }
+    }
+
+    for (const target of targets) {
+      try {
+        if (base64List.length === 1) {
+          const cleanBase64 = base64List[0].replace(/^data:image\/\w+;base64,/, '')
+          const buffer = Buffer.from(cleanBase64, 'base64')
+          await bot.telegram.sendPhoto(target, { source: buffer }, { caption: 'Screenshot Layar PC Mark' })
+        } else {
+          for (let i = 0; i < base64List.length; i++) {
+            const cleanBase64 = base64List[i].replace(/^data:image\/\w+;base64,/, '')
+            const buffer = Buffer.from(cleanBase64, 'base64')
+            await bot.telegram.sendPhoto(
+              target,
+              { source: buffer },
+              { caption: `Screenshot Layar PC Mark - Monitor ${i + 1} dari ${base64List.length}` }
+            )
+          }
+        }
+      } catch (err) {
+        console.error(`[Telegram] Gagal kirim screenshot ke ${target}:`, err.message)
+      }
+    }
+    return { success: true }
+  } catch (e) {
+    console.error('[Telegram] Gagal proses screenshot:', e)
+    return { success: false, error: e.message }
+  }
+}
+
 export const sendTelegramToAdmins = async (text) => {
   if (!bot || currentStatus !== 'connected') {
     pendingBroadcastQueue.push(text)
@@ -462,6 +562,9 @@ const flushPendingBroadcasts = async () => {
 
 export const finishAgentExecution = async ({ chatId, result, msgId }) => {
   const reqObj = pendingRequestsMap.get(msgId)
+  if (msgId && pendingRequestsMap.has(msgId)) {
+    pendingRequestsMap.delete(msgId)
+  }
   const replyText = result?.answer || 'Selesai diproses.'
 
   const uiReplyPayload = {
@@ -487,13 +590,16 @@ export const finishAgentExecution = async ({ chatId, result, msgId }) => {
       } catch (_) {}
     }
     try {
-      await bot.telegram.sendMessage(chatId, replyText, { parse_mode: 'Markdown' })
+      const htmlText = formatMarkdownToTelegramHTML(replyText)
+      await bot.telegram.sendMessage(chatId, htmlText, { parse_mode: 'HTML' })
     } catch (_) {
-      await bot.telegram.sendMessage(chatId, replyText).catch(() => {})
+      try {
+        await bot.telegram.sendMessage(chatId, replyText, { parse_mode: 'Markdown' })
+      } catch (fallbackErr) {
+        await bot.telegram.sendMessage(chatId, replyText).catch(() => {})
+      }
     }
   }
-
-  pendingRequestsMap.delete(msgId)
 }
 
 export const triggerTelegramMusicDownload = async ({ chatId, query }) => {
