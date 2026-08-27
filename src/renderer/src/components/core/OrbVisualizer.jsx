@@ -40,7 +40,7 @@ const SentientCyberEyes = ({
       style={{
         transform: `scale(${voiceScale})`,
         transition: 'transform 75ms ease-out'
-      }}
+    }}
     >
       {/* SVG Container untuk Mata Digital Holografik */}
       <svg

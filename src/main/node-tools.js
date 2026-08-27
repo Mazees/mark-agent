@@ -18,7 +18,6 @@ import {
   openApp,
   listWindows,
   focusWindow,
-  askUserPC,
   openPCSession,
   closePCSession,
   isPCSessionOpen
@@ -1348,17 +1347,6 @@ export const NATIVE_TOOLS = {
     handler: async (query) => {
       try {
         const result = await focusWindow(query)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-  'os-ask': {
-    needsApproval: false,
-    handler: async (query) => {
-      try {
-        const result = await askUserPC(query)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }

@@ -35,7 +35,7 @@
 | `services/ai-bridge.js` | AI HTTP Client & Router | `fetchAI()` with multi-provider routing (Groq, Cerebras, Custom, LM Studio, Gemini Web), 3-tier JSON fallback (`json_schema` → `json_object` → unrestricted), rate limiting, exponential backoff, `<think>` tag extraction, and `cleanAndParse()` with `jsonrepair`. |
 | `services/gemini-web.js` | Gemini Web RPC Engine | Native bridge to Google's Gemini Web RPC backend (`gemini-3.6-flash`, `gemini-3.5-flash-thinking`, `gemini-flash-lite`, `gemini-auto`). |
 | `agent/planner.js` | Server ReAct Planner | Server-side execution loop for chat planning, category routing, and autonomous tool orchestration. |
-| `tools/pc-agent.js` | Win32 PC Automation Daemon | Spawns and communicates with `pc-daemon.ps1`. Exposes desktop automation actions (`readDesktop`, `executeClick`, `executeType`, `executeKey`, `executeScroll`, `openApp`, `listWindows`, `focusWindow`, `askUserPC`). |
+| `tools/pc-agent.js` | Win32 PC Automation Daemon | Spawns and communicates with `pc-daemon.ps1`. Exposes desktop automation actions (`readDesktop`, `executeClick`, `executeType`, `executeKey`, `executeScroll`, `openApp`, `listWindows`, `focusWindow`). |
 | `tools/media-tools.js` | Audio & TTS Services | Edge-TTS synthesis and media tools. |
 
 ### `src/main/` — Native Services & Automation Engines

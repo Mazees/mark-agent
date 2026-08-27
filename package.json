@@ -1,5 +1,5 @@
 {
-  "name": "mark",
+  "name": "@mazees/mark",
   "version": "5.0.0",
   "description": "Mark: Metacognitive Artificial Relational Knowledge AI",
   "main": "./src/server/index.js",

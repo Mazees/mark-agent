@@ -42,9 +42,7 @@ export const GROUP_TOOLS_DEFINITION = {
         'Klik ganda (double click) mouse pada elemen GUI desktop. Query: ID elemen dari os-read atau x||y koordinat absolut. Bisa digunakan untuk memilih file saat input file dari browser atau explorer.',
       'os-list-windows': 'Menampilkan daftar semua window aplikasi yang terbuka beserta judulnya.',
       'os-focus-window':
-        'Fokus sebuah window aplikasi berdasarkan judul. JANGAN MENEBAK JUDUL! WAJIB gunakan os-list-windows terlebih dahulu, lalu gunakan teks judul yang persis ada di daftar tersebut. Query: judul window.',
-      'os-ask':
-        'Meminta masukan/konfirmasi dari user via dialog floating di layar saat mengontrol PC, ATAU jika user menghentikan otomatisasi (Ctrl+Shift+S).'
+        'Fokus sebuah window aplikasi berdasarkan judul. JANGAN MENEBAK JUDUL! WAJIB gunakan os-list-windows terlebih dahulu, lalu gunakan teks judul yang persis ada di daftar tersebut. Query: judul window.'
     }
   },
   youtube_music: {

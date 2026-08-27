@@ -2,6 +2,7 @@ import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { wsHub } from '../ws-hub.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -15,17 +16,96 @@ let lastReadTimestamp = 0
 let stateChanged = false
 const CACHE_TTL = 10000
 
-function getDaemonScriptPath() {
+let overlayProcess = null
+let overlayReady = false
+
+function getScriptPath(scriptName) {
   const candidates = [
-    path.resolve(__dirname, '../../../src/main/pc-agent-scripts/pc-daemon.ps1'),
-    path.resolve(__dirname, '../../main/pc-agent-scripts/pc-daemon.ps1'),
-    path.resolve(__dirname, '../../../resources/scripts/pc-daemon.ps1'),
-    path.resolve(__dirname, '../../resources/scripts/pc-daemon.ps1')
+    path.resolve(__dirname, `../../../src/main/pc-agent-scripts/${scriptName}`),
+    path.resolve(__dirname, `../../main/pc-agent-scripts/${scriptName}`),
+    path.resolve(__dirname, `../../../resources/scripts/${scriptName}`),
+    path.resolve(__dirname, `../../resources/scripts/${scriptName}`)
   ]
   for (const c of candidates) {
     if (fs.existsSync(c)) return c
   }
   return candidates[0]
+}
+
+function getDaemonScriptPath() {
+  return getScriptPath('pc-daemon.ps1')
+}
+
+function getOverlayScriptPath() {
+  return getScriptPath('pc-overlay.ps1')
+}
+
+export function isOverlayAlive() {
+  return overlayProcess && !overlayProcess.killed
+}
+
+export function startOverlay() {
+  if (isOverlayAlive()) return
+
+  const scriptPath = getOverlayScriptPath()
+  if (!fs.existsSync(scriptPath)) {
+    console.warn('[PC-Agent] Skrip overlay tidak ditemukan:', scriptPath)
+    return
+  }
+
+  try {
+    overlayProcess = spawn('powershell.exe', [
+      '-NoProfile',
+      '-STA',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      scriptPath
+    ])
+
+    overlayReady = false
+
+    overlayProcess.stdout.on('data', (chunk) => {
+      const text = chunk.toString().trim()
+      if (text.includes('READY')) {
+        overlayReady = true
+      }
+      if (text.includes('"event":"abort"') || text.includes('{"event":"abort"}')) {
+        console.warn('[PC-Agent] Sinyal ABORT diterima dari Overlay (Ctrl+Shift+S / Tombol Batal)!')
+        // Hentikan sesi dan picu abort di WebSocket hub
+        stopDaemon()
+        stopOverlay()
+        wsHub.broadcast('ai:abort', { source: 'pc-overlay', reason: 'User pressed Ctrl+Shift+S or clicked Cancel' })
+      }
+    })
+
+    overlayProcess.stderr.on('data', (chunk) => {
+      console.warn('[PC-Agent Overlay Error]:', chunk.toString())
+    })
+
+    overlayProcess.on('close', () => {
+      overlayProcess = null
+      overlayReady = false
+    })
+
+    overlayProcess.on('error', (err) => {
+      console.error('[PC-Agent] Gagal spawn overlay:', err)
+      overlayProcess = null
+      overlayReady = false
+    })
+  } catch (err) {
+    console.error('[PC-Agent] Error menjalankan overlay:', err)
+  }
+}
+
+export function stopOverlay() {
+  if (overlayProcess && !overlayProcess.killed) {
+    try {
+      overlayProcess.kill()
+    } catch (_) {}
+    overlayProcess = null
+    overlayReady = false
+  }
 }
 
 export function isDaemonAlive() {
@@ -167,6 +247,7 @@ export async function readDesktop(options = {}) {
 }
 
 export async function executeClick(x, y) {
+  startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
   const raw = await sendCommand({ cmd: 'click', x, y })
@@ -174,6 +255,7 @@ export async function executeClick(x, y) {
 }
 
 export async function executeType(text) {
+  startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
   const raw = await sendCommand({ cmd: 'type', text })
@@ -181,6 +263,7 @@ export async function executeType(text) {
 }
 
 export async function executeKey(combo) {
+  startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
   const raw = await sendCommand({ cmd: 'key', combo })
@@ -188,6 +271,7 @@ export async function executeKey(combo) {
 }
 
 export async function executeScroll(direction = 'down', amount = 3) {
+  startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
   const raw = await sendCommand({ cmd: 'scroll', direction, amount })
@@ -195,6 +279,7 @@ export async function executeScroll(direction = 'down', amount = 3) {
 }
 
 export async function openApp(target) {
+  startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
   const raw = await sendCommand({ cmd: 'open', target })
@@ -212,6 +297,7 @@ export async function listWindows() {
 }
 
 export async function focusWindow(title) {
+  startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
   const raw = await sendCommand({ cmd: 'focus-window', title })
@@ -224,16 +310,14 @@ export async function executeDoubleClick(x, y) {
   return await executeClick(x, y)
 }
 
-export async function askUserPC(query) {
-  return `User prompt: ${query}`
-}
-
 export async function openPCSession() {
+  startOverlay()
   await startDaemon()
   return { success: true }
 }
 
 export async function closePCSession() {
+  stopOverlay()
   stopDaemon()
   return { success: true }
 }

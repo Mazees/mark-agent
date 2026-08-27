@@ -142,6 +142,12 @@ export const webApi = {
 
   onAiStatus: (callback) => {
     addWebListener('ai:status', callback)
+    return () => removeWebListener('ai:status', callback)
+  },
+
+  onAiAbort: (callback) => {
+    addWebListener('ai:abort', callback)
+    return () => removeWebListener('ai:abort', callback)
   },
 
   // 3. Audio & Voice
@@ -291,7 +297,6 @@ export const webApi = {
   osOpen: async (target) => webApi.executeNativeTool('os-open', target),
   osListWindows: async () => webApi.executeNativeTool('os-list-windows', ''),
   osFocusWindow: async (title) => webApi.executeNativeTool('os-focus-window', title),
-  osAskUser: async (query) => webApi.executeNativeTool('os-ask', query),
 
   // 7. Pure Node.js Skills Engine
   getSkills: async () => {

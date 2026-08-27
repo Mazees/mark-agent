@@ -106,6 +106,16 @@ export const useMarkPlan = ({
         }
       })
     }
+
+    if (window.api && window.api.onAiAbort) {
+      const unsub = window.api.onAiAbort((payload) => {
+        console.warn('[useMarkPlan] Sinyal ai:abort diterima:', payload)
+        handleStop()
+      })
+      return () => {
+        if (typeof unsub === 'function') unsub()
+      }
+    }
   }, [setChatData])
 
   const activeTaskObjectiveRef = useRef(null)

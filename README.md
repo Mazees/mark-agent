@@ -36,7 +36,7 @@
 - **Autonomous Multi-Agent Tools:** `spawn_subagent`, `wait_subagents`, `send_message`, `list_subagents`, `kill_subagent`.
 - **Memory & Recall Tools (`memory-search`):** Pencarian semantik memori, preferensi, catatan teknis, dan pasangan percakapan asli (Turn Pairs) dengan *similarity threshold* dinamis (`keyword||threshold||limit`, default threshold `0.5`, limit `5`).
 - **Multi-Session Web Browsing (`browser-*`):** `browser-navigate`, `browser-read`, `browser-click`, `browser-type`, `browser-scroll`, `browser-extract`, `browser-ask-user`, `browser-close`.
-- **Desktop Automation (`os-*`):** `os-read`, `os-click`, `os-type`, `os-key`, `os-scroll`, `os-open`, `os-list-windows`, `os-focus-window`, `os-ask`.
+- **Desktop Automation (`os-*`):** `os-read`, `os-click`, `os-type`, `os-key`, `os-scroll`, `os-open`, `os-list-windows`, `os-focus-window`.
 - **Native File Handling & PowerShell:** `read-file`, `write-file`, `replace-lines`, `delete-file`, `list-dir`, `grep-search`, `run-powershell`.
 - **Vision Awareness:** `analyze-screen` (analisis layar multi-monitor) dan `camera-look` (observasi visual webcam).
 - **Interaksi Suara Natural:** Voice Activity Detection (VAD) dengan Groq Whisper STT / Local Whisper dan Edge-TTS (`id-ID-ArdiNeural`).
