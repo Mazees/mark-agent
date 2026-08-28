@@ -74,6 +74,26 @@ const parsePagination = (str) => {
   return { start, end, fetchCount }
 }
 
+// Helper: Ekstraksi Google Client ID & Secret dengan fallback ke config DB
+const getGoogleCredentials = (config) => {
+  let clientId = config?.googleClientId || (Array.isArray(config) ? config[0]?.googleClientId : null)
+  let clientSecret = config?.googleClientSecret || (Array.isArray(config) ? config[0]?.googleClientSecret : null)
+
+  if (!clientId || !clientSecret) {
+    try {
+      const configPath = path.join(os.homedir(), '.config', 'mark-agent', 'config.json')
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf8')
+        const parsed = JSON.parse(raw)
+        clientId = clientId || parsed?.googleClientId
+        clientSecret = clientSecret || parsed?.googleClientSecret
+      }
+    } catch (_) {}
+  }
+
+  return { clientId, clientSecret }
+}
+
 // Helper: Cek apakah command PowerShell berbahaya
 const DANGEROUS_KEYWORDS = [
   'Remove-Item',
@@ -1410,8 +1430,7 @@ export const NATIVE_TOOLS = {
     needsApproval: false,
     handler: async (query, config) => {
       try {
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await getDriveInfo(clientId, clientSecret)
         return { success: true, data: result }
       } catch (e) {
@@ -1426,8 +1445,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const q = parts[0].trim()
         const { start, end, fetchCount } = parsePagination(parts[1] || '')
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchFiles(clientId, clientSecret, q, fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
       } catch (e) {
@@ -1442,8 +1460,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const folderId = parts[0].trim() || null
         const { start, end, fetchCount } = parsePagination(parts[1] || '')
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await listFiles(clientId, clientSecret, folderId, fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
       } catch (e) {
@@ -1455,8 +1472,7 @@ export const NATIVE_TOOLS = {
     needsApproval: false,
     handler: async (query, config) => {
       try {
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await readFile(clientId, clientSecret, query.trim())
         return { success: true, data: result }
       } catch (e) {
@@ -1473,8 +1489,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const name = parts[0].trim()
         const content = parts.slice(1).join('||')
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await uploadFile(clientId, clientSecret, name, content)
         return { success: true, data: result }
       } catch (e) {
@@ -1493,8 +1508,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const name = parts[0].trim()
         const type = parts[1] ? parts[1].trim() : 'doc'
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await createFile(clientId, clientSecret, name, type)
         return { success: true, data: result }
       } catch (e) {
@@ -1511,8 +1525,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const fileId = parts[0].trim()
         const folderId = parts[1].trim()
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await moveFile(clientId, clientSecret, fileId, folderId)
         return { success: true, data: result }
       } catch (e) {
@@ -1529,8 +1542,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const fileId = parts[0].trim()
         const newName = parts[1].trim()
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await copyFile(clientId, clientSecret, fileId, newName)
         return { success: true, data: result }
       } catch (e) {
@@ -1549,8 +1561,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const { start, end, fetchCount } = parsePagination(parts[0])
         const timeMin = parts[1] ? parts[1].trim() : new Date().toISOString()
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await listEvents(clientId, clientSecret, fetchCount, timeMin)
         return { success: true, data: rawResult.slice(start, end) }
       } catch (e) {
@@ -1571,8 +1582,7 @@ export const NATIVE_TOOLS = {
         const description = parts[1].trim()
         const startTime = parts[2].trim()
         const endTime = parts[3].trim()
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await createEvent(
           clientId,
           clientSecret,
@@ -1592,8 +1602,7 @@ export const NATIVE_TOOLS = {
     approvalMessage: (query) => `Mark ingin MENGHAPUS jadwal/event ini:\nEvent ID: ${query}`,
     handler: async (query, config) => {
       try {
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await deleteEvent(clientId, clientSecret, query.trim())
         return { success: true, data: result }
       } catch (e) {
@@ -1612,8 +1621,7 @@ export const NATIVE_TOOLS = {
         const parts = query.split('||')
         const q = parts[0].trim() || 'is:unread'
         const { start, end, fetchCount } = parsePagination(parts[1] || '')
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchEmails(clientId, clientSecret, q, fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
       } catch (e) {
@@ -1626,8 +1634,7 @@ export const NATIVE_TOOLS = {
     handler: async (query, config) => {
       try {
         const { start, end, fetchCount } = parsePagination(query)
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchEmails(clientId, clientSecret, 'is:unread', fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
       } catch (e) {
@@ -1640,8 +1647,7 @@ export const NATIVE_TOOLS = {
     handler: async (query, config) => {
       try {
         const { start, end, fetchCount } = parsePagination(query)
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchEmails(clientId, clientSecret, 'is:unread', fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
       } catch (e) {
@@ -1653,8 +1659,7 @@ export const NATIVE_TOOLS = {
     needsApproval: false,
     handler: async (query, config) => {
       try {
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await readEmail(clientId, clientSecret, query.trim())
         return { success: true, data: result }
       } catch (e) {
@@ -1674,8 +1679,7 @@ export const NATIVE_TOOLS = {
         const to = parts[0].trim()
         const subject = parts[1].trim()
         const bodyText = parts.slice(2).join('||')
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await sendEmail(clientId, clientSecret, to, subject, bodyText)
         return { success: true, data: result }
       } catch (e) {
@@ -1687,8 +1691,7 @@ export const NATIVE_TOOLS = {
     needsApproval: false,
     handler: async (query, config) => {
       try {
-        const clientId = config?.[0]?.googleClientId
-        const clientSecret = config?.[0]?.googleClientSecret
+        const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await markAsRead(clientId, clientSecret, query.trim())
         return { success: true, data: result }
       } catch (e) {
