@@ -24,17 +24,40 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
       if (
         groupKey === 'advanced_browser' &&
         (lowerQuery.includes('browser') ||
+          lowerQuery.includes('browsing') ||
           lowerQuery.includes('web') ||
+          lowerQuery.includes('website') ||
+          lowerQuery.includes('situs') ||
+          lowerQuery.includes('portal') ||
+          lowerQuery.includes('internet') ||
+          lowerQuery.includes('online') ||
           lowerQuery.includes('http') ||
           lowerQuery.includes('https') ||
           lowerQuery.includes('link') ||
           lowerQuery.includes('url') ||
-          lowerQuery.includes('website') ||
+          lowerQuery.includes('cari') ||
+          lowerQuery.includes('search') ||
+          lowerQuery.includes('google') ||
+          lowerQuery.includes('googling') ||
+          lowerQuery.includes('telusuri') ||
+          lowerQuery.includes('riset') ||
+          lowerQuery.includes('baca') ||
+          lowerQuery.includes('berita') ||
+          lowerQuery.includes('artikel') ||
+          lowerQuery.includes('info') ||
+          lowerQuery.includes('cek') ||
           lowerQuery.includes('buka') ||
           lowerQuery.includes('klik') ||
           lowerQuery.includes('scroll') ||
           lowerQuery.includes('extract') ||
-          lowerQuery.includes('halaman'))
+          lowerQuery.includes('scrape') ||
+          lowerQuery.includes('scraping') ||
+          lowerQuery.includes('halaman') ||
+          lowerQuery.includes('login') ||
+          lowerQuery.includes('unduh') ||
+          lowerQuery.includes('download') ||
+          lowerQuery.includes('form') ||
+          lowerQuery.includes('tab'))
       ) {
         isRelevant = true
       } else if (
@@ -42,32 +65,48 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
         (lowerQuery.includes('desktop') ||
           lowerQuery.includes('layar') ||
           lowerQuery.includes('aplikasi') ||
+          lowerQuery.includes('app') ||
           lowerQuery.includes('ketik') ||
+          lowerQuery.includes('type') ||
           lowerQuery.includes('klik') ||
+          lowerQuery.includes('click') ||
+          lowerQuery.includes('mouse') ||
+          lowerQuery.includes('keyboard') ||
+          lowerQuery.includes('shortcut') ||
+          lowerQuery.includes('tombol') ||
           lowerQuery.includes('windows') ||
           lowerQuery.includes('overlay') ||
           lowerQuery.includes('os-') ||
           lowerQuery.includes('chrome') ||
           lowerQuery.includes('notepad') ||
           lowerQuery.includes('calc') ||
-          lowerQuery.includes('mouse') ||
-          lowerQuery.includes('keyboard') ||
-          lowerQuery.includes('shortcut') ||
+          lowerQuery.includes('kalkulator') ||
+          lowerQuery.includes('explorer') ||
           lowerQuery.includes('focus') ||
-          lowerQuery.includes('window'))
+          lowerQuery.includes('fokus') ||
+          lowerQuery.includes('window') ||
+          lowerQuery.includes('jendela') ||
+          lowerQuery.includes('buka aplikasi') ||
+          lowerQuery.includes('tutup aplikasi'))
       ) {
         isRelevant = true
       } else if (
         groupKey === 'youtube_music' &&
         (lowerQuery.includes('lagu') ||
           lowerQuery.includes('musik') ||
+          lowerQuery.includes('music') ||
           lowerQuery.includes('youtube') ||
           lowerQuery.includes('putar') ||
+          lowerQuery.includes('play') ||
+          lowerQuery.includes('pause') ||
+          lowerQuery.includes('stop musik') ||
           lowerQuery.includes('video') ||
           lowerQuery.includes('yt') ||
           lowerQuery.includes('playlist') ||
           lowerQuery.includes('song') ||
-          lowerQuery.includes('audio'))
+          lowerQuery.includes('audio') ||
+          lowerQuery.includes('sound') ||
+          lowerQuery.includes('track'))
       ) {
         isRelevant = true
       } else if (
@@ -76,9 +115,13 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
           lowerQuery.includes('commit') ||
           lowerQuery.includes('diff') ||
           lowerQuery.includes('repo') ||
+          lowerQuery.includes('repository') ||
           lowerQuery.includes('branch') ||
           lowerQuery.includes('status') ||
-          lowerQuery.includes('revert'))
+          lowerQuery.includes('revert') ||
+          lowerQuery.includes('stash') ||
+          lowerQuery.includes('push') ||
+          lowerQuery.includes('pull'))
       ) {
         isRelevant = true
       } else if (
@@ -89,8 +132,11 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
           lowerQuery.includes('run') ||
           lowerQuery.includes('daemon') ||
           lowerQuery.includes('process') ||
+          lowerQuery.includes('proses') ||
           lowerQuery.includes('background') ||
-          lowerQuery.includes('kill'))
+          lowerQuery.includes('kill') ||
+          lowerQuery.includes('stop task') ||
+          lowerQuery.includes('jalankan'))
       ) {
         isRelevant = true
       }

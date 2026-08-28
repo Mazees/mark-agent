@@ -134,6 +134,12 @@ const normalizeToolQuery = (tool, queryOrArgs) => {
     case 'browser-screenshot':
       return a.filename || 'screenshot.png'
 
+    case 'browser-ask-user':
+      return a.prompt || ''
+
+    case 'browser-close':
+      return ''
+
     case 'os-click':
       return String(a.target || '')
 

@@ -52,6 +52,12 @@ const BrowserPreviewWidget = () => {
     }
   }
 
+  const handleHideBrowser = (sessionId) => {
+    if (window.api?.hideBrowserWindow) {
+      window.api.hideBrowserWindow(sessionId)
+    }
+  }
+
   return (
     <>
       {previewList.map((browserPreview, index) => {
@@ -103,27 +109,52 @@ const BrowserPreviewWidget = () => {
                 <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors duration-300 pointer-events-none" />
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => handleOpenBrowser(sid)}
-                  className="btn btn-outline btn-success btn-xs flex-1 gap-1.5 rounded-lg shadow-[0_0_15px_oklch(var(--su)/0.2)] font-medium h-7"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                {browserPreview.isForeground ? (
+                  <button
+                    onClick={() => handleHideBrowser(sid)}
+                    className="btn btn-outline btn-warning btn-xs flex-1 gap-1.5 rounded-lg shadow-[0_0_15px_oklch(var(--wa)/0.2)] font-medium h-7"
+                    title="Sembunyikan jendela browser ke latar belakang"
                   >
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                    <polyline points="15 3 21 3 21 9"></polyline>
-                    <line x1="10" y1="14" x2="21" y2="3"></line>
-                  </svg>
-                  Buka Jendela
-                </button>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                      <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                    Sembunyikan
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleOpenBrowser(sid)}
+                    className="btn btn-outline btn-success btn-xs flex-1 gap-1.5 rounded-lg shadow-[0_0_15px_oklch(var(--su)/0.2)] font-medium h-7"
+                    title="Tampilkan jendela browser ke layar"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                    Buka Jendela
+                  </button>
+                )}
 
                 <button
                   onClick={() => handleCloseBrowser(sid)}

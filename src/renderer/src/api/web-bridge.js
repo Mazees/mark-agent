@@ -299,6 +299,8 @@ export const webApi = {
     ),
   showBrowserWindow: async (sessionId = 'default') =>
     webApi.executeNativeTool('browser-show', typeof sessionId === 'string' ? sessionId : 'default'),
+  hideBrowserWindow: async (sessionId = 'default') =>
+    webApi.executeNativeTool('browser-hide', typeof sessionId === 'string' ? sessionId : 'default'),
   onBrowserPreview: (cb) => {
     addWebListener('browser:preview', cb)
   },

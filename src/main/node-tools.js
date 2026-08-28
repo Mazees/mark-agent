@@ -7,7 +7,7 @@ import util from 'util'
 export const _getOSMeta = () =>
   'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
 import { validateFileSyntax } from './syntax-validator.js'
-import { navigateTo, readDOM, executeAction, closeBrowser, executeScript, extractData, takeScreenshot, downloadFile, showBrowserWindow } from './browser-agent.js'
+import { navigateTo, readDOM, executeAction, closeBrowser, executeScript, extractData, takeScreenshot, downloadFile, showBrowserWindow, hideBrowserWindow } from './browser-agent.js'
 import {
   readDesktop,
   executeClick,
@@ -1112,6 +1112,18 @@ export const NATIVE_TOOLS = {
       try {
         const sessionId = config?.sessionId || (query?.trim() ? query.trim() : 'default')
         const result = await showBrowserWindow(sessionId)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+  'browser-hide': {
+    needsApproval: false,
+    handler: async (query, config) => {
+      try {
+        const sessionId = config?.sessionId || (query?.trim() ? query.trim() : 'default')
+        const result = await hideBrowserWindow(sessionId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }

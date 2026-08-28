@@ -113,6 +113,24 @@ export const GROUP_TOOLS_SCHEMA = {
       {
         type: 'function',
         function: {
+          name: 'browser-ask-user',
+          description: 'Minta bantuan user untuk menyelesaikan CAPTCHA, 2FA, verifikasi Cloudflare, atau login manual pada halaman browser. Jendela browser akan otomatis ditampilkan dan interaksi user di-unblock sementara hingga user menekan tombol Resume.',
+          parameters: {
+            type: 'object',
+            properties: {
+              prompt: {
+                type: 'string',
+                description: 'Pesan arahan untuk user (misal: "Silakan selesaikan Cloudflare Turnstile / Login Google terlebih dahulu")'
+              }
+            },
+            required: ['prompt'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'browser-close',
           description: 'Menutup sesi browser fisik yang sedang aktif.',
           parameters: {

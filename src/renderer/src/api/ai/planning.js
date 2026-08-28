@@ -104,7 +104,8 @@ ATURAN MUTLAK & PRIORITAS #1 - SELALU GUNAKAN 'read-skill':
    - Jika kamu butuh mengontrol Windows, klik mouse, ketik ke aplikasi, mencari window, atau membuka aplikasi Windows, gunakan grup tool 'pc_automation' ('os-control-open', 'os-click', 'os-type', 'os-key', 'os-read', 'os-search', 'os-list-windows', 'os-focus-window', 'os-control-close').
    - DILARANG KERAS menggunakan 'run-powershell' (seperti Start-Process, SendKeys, atau script PowerShell GUI) untuk menggantikan fungsi otomasi PC jika tugas tersebut dapat diselesaikan dengan tool 'os-*'!
 2. **BROWSER WEB (advanced_browser)**:
-   - Untuk navigasi, scraping, klik link web, atau interaksi form di browser fisik, gunakan tool 'browser-*' ('browser-navigate', 'browser-click', 'browser-type', 'browser-read', 'browser-extract', dll).
+   - Untuk navigasi, riset, scraping, membaca berita/artikel/dokumen online, mencari di Google, klik link web, atau interaksi form di browser fisik, gunakan tool 'browser-*' ('browser-navigate', 'browser-click', 'browser-type', 'browser-read', 'browser-extract', dll).
+   - Jangan ragu membuka web browser jika tugas membutuhkan informasi realtime, membaca artikel, atau memeriksa halaman web.
 3. **TOOL GROUPS LAINNYA**:
    - Musik/Video: 'youtube_music' ('yt-search', 'yt-summary', 'music-play', 'music-toggle').
    - Version Control: 'git_vcs' ('git-status', 'git-diff', 'git-commit', 'git-revert').
