@@ -341,6 +341,42 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
+      name: 'analyze-screen',
+      description: 'Mengambil screenshot seluruh monitor/layar Windows saat ini dan menganalisis tampilan visual antarmuka/aplikasi menggunakan AI Vision.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat atau analisis dari layar pengguna (contoh: "Analisis layout halaman ini", "Apa error yang muncul di layar?")'
+          }
+        },
+        required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'camera-look',
+      description: 'Mengambil frame gambar dari webcam/kamera laptop/PC pengguna dan menganalisis apa yang terlihat di depan kamera secara real-time menggunakan AI Vision.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat dari kamera (contoh: "Jelaskan apa yang terlihat di depan kamera", "Apakah user sedang duduk di depan layar?")'
+          }
+        },
+        required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'open',
       description: 'Membuka aplikasi Windows via shell execute atau membuka URL di browser default.',
       parameters: {

@@ -64,6 +64,10 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
         groupKey === 'pc_automation' &&
         (lowerQuery.includes('desktop') ||
           lowerQuery.includes('layar') ||
+          lowerQuery.includes('screen') ||
+          lowerQuery.includes('screenshot') ||
+          lowerQuery.includes('ss') ||
+          lowerQuery.includes('tampilan') ||
           lowerQuery.includes('aplikasi') ||
           lowerQuery.includes('app') ||
           lowerQuery.includes('ketik') ||
