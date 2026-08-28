@@ -63,6 +63,11 @@ const normalizeSubagentToolQuery = (tool, queryOrArgs) => {
     case 'browser-navigate':
       return a.url || ''
 
+    case 'browser-read':
+    case 'browser-show':
+    case 'browser-hide':
+      return ''
+
     case 'browser-click':
       return String(a.element_id ?? '')
 
@@ -75,8 +80,14 @@ const normalizeSubagentToolQuery = (tool, queryOrArgs) => {
     case 'browser-extract':
       return a.selector || ''
 
+    case 'browser-script':
+      return a.script || ''
+
     case 'browser-screenshot':
       return a.filename || 'screenshot.png'
+
+    case 'browser-download':
+      return `${a.url || ''}||${a.filename || ''}`
 
     case 'browser-ask-user':
       return a.prompt || ''
@@ -85,6 +96,7 @@ const normalizeSubagentToolQuery = (tool, queryOrArgs) => {
       return ''
 
     case 'os-click':
+    case 'os-double-click':
       return String(a.target || '')
 
     case 'os-type':
@@ -96,11 +108,96 @@ const normalizeSubagentToolQuery = (tool, queryOrArgs) => {
     case 'os-scroll':
       return `${a.direction || 'down'}||${a.amount || 3}`
 
+    case 'os-delay':
+      return String(a.ms || 1000)
+
     case 'os-search':
       return a.keyword || ''
 
     case 'os-focus-window':
       return a.title || ''
+
+    case 'os-list-windows':
+    case 'os-control-open':
+    case 'os-control-close':
+      return ''
+
+    case 'gdrive-info':
+      return 'all'
+
+    case 'gdrive-search':
+      if (a.pagination) return `${a.query || ''}||${a.pagination}`
+      return a.query || ''
+
+    case 'gdrive-list':
+      if (a.pagination) return `${a.folder_id || ''}||${a.pagination}`
+      return a.folder_id || ''
+
+    case 'gdrive-read':
+      return a.file_id || ''
+
+    case 'gdrive-upload':
+      return `${a.name || ''}||${a.content || ''}`
+
+    case 'gdrive-create':
+      return `${a.name || ''}||${a.type || 'doc'}`
+
+    case 'gdrive-move':
+      return `${a.file_id || ''}||${a.folder_id || ''}`
+
+    case 'gdrive-copy':
+      return `${a.file_id || ''}||${a.new_name || ''}`
+
+    case 'gcalendar-list':
+      if (a.time_min) return `${a.pagination || '0-10'}||${a.time_min}`
+      return a.pagination || '0-10'
+
+    case 'gcalendar-create':
+      return `${a.summary || ''}||${a.description || ''}||${a.start_time || ''}||${a.end_time || ''}`
+
+    case 'gcalendar-delete':
+      return a.event_id || ''
+
+    case 'gmail-search':
+      if (a.pagination) return `${a.query || 'is:unread'}||${a.pagination}`
+      return a.query || 'is:unread'
+
+    case 'gmail-list':
+      return a.pagination || '0-10'
+
+    case 'gmail-read':
+    case 'gmail-mark-read':
+      return a.message_id || ''
+
+    case 'gmail-send':
+      return `${a.to || ''}||${a.subject || ''}||${a.body || ''}`
+
+    case 'screenshot-to-tg':
+      return ''
+
+    case 'tg-send':
+      return `${a.chat_id || ''}||${a.type || 'text'}||${a.content || ''}`
+
+    case 'speak':
+      return a.text || ''
+
+    case 'analyze-screen':
+    case 'camera-look':
+      return a.query || ''
+
+    case 'yt-search':
+      return a.query || ''
+
+    case 'yt-summary':
+      return a.url || ''
+
+    case 'music-play':
+      return a.title || ''
+
+    case 'music-toggle':
+    case 'music-next':
+    case 'music-prev':
+      return ''
 
     case 'git-status':
       return a.path || ''

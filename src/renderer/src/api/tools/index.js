@@ -114,6 +114,63 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
       ) {
         isRelevant = true
       } else if (
+        groupKey === 'google_drive' &&
+        (lowerQuery.includes('drive') ||
+          lowerQuery.includes('gdrive') ||
+          lowerQuery.includes('google drive') ||
+          lowerQuery.includes('gworkspace') ||
+          lowerQuery.includes('workspace') ||
+          lowerQuery.includes('docs') ||
+          lowerQuery.includes('sheets') ||
+          lowerQuery.includes('doc') ||
+          lowerQuery.includes('sheet') ||
+          lowerQuery.includes('gdoc') ||
+          lowerQuery.includes('gsheet'))
+      ) {
+        isRelevant = true
+      } else if (
+        groupKey === 'google_calendar' &&
+        (lowerQuery.includes('calendar') ||
+          lowerQuery.includes('kalender') ||
+          lowerQuery.includes('jadwal') ||
+          lowerQuery.includes('agenda') ||
+          lowerQuery.includes('event') ||
+          lowerQuery.includes('meeting') ||
+          lowerQuery.includes('gcalendar') ||
+          lowerQuery.includes('gworkspace') ||
+          lowerQuery.includes('workspace'))
+      ) {
+        isRelevant = true
+      } else if (
+        groupKey === 'google_gmail' &&
+        (lowerQuery.includes('gmail') ||
+          lowerQuery.includes('email') ||
+          lowerQuery.includes('mail') ||
+          lowerQuery.includes('inbox') ||
+          lowerQuery.includes('surat') ||
+          lowerQuery.includes('pesan masuk') ||
+          lowerQuery.includes('kirim email') ||
+          lowerQuery.includes('gworkspace') ||
+          lowerQuery.includes('workspace'))
+      ) {
+        isRelevant = true
+      } else if (
+        groupKey === 'system_vision_tg' &&
+        (lowerQuery.includes('vision') ||
+          lowerQuery.includes('kamera') ||
+          lowerQuery.includes('camera') ||
+          lowerQuery.includes('webcam') ||
+          lowerQuery.includes('layar') ||
+          lowerQuery.includes('screen') ||
+          lowerQuery.includes('screenshot') ||
+          lowerQuery.includes('telegram') ||
+          lowerQuery.includes('tg') ||
+          lowerQuery.includes('speak') ||
+          lowerQuery.includes('bicara') ||
+          lowerQuery.includes('suara'))
+      ) {
+        isRelevant = true
+      } else if (
         groupKey === 'git_vcs' &&
         (lowerQuery.includes('git') ||
           lowerQuery.includes('commit') ||
