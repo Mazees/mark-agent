@@ -38,6 +38,7 @@ import { searchEmails, readEmail, sendEmail, markAsRead } from './google/google-
 import { sendTelegramMessage, sendTelegramFile } from './telegram/telegram-service.js'
 import { getGitStatus, getGitDiff, gitCommit, gitRevert } from './git-service.js'
 import { spawnBackgroundTask, readBackgroundTaskOutput, killBackgroundTask, listBackgroundTasks } from './task-daemon.js'
+import { searchYoutube, getTranscript, synthesizeTTS } from '../server/tools/media-tools.js'
 
 const DANGEROUS_KEY_COMBOS = [
   'alt+f4',
@@ -1728,6 +1729,46 @@ export const NATIVE_TOOLS = {
       } catch (e) {
         const errPath = path.join(os.homedir(), 'Desktop', 'tg_debug.txt')
         fs.appendFileSync(errPath, `CRASH: ${e.stack}\n`)
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  // ----------------------------------------------------------------------
+  // MEDIA & YOUTUBE TOOLS
+  // ----------------------------------------------------------------------
+  'search-youtube': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        const q = (query || '').trim()
+        const result = await searchYoutube(q)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+  'youtube-transcript': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        const url = (query || '').trim()
+        const result = await getTranscript(url)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+  'tts-speak': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        const text = (query || '').trim()
+        const result = await synthesizeTTS(text)
+        return { success: true, data: result }
+      } catch (e) {
         return { success: false, error: e.message }
       }
     }

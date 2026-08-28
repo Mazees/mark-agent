@@ -165,7 +165,7 @@ const normalizeToolQuery = (tool, queryOrArgs) => {
       return a.url || ''
 
     case 'music-play':
-      return a.title || ''
+      return a.title || a.query || a.song || a.keyword || a.name || a.track || a.reason || ''
 
     case 'git-status':
       return a.path || ''

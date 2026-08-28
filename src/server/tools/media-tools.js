@@ -47,12 +47,17 @@ export async function synthesizeTTS(text, voice = 'id-ID-ArdiNeural') {
 export async function searchYoutube(query) {
   if (!query) return []
   const result = await ytSearch(query)
-  return result.videos.slice(0, 5).map((v) => ({
+  return result.videos.slice(0, 10).map((v) => ({
+    id: v.videoId,
+    videoId: v.videoId,
     title: v.title,
     url: v.url,
     timestamp: v.timestamp,
+    seconds: v.seconds,
     views: v.views,
-    author: v.author.name
+    author: v.author?.name || 'Unknown Artist',
+    artist: v.author?.name || 'Unknown Artist',
+    thumbnail: v.thumbnail || v.image || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`
   }))
 }
 

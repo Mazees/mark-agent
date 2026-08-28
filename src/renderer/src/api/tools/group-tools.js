@@ -325,11 +325,11 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'music-play',
-          description: 'Memutar lagu di YouTube Music.',
+          description: 'Memutar lagu di YouTube Music. Masukkan judul atau genre/mood lagu pada parameter title.',
           parameters: {
             type: 'object',
             properties: {
-              title: { type: 'string', description: 'Judul lagu yang ingin diputar' }
+              title: { type: 'string', description: 'Judul lagu, nama artis, atau kata kunci pencarian lagu yang ingin diputar (contoh: "Bohemian Rhapsody", "Lagu Pop Santai")' }
             },
             required: ['title'],
             additionalProperties: false

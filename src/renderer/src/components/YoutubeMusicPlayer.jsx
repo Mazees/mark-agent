@@ -1,288 +1,364 @@
-import { useEffect, useState, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
+import {
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  Volume,
+  Volume2,
+  VolumeX,
+  ListMusic,
+  ChevronDown,
+  Music,
+  ImageIcon,
+  Tv,
+  X,
+  Radio
+} from 'lucide-react'
+
+function formatTime(seconds) {
+  if (!seconds || isNaN(seconds)) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`
+}
 
 export const YoutubeMusicPlayer = () => {
   const {
-    musicUrl,
+    currentTrack,
+    queue,
+    currentIndex,
+    isPlaying,
+    isMuted,
+    volume,
+    currentTime,
+    duration,
+    viewMode,
     isPlayerOpen,
+    containerId,
     setIsPlayerOpen,
     togglePlayer,
-    webviewRef,
-    playUrl,
-    playId,
+    setViewMode,
+    playTrack,
+    playPause,
     nextTrack,
     prevTrack,
-    playPause
+    seekTo,
+    setVolume,
+    toggleMute
   } = useYoutubeMusic()
-  const [isReady, setIsReady] = useState(false)
 
-  // IPC listeners — register sekali saja saat mount, pakai ref agar selalu akses fungsi terbaru
-  const playUrlRef = useRef(playUrl)
+  const [isSeeking, setIsSeeking] = useState(false)
+  const [seekValue, setSeekValue] = useState(0)
+  const [showQueue, setShowQueue] = useState(false)
+
+  // Web Bridge / IPC command synchronization
+  const playTrackRef = useRef(playTrack)
   const nextTrackRef = useRef(nextTrack)
   const prevTrackRef = useRef(prevTrack)
   const playPauseRef = useRef(playPause)
 
   useEffect(() => {
-    playUrlRef.current = playUrl
+    playTrackRef.current = playTrack
     nextTrackRef.current = nextTrack
     prevTrackRef.current = prevTrack
     playPauseRef.current = playPause
-  }, [playUrl, nextTrack, prevTrack, playPause])
+  }, [playTrack, nextTrack, prevTrack, playPause])
 
   useEffect(() => {
     if (window.api?.onExecuteMusicCommand) {
       window.api.onExecuteMusicCommand((command, payload) => {
-        if (command === 'play' && payload) playUrlRef.current(payload)
-        else if (command === 'next') nextTrackRef.current()
-        else if (command === 'prev') prevTrackRef.current()
-        else if (command === 'toggle') playPauseRef.current()
-      })
-    }
-    if (window.api?.onExecuteMusicCommandWa) {
-      window.api.onExecuteMusicCommandWa((command, payload) => {
         if (command === 'play' && payload) {
-          window.api.searchMusic(payload).then((music) => {
-            if (music && music.length > 0) {
-              // Gunakan URL bersih tanpa parameter _t yang asing bagi YouTube Music
-              const url = `https://music.youtube.com/watch?v=${music[0].id}`
-              playUrlRef.current(url)
-            }
-          })
+          if (typeof payload === 'object') {
+            playTrackRef.current(payload)
+          } else {
+            window.api.searchMusic(payload).then((res) => {
+              if (res && res.length > 0) {
+                playTrackRef.current(res[0], res)
+              }
+            })
+          }
         } else if (command === 'next') nextTrackRef.current()
         else if (command === 'prev') prevTrackRef.current()
         else if (command === 'toggle') playPauseRef.current()
       })
     }
-  }, []) // Register sekali saja, tidak perlu re-register
-
-  useEffect(() => {
-    const webview = webviewRef.current
-    if (!webview) return
-
-    const handleDomReady = () => {
-      setIsReady(true)
-      // 1. Suntik CSS buat ngilangin visual iklan & promo premium
-      webview.insertCSS(`
-        /* Sembunyikan iklan video/audio player */
-        .ad-showing, .ad-interrupting, .ytp-ad-overlay-container, .ytp-ad-message-container {
-          display: none !important;
-        }
-        
-        /* Sembunyikan banner "Upgrade to Premium" & Mealbar Promo */
-        ytmusic-guide-entry-renderer[icon='yt-sys-icons:premium'],
-        ytmusic-pivot-bar-item-renderer[tab-id='SPunlimited'],
-        .ytmusic-mealbar-promo-renderer,
-        ytmusic-ad-slot-renderer,
-        #premium-out-of-app-upsell {
-          display: none !important;
-        }
-
-        /* Sembunyikan promo banner non-modal */
-        ytmusic-mealbar-promo-renderer,
-        ytmusic-sign-in-promo-renderer {
-          display: none !important;
-        }
-      `)
-
-      // 2. Logic "Ad-Blaster" & Auto-Dismiss Login Prompt (Auto-Mute, 16x Speed, Anti-Login Modal)
-      webview.executeJavaScript(`
-        (function() {
-          let isAdMuted = false;
-
-          setInterval(() => {
-            const video = document.querySelector('video');
-            const adContainer = document.querySelector('.ad-showing, .ad-interrupting');
-            const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
-
-            // --- JIKA ADA IKLAN ---
-            if (adContainer && video) {
-              console.log('Mark mendeteksi iklan. Mengaktifkan Ad-Blaster...');
-              
-              // A. Mute suara iklan biar gak berisik
-              if (!video.muted) {
-                video.muted = true;
-                isAdMuted = true;
-              }
-
-              // B. Paksa kecepatan hanya jika buffer siap agar tidak loading terus
-              if (video.readyState >= 3) {
-                video.playbackRate = 16;
-              }
-
-              // C. Klik tombol skip kalau tiba-tiba muncul
-              if (skipBtn) skipBtn.click();
-            } 
-            
-            // --- JIKA IKLAN SELESAI ---
-            else if (video) {
-              // Balikin suara & kecepatan normal
-              if (isAdMuted) {
-                video.muted = false;
-                isAdMuted = false;
-              }
-              if (video.playbackRate !== 1) {
-                video.playbackRate = 1;
-              }
-            }
-
-            // --- ANTI-SIGN-IN PROMPT, CONSENT BANNER & MODAL LOGIN ---
-            const dismissBtns = document.querySelectorAll(
-              'ytmusic-modal-with-title-and-button-renderer yt-button-renderer, ' +
-              'ytmusic-sign-in-promo-renderer .dismiss-button, ' +
-              'button[aria-label="No thanks"], button[aria-label="Lain kali"], ' +
-              'button[aria-label="Dismiss"], button[aria-label="Lewati"], ' +
-              'button[aria-label="Reject all"], button[aria-label="Tolak semua"], ' +
-              'button[aria-label="Accept all"], button[aria-label="Terima semua"], ' +
-              'ytmusic-consent-bump-renderer .yt-spec-button-shape-next--call-to-action-secondary, ' +
-              'ytmusic-consent-bump-renderer button, #consent-bump button'
-            );
-            dismissBtns.forEach(btn => btn.click());
-
-            // Pastikan halaman & player tidak terkunci (backdrop sisa / overflow hidden / pointer-events none)
-            const backdrop = document.querySelector('iron-overlay-backdrop, tp-yt-iron-overlay-backdrop');
-            if (backdrop && backdrop.style.display !== 'none') {
-              backdrop.click();
-              backdrop.style.display = 'none';
-            }
-            if (document.body && document.body.style.overflow === 'hidden') {
-              document.body.style.overflow = 'auto';
-            }
-            if (document.body && document.body.style.pointerEvents === 'none') {
-              document.body.style.pointerEvents = 'auto';
-            }
-
-            // Anti-pause "Are you still watching?"
-            const confirmBtn = document.querySelector('ytmusic-you-there-renderer button, .ytmusic-you-there-renderer button');
-            if (confirmBtn) confirmBtn.click();
-
-          }, 500); // Cek setiap setengah detik
-        })();
-      `)
-    }
-
-    webview.addEventListener('dom-ready', handleDomReady)
-    return () => webview.removeEventListener('dom-ready', handleDomReady)
   }, [])
 
-  useEffect(() => {
-    if (webviewRef.current && musicUrl && musicUrl !== 'https://music.youtube.com') {
-      try {
-        webviewRef.current.loadURL(musicUrl)
-      } catch (e) {
-        console.error('Gagal ganti lagu YT Music:', e)
-      }
-    }
-  }, [musicUrl, playId])
+  const currentSeek = isSeeking ? seekValue : currentTime
+  const progressRatio = duration > 0 ? Math.min(100, Math.max(0, (currentSeek / duration) * 100)) : 0
+  const remainingTime = duration > currentSeek ? duration - currentSeek : 0
 
   return (
-    <div className="fixed bottom-6 right-6 z-[120] flex flex-col items-end gap-3 pointer-events-none">
-      {/* Player Panel */}
+    <div className="fixed bottom-5 right-5 z-120 flex flex-col items-end gap-2 select-none pointer-events-none">
+      {/* Player Main Card */}
       <div
         className={`
-          transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom-right
+          transition-all duration-300 ease-out origin-bottom-right
           ${
             isPlayerOpen
               ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
-              : 'opacity-0 scale-75 translate-y-4 pointer-events-none'
+              : 'opacity-0 scale-95 translate-y-3 pointer-events-none'
           }
         `}
       >
-        <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/40 border border-white/10 bg-base-300">
-          {/* Header bar */}
-          <div className="flex items-center justify-between px-3 py-2 bg-base-200/80 backdrop-blur-sm border-b border-white/5">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
-              <span className="text-xs font-medium text-white/60 select-none">YouTube Music</span>
-            </div>
+        <div className="relative w-80 sm:w-84 rounded-3xl overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] border border-white/10 bg-[#0d0d0e]/95 backdrop-blur-2xl text-white flex flex-col p-4">
+          {/* Subtle Ambient Red Glow Background */}
+          {currentTrack.thumbnail && (
+            <div
+              className="absolute inset-0 bg-cover bg-center blur-3xl opacity-20 pointer-events-none scale-150 transition-opacity duration-700"
+              style={{ backgroundImage: `url(${currentTrack.thumbnail})` }}
+            />
+          )}
+
+          {/* Top Bar (Dismiss handle & View Mode Toggle) */}
+          <div className="relative z-10 flex items-center justify-between pb-3">
             <button
               onClick={() => setIsPlayerOpen(false)}
-              className="btn btn-ghost btn-xs btn-circle text-white/40 hover:text-white/80"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+              title="Tutup Player"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <ChevronDown size={18} />
+            </button>
+
+            {/* Video vs Cover Pill Switcher */}
+            <div className="flex items-center bg-white/10 p-0.5 rounded-full border border-white/5 backdrop-blur-md">
+              <button
+                onClick={() => setViewMode('thumbnail')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5 ${
+                  viewMode === 'thumbnail'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
               >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
+                <ImageIcon size={12} />
+                <span>Cover</span>
+              </button>
+              <button
+                onClick={() => setViewMode('video')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5 ${
+                  viewMode === 'video'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Tv size={12} />
+                <span>Video</span>
+              </button>
+            </div>
+
+            {/* Queue Toggle Button */}
+            <button
+              onClick={() => setShowQueue(!showQueue)}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                showQueue
+                  ? 'bg-red-600 text-white shadow-sm shadow-red-600/50'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/10'
+              }`}
+              title="Daftar Antrean"
+            >
+              <ListMusic size={17} />
             </button>
           </div>
 
-          {/* Webview */}
-          <webview
-            ref={webviewRef}
-            src="https://music.youtube.com/"
-            style={{ zoom: '0.65', width: '420px', height: '560px' }}
-            className="no-scrollbar"
-            allowpopups="false"
-            useragent={
-              typeof navigator !== 'undefined'
-                ? navigator.userAgent.replace(/Electron\/[\d.]+\s?/, '').replace(/mark\/[\d.]+\s?/, '').trim()
-                : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
-            }
-          />
+          {/* Media Display Screen (Artwork / Embedded Video) */}
+          <div className="relative z-10 w-full aspect-square rounded-2xl overflow-hidden shadow-2xl shadow-black/80 bg-black/60 border border-white/5 group my-1 flex items-center justify-center">
+            {/* 1. YouTube Iframe Video (Kept mounted for continuous playback) */}
+            <div
+              className={`absolute inset-0 w-full h-full transition-opacity duration-200 ${
+                viewMode === 'video'
+                  ? 'opacity-100 pointer-events-auto z-20'
+                  : 'opacity-0 pointer-events-none -z-10'
+              }`}
+            >
+              <div id={containerId} className="w-full h-full pointer-events-auto" />
+            </div>
+
+            {/* 2. Cover / Artwork View */}
+            {viewMode === 'thumbnail' && (
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                {currentTrack.thumbnail ? (
+                  <>
+                    <img
+                      src={currentTrack.thumbnail}
+                      alt={currentTrack.title}
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-zinc-600">
+                    <Music size={40} strokeWidth={1.5} />
+                    <span className="text-xs font-mono">Belum ada lagu</span>
+                  </div>
+                )}
+
+                {/* Soundwave Animation Badge */}
+                {isPlaying && (
+                  <div className="absolute bottom-3 right-3 flex items-end gap-0.5 px-2 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-lg">
+                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-2.5" />
+                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.9s_ease-in-out_infinite] h-4" />
+                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.4s_ease-in-out_infinite] h-2" />
+                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.7s_ease-in-out_infinite] h-3.5" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Queue List Overlay Panel */}
+          {showQueue && queue && queue.length > 0 && (
+            <div className="relative z-20 my-2 max-h-36 overflow-y-auto no-scrollbar rounded-2xl bg-black/80 border border-white/10 p-1.5 flex flex-col gap-0.5 text-xs backdrop-blur-xl">
+              {queue.map((item, idx) => {
+                const isCurrent = (item.videoId || item.id) === currentTrack.videoId
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => playTrack(item)}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors ${
+                      isCurrent
+                        ? 'bg-red-600/20 text-red-400 font-medium'
+                        : 'hover:bg-white/5 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 truncate">
+                      <span className="text-[11px] text-zinc-500 font-mono w-4">{idx + 1}</span>
+                      <span className="truncate text-xs">{item.title}</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-500 font-mono shrink-0 ml-2">
+                      {item.timestamp || ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Song Meta (Title & Artist) */}
+          <div className="relative z-10 mt-3 mb-2 flex items-center justify-between">
+            <div className="flex flex-col min-w-0 pr-2">
+              <span className="font-semibold text-base text-white truncate tracking-tight" title={currentTrack.title}>
+                {currentTrack.title || 'Tidak ada lagu aktif'}
+              </span>
+              <span className="text-xs text-zinc-400 truncate mt-0.5" title={currentTrack.artist}>
+                {currentTrack.artist || 'Pilih lagu untuk memulai'}
+              </span>
+            </div>
+          </div>
+
+          {/* Progress Scrubber (Apple Music Style) */}
+          <div className="relative z-10 flex flex-col gap-1 my-1">
+            <div className="relative flex items-center group">
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={currentSeek}
+                onMouseDown={() => setIsSeeking(true)}
+                onChange={(e) => setSeekValue(Number(e.target.value))}
+                onMouseUp={(e) => {
+                  setIsSeeking(false)
+                  seekTo(Number(e.target.value))
+                }}
+                className="w-full h-1 bg-white/15 rounded-full appearance-none cursor-pointer accent-red-500 focus:outline-none transition-all group-hover:h-1.5"
+                style={{
+                  background: `linear-gradient(to right, #ef4444 ${progressRatio}%, rgba(255, 255, 255, 0.15) ${progressRatio}%)`
+                }}
+              />
+            </div>
+            <div className="flex justify-between text-[11px] font-mono text-zinc-400">
+              <span>{formatTime(currentSeek)}</span>
+              <span>{duration > 0 ? `-${formatTime(remainingTime)}` : '0:00'}</span>
+            </div>
+          </div>
+
+          {/* Main Playback Controls Cluster */}
+          <div className="relative z-10 flex items-center justify-center gap-6 py-2">
+            <button
+              onClick={prevTrack}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/5 active:scale-90 transition-all"
+              title="Sebelumnya"
+            >
+              <SkipBack size={22} fill="currentColor" />
+            </button>
+
+            <button
+              onClick={playPause}
+              className="w-13 h-13 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10"
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? (
+                <Pause size={22} fill="currentColor" />
+              ) : (
+                <Play size={22} fill="currentColor" className="ml-0.5" />
+              )}
+            </button>
+
+            <button
+              onClick={nextTrack}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/5 active:scale-90 transition-all"
+              title="Berikutnya"
+            >
+              <SkipForward size={22} fill="currentColor" />
+            </button>
+          </div>
+
+          {/* Volume Control Bar (Apple Music Style) */}
+          <div className="relative z-10 flex items-center gap-2 px-1 pt-1 pb-0.5">
+            <button
+              onClick={toggleMute}
+              className="text-zinc-400 hover:text-white transition-colors"
+              title={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume size={14} />}
+            </button>
+
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={isMuted ? 0 : volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              className="w-full h-1 bg-white/15 rounded-full appearance-none cursor-pointer accent-white focus:outline-none"
+              style={{
+                background: `linear-gradient(to right, rgba(255, 255, 255, 0.8) ${isMuted ? 0 : volume}%, rgba(255, 255, 255, 0.15) ${isMuted ? 0 : volume}%)`
+              }}
+            />
+
+            <Volume2 size={14} className="text-zinc-400 shrink-0" />
+          </div>
         </div>
       </div>
 
-      {/* Floating Action Button */}
+      {/* Floating Mini Action Button */}
       <button
         onClick={togglePlayer}
         className={`
-          group relative w-14 h-14 rounded-full flex items-center justify-center pointer-events-auto
-          shadow-lg shadow-black/30 border border-white/10
-          transition-all duration-300 ease-out
-          hover:scale-110 hover:shadow-xl hover:shadow-red-500/20
-          active:scale-95
+          group relative w-11 h-11 rounded-full flex items-center justify-center pointer-events-auto
+          shadow-lg shadow-black/80 border border-white/10
+          transition-all duration-200 ease-out
+          hover:scale-105 active:scale-95
           ${
             isPlayerOpen
-              ? 'bg-red-600 hover:bg-red-700 rotate-0'
-              : 'bg-linear-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700'
+              ? 'bg-white/15 text-white hover:bg-white/20'
+              : 'bg-[#121214] text-white hover:border-red-500/40'
           }
         `}
-        title={isPlayerOpen ? 'Tutup Player' : 'Buka YouTube Music'}
+        title={isPlayerOpen ? 'Tutup' : 'YouTube Music'}
       >
-        {/* Pulse ring saat tertutup */}
-        {!isPlayerOpen && (
-          <span className="absolute inset-0 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
+        {isPlaying && !isPlayerOpen && (
+          <span className="absolute inset-0 rounded-full bg-red-600/30 animate-ping pointer-events-none" />
         )}
 
         {isPlayerOpen ? (
-          // Icon X (close)
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="transition-transform duration-300"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
+          <X size={16} strokeWidth={2} />
         ) : (
-          // Icon Music Note
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="white"
-            className="transition-transform duration-300 group-hover:scale-110"
-          >
-            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-          </svg>
+          <Music size={17} className={isPlaying ? 'text-red-500 animate-pulse' : 'text-zinc-300'} />
         )}
       </button>
     </div>
   )
 }
+
+export default YoutubeMusicPlayer

@@ -700,6 +700,10 @@ export const webApi = {
     const res = await webApi.executeNativeTool('youtube-transcript', url)
     return res.data || ''
   },
+  searchYoutube: async (query) => {
+    const res = await webApi.executeNativeTool('search-youtube', query)
+    return res.data || []
+  },
   searchMusic: async (query) => {
     const res = await webApi.executeNativeTool('search-youtube', query)
     return res.data || []

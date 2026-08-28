@@ -2,160 +2,327 @@ import { useState, useContext, createContext, useRef, useCallback, useEffect } f
 
 const YoutubeMusicContext = createContext()
 
-const DEFAULT_URL = 'https://music.youtube.com'
+/**
+ * Load YouTube IFrame Player API Script dynamically
+ */
+let ytIframeScriptLoading = false
+let ytIframeReadyCallbacks = []
+
+function loadYouTubeIframeApi(callback) {
+  if (window.YT && window.YT.Player) {
+    callback()
+    return
+  }
+
+  ytIframeReadyCallbacks.push(callback)
+
+  if (!ytIframeScriptLoading) {
+    ytIframeScriptLoading = true
+    const tag = document.createElement('script')
+    tag.src = 'https://www.youtube.com/iframe_api'
+    const firstScriptTag = document.getElementsByTagName('script')[0]
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag)
+
+    window.onYouTubeIframeAPIReady = () => {
+      ytIframeReadyCallbacks.forEach((cb) => cb())
+      ytIframeReadyCallbacks = []
+    }
+  }
+}
 
 export const YoutubeMusicProvider = ({ children }) => {
-  const [musicUrl, setMusicUrl] = useState(DEFAULT_URL)
+  const [currentTrack, setCurrentTrack] = useState({
+    id: '',
+    videoId: '',
+    title: 'Tidak Ada Lagu',
+    artist: 'Pilih lagu untuk memutar',
+    thumbnail: '',
+    duration: 0
+  })
+
+  const [queue, setQueue] = useState([])
+  const [currentIndex, setCurrentIndex] = useState(-1)
   const [isPlayerOpen, setIsPlayerOpen] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [playId, setPlayId] = useState(0)
-  const webviewRef = useRef(null)
+  const [isMuted, setIsMuted] = useState(false)
+  const [volume, setVolume] = useState(80)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [viewMode, setViewMode] = useState('thumbnail') // 'thumbnail' | 'video'
+  const [isReady, setIsReady] = useState(false)
 
-  const [currentTrack, setCurrentTrack] = useState({ title: '', artist: '' })
+  const playerRef = useRef(null)
+  const containerIdRef = useRef('mark-yt-iframe-player')
+  const timeUpdateTimerRef = useRef(null)
 
-  // Poll webview every 1s to detect if music is playing and get track info
+  // Inisialisasi YouTube Player
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const webview = webviewRef.current
-      if (!webview) {
-        setIsPlaying(false)
-        return
-      }
+    loadYouTubeIframeApi(() => {
+      if (playerRef.current) return
+
       try {
-        const info = await webview.executeJavaScript(
-          `(function(){ 
-            const titleEl = document.querySelector('yt-formatted-string.title.ytmusic-player-bar, .title.ytmusic-player-bar');
-            const subtitleEl = document.querySelector('span.subtitle.ytmusic-player-bar, .byline.ytmusic-player-bar');
-            const imgEl = document.querySelector('img.image.ytmusic-player-bar, .thumbnail.ytmusic-player img');
-            const video = document.querySelector('video');
-            return {
-              title: titleEl ? (titleEl.getAttribute('title') || titleEl.innerText || titleEl.textContent || '').trim() : '',
-              artist: subtitleEl ? (subtitleEl.getAttribute('title') || subtitleEl.innerText || subtitleEl.textContent || '').trim() : '',
-              thumbnail: imgEl ? imgEl.src.replace(/=w\\d+-h\\d+.*$/, '=w1080-h1080-l90-rj').replace(/\\?sqp=.*$/, '') : '',
-              paused: video ? video.paused : true
-            };
-          })()`
-        )
-        setIsPlaying(!info.paused)
-        if (info.title) {
-          setCurrentTrack(prev => ({ 
-            title: info.title, 
-            artist: info.artist, 
-            thumbnail: info.thumbnail || prev.thumbnail 
-          }))
-        }
-      } catch {
-        setIsPlaying(false)
+        playerRef.current = new window.YT.Player(containerIdRef.current, {
+          height: '100%',
+          width: '100%',
+          host: 'https://www.youtube-nocookie.com',
+          playerVars: {
+            autoplay: 1,
+            controls: 1,
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            iv_load_policy: 3,
+            disablekb: 0,
+            enablejsapi: 1,
+            origin: window.location.origin
+          },
+          events: {
+            onReady: (event) => {
+              setIsReady(true)
+              event.target.setVolume(80)
+            },
+            onStateChange: (event) => {
+              // YT.PlayerState: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (video cued)
+              if (event.data === window.YT.PlayerState.PLAYING) {
+                setIsPlaying(true)
+                const dur = playerRef.current?.getDuration() || 0
+                if (dur > 0) setDuration(dur)
+              } else if (event.data === window.YT.PlayerState.PAUSED) {
+                setIsPlaying(false)
+              } else if (event.data === window.YT.PlayerState.ENDED) {
+                setIsPlaying(false)
+                // Otomatis next track jika ada di queue
+                nextTrack()
+              }
+            },
+            onError: (e) => {
+              console.warn('[YT Player] Error:', e.data)
+              // Error 150/101 sering terjadi jika embedding ditolak, coba lagu berikutnya
+              if (e.data === 150 || e.data === 101) {
+                nextTrack()
+              }
+            }
+          }
+        })
+      } catch (err) {
+        console.error('[YT Player] Failed to create player instance:', err)
       }
-    }, 1000)
-    return () => clearInterval(interval)
+    })
+
+    return () => {
+      if (timeUpdateTimerRef.current) clearInterval(timeUpdateTimerRef.current)
+    }
   }, [])
 
-  const playUrl = useCallback(async (url, initialTrack = null) => {
-    if (webviewRef.current) {
-      try {
-        await webviewRef.current.executeJavaScript(`
-          var video = document.querySelector('video');
-          if (video && !video.paused) {
-            video.pause();
-          }
-        `);
-        // Tunggu sebentar agar pause benar-benar tereksekusi sebelum ganti URL
-        await new Promise(resolve => setTimeout(resolve, 300));
-      } catch (e) {
-        console.error('Error pausing before playUrl:', e);
-      }
+  // Timer pemantau progress durasi
+  useEffect(() => {
+    if (isPlaying) {
+      timeUpdateTimerRef.current = setInterval(() => {
+        if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+          const curr = playerRef.current.getCurrentTime() || 0
+          const dur = playerRef.current.getDuration() || 0
+          setCurrentTime(curr)
+          if (dur > 0 && dur !== duration) setDuration(dur)
+        }
+      }, 500)
+    } else {
+      if (timeUpdateTimerRef.current) clearInterval(timeUpdateTimerRef.current)
     }
-    
-    setMusicUrl(url)
-    setPlayId(prev => prev + 1)
+    return () => {
+      if (timeUpdateTimerRef.current) clearInterval(timeUpdateTimerRef.current)
+    }
+  }, [isPlaying, duration])
+
+  // Memutar Track tertentu
+  const playTrack = useCallback((track, newQueue = null) => {
+    if (!track) return
+
+    const videoId = track.videoId || track.id || (track.url ? track.url.split('v=')[1]?.split('&')[0] : '')
+    if (!videoId) return
+
+    const formattedTrack = {
+      id: videoId,
+      videoId: videoId,
+      title: track.title || 'YouTube Track',
+      artist: track.artist || track.author || 'YouTube Artist',
+      thumbnail: track.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      duration: track.seconds || 0
+    }
+
+    setCurrentTrack(formattedTrack)
     setIsPlayerOpen(true)
-    if (initialTrack) {
-      setCurrentTrack(initialTrack)
+    setCurrentTime(0)
+
+    if (newQueue && Array.isArray(newQueue) && newQueue.length > 0) {
+      setQueue(newQueue)
+      const foundIndex = newQueue.findIndex(
+        (item) => (item.videoId || item.id) === videoId
+      )
+      setCurrentIndex(foundIndex >= 0 ? foundIndex : 0)
+    }
+
+    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+      playerRef.current.loadVideoById({
+        videoId: videoId,
+        startSeconds: 0
+      })
+      playerRef.current.playVideo()
+      setIsPlaying(true)
     }
   }, [])
+
+  // Kompatibilitas untuk pemanggilan via URL
+  const playUrl = useCallback(
+    (url, initialTrack = null) => {
+      let videoId = ''
+      if (url.includes('v=')) {
+        videoId = url.split('v=')[1]?.split('&')[0]
+      } else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1]?.split('?')[0]
+      }
+
+      if (videoId) {
+        playTrack(initialTrack || { videoId, title: 'YouTube Track', artist: 'YouTube' })
+      }
+    },
+    [playTrack]
+  )
+
+  const playPause = useCallback(() => {
+    if (!playerRef.current) return
+    try {
+      if (isPlaying) {
+        playerRef.current.pauseVideo()
+        setIsPlaying(false)
+      } else {
+        playerRef.current.playVideo()
+        setIsPlaying(true)
+      }
+    } catch (_) {}
+  }, [isPlaying])
+
+  const nextTrack = useCallback(() => {
+    setQueue((currQueue) => {
+      if (!currQueue || currQueue.length === 0) return currQueue
+      setCurrentIndex((currIndex) => {
+        const nextIdx = currIndex + 1 < currQueue.length ? currIndex + 1 : 0
+        const nextItem = currQueue[nextIdx]
+        if (nextItem) {
+          const videoId = nextItem.videoId || nextItem.id
+          if (videoId) {
+            setCurrentTrack({
+              id: videoId,
+              videoId: videoId,
+              title: nextItem.title || 'YouTube Track',
+              artist: nextItem.artist || nextItem.author || 'YouTube Artist',
+              thumbnail: nextItem.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+              duration: nextItem.seconds || 0
+            })
+            if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+              playerRef.current.loadVideoById({ videoId, startSeconds: 0 })
+              playerRef.current.playVideo()
+              setIsPlaying(true)
+            }
+          }
+        }
+        return nextIdx
+      })
+      return currQueue
+    })
+  }, [])
+
+  const prevTrack = useCallback(() => {
+    setQueue((currQueue) => {
+      if (!currQueue || currQueue.length === 0) return currQueue
+      setCurrentIndex((currIndex) => {
+        const prevIdx = currIndex - 1 >= 0 ? currIndex - 1 : currQueue.length - 1
+        const prevItem = currQueue[prevIdx]
+        if (prevItem) {
+          const videoId = prevItem.videoId || prevItem.id
+          if (videoId) {
+            setCurrentTrack({
+              id: videoId,
+              videoId: videoId,
+              title: prevItem.title || 'YouTube Track',
+              artist: prevItem.artist || prevItem.author || 'YouTube Artist',
+              thumbnail: prevItem.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+              duration: prevItem.seconds || 0
+            })
+            if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+              playerRef.current.loadVideoById({ videoId, startSeconds: 0 })
+              playerRef.current.playVideo()
+              setIsPlaying(true)
+            }
+          }
+        }
+        return prevIdx
+      })
+      return currQueue
+    })
+  }, [])
+
+  const seekTo = useCallback((seconds) => {
+    if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+      playerRef.current.seekTo(seconds, true)
+      setCurrentTime(seconds)
+    }
+  }, [])
+
+  const handleVolumeChange = useCallback((newVolume) => {
+    setVolume(newVolume)
+    if (playerRef.current && typeof playerRef.current.setVolume === 'function') {
+      playerRef.current.setVolume(newVolume)
+      if (newVolume > 0 && isMuted) {
+        playerRef.current.unMute()
+        setIsMuted(false)
+      }
+    }
+  }, [isMuted])
+
+  const toggleMute = useCallback(() => {
+    if (!playerRef.current) return
+    if (isMuted) {
+      playerRef.current.unMute()
+      setIsMuted(false)
+    } else {
+      playerRef.current.mute()
+      setIsMuted(true)
+    }
+  }, [isMuted])
 
   const togglePlayer = useCallback(() => {
     setIsPlayerOpen((prev) => !prev)
   }, [])
 
-  const nextTrack = useCallback(() => {
-    webviewRef.current?.executeJavaScript(`
-      (function() {
-        const btn = document.querySelector('.next-button, #next-button, ytmusic-player-bar .next-button, ytmusic-player-bar #next-button');
-        if (btn) btn.click();
-      })();
-    `)
-  }, [])
-
-  const prevTrack = useCallback(() => {
-    webviewRef.current?.executeJavaScript(`
-      (function() {
-        const btn = document.querySelector('.previous-button, #previous-button, ytmusic-player-bar .previous-button, ytmusic-player-bar #previous-button');
-        if (btn) btn.click();
-      })();
-    `)
-  }, [])
-
-  const playPause = useCallback(() => {
-    webviewRef.current?.executeJavaScript(`
-      (function() {
-        const btn = document.querySelector('.play-pause-button, #play-pause-button, ytmusic-player-bar .play-pause-button, ytmusic-player-bar #play-pause-button');
-        if (btn) {
-          btn.click();
-        } else {
-          const video = document.querySelector('video');
-          if (video) {
-            if (video.paused) video.play();
-            else video.pause();
-          }
-        }
-      })();
-    `)
-  }, [])
-
-  const pauseTrack = useCallback(() => {
-    webviewRef.current?.executeJavaScript(`
-      (function() {
-        const video = document.querySelector('video');
-        if (video && !video.paused) {
-          const btn = document.querySelector('.play-pause-button, #play-pause-button, ytmusic-player-bar .play-pause-button, ytmusic-player-bar #play-pause-button');
-          if (btn) btn.click();
-          else video.pause();
-        }
-      })();
-    `)
-  }, [])
-
-  const resumeTrack = useCallback(() => {
-    webviewRef.current?.executeJavaScript(`
-      (function() {
-        const video = document.querySelector('video');
-        if (video && video.paused) {
-          const btn = document.querySelector('.play-pause-button, #play-pause-button, ytmusic-player-bar .play-pause-button, ytmusic-player-bar #play-pause-button');
-          if (btn) btn.click();
-          else video.play();
-        }
-      })();
-    `)
+  const toggleViewMode = useCallback(() => {
+    setViewMode((prev) => (prev === 'thumbnail' ? 'video' : 'thumbnail'))
   }, [])
 
   const value = {
-    musicUrl,
-    setMusicUrl,
-    playUrl,
-    playId,
+    currentTrack,
+    queue,
+    currentIndex,
+    isPlaying,
+    isMuted,
+    volume,
+    currentTime,
+    duration,
+    viewMode,
     isPlayerOpen,
+    isReady,
+    containerId: containerIdRef.current,
     setIsPlayerOpen,
     togglePlayer,
-    webviewRef,
-    isPlaying,
-    currentTrack,
+    setViewMode,
+    toggleViewMode,
+    playTrack,
+    playUrl,
+    playPause,
     nextTrack,
     prevTrack,
-    playPause,
-    pauseTrack,
-    resumeTrack
+    seekTo,
+    setVolume: handleVolumeChange,
+    toggleMute
   }
 
   return <YoutubeMusicContext.Provider value={value}>{children}</YoutubeMusicContext.Provider>
