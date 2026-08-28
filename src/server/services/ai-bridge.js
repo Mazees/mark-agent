@@ -191,7 +191,7 @@ export const fetchAI = async (
       body.model = conf.customModel || 'default-model'
     } else {
       endpoint = 'http://localhost:1234/v1/chat/completions'
-      body.model = conf.model || 'google/gemma-3-4b'
+      body.model = conf.model || 'local-model'
     }
 
     const parentAbortController = new AbortController()
@@ -629,7 +629,7 @@ export const fetchAIStream = async ({
     body.model = conf.customModel || 'default-model'
   } else {
     endpoint = 'http://localhost:1234/v1/chat/completions'
-    body.model = conf.model || 'google/gemma-3-4b'
+    body.model = conf.model || 'local-model'
   }
 
   const abortController = new AbortController()

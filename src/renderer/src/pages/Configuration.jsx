@@ -77,15 +77,16 @@ const ConfigCameraPreview = ({ deviceId, enabled }) => {
 const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   const [config, setConfig] = useState({
     personality: 'Santai layaknya seorang teman dan suka bercanda.',
-    model: 'google/gemma-3-4b',
+    model: 'local-model',
+    customModel: 'default-model',
     temperature: 0,
     context: 10,
     ttsRate: 0,
     ttsPitch: 0,
     groqApiKey: '',
+    groqModel: 'llama-3.1-8b-instant',
     aiProvider: 'gemini-web',
     geminiWebModel: 'gemini-3.6-flash',
-    groqModel: 'llama-3.1-8b-instant',
     tgBotToken: '',
     tgAdminIds: '',
     micDeviceId: 'default',

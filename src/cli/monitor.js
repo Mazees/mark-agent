@@ -35,8 +35,13 @@ async function fetchConfig() {
 
 export function printMonitorHeader(config = {}) {
   console.clear()
-  const provider = config.aiProvider || 'lm-studio'
-  const model = config.model || config.customModel || 'google/gemma-3-4b'
+  const provider = config.aiProvider || 'gemini-web'
+  const model =
+    provider === 'gemini-web'
+      ? config.geminiWebModel || 'gemini-3.6-flash'
+      : provider === 'custom'
+        ? config.customModel || 'default-model'
+        : config.model || 'local-model'
   const cwd = process.cwd()
 
   const lines = [

@@ -16,11 +16,19 @@ export function recordActivityEntry(winData) {
   const appName = winData.owner?.name || winData.app || 'System'
   const title = winData.title.trim()
 
-  if (activityBuffer.length > 0 && activityBuffer[0].title === title && activityBuffer[0].app === appName) {
+  if (
+    activityBuffer.length > 0 &&
+    activityBuffer[0].title === title &&
+    activityBuffer[0].app === appName
+  ) {
     return
   }
 
-  const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const timeStr = new Date().toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
 
   activityBuffer.unshift({
     app: appName,
@@ -31,7 +39,6 @@ export function recordActivityEntry(winData) {
   })
 
   wsHub.broadcast('awareness:entry', { app: appName, title, time: timeStr })
-  console.log(`[Awareness Tracker] New Entry: [${appName}] ${title}`)
 
   if (activityBuffer.length > MAX_BUFFER_SIZE) {
     activityBuffer.pop()
@@ -101,7 +108,9 @@ if ($hwnd -ne [IntPtr]::Zero) {
 }
 `
     const b64 = Buffer.from(psScript, 'utf16le').toString('base64')
-    const { stdout } = await execPromise(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${b64}`)
+    const { stdout } = await execPromise(
+      `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${b64}`
+    )
     const text = stdout?.trim()
     if (text && text.startsWith('{') && text.endsWith('}')) {
       const parsed = JSON.parse(text)
@@ -141,7 +150,9 @@ export async function getSystemIdleSeconds() {
           0
       }
     `
-    const { stdout } = await execPromise(`powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\n/g, ' ')}"`)
+    const { stdout } = await execPromise(
+      `powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\n/g, ' ')}"`
+    )
     return parseInt(stdout.trim(), 10) || 0
   } catch (_) {
     return 0
@@ -180,4 +191,3 @@ export function getActivityBuffer() {
 export function clearActivityBuffer() {
   activityBuffer.length = 0
 }
-

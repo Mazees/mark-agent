@@ -478,10 +478,15 @@ export async function showBrowserWindow(sessionId = 'default') {
         bounds: { windowState: 'normal', left: 80, top: 60, width: 1280, height: 800 }
       })
       await session.page.bringToFront()
-    } catch (_) {
+      return `Berhasil menampilkan jendela browser untuk sesi '${sessionId}'.`
+    } catch (cdpErr) {
       try {
         await session.page.bringToFront()
-      } catch (_) {}
+        return `Berhasil membawa browser sesi '${sessionId}' ke depan.`
+      } catch (err) {
+        return `Gagal menampilkan jendela browser: ${err.message}`
+      }
     }
   }
+  return `Sesi browser '${sessionId}' tidak ditemukan atau sedang tidak aktif.`
 }

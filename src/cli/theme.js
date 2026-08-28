@@ -46,8 +46,13 @@ export function drawBox(title, contentLines, width = 74, borderColor = colors.da
 export function printHeader(config = {}) {
   const c = colors
   console.clear()
-  const provider = config.aiProvider || 'lm-studio'
-  const model = config.model || config.customModel || 'google/gemma-3-4b'
+  const provider = config.aiProvider || 'gemini-web'
+  const model =
+    provider === 'gemini-web'
+      ? config.geminiWebModel || 'gemini-3.6-flash'
+      : provider === 'custom'
+        ? config.customModel || 'default-model'
+        : config.model || 'local-model'
   const cwd = process.cwd()
 
   const lines = [

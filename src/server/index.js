@@ -111,8 +111,10 @@ function loadConfig() {
     }
   } catch (_) {}
   return {
-    aiProvider: 'lm-studio',
-    model: 'google/gemma-3-4b',
+    aiProvider: 'gemini-web',
+    geminiWebModel: 'gemini-3.6-flash',
+    model: 'local-model',
+    customModel: 'default-model',
     temperature: 0.7,
     wakeWordEnabled: true,
     wakeWord: 'mark',
@@ -808,11 +810,18 @@ app.post('/api/ai/fetch', async (req, res) => {
   try {
     const { fetchAI } = await import('./services/ai-bridge.js')
     const finalConfig = { ...activeConfig, ...config }
+    const provider = finalConfig.aiProvider || 'gemini-web'
+    const resolvedModel =
+      provider === 'gemini-web'
+        ? finalConfig.geminiWebModel || 'gemini-3.6-flash'
+        : provider === 'custom'
+          ? finalConfig.customModel || 'default-model'
+          : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
       type: 'fetch',
-      provider: finalConfig.aiProvider || 'lm-studio',
-      model: finalConfig.model || finalConfig.customModel || 'default',
+      provider,
+      model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: false,
       payload: { messages, jsonSchema, isSmallTask }
@@ -831,11 +840,18 @@ app.post('/api/ai/stream', async (req, res) => {
   try {
     const { fetchAIStream } = await import('./services/ai-bridge.js')
     const finalConfig = { ...activeConfig, ...config }
+    const provider = finalConfig.aiProvider || 'gemini-web'
+    const resolvedModel =
+      provider === 'gemini-web'
+        ? finalConfig.geminiWebModel || 'gemini-3.6-flash'
+        : provider === 'custom'
+          ? finalConfig.customModel || 'default-model'
+          : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
       type: 'stream',
-      provider: finalConfig.aiProvider || 'lm-studio',
-      model: finalConfig.model || finalConfig.customModel || 'default',
+      provider,
+      model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: Array.isArray(tools) && tools.length > 0,
       toolsCount: Array.isArray(tools) ? tools.length : 0,
