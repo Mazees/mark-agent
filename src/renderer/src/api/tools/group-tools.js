@@ -1,169 +1,481 @@
-export const GROUP_TOOLS_DEFINITION = {
+/**
+ * Group Tools Definition & OpenAPI Function Schema untuk MARK V5.
+ * Format penamaan kebab-case dipertahankan.
+ */
+
+export const GROUP_TOOLS_SCHEMA = {
   advanced_browser: {
-    description: 'Tool untuk navigasi dan kontrol elemen fisik browser web secara detail, gunakan ini untuk melakukan pencarian di browser/web jangan gunakan powershell.',
-    tools: {
-      'browser-navigate':
-        'Buka URL di browser fisik. Query: URL lengkap. Mengembalikan daftar elemen interaktif bernomor (ID).',
-      'browser-read': 'Scan ulang elemen halaman saat ini. Gunakan setelah menunggu loading.',
-      'browser-click': 'Klik elemen. Query: ID angka. Mengembalikan DOM terbaru setelah klik.',
-      'browser-type': 'Ketik teks di kolom input. Query: ID||teks. Mengembalikan DOM terbaru.',
-      'browser-scroll': 'Scroll halaman. Query: "up" atau "down".',
-      'browser-extract': 'Ekstrak teks/data via CSS Selector. Kembalikan JSON. Query: selector CSS (misal: ".product-price").',
-      'browser-script': 'Eksekusi custom Javascript di browser (Bisa untuk manipulasi DOM / bypass). Query: script JS murni.',
-      'browser-screenshot': 'Ambil screenshot web utuh dan simpan ke OS. Query: namafile.png.',
-      'browser-download': 'Download URL secara fisik ke OS. Query: URL||namafile.ext.',
-      'browser-ask-user':
-        'JIKA terhalang form login/CAPTCHA, BUKAKAN HALAMANNYA DULU (misal klik tombol \'Login\' hingga form muncul), lalu GUNAKAN TOOL INI. Query: Instruksi/Pesan untuk user (misal: "Tolong isi email dan password"). Pesanmu akan muncul di layar popup. Setelah user selesai, kamu akan langsung mendapat DOM terbaru untuk MELANJUTKAN misimu. Jangan berhenti!',
-      'browser-close': 'Menutup browser fisik.'
-    }
+    description: 'Tool untuk navigasi dan kontrol elemen fisik browser web secara detail.',
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'browser-navigate',
+          description: 'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', description: 'URL lengkap website tujuan' }
+            },
+            required: ['url'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-read',
+          description: 'Scan ulang elemen halaman browser saat ini.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-click',
+          description: 'Klik elemen pada halaman browser berdasarkan ID numerik.',
+          parameters: {
+            type: 'object',
+            properties: {
+              element_id: { type: 'number', description: 'ID numerik elemen interaktif' }
+            },
+            required: ['element_id'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-type',
+          description: 'Ketik teks ke kolom input formulir web berdasarkan ID elemen.',
+          parameters: {
+            type: 'object',
+            properties: {
+              element_id: { type: 'number', description: 'ID elemen input' },
+              text: { type: 'string', description: 'Teks yang akan diketikkan' }
+            },
+            required: ['element_id', 'text'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-scroll',
+          description: 'Scroll halaman browser ke atas atau ke bawah.',
+          parameters: {
+            type: 'object',
+            properties: {
+              direction: { type: 'string', enum: ['up', 'down'], description: 'Arah scroll' }
+            },
+            required: ['direction'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-extract',
+          description: 'Ekstrak teks atau data dari web via CSS Selector.',
+          parameters: {
+            type: 'object',
+            properties: {
+              selector: { type: 'string', description: 'CSS Selector target' }
+            },
+            required: ['selector'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-screenshot',
+          description: 'Mengambil screenshot halaman browser web dan menyimpannya.',
+          parameters: {
+            type: 'object',
+            properties: {
+              filename: { type: 'string', description: 'Nama berkas gambar screenshot (.png)' }
+            },
+            required: ['filename'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-close',
+          description: 'Menutup sesi browser fisik yang sedang aktif.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      }
+    ]
   },
   pc_automation: {
-    description:
-      'Tool untuk <inter></inter>aksi fisik dengan desktop OS Windows. [SPEEDRUNNER BATCH MODE]: Kamu BISA mengeksekusi BATCH ACTIONS (mengirim ARRAY aksi) dalam 1 giliran untuk menghindari loading lama. Contoh: [{"tool":"os-click","query":"5"}, {"tool":"os-delay","query":"1000"}, {"tool":"os-type","query":"Teks"}]. Gunakan os-click secara bebas, tetapi KELOMPOKKAN aksimu ke dalam array jika urutannya sudah jelas, jangan satu per satu!',
-    tools: {
-      'os-control-open':
-        'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC. PENTING: Jika tool ini sudah mengembalikan status success, ITU BERARTI USER SUDAH MEMBERIKAN IZIN DI POPUP! Kamu WAJIB LANGSUNG meneruskan eksekusi langkah berikutnya (os-read/os-click/os-type/dll) di loop yang sama TANPA berhenti atau menyuruh user klik tombol izinkan lagi! Query: KOSONG.',
-      'os-control-close':
-        'WAJIB DIPANGGIL TERAKHIR setelah semua tugas otomatisasi PC selesai. Menutup sesi dan overlay. Query: KOSONG.',
-      'os-read':
-        'Membaca elemen GUI desktop. Query: Kosongkan untuk scan seluruh layar (LAMBAT, 1-3 detik), atau isi dengan kata "focus" untuk HANYA membaca 1 elemen yang saat ini sedang aktif/tersorot (INSTAN, 1 ms). Gunakan query "focus" setelah kamu menekan tombol TAB/Panah untuk memverifikasi posisimu dengan cepat!',
-      'os-click':
-        'Klik mouse pada elemen GUI desktop. Query: ID elemen dari os-read atau x||y koordinat absolut.',
-      'os-type':
-        'Ketik teks ke elemen input di aplikasi Windows. Query: ID||teks atau teks langsung. PENTING: DILARANG KERAS MENGETIKKAN EMOJI! DILARANG KERAS menggunakan format markdown link seperti [teks](url) saat mengetik URL! Ketik raw teks saja.',
-      'os-key':
-        'Tekan kombinasi tombol keyboard shortcut. Query: combo (misal: ctrl+c, alt+tab, win+e, ctrl+s, enter).',
-      'os-scroll':
-        'Scroll mouse wheel di aplikasi aktif. Query: direction||amount (misal: down||5 atau up||3).',
-
-      'os-search':
-        'Mensimulasikan user mencari APLIKASI di Start Menu dengan tombol Windows. Query: kata kunci (misal: Chrome). PENTING: Tool ini HANYA mengetik di Start Menu. Untuk membuka aplikasinya, kamu WAJIB memanggil BATCH ACTION: os-search -> os-delay (1000) -> os-key (enter). JANGAN panggil os-open/os-double-click setelah os-search!',
-      'os-double-click':
-        'Klik ganda (double click) mouse pada elemen GUI desktop. Query: ID elemen dari os-read atau x||y koordinat absolut. Bisa digunakan untuk memilih file saat input file dari browser atau explorer.',
-      'os-list-windows': 'Menampilkan daftar semua window aplikasi yang terbuka beserta judulnya.',
-      'os-focus-window':
-        'Fokus sebuah window aplikasi berdasarkan judul. JANGAN MENEBAK JUDUL! WAJIB gunakan os-list-windows terlebih dahulu, lalu gunakan teks judul yang persis ada di daftar tersebut. Query: judul window.'
-    }
+    description: 'Tool untuk interaksi fisik dengan desktop OS Windows, mouse click, keyboard typing, dan window management.',
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'os-control-open',
+          description: 'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-control-close',
+          description: 'WAJIB DIPANGGIL TERAKHIR setelah semua tugas otomatisasi PC selesai.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-read',
+          description: 'Membaca elemen GUI desktop.',
+          parameters: {
+            type: 'object',
+            properties: {
+              mode: { type: 'string', enum: ['all', 'focus'], description: '"all" untuk scan seluruh layar atau "focus" untuk membaca 1 elemen aktif' }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-click',
+          description: 'Klik mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: { type: 'string', description: 'ID elemen dari os-read atau koordinat "x||y"' }
+            },
+            required: ['target'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-type',
+          description: 'Ketik teks ke aplikasi Windows yang sedang aktif.',
+          parameters: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'Teks yang akan diketikkan' }
+            },
+            required: ['text'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-key',
+          description: 'Tekan kombinasi tombol keyboard shortcut (misal: ctrl+c, alt+tab, enter).',
+          parameters: {
+            type: 'object',
+            properties: {
+              combo: { type: 'string', description: 'Kombinasi tombol keyboard' }
+            },
+            required: ['combo'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-scroll',
+          description: 'Scroll mouse wheel di aplikasi aktif.',
+          parameters: {
+            type: 'object',
+            properties: {
+              direction: { type: 'string', enum: ['up', 'down'], description: 'Arah scroll' },
+              amount: { type: 'number', description: 'Jumlah baris scroll' }
+            },
+            required: ['direction'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-search',
+          description: 'Mencari aplikasi di Start Menu Windows dengan tombol Windows.',
+          parameters: {
+            type: 'object',
+            properties: {
+              keyword: { type: 'string', description: 'Kata kunci nama aplikasi' }
+            },
+            required: ['keyword'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-list-windows',
+          description: 'Menampilkan daftar semua window aplikasi yang terbuka beserta judulnya.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'os-focus-window',
+          description: 'Fokus sebuah window aplikasi berdasarkan judul yang ada di os-list-windows.',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Judul window aplikasi persis' }
+            },
+            required: ['title'],
+            additionalProperties: false
+          }
+        }
+      }
+    ]
   },
   youtube_music: {
     description: 'Integrasi pencarian YouTube dan pemutar musik lokal.',
-    tools: {
-      'yt-search':
-        'Alat pencari video di YouTube. Gunakan ini jika kamu merasa informasi lebih baik didapat dari video/tutorial visual.',
-      'yt-summary':
-        'Merangkum isi video YouTube. Sangat berguna untuk mengekstrak informasi/pembelajaran dari video panjang.',
-      'music-play': 'Memutar lagu di YouTube Music.',
-      'music-toggle': 'Pause/lanjut memutar lagu.',
-      'music-search': 'Mencari lagu spesifik di YT Music.',
-      'music-next': 'Mengganti lagu ke track selanjutnya.',
-      'music-prev': 'Mengganti lagu ke track sebelumnya.'
-    }
-  },
-  google_drive: {
-    description: 'Akses layanan Google Drive (Manajemen file dan storage).',
-    tools: {
-      'gdrive-info': 'Cek kapasitas/storage sisa Google Drive. Query: "all"',
-      'gdrive-search':
-        'Cari file di Google Drive. Query: "kata kunci||start-end" (Contoh: "dokumen||10-20" untuk paging)',
-      'gdrive-list':
-        'List file di Drive. Query: "folderId||start-end" (Contoh: "root||10-20" untuk paging)',
-      'gdrive-read': 'Ekstrak isi teks dari Google Docs, Sheets, atau TXT. Query: fileId.',
-      'gdrive-upload': 'Upload file teks (Butuh persetujuan user). Query: nama_file||isi_teks.',
-      'gdrive-create': 'Membuat dokumen/folder baru. Query: nama_file||doc/sheet/folder.',
-      'gdrive-move': 'Memindahkan file. Query: fileId||folderId.',
-      'gdrive-copy': 'Menduplikasi file. Query: fileId||nama_baru.'
-    }
-  },
-  google_calendar: {
-    description: 'Akses layanan Google Calendar (Manajemen jadwal dan event).',
-    tools: {
-      'gcalendar-list':
-        'Lihat jadwal/event (PENTING: Jika belum connect, beri tahu user). Query: "start-end||YYYY-MM-DDTHH:mm:ssZ" (Contoh: "10-20||2023-10-01T00:00:00Z" atau "10||" untuk paging)',
-      'gcalendar-create':
-        'Membuat jadwal baru (Butuh persetujuan user). Query: Judul||Deskripsi||Waktu_Mulai(ISO)||Waktu_Selesai(ISO).',
-      'gcalendar-delete': 'Menghapus jadwal. Query: eventId.'
-    }
-  },
-  google_gmail: {
-    description: 'Akses layanan Google Gmail (Membaca dan mengirim pesan email).',
-    tools: {
-      'gmail-search': 'Mencari email. Query: query_gmail||start-end (Contoh: "is:unread||10-20").',
-      'gmail-list': 'Baca email masuk (Inbox). Query: "start-end" (Contoh: "0-10" untuk paging).',
-      'gmail-read': 'Membaca isi pesan email tertentu. Query: messageId.',
-      'gmail-send':
-        'Mengirim email baru (Butuh persetujuan user). Query: email_tujuan||Subjek||Isi_pesan.',
-      'gmail-mark-read': 'Menandai email sebagai sudah dibaca. Query: messageId.'
-    }
-  },
-  system_vision_tg: {
-    description: 'Akses screenshot layar, webcam (Vision), Text-to-Speech lisan, dan Telegram.',
-    tools: {
-      'analyze-screen':
-        'Mengambil screenshot LAYAR LAPTOP saat ini untuk dianalisis oleh "Mata AI" (Vision). ATURAN MUTLAK: DILARANG KERAS menggunakan tool ini JIKA user SUDAH melampirkan file gambar di pesan (karena kamu sudah bisa melihat gambar terlampir tersebut secara langsung!). Gunakan tool ini HANYA jika kamu perlu melihat tampilan layar monitor/aplikasi yang sedang aktif di PC user. Query: Isi dengan prompt instruksi visual spesifikmu (misal: "Tolong bacakan teks error di layar" atau "Cari tombol warna biru").',
-      'camera-look':
-        'Mengaktifkan kamera webcam untuk melihat dunia nyata di depan user. Gunakan tool ini JIKA user meminta kamu melihat sesuatu secara fisik (bukan layar), ATAU jika kamu menerima instruksi dari sistem (autonomous_prompt) untuk mengecek kondisi user secara visual. Query: Isi dengan prompt instruksi visual spesifikmu (misal: "Apa objek yang dipegang user?" atau "Baca tulisan di kertas ini").',
-      'screenshot-to-tg':
-        'Mengambil screenshot layar komputer dan MENGIRIMNYA SECARA FISIK ke Telegram user (Hanya jika chat berasal dari Telegram). Query: KOSONGKAN SAJA.',
-      'tg-send':
-        'Mengirim pesan teks ATAU file fisik ke Telegram. Format query: chatId||tipe(text/file)||konten. Jika tipe="text", konten=isi pesan. Jika tipe="file", konten=path absolute file. WAJIB MENGGUNAKAN DOUBLE PIPE (||) SEBAGAI PEMISAH, JANGAN PERNAH GUNAKAN SINGLE PIPE (|)!!! Contoh benar: "1234567||text||Halo!" atau "1234567||file||C:\\Data.xlsx".',
-      speak:
-        'Bicarakan teks secara lisan (Text-to-Speech) lewat speaker komputer user. Query: "Teks yang ingin kamu ucapkan". Gunakan ini jika kamu ingin memanggil user atau berbicara langsung.'
-    }
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'yt-search',
+          description: 'Mencari video di YouTube.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Kata kunci pencarian YouTube' }
+            },
+            required: ['query'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'yt-summary',
+          description: 'Merangkum isi video YouTube.',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', description: 'URL video YouTube' }
+            },
+            required: ['url'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'music-play',
+          description: 'Memutar lagu di YouTube Music.',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Judul lagu yang ingin diputar' }
+            },
+            required: ['title'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'music-toggle',
+          description: 'Pause atau lanjut memutar musik.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      }
+    ]
   },
   git_vcs: {
-    description: 'Manajemen version control Git untuk repositori proyek (Status, Diff, Commit, Revert).',
-    tools: {
-      'git-status': 'Melihat status modifikasi berkas di repositori git (git status --short). Query: kosongkan atau masukkan path folder.',
-      'git-diff': 'Melihat detail baris kode yang berubah sebelum di-commit (git diff). Query: kosongkan untuk semua berkas, atau spesifik nama_berkas.',
-      'git-commit': 'Membuat checkpoint commit git secara otomatis. Query: pesan_commit||path_folder (path opsional). (Butuh persetujuan user).',
-      'git-revert': 'Me-rollback perubahan berkas yang belum di-commit ke HEAD. Query: nama_berkas (atau kosongkan untuk reset --hard seluruh repo). (Butuh persetujuan user).'
-    }
+    description: 'Manajemen version control Git untuk repositori proyek.',
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'git-status',
+          description: 'Melihat status modifikasi berkas di repositori git.',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Path folder repositori' }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git-diff',
+          description: 'Melihat detail perubahan baris kode (git diff).',
+          parameters: {
+            type: 'object',
+            properties: {
+              file_path: { type: 'string', description: 'Nama berkas spesifik' }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git-commit',
+          description: 'Membuat checkpoint commit git.',
+          parameters: {
+            type: 'object',
+            properties: {
+              message: { type: 'string', description: 'Pesan commit' }
+            },
+            required: ['message'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git-revert',
+          description: 'Me-rollback perubahan berkas yang belum di-commit.',
+          parameters: {
+            type: 'object',
+            properties: {
+              file_path: { type: 'string', description: 'Nama berkas yang akan di-revert' }
+            },
+            additionalProperties: false
+          }
+        }
+      }
+    ]
   },
   task_terminal: {
     description: 'Terminal runner latar belakang (non-blocking) untuk menjalankan server dev, unit test, dan proses jangka panjang.',
-    tools: {
-      'run-task': 'Menjalankan server atau proses background terminal (misal: dev-server, build, test). Query: taskId||perintah (contoh: "dev-server||npm run dev" atau "test||pytest"). (Perlu persetujuan user jika perintah berisiko).',
-      'read-task-output': 'Membaca log output terbaru dari background terminal task. Query: taskId||jumlah_baris (contoh: "dev-server||40").',
-      'kill-task': 'Menghentikan proses background terminal yang sedang berjalan. Query: taskId (contoh: "dev-server").',
-      'list-tasks': 'Melihat seluruh background tasks yang sedang berjalan beserta PID dan statusnya. Query: kosongkan.'
-    }
-  }
-}
-
-export const group_tools = async () => {
-  const dynamicGroups = { ...GROUP_TOOLS_DEFINITION }
-
-  try {
-    const plugins = await window.api.getPlugins()
-    if (plugins && plugins.length > 0) {
-      plugins.forEach((plugin) => {
-        if (plugin.isEnabled !== false && plugin.actions) {
-          const toolMap = {}
-          plugin.actions.forEach((act) => {
-            let paramDocs = ''
-            if (act.parameters) {
-              paramDocs = ` (Params: ${Object.entries(act.parameters)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(', ')})`
-            }
-            toolMap[act.name] = `${act.description}${paramDocs}`
-          })
-
-          dynamicGroups[plugin.name] = {
-            description: plugin.description || 'Plugin Eksternal Tambahan',
-            tools: toolMap
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'run-task',
+          description: 'Menjalankan server atau proses terminal background.',
+          parameters: {
+            type: 'object',
+            properties: {
+              task_id: { type: 'string', description: 'ID penanda task' },
+              command: { type: 'string', description: 'Perintah shell terminal' }
+            },
+            required: ['task_id', 'command'],
+            additionalProperties: false
           }
         }
-      })
-    }
-  } catch (err) {
-    console.error('Gagal meload external plugin', err)
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'read-task-output',
+          description: 'Membaca log output terbaru dari background terminal task.',
+          parameters: {
+            type: 'object',
+            properties: {
+              task_id: { type: 'string', description: 'ID penanda task' },
+              lines: { type: 'number', description: 'Jumlah baris log terbaru' }
+            },
+            required: ['task_id'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'kill-task',
+          description: 'Menghentikan proses background terminal yang sedang berjalan.',
+          parameters: {
+            type: 'object',
+            properties: {
+              task_id: { type: 'string', description: 'ID penanda task yang akan dihentikan' }
+            },
+            required: ['task_id'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list-tasks',
+          description: 'Melihat seluruh background tasks yang sedang berjalan.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      }
+    ]
   }
-
-  return dynamicGroups
 }
 
-// Generate flat map sekali aja buat fast O(1) lookup
+// Legacy dictionary representation for backwards-compatibility
+export const GROUP_TOOLS_DEFINITION = Object.entries(GROUP_TOOLS_SCHEMA).reduce((acc, [groupKey, group]) => {
+  acc[groupKey] = {
+    description: group.description,
+    tools: group.tools.reduce((tAcc, t) => {
+      tAcc[t.function.name] = t.function.description
+      return tAcc
+    }, {})
+  }
+  return acc
+}, {})
+
+export const group_tools = async () => {
+  return GROUP_TOOLS_DEFINITION
+}
+
 export const group_tools_flat = {}
 for (const group of Object.values(GROUP_TOOLS_DEFINITION)) {
   Object.assign(group_tools_flat, group.tools)

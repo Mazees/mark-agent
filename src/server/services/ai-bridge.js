@@ -547,6 +547,314 @@ export const fetchAI = async (
   }
 }
 
+export const fetchAIStream = async ({
+  messages,
+  tools = null,
+  config = null,
+  isSmallTask = false,
+  onToken = null,
+  onReasoning = null,
+  onMood = null,
+  onToolCall = null,
+  onStatus = null,
+  signal = null
+}) => {
+  const conf = config || globalConfig
+
+  let moodExtracted = false
+  const extractMood = (text) => {
+    if (moodExtracted || !text) return
+    const match = text.match(/\[mood:([a-zA-Z_]+)\]/)
+    if (match) {
+      onMood?.(match[1].toLowerCase())
+      moodExtracted = true
+    }
+  }
+
+  // JIKA PROVIDER: GEMINI-WEB RPC
+  if (conf.aiProvider === 'gemini-web') {
+    const res = await fetchAI(messages, conf, isSmallTask, null, onStatus)
+    let cleanContent = res.content || ''
+    let cleanReasoning = res.reasoning || ''
+
+    if (cleanReasoning) {
+      extractMood(cleanReasoning)
+      cleanReasoning = cleanReasoning.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+      onReasoning?.(cleanReasoning)
+    }
+    if (cleanContent) {
+      extractMood(cleanContent)
+      cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+      onToken?.(cleanContent)
+    }
+    return {
+      content: cleanContent,
+      reasoning: cleanReasoning,
+      toolCalls: null,
+      finishReason: 'stop'
+    }
+  }
+
+  // JIKA PROVIDER: OPENAI-COMPATIBLE (LM Studio, Custom Endpoint, Groq, dll)
+  let endpoint = 'http://localhost:1234/v1/chat/completions'
+  let headers = {
+    'Content-Type': 'application/json'
+  }
+
+  let body = {
+    stream: true,
+    temperature: Number(conf.temperature) || 0,
+    messages: messages.map((m, index) => {
+      let sanitizedContent = m.content
+      if (Array.isArray(m.content)) {
+        if (index < messages.length - 1) {
+          sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
+        } else {
+          sanitizedContent = m.content
+        }
+      }
+      return { ...m, content: sanitizedContent }
+    })
+  }
+
+  if (tools && Array.isArray(tools) && tools.length > 0) {
+    body.tools = tools
+  }
+
+  if (conf.aiProvider === 'custom') {
+    endpoint = conf.customEndpoint || 'http://localhost:1234/v1/chat/completions'
+    if (conf.customApiKey) {
+      headers['Authorization'] = `Bearer ${conf.customApiKey}`
+    }
+    body.model = conf.customModel || 'default-model'
+  } else {
+    endpoint = 'http://localhost:1234/v1/chat/completions'
+    body.model = conf.model || 'google/gemma-3-4b'
+  }
+
+  const abortController = new AbortController()
+  activeAbortControllers.add(abortController)
+
+  if (signal) {
+    if (signal.aborted) {
+      abortController.abort()
+    } else {
+      signal.addEventListener('abort', () => abortController.abort())
+    }
+  }
+
+  let accumulatedContent = ''
+  let accumulatedReasoning = ''
+  const accumulatedToolCalls = {}
+  let finishReason = 'stop'
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: abortController.signal
+    })
+
+    if (!response.ok) {
+      const textData = await response.text()
+      let errorMsg = textData
+      try {
+        const json = JSON.parse(textData)
+        errorMsg = json.error?.message || json.message || textData
+      } catch (_) {}
+      throw new Error(`API Error (${response.status}): ${errorMsg}`)
+    }
+
+    let moodExtracted = false
+    let isBufferingInitialMood = true
+    let initialChunkBuffer = ''
+
+    const processContentToken = (token) => {
+      accumulatedContent += token
+
+      if (isBufferingInitialMood) {
+        initialChunkBuffer += token
+        // Periksa apakah ada tag [mood:xxx] di awal
+        if (initialChunkBuffer.startsWith('[')) {
+          const closeBracketIdx = initialChunkBuffer.indexOf(']')
+          if (closeBracketIdx !== -1) {
+            const tag = initialChunkBuffer.substring(0, closeBracketIdx + 1)
+            const moodMatch = tag.match(/^\[mood:([a-zA-Z_]+)\]$/i)
+            if (moodMatch) {
+              if (!moodExtracted) {
+                onMood?.(moodMatch[1].toLowerCase())
+                moodExtracted = true
+              }
+              // Buang tag [mood:...], alirkan sisa teks di belakang tag jika ada
+              const remainder = initialChunkBuffer.substring(closeBracketIdx + 1).replace(/^[\r\n\s]+/, '')
+              isBufferingInitialMood = false
+              initialChunkBuffer = ''
+              if (remainder) {
+                onToken?.(remainder)
+              }
+              return
+            } else {
+              // Bukan tag mood yang valid, lepas buffer
+              isBufferingInitialMood = false
+              onToken?.(initialChunkBuffer)
+              initialChunkBuffer = ''
+              return
+            }
+          } else if (initialChunkBuffer.length > 30) {
+            // Buffer terlalu panjang tanpa closing bracket ']', bukan tag mood
+            isBufferingInitialMood = false
+            onToken?.(initialChunkBuffer)
+            initialChunkBuffer = ''
+            return
+          }
+          // Masih menunggu kelengkapan tag bracket
+          return
+        } else {
+          // Tidak diawali '['
+          isBufferingInitialMood = false
+          onToken?.(initialChunkBuffer)
+          initialChunkBuffer = ''
+          return
+        }
+      }
+
+      // Stream token normal
+      onToken?.(token)
+    }
+
+    const handleChunkText = (jsonStr) => {
+      if (!jsonStr || jsonStr === '[DONE]') return
+      try {
+        const parsed = JSON.parse(jsonStr)
+        const choice = parsed.choices?.[0]
+        if (!choice) return
+
+        if (choice.finish_reason) {
+          finishReason = choice.finish_reason
+        }
+
+        const delta = choice.delta || {}
+
+        // Reasoning / Thought
+        if (delta.reasoning_content || delta.reasoning) {
+          const rToken = delta.reasoning_content || delta.reasoning
+          accumulatedReasoning += rToken
+          extractMood(rToken)
+          onReasoning?.(rToken)
+        }
+
+        // Content
+        if (delta.content) {
+          processContentToken(delta.content)
+        }
+
+        // Tool Calls
+        if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0
+            if (!accumulatedToolCalls[idx]) {
+              accumulatedToolCalls[idx] = {
+                id: tc.id || `call_${Date.now()}_${idx}`,
+                type: 'function',
+                function: {
+                  name: tc.function?.name || '',
+                  arguments: ''
+                }
+              }
+            }
+            if (tc.function?.name && !accumulatedToolCalls[idx].function.name) {
+              accumulatedToolCalls[idx].function.name = tc.function.name
+            }
+            if (tc.function?.arguments) {
+              accumulatedToolCalls[idx].function.arguments += tc.function.arguments
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Parsing Stream Body
+    if (response.body && (response.body.getReader || response.body[Symbol.asyncIterator])) {
+      if (response.body[Symbol.asyncIterator]) {
+        const decoder = new TextDecoder()
+        let lineBuffer = ''
+        for await (const chunk of response.body) {
+          lineBuffer += typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() || ''
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (trimmed.startsWith('data:')) {
+              handleChunkText(trimmed.slice(5).trim())
+            }
+          }
+        }
+        if (lineBuffer.trim().startsWith('data:')) {
+          handleChunkText(lineBuffer.trim().slice(5).trim())
+        }
+      } else {
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let lineBuffer = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          lineBuffer += typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() || ''
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (trimmed.startsWith('data:')) {
+              handleChunkText(trimmed.slice(5).trim())
+            }
+          }
+        }
+        if (lineBuffer.trim().startsWith('data:')) {
+          handleChunkText(lineBuffer.trim().slice(5).trim())
+        }
+      }
+    } else {
+      // Non-streaming fallback
+      const raw = await response.text()
+      const parsed = JSON.parse(raw)
+      const choice = parsed.choices?.[0]
+      if (choice) {
+        accumulatedContent = choice.message?.content || ''
+        accumulatedReasoning = choice.message?.reasoning || choice.message?.reasoning_content || ''
+        if (choice.message?.tool_calls) {
+          choice.message.tool_calls.forEach((tc, i) => {
+            accumulatedToolCalls[i] = tc
+          })
+          finishReason = 'tool_calls'
+        }
+        if (accumulatedContent) onToken?.(accumulatedContent)
+        if (accumulatedReasoning) onReasoning?.(accumulatedReasoning)
+      }
+    }
+
+    const toolCallsList = Object.values(accumulatedToolCalls)
+    if (toolCallsList.length > 0) {
+      finishReason = 'tool_calls'
+      onToolCall?.(toolCallsList)
+    }
+
+    return {
+      content: accumulatedContent,
+      reasoning: accumulatedReasoning,
+      toolCalls: toolCallsList.length > 0 ? toolCallsList : null,
+      finishReason
+    }
+  } catch (error) {
+    if (conf.aiProvider !== 'custom' && isLMStudioOfflineError(error)) {
+      throw createLMStudioOfflineError(error)
+    }
+    throw error
+  } finally {
+    activeAbortControllers.delete(abortController)
+  }
+}
+
 export const cleanAndParse = (rawResponse) => {
   try {
     if (!rawResponse) return null

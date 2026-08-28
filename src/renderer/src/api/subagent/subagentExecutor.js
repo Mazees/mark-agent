@@ -1,14 +1,133 @@
-import { fetchAI, cleanAndParse } from '../ai/core'
+import { fetchAIStream } from '../ai/core'
 import { subagentStore } from './subagentStore'
 import { buildSubagentSystemPrompt } from './subagentPrompt'
-import { core_tools } from '../tools/core-tools'
-import { GROUP_TOOLS_DEFINITION } from '../tools/group-tools'
+import { core_tools_schema } from '../tools/core-tools'
+import { GROUP_TOOLS_SCHEMA } from '../tools/group-tools'
 
 // Registry AbortController aktif per sub-agent
 const subagentAbortControllers = new Map()
 
 /**
- * Menjalankan satu putaran eksekusi ReAct untuk sub-agent
+ * Normalisasi query/argumen tool OpenAPI ke parameter native tool execution
+ */
+const normalizeSubagentToolQuery = (tool, queryOrArgs) => {
+  if (typeof queryOrArgs === 'string') return queryOrArgs
+  if (!queryOrArgs || typeof queryOrArgs !== 'object') return ''
+
+  const a = queryOrArgs
+
+  switch (tool) {
+    case 'read-file':
+      if (a.start_line !== undefined && a.end_line !== undefined) {
+        return `${a.path || ''}||${a.start_line}||${a.end_line}`
+      }
+      return a.path || ''
+
+    case 'write-file':
+      return `${a.path || ''}||${a.content || ''}`
+
+    case 'replace-content':
+      return `${a.path || ''}||${a.target_content || ''}||${a.replacement_content || ''}`
+
+    case 'replace-lines':
+      return `${a.path || ''}||${a.start_line || 1}||${a.end_line || 1}||${a.new_code || ''}`
+
+    case 'delete-file':
+    case 'file-outline':
+      return a.path || ''
+
+    case 'list-dir':
+      return a.path || ''
+
+    case 'find-files':
+      if (a.subfolder) return `${a.pattern || ''}||${a.subfolder}`
+      return a.pattern || ''
+
+    case 'grep-search':
+      if (a.path) return `${a.keyword || ''}||${a.path}`
+      return a.keyword || ''
+
+    case 'read-document':
+      if (a.keyword) return `${a.path || ''}||${a.keyword}`
+      return a.path || ''
+
+    case 'read-tools':
+      return a.group_name || ''
+
+    case 'run-powershell':
+      return a.command || ''
+
+    case 'open':
+      return a.target || ''
+
+    case 'browser-navigate':
+      return a.url || ''
+
+    case 'browser-click':
+      return String(a.element_id ?? '')
+
+    case 'browser-type':
+      return `${a.element_id ?? ''}||${a.text || ''}`
+
+    case 'browser-scroll':
+      return a.direction || 'down'
+
+    case 'browser-extract':
+      return a.selector || ''
+
+    case 'browser-screenshot':
+      return a.filename || 'screenshot.png'
+
+    case 'os-click':
+      return String(a.target || '')
+
+    case 'os-type':
+      return a.text || ''
+
+    case 'os-key':
+      return a.combo || ''
+
+    case 'os-scroll':
+      return `${a.direction || 'down'}||${a.amount || 3}`
+
+    case 'os-search':
+      return a.keyword || ''
+
+    case 'os-focus-window':
+      return a.title || ''
+
+    case 'git-status':
+      return a.path || ''
+
+    case 'git-diff':
+      return a.file_path || ''
+
+    case 'git-commit':
+      return a.message || ''
+
+    case 'git-revert':
+      return a.file_path || ''
+
+    case 'run-task':
+      return `${a.task_id || ''}||${a.command || ''}`
+
+    case 'read-task-output':
+      return `${a.task_id || ''}||${a.lines || 50}`
+
+    case 'kill-task':
+      return a.task_id || ''
+
+    case 'memory-search':
+      return a.query || ''
+
+    default:
+      if (a.query) return a.query
+      return JSON.stringify(a)
+  }
+}
+
+/**
+ * Menjalankan satu putaran eksekusi ReAct untuk sub-agent menggunakan Native Function Calling & SSE Streaming.
  * @param {string} subagentId ID sub-agent
  * @param {string|null} incomingMessage Pesan baru dari Lead Agent (Mark) atau User
  * @param {string} senderType 'mark' | 'user'
@@ -40,7 +159,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
   subagentAbortControllers.set(subagentId, abortController)
   await subagentStore.updateSubagent(subagentId, { status: 'running' })
 
-  // Format tool bawaan (core) dan kelompok tool tambahan persis seperti Lead Agent (Mark)
+  // Filter tools OpenAPI schema yang diizinkan untuk sub-agent ini
   const forbiddenTools = ['spawn_subagent', 'send_message', 'kill_subagent', 'wait_subagents']
   const specificAllowed =
     Array.isArray(subagent.allowedTools) &&
@@ -50,26 +169,29 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
       ? subagent.allowedTools.map((t) => t.trim())
       : null
 
-  const coreToolsText = Object.entries(core_tools)
-    .filter(([k]) => {
-      if (forbiddenTools.includes(k)) return false
-      if (specificAllowed) return specificAllowed.includes(k)
-      return true
-    })
-    .map(([k, v]) => `- ${k}: ${v}`)
-    .join('\n')
+  const allowedSchemas = []
 
-  const groupToolsText = GROUP_TOOLS_DEFINITION
-    ? Object.entries(GROUP_TOOLS_DEFINITION)
-        .map(([k, v]) => `- ${k}: ${v.description}`)
-        .join('\n')
-    : ''
+  // 1. Core tools
+  for (const t of core_tools_schema) {
+    const name = t.function?.name
+    if (forbiddenTools.includes(name)) continue
+    if (specificAllowed && !specificAllowed.includes(name)) continue
+    allowedSchemas.push(t)
+  }
+
+  // 2. Group tools
+  for (const group of Object.values(GROUP_TOOLS_SCHEMA)) {
+    for (const t of group.tools || []) {
+      const name = t.function?.name
+      if (forbiddenTools.includes(name)) continue
+      if (specificAllowed && !specificAllowed.includes(name)) continue
+      allowedSchemas.push(t)
+    }
+  }
 
   const systemPrompt = buildSubagentSystemPrompt({
     role: subagent.role,
-    goal: subagent.goal,
-    coreToolsText,
-    groupToolsText
+    goal: subagent.goal
   })
 
   let currentTurn = subagent.turnCount || 0
@@ -84,74 +206,64 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         break
       }
 
-      // Ambil seluruh riwayat pesan sub-agent dari Dexie
+      // Ambil seluruh riwayat pesan sub-agent dari database
       const history = await subagentStore.getMessages(subagentId)
       const messagesPayload = [
         { role: 'system', content: systemPrompt },
-        ...history.map((m) => ({ role: m.role, content: m.content }))
+        ...history.map((m) => ({
+          role: m.role,
+          content: m.content,
+          ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+          ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {})
+        }))
       ]
 
-      const aiResponseRaw = await fetchAI(messagesPayload, {
-        signal: abortController.signal
+      let turnReasoning = ''
+      let turnContent = ''
+
+      const streamResult = await fetchAIStream({
+        messages: messagesPayload,
+        tools: allowedSchemas,
+        signal: abortController.signal,
+        onReasoning: (chunk) => {
+          turnReasoning += chunk
+        },
+        onToken: (token) => {
+          turnContent += token
+        }
       })
 
-      if (aiResponseRaw && aiResponseRaw.error) {
-        throw new Error(aiResponseRaw.error)
-      }
-
-      const rawContent = aiResponseRaw?.content !== undefined ? aiResponseRaw.content : aiResponseRaw
-      const decision = cleanAndParse(rawContent)
-      if (!decision) {
-        throw new Error('Sub-Agent mengembalikan output yang tidak dapat diparse sebagai JSON.')
-      }
-
-      // KONDISI 1: Sub-Agent Ingin Berbicara / Melapor ke Mark (action null / selesai)
-      if (!decision.action && decision.answer) {
-        latestSubagentReply = decision.answer
-        await subagentStore.addMessage(subagentId, {
+      // KONDISI 1: Sub-Agent Memanggil Native Tool Calls
+      if (streamResult.toolCalls && streamResult.toolCalls.length > 0) {
+        const assistantMsg = {
           sender: 'subagent',
           role: 'assistant',
-          content: JSON.stringify({ thought: decision.thought, answer: decision.answer }),
-          thought: decision.thought
-        })
-        await subagentStore.updateSubagent(subagentId, {
-          status: 'idle',
-          finalAnswer: decision.answer
-        })
-
-        return {
-          success: true,
-          subagentId,
-          reply: decision.answer,
-          thought: decision.thought || '',
-          turnCount: currentTurn
+          content: streamResult.content || null,
+          thought: turnReasoning || null,
+          tool_calls: streamResult.toolCalls
         }
-      }
+        await subagentStore.addMessage(subagentId, assistantMsg)
 
-      // KONDISI 2: Sub-Agent Ingin Mengeksekusi Tool
-      if (decision.action) {
-        await subagentStore.addMessage(subagentId, {
-          sender: 'subagent',
-          role: 'assistant',
-          content: JSON.stringify({ thought: decision.thought, action: decision.action }),
-          thought: decision.thought,
-          action: decision.action
-        })
+        for (const tc of streamResult.toolCalls) {
+          const toolName = tc.function?.name
+          let parsedArgs = {}
+          try {
+            parsedArgs = JSON.parse(tc.function?.arguments || '{}')
+          } catch (_) {
+            parsedArgs = { raw: tc.function?.arguments || '' }
+          }
 
-        // Tangani Batch Actions vs Single Action
-        const actionsToExecute = Array.isArray(decision.action) ? decision.action : [decision.action]
-        const observations = []
+          if (!toolName || abortController.signal.aborted) continue
 
-        for (const act of actionsToExecute) {
-          if (!act?.tool) continue
-          if (abortController.signal.aborted) break
+          const query = normalizeSubagentToolQuery(toolName, parsedArgs)
+          let resultString = ''
 
           try {
             let res
-            if (act.tool === 'read-tools') {
+            if (toolName === 'read-tools') {
               const { group_tools } = await import('../tools/group-tools.js')
               const groups = await group_tools()
-              const groupName = (act.query || '').trim()
+              const groupName = (parsedArgs.group_name || query || '').trim()
               if (!groupName) {
                 res = { success: false, error: 'Harap sebutkan nama_grup (misal: "advanced_browser").' }
               } else if (groups[groupName]) {
@@ -162,53 +274,77 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               } else {
                 res = { success: false, error: `Grup tool '${groupName}' tidak ditemukan.` }
               }
-            } else if (act.tool === 'memory-search') {
+            } else if (toolName === 'memory-search') {
               const { executeMemorySearch } = await import('../vectorMemory.js')
-              const formatted = await executeMemorySearch(act.query || '')
+              const formatted = await executeMemorySearch(parsedArgs.query || query)
               res = { success: true, data: formatted }
             } else if (window.api && window.api.executeNativeTool) {
-              res = await window.api.executeNativeTool(act.tool, act.query || '', { sessionId: subagentId })
+              res = await window.api.executeNativeTool(toolName, query, { sessionId: subagentId })
             } else {
               res = { success: false, error: 'IPC executeNativeTool tidak tersedia.' }
             }
 
-            let resultStr = ''
-            if (res.success) {
+            if (res && res.success) {
               if (res.data !== undefined) {
-                resultStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+                resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
               } else if (res.output !== undefined) {
-                resultStr = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
+                resultString = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
               } else if (res.result !== undefined) {
-                resultStr = typeof res.result === 'string' ? res.result : JSON.stringify(res.result)
+                resultString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result)
               } else if (res.content !== undefined) {
-                resultStr = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+                resultString = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
               } else if (res.contents !== undefined) {
-                resultStr = typeof res.contents === 'string' ? res.contents : JSON.stringify(res.contents)
+                resultString = typeof res.contents === 'string' ? res.contents : JSON.stringify(res.contents)
               } else {
-                resultStr = res.message || 'Success'
+                resultString = res.message || 'Success'
               }
             } else {
-              resultStr = `[ERROR] ${res.message || res.error || 'Unknown error'}`
+              resultString = `[ERROR] ${res?.message || res?.error || 'Unknown error'}`
             }
-
-            observations.push(`[${act.tool}] ${resultStr}`)
           } catch (err) {
-            observations.push(`[${act.tool} ERROR] ${err.message}`)
+            resultString = `[ERROR] Tool ${toolName} crash: ${err.message}`
           }
+
+          if (resultString.length > 4000) {
+            resultString =
+              resultString.slice(0, 4000) +
+              `\n\n[...SISA DATA DIPOTONG (Total: ${resultString.length} karakter)...]`
+          }
+
+          // Catat pesan role 'tool'
+          await subagentStore.addMessage(subagentId, {
+            sender: 'tool',
+            role: 'tool',
+            tool_call_id: tc.id,
+            name: toolName,
+            content: resultString
+          })
         }
 
-        let combinedObservation = observations.join('\n\n')
-        if (combinedObservation.length > 4000) {
-          combinedObservation =
-            combinedObservation.slice(0, 4000) +
-            `\n\n[...SISA DATA DIPOTONG (Total: ${combinedObservation.length} karakter)...]`
-        }
+        // Lanjut ke giliran berikutnya agar subagent mengevaluasi hasil tool
+        continue
+      }
 
-        await subagentStore.addMessage(subagentId, {
-          sender: 'tool',
-          role: 'user',
-          content: `[OBSERVATION]:\n${combinedObservation}`
-        })
+      // KONDISI 2: Sub-Agent Menyelesaikan Misi (Direct text answer / Finish reason: stop)
+      latestSubagentReply = streamResult.content || turnContent || 'Misi teknis selesai.'
+      await subagentStore.addMessage(subagentId, {
+        sender: 'subagent',
+        role: 'assistant',
+        content: latestSubagentReply,
+        thought: turnReasoning || null
+      })
+
+      await subagentStore.updateSubagent(subagentId, {
+        status: 'idle',
+        finalAnswer: latestSubagentReply
+      })
+
+      return {
+        success: true,
+        subagentId,
+        reply: latestSubagentReply,
+        thought: turnReasoning || '',
+        turnCount: currentTurn
       }
     }
 

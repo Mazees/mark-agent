@@ -1,6 +1,99 @@
 import { getAllConfig } from '../db'
 import { jsonrepair } from 'jsonrepair'
 
+export const fetchAIStream = async ({
+  messages,
+  tools = null,
+  signal = null,
+  isSmallTask = false,
+  configOverride = null,
+  onToken = null,
+  onReasoning = null,
+  onMood = null,
+  onToolCall = null
+}) => {
+  const currentConfig = await getAllConfig()
+  const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
+
+  let unsubToken = null
+  let unsubMood = null
+
+  if (window.api && window.api.onAiToken && (onToken || onReasoning)) {
+    unsubToken = window.api.onAiToken((payload) => {
+      if (payload && payload.token) {
+        if (payload.type === 'thought') {
+          onReasoning?.(payload.token)
+        } else {
+          onToken?.(payload.token)
+        }
+      }
+    })
+  }
+
+  if (window.api && window.api.onAiMood && onMood) {
+    unsubMood = window.api.onAiMood((payload) => {
+      if (payload && payload.mood) {
+        onMood(payload.mood)
+      }
+    })
+  }
+
+  return new Promise((resolve, reject) => {
+    let hasResolved = false
+
+    const onAbort = () => {
+      if (hasResolved) return
+      hasResolved = true
+      if (unsubToken) unsubToken()
+      if (unsubMood) unsubMood()
+      if (window.api && window.api.abortFetchAI) window.api.abortFetchAI()
+      const err = new Error('AbortError')
+      err.name = 'AbortError'
+      reject(err)
+    }
+
+    if (signal) {
+      if (signal.aborted) return onAbort()
+      if (typeof signal.addEventListener === 'function') {
+        signal.addEventListener('abort', onAbort)
+      }
+    }
+
+    window.api
+      .fetchAIStream({ messages, tools, config: conf, isSmallTask }, signal)
+      .then((result) => {
+        if (hasResolved) return
+        hasResolved = true
+        if (unsubToken) unsubToken()
+        if (unsubMood) unsubMood()
+        if (signal && typeof signal.removeEventListener === 'function') {
+          signal.removeEventListener('abort', onAbort)
+        }
+
+        if (result && result.error) {
+          const err = new Error(result.error.message)
+          err.code = result.error.code
+          reject(err)
+          return
+        }
+
+        if (result && result.toolCalls && onToolCall) {
+          onToolCall(result.toolCalls)
+        }
+
+        resolve(result)
+      })
+      .catch((e) => {
+        if (hasResolved) return
+        hasResolved = true
+        if (unsubToken) unsubToken()
+        if (unsubMood) unsubMood()
+        if (signal) signal.removeEventListener('abort', onAbort)
+        reject(e)
+      })
+  })
+}
+
 export const fetchAI = async (
   messages,
   signalOrOptions = null,
@@ -64,7 +157,9 @@ export const fetchAI = async (
     console.log('%c[fetchAI] FULL RAW REQUEST JSON:', 'color: #10b981; font-weight: bold;');
     console.log(JSON.stringify({ messages, isSmallTask: smallTask, jsonSchema: schema }, null, 2));
 
-    window.api.fetchAI({ messages, config: conf, isSmallTask: smallTask, jsonSchema: schema }).then(result => {
+    window.api
+      .fetchAI({ messages, config: conf, isSmallTask: smallTask, jsonSchema: schema }, signal)
+      .then((result) => {
       if (hasResolved) return;
       hasResolved = true;
       if (signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', onAbort);

@@ -49,7 +49,7 @@ export function printMonitorHeader(config = {}) {
 
   drawBox('', lines, 74, c.darkGray)
   console.log(
-    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka WebUI${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Clear Log${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Matikan Server${c.reset}\n`
+    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka WebUI${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[j]${c.reset} ${c.gray}Inspect/Tutup JSON Fetch${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Clear Log${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}\n`
   )
   console.log(` ${c.darkGray}── Live Activity Monitor ───────────────────────────────────────────────${c.reset}`)
 }
@@ -61,10 +61,40 @@ export function logActivity(type, title, detail = '') {
   else if (type === 'tool') badge = `${c.yellow}⚡ Tool   ${c.reset}`
   else if (type === 'result') badge = `${c.green}✓ Result ${c.reset}`
   else if (type === 'thought') badge = `${c.purple}● Thought${c.reset}`
+  else if (type === 'fetch') badge = `${c.blue}📡 Fetch  ${c.reset}`
   else if (type === 'error') badge = `${c.red}● Error  ${c.reset}`
 
   const cleanDetail = detail ? ` ${c.darkGray}›${c.reset} ${c.gray}${String(detail).replace(/\n/g, ' ').slice(0, 110)}${c.reset}` : ''
   console.log(` ${c.darkGray}${time}${c.reset}  ${badge}  ${c.white}${title}${c.reset}${cleanDetail}`)
+}
+
+let lastFetchPayload = null
+let isJsonInspectorOpen = false
+
+export function toggleJsonInspector(currentConfig) {
+  isJsonInspectorOpen = !isJsonInspectorOpen
+  if (!isJsonInspectorOpen) {
+    printMonitorHeader(currentConfig)
+    logActivity('agent', 'JSON Inspector ditutup. Monitor kembali ke mode live.')
+  } else {
+    printJsonInspector(lastFetchPayload)
+  }
+}
+
+export function printJsonInspector(payload) {
+  if (!payload) {
+    console.log(`\n ${c.yellow}●${c.reset} ${c.gray}Belum ada payload request JSON yang di-fetch. Menunggu request dari WebUI...${c.reset}\n`)
+    return
+  }
+
+  const jsonStr = JSON.stringify(payload, null, 2)
+  const lines = jsonStr.split('\n')
+
+  console.log(`\n ${c.bold}${c.green}── [INSPECT] AI Request JSON Payload (${lines.length} lines) ── [Tekan 'j' untuk tutup/kembali] ──${c.reset}\n`)
+  for (let i = 0; i < lines.length; i++) {
+    console.log(` ${c.cyan}${lines[i]}${c.reset}`)
+  }
+  console.log(`\n ${c.bold}${c.green}────────────────────────────────────────────────────────────────────────────────────────${c.reset}\n`)
 }
 
 export async function runMonitor(portOverride) {
@@ -108,7 +138,11 @@ export async function runMonitor(portOverride) {
     ws.on('message', (data) => {
       try {
         const { event, payload } = JSON.parse(data.toString())
-        if (event === 'agent:thought') {
+        if (event === 'ai:fetch') {
+          lastFetchPayload = payload
+          const info = `[${payload.provider}/${payload.model}] ${payload.messagesCount || 0} msgs${payload.hasTools ? `, ${payload.toolsCount || 0} tools` : ''}`
+          logActivity('fetch', `AI Request (${payload.type || 'fetch'})`, `${info} (Tekan [j] utk inspect)`)
+        } else if (event === 'agent:thought') {
           logActivity('thought', `Turn ${payload.turn}`, payload.thought)
         } else if (event === 'tool:call') {
           logActivity('tool', payload.tool, payload.query)
@@ -142,6 +176,17 @@ export async function runMonitor(portOverride) {
     } else if (key.name === 'u' || key.name === 'o') {
       logActivity('agent', 'Membuka kembali jendela WebUI...')
       await launchUI({ port: serverPort, mode: 'app' })
+    } else if (key.name === 'j' || key.name === 'd') {
+      const currentConfig = await (async () => {
+        try {
+          const res = await fetch(`${serverUrl}/api/config`)
+          const data = await res.json()
+          return data.config || {}
+        } catch (_) {
+          return {}
+        }
+      })()
+      toggleJsonInspector(currentConfig)
     } else if (key.name === 'c') {
       const currentConfig = await (async () => {
         try {

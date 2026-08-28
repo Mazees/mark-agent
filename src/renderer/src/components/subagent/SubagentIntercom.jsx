@@ -175,6 +175,7 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
 
 // Helper untuk mengelompokkan pesan mentah menjadi satu bubble per giliran
 function groupSubagentMessages(rawMessages) {
+  if (!Array.isArray(rawMessages)) return []
   const grouped = []
   let currentSubTurn = null
 

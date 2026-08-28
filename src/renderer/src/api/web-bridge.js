@@ -117,11 +117,12 @@ export const webApi = {
   },
 
   // 2. Chat & AI
-  fetchAI: async (params) => {
+  fetchAI: async (params, signal = null) => {
     const res = await fetch(`${API_BASE}/api/ai/fetch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
+      body: JSON.stringify(params),
+      signal: signal || undefined
     })
     const json = await res.json()
     if (!res.ok || json.error) {
@@ -130,6 +131,37 @@ export const webApi = {
       throw err
     }
     return json
+  },
+
+  fetchAIStream: async (params, signal = null) => {
+    const res = await fetch(`${API_BASE}/api/ai/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: signal || undefined
+    })
+    const json = await res.json()
+    if (!res.ok || json.error) {
+      const err = new Error(json.error?.message || `HTTP error ${res.status}`)
+      err.code = json.error?.code
+      throw err
+    }
+    return json
+  },
+
+  onAiToken: (callback) => {
+    addWebListener('ai:token', callback)
+    return () => removeWebListener('ai:token', callback)
+  },
+
+  onAiMood: (callback) => {
+    addWebListener('ai:mood', callback)
+    return () => removeWebListener('ai:mood', callback)
+  },
+
+  onToolStatus: (callback) => {
+    addWebListener('tool:status', callback)
+    return () => removeWebListener('tool:status', callback)
   },
 
   abortFetchAI: () => {

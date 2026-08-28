@@ -808,7 +808,59 @@ app.post('/api/ai/fetch', async (req, res) => {
   try {
     const { fetchAI } = await import('./services/ai-bridge.js')
     const finalConfig = { ...activeConfig, ...config }
+
+    wsHub.broadcast('ai:fetch', {
+      type: 'fetch',
+      provider: finalConfig.aiProvider || 'lm-studio',
+      model: finalConfig.model || finalConfig.customModel || 'default',
+      messagesCount: Array.isArray(messages) ? messages.length : 0,
+      hasTools: false,
+      payload: { messages, jsonSchema, isSmallTask }
+    })
+
     const result = await fetchAI(messages, finalConfig, isSmallTask, jsonSchema)
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })
+  }
+})
+
+// 7b. AI Streaming Gateway (Native Tool Calling + SSE & WebSocket Tokens)
+app.post('/api/ai/stream', async (req, res) => {
+  const { messages, tools = null, config = {}, isSmallTask = false } = req.body || {}
+  try {
+    const { fetchAIStream } = await import('./services/ai-bridge.js')
+    const finalConfig = { ...activeConfig, ...config }
+
+    wsHub.broadcast('ai:fetch', {
+      type: 'stream',
+      provider: finalConfig.aiProvider || 'lm-studio',
+      model: finalConfig.model || finalConfig.customModel || 'default',
+      messagesCount: Array.isArray(messages) ? messages.length : 0,
+      hasTools: Array.isArray(tools) && tools.length > 0,
+      toolsCount: Array.isArray(tools) ? tools.length : 0,
+      payload: { messages, tools, isSmallTask }
+    })
+
+    const result = await fetchAIStream({
+      messages,
+      tools,
+      config: finalConfig,
+      isSmallTask,
+      onToken: (token) => {
+        wsHub.streamToken(token, 'answer')
+      },
+      onReasoning: (rToken) => {
+        wsHub.streamToken(rToken, 'thought')
+      },
+      onMood: (mood) => {
+        wsHub.broadcast('ai:mood', { mood })
+      },
+      onToolCall: (toolCalls) => {
+        wsHub.broadcast('ai:tool_calls', { toolCalls })
+      }
+    })
+
     res.json(result)
   } catch (err) {
     res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })

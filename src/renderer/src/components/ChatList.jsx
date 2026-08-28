@@ -110,7 +110,7 @@ const ChatList = ({
             : 'bg-base-200/90 text-base-content border border-white/10 rounded-2xl rounded-tl-sm p-4 backdrop-blur-md'
         }`}
       >
-        {isThinking || isSummarizing || isSearchingMusic ? (
+        {(isThinking && !content) || isSummarizing || isSearchingMusic ? (
           <ThinkingBubble
             isThinking={isThinking}
             isSummarizing={isSummarizing}
