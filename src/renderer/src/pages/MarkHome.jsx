@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
 import OrbVisualizer, { getMoodColor } from '../components/core/OrbVisualizer'
 import InputBar from '../components/core/InputBar'
@@ -124,22 +123,6 @@ const MarkHome = () => {
   } = useVAD({
     onTranscript: handleVoiceTranscript
   })
-
-  const location = useLocation()
-  const hasAutoStartedRef = useRef(false)
-
-  useEffect(() => {
-    if (location.state?.autoToggleMic) {
-      if (hasAutoStartedRef.current !== location.state.autoToggleMic) {
-        hasAutoStartedRef.current = location.state.autoToggleMic
-        if (isLoading || isAgentBusy) {
-          console.warn('[VAD] Ignored toggle because agent is busy')
-        } else {
-          toggleRecording()
-        }
-      }
-    }
-  }, [location.state?.autoToggleMic, toggleRecording, isLoading, isAgentBusy])
 
   // Handle music widget exit animation
   useEffect(() => {

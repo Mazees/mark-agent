@@ -46,7 +46,10 @@ const GlobalListener = () => {
     window.addEventListener('config-updated', handleConfigUpdated)
 
     const triggerMicShortcut = () => {
-      navigate('/', { state: { autoToggleMic: Date.now() } })
+      // Dispatch custom event langsung agar didengar oleh useVAD / MarkHome seketika
+      window.dispatchEvent(new CustomEvent('trigger-mic-toggle'))
+      // Pastikan jika user sedang berada di sub-page atau drawer, kita juga arahkan view ke root Home
+      navigate('/')
     }
 
     const matchesShortcut = (e, shortcutStr) => {

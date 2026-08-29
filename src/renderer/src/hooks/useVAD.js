@@ -452,6 +452,14 @@ export const useVAD = ({
   }, [startManualRecording])
 
   useEffect(() => {
+    const handleTriggerToggle = () => {
+      toggleRecording()
+    }
+    window.addEventListener('trigger-mic-toggle', handleTriggerToggle)
+    return () => window.removeEventListener('trigger-mic-toggle', handleTriggerToggle)
+  }, [toggleRecording])
+
+  useEffect(() => {
     window.isVADRecording = isRecording
   }, [isRecording])
 

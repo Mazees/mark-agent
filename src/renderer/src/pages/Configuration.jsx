@@ -528,25 +528,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
 
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false)
 
-  const normalizeShortcut = (val) => {
-    if (!val) return 'CommandOrControl+Alt+M'
-    return val
-      .replace(/\bctrl\b/gi, 'CommandOrControl')
-      .replace(/\bcontrol\b/gi, 'CommandOrControl')
-      .replace(/\bcmd\b/gi, 'CommandOrControl')
-      .replace(/\bmeta\b/gi, 'CommandOrControl')
-  }
-
-  const handleShortcutKeyChange = (e) => {
-    const rawVal = e.target.value
-    const normalized = normalizeShortcut(rawVal)
-    setConfig((prev) => {
-      const updated = { ...prev, shortcutKey: normalized }
-      if (window.api && window.api.syncConfig) window.api.syncConfig(updated)
-      return updated
-    })
-  }
-
   const handleShortcutRecorderKeyDown = (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -565,6 +546,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
 
     setConfig((prev) => {
       const updated = { ...prev, shortcutKey: fullShortcut }
+      window.dispatchEvent(new CustomEvent('config-updated', { detail: updated }))
       if (window.api && window.api.syncConfig) window.api.syncConfig(updated)
       return updated
     })
@@ -984,6 +966,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                       onClick={() => {
                         setConfig((prev) => {
                           const updated = { ...prev, shortcutKey: preset }
+                          window.dispatchEvent(new CustomEvent('config-updated', { detail: updated }))
                           if (window.api && window.api.syncConfig) window.api.syncConfig(updated)
                           return updated
                         })
