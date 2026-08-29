@@ -69,6 +69,7 @@ export const useVAD = ({
   const isWakeListeningRef = useRef(false)
   const wakeRecognitionRef = useRef(null)
   const manualRecognitionRef = useRef(null)
+  const silenceTimerRef = useRef(null)
   const currentConfigRef = useRef({})
   const onTranscriptRef = useRef(onTranscript)
 
@@ -208,6 +209,10 @@ export const useVAD = ({
    * Menghentikan rekognisi manual secara bersih
    */
   const stopManualRecording = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
     isRecordingRef.current = false
     setIsRecording(false)
     stopAudioAnalyser()
@@ -232,6 +237,11 @@ export const useVAD = ({
       isWakeListeningRef.current = false
     }
 
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+
     await refreshConfig()
     const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
     const customWakeWords = currentConfigRef.current?.customWakeWords || ''
@@ -247,27 +257,70 @@ export const useVAD = ({
     startAudioAnalyser()
 
     let accumulatedFinal = ''
+    let latestInterim = ''
+
+    // Buffer jeda hening (1800ms) sebelum rekaman otomatis diselesaikan
+    const resetSilenceTimeout = (delayMs = 1800) => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current)
+      }
+      silenceTimerRef.current = setTimeout(() => {
+        if (!isRecordingRef.current) return
+        const textToProcess = (accumulatedFinal || latestInterim || '').trim()
+        if (textToProcess) {
+          stopManualRecording()
+          const cleanText = cleanSpokenCommand(textToProcess, customWakeWords)
+          const textToSend = cleanText || textToProcess
+          if (textToSend) {
+            onTranscriptRef.current(textToSend, { isWakeWord: false, wakePhrase: null })
+          }
+        }
+      }, delayMs)
+    }
+
+    // Pasang timeout awal (8 detik) jika pengguna belum mulai berbicara
+    resetSilenceTimeout(8000)
 
     const rec = await startWebSpeechRecognition({
       lang,
-      continuous: false,
-      onInterim: (_interim) => {},
+      continuous: true,
+      onInterim: (interim) => {
+        if (!isRecordingRef.current) return
+        latestInterim = interim
+        // Reset jeda hening saat pengguna sedang berbicara
+        resetSilenceTimeout(1800)
+      },
       onResult: (finalText) => {
+        if (!isRecordingRef.current) return
         if (finalText && finalText.trim()) {
           accumulatedFinal = finalText.trim()
+          latestInterim = ''
+          // Reset jeda hening setelah potongan kalimat selesai
+          resetSilenceTimeout(1800)
         }
       },
       onError: (err) => {
         console.warn('[VAD] Speech recognition error:', err.message)
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current)
+          silenceTimerRef.current = null
+        }
         stopManualRecording()
       },
       onEnd: () => {
-        stopManualRecording()
-        if (accumulatedFinal && accumulatedFinal.trim()) {
-          const cleanText = cleanSpokenCommand(accumulatedFinal, customWakeWords)
-          const textToSend = cleanText || accumulatedFinal
-          if (textToSend) {
-            onTranscriptRef.current(textToSend, { isWakeWord: false, wakePhrase: null })
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current)
+          silenceTimerRef.current = null
+        }
+        if (isRecordingRef.current) {
+          stopManualRecording()
+          const textToProcess = (accumulatedFinal || latestInterim || '').trim()
+          if (textToProcess) {
+            const cleanText = cleanSpokenCommand(textToProcess, customWakeWords)
+            const textToSend = cleanText || textToProcess
+            if (textToSend) {
+              onTranscriptRef.current(textToSend, { isWakeWord: false, wakePhrase: null })
+            }
           }
         }
       }
