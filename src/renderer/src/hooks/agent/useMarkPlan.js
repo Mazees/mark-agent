@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { buildPlanningSystemPrompt } from '../../api/ai/planning'
 import { getYoutubeSummary } from '../../api/ai/tools'
 import { fetchAI, fetchAIStream } from '../../api/ai/core'
-import { playVoice, getCurrentTimeInfo } from '../../api/ai/utils'
+import { playVoice, speechQueue, getCurrentTimeInfo } from '../../api/ai/utils'
 import {
   deleteMemory,
   getAllMemory,
@@ -1105,6 +1105,11 @@ export const useMarkPlan = ({
       }
     }
 
+    // Reset Speech Queue sebelum memulai turn baru
+    if (finalIsSpeak) {
+      speechQueue.reset()
+    }
+
     if (!userInput) {
       activeSessionsRef.current.delete(activeSessionNum)
       if (removeRunningSessionId) removeRunningSessionId(activeSessionNum)
@@ -1408,6 +1413,7 @@ export const useMarkPlan = ({
 
         let currentTurnReasoning = ''
         let currentTurnContent = ''
+        let sentenceBuffer = ''
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAIStream({
@@ -1440,6 +1446,21 @@ export const useMarkPlan = ({
           onToken: (token) => {
             currentTurnContent += token
             finalContentAccumulator = currentTurnContent
+
+            // Sentence-Level Streaming TTS: Deteksi kalimat lengkap secara real-time
+            if (finalIsSpeak) {
+              sentenceBuffer += token
+              // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
+              const sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/)
+              if (sentenceEndMatch) {
+                const completeSentence = sentenceEndMatch[1].trim()
+                sentenceBuffer = sentenceEndMatch[2] || ''
+                if (completeSentence) {
+                  speechQueue.enqueue(completeSentence)
+                }
+              }
+            }
+
             targetSetChatData((prev) => {
               const filtered = prev.filter((item) => !item.isThinking)
               return [
@@ -1585,9 +1606,15 @@ export const useMarkPlan = ({
           }
         })
 
-        // TTS Lisan
-        if (finalIsSpeak && finalContentAccumulator) {
-          playVoice(finalContentAccumulator).catch(() => {})
+        // TTS Lisan: Kirimkan sisa buffer kalimat yang belum ter-enqueue
+        if (finalIsSpeak) {
+          if (sentenceBuffer && sentenceBuffer.trim()) {
+            speechQueue.enqueue(sentenceBuffer.trim())
+            sentenceBuffer = ''
+          } else if (!speechQueue.isPlaying && speechQueue.queue.length === 0 && finalContentAccumulator) {
+            // Fallback jika tidak ada tanda baca di output model sama sekali
+            playVoice(finalContentAccumulator).catch(() => {})
+          }
         }
 
         // OS Notification

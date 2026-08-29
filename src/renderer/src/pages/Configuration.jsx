@@ -113,10 +113,11 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     const testText =
       'Halo bro! Gue Mark, asisten pribadi lo. Gimana suara gue sekarang? Udah mantap belum?'
     try {
-      const audioBase64 = await window.api.textToSpeech(testText, config.ttsRate, config.ttsPitch)
-      if (audioBase64) {
-        const audio = new Audio(audioBase64)
+      const audioSrc = await window.api.textToSpeech(testText, config.ttsRate, config.ttsPitch)
+      if (audioSrc) {
+        const audio = new Audio(audioSrc)
         audio.onended = () => setPlayingTest(false)
+        audio.onerror = () => setPlayingTest(false)
         await audio.play()
       } else {
         setPlayingTest(false)

@@ -933,6 +933,34 @@ app.post('/api/tools/needs-approval', async (req, res) => {
 })
 
 // 9. Edge-TTS Speech Synthesis API
+app.get('/api/tts/stream', async (req, res) => {
+  const { text, voice, rate = 0, pitch = 0 } = req.query || {}
+  try {
+    const { streamTTS } = await import('./tools/media-tools.js')
+    const audioStream = await streamTTS(text, voice, rate, pitch)
+    res.setHeader('Content-Type', 'audio/mpeg')
+    res.setHeader('Transfer-Encoding', 'chunked')
+    res.setHeader('Cache-Control', 'no-cache, no-store')
+    audioStream.pipe(res)
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/tts/stream', async (req, res) => {
+  const { text, voice, rate = 0, pitch = 0 } = req.body || {}
+  try {
+    const { streamTTS } = await import('./tools/media-tools.js')
+    const audioStream = await streamTTS(text, voice, rate, pitch)
+    res.setHeader('Content-Type', 'audio/mpeg')
+    res.setHeader('Transfer-Encoding', 'chunked')
+    res.setHeader('Cache-Control', 'no-cache, no-store')
+    audioStream.pipe(res)
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 app.post('/api/tts', async (req, res) => {
   const { text, voice, rate = 0, pitch = 0 } = req.body || {}
   try {

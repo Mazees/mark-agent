@@ -183,12 +183,22 @@ const LiveAudio = () => {
       const rate = configList[0]?.ttsRate ?? 0
       const pitch = configList[0]?.ttsPitch ?? 0
 
-      const audioBase64 = await window.api?.textToSpeech?.(text, rate, pitch)
-      if (audioBase64) {
-        const audio = new Audio(audioBase64)
+      const audioSrc = await window.api?.textToSpeech?.(text, rate, pitch)
+      if (audioSrc) {
+        const audio = new Audio(audioSrc)
+        audio.crossOrigin = 'anonymous'
         audioRef.current = audio
 
         audio.onended = () => {
+          audioRef.current = null
+          if (isActiveRef.current) {
+            setStatus('listening')
+            startListeningSession()
+          } else {
+            setStatus('idle')
+          }
+        }
+        audio.onerror = () => {
           audioRef.current = null
           if (isActiveRef.current) {
             setStatus('listening')

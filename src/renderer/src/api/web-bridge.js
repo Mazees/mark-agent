@@ -199,16 +199,12 @@ export const webApi = {
       }
     }
 
+    // Gunakan direct streaming endpoint untuk latensi instan tanpa base64 overhead
     try {
-      const res = await fetch(`${API_BASE}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: finalVoice, rate: finalRate, pitch: finalPitch })
-      })
-      const json = await res.json()
-      return json.audioBase64 || json.data?.audioBase64 || null
+      const url = `${API_BASE}/api/tts/stream?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(finalVoice)}&rate=${encodeURIComponent(finalRate)}&pitch=${encodeURIComponent(finalPitch)}`
+      return url
     } catch (err) {
-      console.error('[webBridge] textToSpeech error:', err)
+      console.error('[webBridge] textToSpeech stream URL error:', err)
       return null
     }
   },

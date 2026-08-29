@@ -10,8 +10,59 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true })
 }
 
+let persistentTTSInstance = null
+let currentConfiguredVoice = null
+
 /**
- * Sintesis suara menggunakan Microsoft Edge TTS
+ * Mendapatkan instance MsEdgeTTS persistent dengan voice yang sudah ter-setup
+ * @param {string} voice
+ */
+async function getOrCreateTTSInstance(voice = 'id-ID-ArdiNeural') {
+  if (!persistentTTSInstance || currentConfiguredVoice !== voice) {
+    const tts = new MsEdgeTTS()
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+    persistentTTSInstance = tts
+    currentConfiguredVoice = voice
+  }
+  return persistentTTSInstance
+}
+
+/**
+ * Menghasilkan readable stream audio langsung untuk HTTP response streaming
+ * @param {string} text
+ * @param {string} [voice='id-ID-ArdiNeural']
+ * @param {number|string} [rate=0]
+ * @param {number|string} [pitch=0]
+ */
+export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitch = 0) {
+  if (!text || !text.trim()) throw new Error('Teks kosong untuk TTS')
+
+  let selectedVoice = 'id-ID-ArdiNeural'
+  if (typeof voice === 'string' && voice.trim() && !/^-?\d+$/.test(voice.trim())) {
+    selectedVoice = voice.trim()
+  }
+
+  const numRate = typeof rate === 'number' ? rate : parseInt(rate, 10) || 0
+  const numPitch = typeof pitch === 'number' ? pitch : parseInt(pitch, 10) || 0
+  const rateStr = numRate >= 0 ? `+${numRate}%` : `${numRate}%`
+  const pitchStr = numPitch >= 0 ? `+${numPitch}Hz` : `${numPitch}Hz`
+
+  try {
+    const tts = await getOrCreateTTSInstance(selectedVoice)
+    const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
+    return streamObj.audioStream
+  } catch (err) {
+    // Retry sekali jika socket terputus/stale
+    persistentTTSInstance = null
+    currentConfiguredVoice = null
+    const tts = await getOrCreateTTSInstance(selectedVoice)
+    const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
+    return streamObj.audioStream
+  }
+}
+
+/**
+ * Sintesis suara menggunakan Microsoft Edge TTS (Buffer RAM langsung tanpa disk write)
  * @param {string} text
  * @param {string} [voice='id-ID-ArdiNeural']
  * @param {number|string} [rate=0]
@@ -21,38 +72,24 @@ if (!fs.existsSync(TEMP_DIR)) {
 export async function synthesizeTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitch = 0) {
   if (!text || !text.trim()) throw new Error('Teks kosong untuk TTS')
 
-  // Pastikan voice selalu berupa string voice name valid (misal 'id-ID-ArdiNeural')
   let selectedVoice = 'id-ID-ArdiNeural'
   if (typeof voice === 'string' && voice.trim() && !/^-?\d+$/.test(voice.trim())) {
     selectedVoice = voice.trim()
   }
 
-  const tts = new MsEdgeTTS()
-  await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
-
-  const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.mp3`
-  const filePath = path.join(TEMP_DIR, fileName)
-
-  // Format rate & pitch prosody options
-  const numRate = typeof rate === 'number' ? rate : parseInt(rate, 10) || 0
-  const numPitch = typeof pitch === 'number' ? pitch : parseInt(pitch, 10) || 0
-  const rateStr = numRate >= 0 ? `+${numRate}%` : `${numRate}%`
-  const pitchStr = numPitch >= 0 ? `+${numPitch}Hz` : `${numPitch}Hz`
-
-  const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
+  const audioStream = await streamTTS(text, selectedVoice, rate, pitch)
   const chunks = []
 
   await new Promise((resolve, reject) => {
-    streamObj.audioStream.on('data', (chunk) => chunks.push(chunk))
-    streamObj.audioStream.on('end', resolve)
-    streamObj.audioStream.on('error', reject)
+    audioStream.on('data', (chunk) => chunks.push(chunk))
+    audioStream.on('end', resolve)
+    audioStream.on('error', reject)
   })
 
   const buffer = Buffer.concat(chunks)
-  fs.writeFileSync(filePath, buffer)
   const audioBase64 = `data:audio/mp3;base64,${buffer.toString('base64')}`
 
-  return { filePath, audioBase64 }
+  return { filePath: '', audioBase64 }
 }
 
 /**

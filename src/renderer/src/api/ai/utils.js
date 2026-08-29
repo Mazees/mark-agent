@@ -17,7 +17,150 @@ export const getCurrentTimeInfo = (dateObj = new Date()) => {
 
 
 
-let ttsAudioContext = null;
+let ttsAudioContext = null
+let currentAudioElement = null
+
+// Bersihkan tag [mood:xxx], format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
+export const cleanTextForTTS = (text) => {
+  if (!text || typeof text !== 'string') return ''
+  return text
+    .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
+    .replace(/```[\s\S]*?```/g, '') // Hapus blok kode
+    .replace(/`([^`]+)`/g, '$1') // Bersihkan inline code
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // Bersihkan bold
+    .replace(/\*([^*]+)\*/g, '$1') // Bersihkan italic
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Bersihkan link
+    .replace(/^[\s>#-]+/gm, '') // Bersihkan simbol quote/heading/list di awal baris
+    .trim()
+}
+
+/**
+ * Speech Queue Manager untuk memutar audio per kalimat secara berurutan dan mulus
+ */
+class SpeechQueueManager {
+  constructor() {
+    this.queue = []
+    this.isPlaying = false
+    this.currentAudio = null
+    this.activeSessionId = 0
+  }
+
+  reset() {
+    this.activeSessionId++
+    this.queue = []
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause()
+        this.currentAudio.currentTime = 0
+      } catch (_) {}
+      this.currentAudio = null
+    }
+    this.isPlaying = false
+    window.isMarkSpeaking = false
+    window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+  }
+
+  enqueue(text) {
+    const clean = cleanTextForTTS(text)
+    if (!clean) return
+    const sessionId = this.activeSessionId
+    this.queue.push({ text: clean, sessionId })
+    if (!this.isPlaying) {
+      this.playNext()
+    }
+  }
+
+  async playNext() {
+    if (this.queue.length === 0) {
+      this.isPlaying = false
+      window.isMarkSpeaking = false
+      window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+      return
+    }
+
+    const item = this.queue.shift()
+    if (item.sessionId !== this.activeSessionId) {
+      // Abaikan jika sesi bicara sudah di-reset
+      this.playNext()
+      return
+    }
+
+    this.isPlaying = true
+    try {
+      const config = await getAllConfig()
+      const rate = config[0]?.ttsRate ?? 0
+      const pitch = config[0]?.ttsPitch ?? 0
+
+      const audioSrc = await window.api.textToSpeech(item.text, rate, pitch)
+      if (!audioSrc || item.sessionId !== this.activeSessionId) {
+        this.playNext()
+        return
+      }
+
+      const audio = new Audio(audioSrc)
+      audio.crossOrigin = 'anonymous'
+      this.currentAudio = audio
+      currentAudioElement = audio
+
+      let animationId = null
+      let analyser = null
+      let dataArray = null
+      let bufferLength = 0
+
+      try {
+        if (!ttsAudioContext || ttsAudioContext.state === 'closed') {
+          ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)()
+        }
+        if (ttsAudioContext.state === 'suspended') {
+          await ttsAudioContext.resume()
+        }
+
+        const source = ttsAudioContext.createMediaElementSource(audio)
+        analyser = ttsAudioContext.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = 0.4
+        source.connect(analyser)
+        analyser.connect(ttsAudioContext.destination)
+
+        bufferLength = analyser.frequencyBinCount
+        dataArray = new Uint8Array(bufferLength)
+      } catch (_) {}
+
+      const updateIntensity = () => {
+        if (!window.isMarkSpeaking || !analyser) return
+        analyser.getByteFrequencyData(dataArray)
+        let sum = 0
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i]
+        }
+        const avg = sum / bufferLength
+        const normalized = Math.min(1, Math.max(0, (avg - 8) / 55))
+        window.dispatchEvent(new CustomEvent('mark-intensity', { detail: normalized }))
+        animationId = requestAnimationFrame(updateIntensity)
+      }
+
+      const cleanupAndNext = () => {
+        if (animationId) cancelAnimationFrame(animationId)
+        if (this.currentAudio === audio) {
+          this.currentAudio = null
+        }
+        this.playNext()
+      }
+
+      audio.onended = cleanupAndNext
+      audio.onerror = cleanupAndNext
+
+      window.isMarkSpeaking = true
+      await audio.play()
+      if (analyser) updateIntensity()
+    } catch (err) {
+      console.warn('[SpeechQueue] Error playing segment:', err)
+      this.playNext()
+    }
+  }
+}
+
+export const speechQueue = new SpeechQueueManager()
 
 export const playVoice = async (text, onStart, onEnd) => {
   try {
@@ -27,17 +170,18 @@ export const playVoice = async (text, onStart, onEnd) => {
       return
     }
 
-    // Bersihkan tag [mood:xxx], format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
-    const cleanText = text
-      .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
-      .replace(/```[\s\S]*?```/g, '') // Hapus blok kode
-      .replace(/`([^`]+)`/g, '$1') // Bersihkan inline code
-      .replace(/\*\*([^*]+)\*\*/g, '$1') // Bersihkan bold
-      .replace(/\*([^*]+)\*/g, '$1') // Bersihkan italic
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Bersihkan link
-      .replace(/^[\s>#-]+/gm, '') // Bersihkan simbol quote/heading/list di awal baris
-      .trim()
+    speechQueue.reset()
 
+    // Hentikan pemutaran sebelumnya jika sedang ada suara aktif
+    if (currentAudioElement) {
+      try {
+        currentAudioElement.pause()
+        currentAudioElement.currentTime = 0
+      } catch (_) {}
+      currentAudioElement = null
+    }
+
+    const cleanText = cleanTextForTTS(text)
     if (!cleanText) {
       if (onStart) onStart()
       if (onEnd) onEnd()
@@ -48,58 +192,81 @@ export const playVoice = async (text, onStart, onEnd) => {
     const rate = config[0]?.ttsRate ?? 0
     const pitch = config[0]?.ttsPitch ?? 0
 
-    // 1. Minta data audio (base64) ke backend
-    const audioBase64 = await window.api.textToSpeech(cleanText, rate, pitch)
+    // 1. Minta stream URL audio ke backend
+    const audioSrc = await window.api.textToSpeech(cleanText, rate, pitch)
 
-    if (audioBase64) {
-      // 2. Bikin object Audio baru dari string base64 tadi
-      const audio = new Audio(audioBase64)
-      audio.crossOrigin = "anonymous"
+    if (audioSrc) {
+      // 2. Bikin object Audio baru dari stream URL
+      const audio = new Audio(audioSrc)
+      audio.crossOrigin = 'anonymous'
+      currentAudioElement = audio
+
+      let animationId = null
+      let analyser = null
+      let dataArray = null
+      let bufferLength = 0
 
       // Setup Web Audio API for Intensity Extraction
-      if (!ttsAudioContext) {
-        ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)()
-      }
-      if (ttsAudioContext.state === 'suspended') {
-        await ttsAudioContext.resume()
-      }
+      try {
+        if (!ttsAudioContext || ttsAudioContext.state === 'closed') {
+          ttsAudioContext = new (window.AudioContext || window.webkitAudioContext)()
+        }
+        if (ttsAudioContext.state === 'suspended') {
+          await ttsAudioContext.resume()
+        }
 
-      const source = ttsAudioContext.createMediaElementSource(audio)
-      const analyser = ttsAudioContext.createAnalyser()
-      analyser.fftSize = 2048
-      source.connect(analyser)
-      analyser.connect(ttsAudioContext.destination)
+        const source = ttsAudioContext.createMediaElementSource(audio)
+        analyser = ttsAudioContext.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = 0.4
+        source.connect(analyser)
+        analyser.connect(ttsAudioContext.destination)
 
-      const bufferLength = analyser.fftSize
-      const dataArray = new Float32Array(bufferLength)
-      let animationId = null
+        bufferLength = analyser.frequencyBinCount
+        dataArray = new Uint8Array(bufferLength)
+      } catch (_) {
+        // Fallback jika createMediaElementSource terhalang: audio tetap play secara mandiri
+      }
 
       const updateIntensity = () => {
-        if (!window.isMarkSpeaking) return
-        analyser.getFloatTimeDomainData(dataArray)
+        if (!window.isMarkSpeaking || !analyser) return
+        analyser.getByteFrequencyData(dataArray)
         let sum = 0
         for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i] * dataArray[i]
+          sum += dataArray[i]
         }
-        const rms = Math.sqrt(sum / bufferLength)
-        
-        // Normalisasi RMS untuk visualisasi (RMS biasanya berkisar antara 0.01 - 0.15)
-        const normalized = Math.min(1, Math.max(0, rms - 0.01) * 8)
+        const avg = sum / bufferLength
+        // Normalisasi 0 - 255 menjadi 0.0 - 1.0 dengan respons dinamis
+        const normalized = Math.min(1, Math.max(0, (avg - 8) / 55))
         window.dispatchEvent(new CustomEvent('mark-intensity', { detail: normalized }))
         animationId = requestAnimationFrame(updateIntensity)
       }
 
       audio.onended = () => {
         window.isMarkSpeaking = false
+        if (currentAudioElement === audio) {
+          currentAudioElement = null
+        }
         window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
         if (animationId) cancelAnimationFrame(animationId)
         if (onEnd) onEnd()
       }
 
-      // 3. Mainkan!
+      audio.onerror = (e) => {
+        console.warn('[playVoice] Audio playback warning:', e)
+        window.isMarkSpeaking = false
+        if (currentAudioElement === audio) {
+          currentAudioElement = null
+        }
+        window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+        if (animationId) cancelAnimationFrame(animationId)
+        if (onEnd) onEnd()
+      }
+
+      // 3. Mainkan audio seketika
       window.isMarkSpeaking = true
       await audio.play()
-      updateIntensity()
+      if (analyser) updateIntensity()
       if (onStart) onStart()
     } else {
       if (onStart) onStart()
