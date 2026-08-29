@@ -21,12 +21,35 @@ let ttsAudioContext = null;
 
 export const playVoice = async (text, onStart, onEnd) => {
   try {
+    if (!text || typeof text !== 'string') {
+      if (onStart) onStart()
+      if (onEnd) onEnd()
+      return
+    }
+
+    // Bersihkan tag [mood:xxx], format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
+    const cleanText = text
+      .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
+      .replace(/```[\s\S]*?```/g, '') // Hapus blok kode
+      .replace(/`([^`]+)`/g, '$1') // Bersihkan inline code
+      .replace(/\*\*([^*]+)\*\*/g, '$1') // Bersihkan bold
+      .replace(/\*([^*]+)\*/g, '$1') // Bersihkan italic
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Bersihkan link
+      .replace(/^[\s>#-]+/gm, '') // Bersihkan simbol quote/heading/list di awal baris
+      .trim()
+
+    if (!cleanText) {
+      if (onStart) onStart()
+      if (onEnd) onEnd()
+      return
+    }
+
     const config = await getAllConfig()
     const rate = config[0]?.ttsRate ?? 0
     const pitch = config[0]?.ttsPitch ?? 0
 
     // 1. Minta data audio (base64) ke backend
-    const audioBase64 = await window.api.textToSpeech(text, rate, pitch)
+    const audioBase64 = await window.api.textToSpeech(cleanText, rate, pitch)
 
     if (audioBase64) {
       // 2. Bikin object Audio baru dari string base64 tadi
