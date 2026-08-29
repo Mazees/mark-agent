@@ -1,91 +1,170 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
 import { getAllConfig } from '../api/db'
-import { transcribeAudioLocal } from '../api/localWhisper'
+import {
+  startWebSpeechRecognition,
+  stopWebSpeechRecognition,
+  isWebSpeechSupported
+} from '../api/webSpeech'
+import { detectWakeWord, cleanSpokenCommand } from '../api/wakeWord'
 import { FaChevronLeft, FaMicrophone, FaStop, FaExclamationTriangle } from 'react-icons/fa'
 
 const LiveAudio = () => {
   const {
     chatData,
-    setChatData,
-    isLoading,
-    isSpeak,
     setIsSpeak,
-    message,
     setMessage,
-    handleSubmit,
-    handlePlanningCommand,
-    abortControllerRef,
-    config
+    handlePlanningCommand
   } = useChat()
-  const chatEndRef = useRef(null)
+
   const navigate = useNavigate()
   const location = useLocation()
   const [isActive, setIsActive] = useState(false)
-  const [status, setStatus] = useState('idle')
-  const timeoutsRef = useRef(null)
-  const recognitionRef = useRef(null)
-  const audioRef = useRef(null)
-  const prevChatLengthRef = useRef(chatData.length)
-
+  const [status, setStatus] = useState('idle') // 'idle' | 'listening' | 'thinking' | 'speaking'
   const [toastMessage, setToastMessage] = useState('')
 
-  // Local Whisper STT Refs (Now used for Audio Context VAD)
-  const streamRef = useRef(null)
-  const audioContextRef = useRef(null)
-  const processorRef = useRef(null)
-  const isSpeakingRef = useRef(false)
-  const audioChunksRef = useRef([])
-  const silenceTimerRef = useRef(null)
+  const isActiveRef = useRef(false)
+  const statusRef = useRef(status)
+  const audioRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const currentConfigRef = useRef({})
 
-  // Inisialisasi dengan pesan terakhir agar saat LiveAudio dibuka, tidak memutar ulang pesan lama
+  // Inisialisasi dengan pesan terakhir agar saat LiveAudio dibuka tidak memutar ulang pesan lama
   const lastSpokenMessageContentRef = useRef(
     chatData.length > 0 && chatData[chatData.length - 1].role === 'ai'
       ? chatData[chatData.length - 1].content
       : null
   )
 
-  const stopRecordingCleanup = () => {
-    const totalLength = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
+  useEffect(() => {
+    isActiveRef.current = isActive
+  }, [isActive])
 
-    // Jika dipanggil saat mau dimatikan secara manual dan ada data audio,
-    // kembalikan merged array agar bisa ditranskrip sebelum dihapus
-    let pendingAudio = null
-    if (totalLength >= 8000) {
-      pendingAudio = new Float32Array(totalLength)
-      let offset = 0
-      for (let arr of audioChunksRef.current) {
-        pendingAudio.set(arr, offset)
-        offset += arr.length
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
+  // Pastikan isSpeak dari ChatContext dimatikan agar tidak double playback
+  useEffect(() => {
+    setIsSpeak(false)
+  }, [setIsSpeak])
+
+  // Muat konfigurasi
+  const refreshConfig = async () => {
+    try {
+      const data = await getAllConfig()
+      if (data && data.length > 0) {
+        currentConfigRef.current = data[0] || {}
       }
-    }
-
-    if (processorRef.current) {
-      processorRef.current.disconnect()
-      processorRef.current = null
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-    }
-    isSpeakingRef.current = false
-    audioChunksRef.current = []
-
-    return pendingAudio
+    } catch (_) {}
   }
 
-  // Bersihkan mic saat unmount
   useEffect(() => {
-    return () => stopRecordingCleanup()
+    refreshConfig()
   }, [])
+
+  const stopRecognitionCleanup = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    stopWebSpeechRecognition()
+    recognitionRef.current = null
+  }, [])
+
+  // Bersihkan rekognisi saat unmount
+  useEffect(() => {
+    return () => {
+      stopRecognitionCleanup()
+    }
+  }, [stopRecognitionCleanup])
+
+  const startListeningSession = useCallback(async () => {
+    if (!isWebSpeechSupported()) {
+      setToastMessage('Web Speech API tidak didukung di peramban ini.')
+      setTimeout(() => setToastMessage(''), 4000)
+      setIsActive(false)
+      setStatus('idle')
+      return
+    }
+
+    await refreshConfig()
+    const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
+    const customWakeWords = currentConfigRef.current?.customWakeWords || ''
+
+    stopRecognitionCleanup()
+
+    try {
+      const rec = await startWebSpeechRecognition({
+        lang,
+        continuous: true,
+        onInterim: (_interim) => {
+          // Barge-in: jika user mulai bicara saat AI sedang bicara, hentikan suara AI
+          if (statusRef.current === 'speaking' && audioRef.current) {
+            audioRef.current.pause()
+            audioRef.current = null
+            setStatus('listening')
+          }
+        },
+        onResult: (finalText) => {
+          if (!finalText || !finalText.trim()) return
+
+          // Hentikan suara AI jika sedang bersuara (barge-in)
+          if (audioRef.current) {
+            audioRef.current.pause()
+            audioRef.current = null
+          }
+
+          const rawText = finalText.trim()
+          const check = detectWakeWord(rawText, customWakeWords)
+          const wakePrefix = check.detected && check.wakePhrase ? `${check.wakePhrase} ` : ''
+          const cleanText = cleanSpokenCommand(rawText, customWakeWords)
+          const commandToRun = cleanText || rawText
+
+          if (commandToRun) {
+            setStatus('thinking')
+            const fullMessage = `(Mikrofon) ${wakePrefix}${commandToRun}`.trim()
+            setMessage(fullMessage)
+            handlePlanningCommand(fullMessage)
+          }
+        },
+        onError: (err) => {
+          console.warn('[LiveAudio] Web Speech Error:', err.message)
+        },
+        onEnd: () => {
+          if (isActiveRef.current && statusRef.current !== 'thinking') {
+            // Restart listening jika masih aktif
+            setTimeout(() => {
+              if (isActiveRef.current && statusRef.current !== 'thinking') {
+                startListeningSession()
+              }
+            }, 300)
+          }
+        }
+      })
+
+      recognitionRef.current = rec
+      setStatus('listening')
+    } catch (err) {
+      console.error('[LiveAudio] Failed to start recognition:', err)
+      setToastMessage('Gagal memulai mikrofon.')
+      setTimeout(() => setToastMessage(''), 4000)
+      setIsActive(false)
+      setStatus('idle')
+    }
+  }, [handlePlanningCommand, setMessage, stopRecognitionCleanup])
+
+  const handleMicToggle = useCallback(async () => {
+    if (isActive) {
+      setIsActive(false)
+      setStatus('idle')
+      stopRecognitionCleanup()
+    } else {
+      setIsActive(true)
+      await startListeningSession()
+    }
+  }, [isActive, startListeningSession, stopRecognitionCleanup])
 
   // Auto-start dari Global Shortcut / System Tray
   useEffect(() => {
@@ -93,188 +172,50 @@ const LiveAudio = () => {
       if (!isActive) {
         handleMicToggle()
       }
-      // Hapus state dari React Router secara benar agar tidak loop
       navigate(location.pathname, { replace: true, state: {} })
     }
-  }, [location.state, isActive, navigate])
+  }, [location.state, isActive, navigate, handleMicToggle])
 
-  // Refs untuk mengatasi stale closure pada event listener STT
-  const isActiveRef = useRef(isActive)
-  const statusRef = useRef(status)
+  const playAIResponse = useCallback(async (text) => {
+    try {
+      setStatus('speaking')
+      const configList = await getAllConfig()
+      const rate = configList[0]?.ttsRate ?? 0
+      const pitch = configList[0]?.ttsPitch ?? 0
 
-  useEffect(() => {
-    isActiveRef.current = isActive
-    statusRef.current = status
-  }, [isActive, status])
+      const audioBase64 = await window.api?.textToSpeech?.(text, rate, pitch)
+      if (audioBase64) {
+        const audio = new Audio(audioBase64)
+        audioRef.current = audio
 
-  // Pastikan isSpeak dari ChatContext dimatikan agar tidak double playback
-  // karena LiveAudio menghandle playback-nya sendiri
-  useEffect(() => {
-    setIsSpeak(false)
-  }, [setIsSpeak])
-
-  const isStartingRef = useRef(false)
-
-  const handleMicToggle = async () => {
-    if (isActive) {
-      // Dapatkan pending audio yang sempat terekam sebelum dimatikan
-      const pendingAudio = stopRecordingCleanup()
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
+        audio.onended = () => {
+          audioRef.current = null
+          if (isActiveRef.current) {
+            setStatus('listening')
+            startListeningSession()
+          } else {
+            setStatus('idle')
+          }
+        }
+        await audio.play()
+      } else {
+        if (isActiveRef.current) {
+          setStatus('listening')
+          startListeningSession()
+        } else {
+          setStatus('idle')
+        }
       }
-      setIsActive(false)
-
-      // Jika ada audio yang sempat ngomong sebelum dimatikan paksa, transkrip!
-      if (pendingAudio) {
-        setStatus('thinking')
-
-        // Memberikan jeda 150ms agar UI React sempat re-render (mic mati) sebelum thread diblokir oleh WASM
-        setTimeout(() => {
-          transcribeAudioLocal(pendingAudio)
-            .then((text) => {
-              if (text && text.trim() !== '') {
-                setMessage(`(Mikrofon) ${text.trim()}`)
-                handlePlanningCommand(`(Mikrofon) ${text.trim()}`)
-              } else {
-                setStatus('idle')
-              }
-            })
-            .catch((err) => {
-              console.error('Local STT Error:', err)
-              setStatus('idle')
-            })
-        }, 150)
+    } catch (e) {
+      console.error('[LiveAudio] TTS Error:', e)
+      if (isActiveRef.current) {
+        setStatus('listening')
+        startListeningSession()
       } else {
         setStatus('idle')
       }
-    } else {
-      if (isStartingRef.current) return
-      isStartingRef.current = true
-
-      try {
-        stopRecordingCleanup()
-
-        const micId = config[0]?.micDeviceId
-        const audioConstraints = {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
-
-        if (micId && micId !== 'default') {
-          audioConstraints.deviceId = { exact: micId }
-        }
-
-        const constraints = {
-          audio: audioConstraints
-        }
-        const stream = await navigator.mediaDevices.getUserMedia(constraints)
-        streamRef.current = stream
-
-        const AudioContext = window.AudioContext || window.webkitAudioContext
-        const audioContext = new AudioContext({ sampleRate: 16000 })
-        audioContextRef.current = audioContext
-
-        const source = audioContext.createMediaStreamSource(stream)
-        const processor = audioContext.createScriptProcessor(4096, 1, 1)
-        processorRef.current = processor
-
-        const gainNode = audioContext.createGain()
-        gainNode.gain.value = 0 // Mute output to speakers
-
-        source.connect(processor)
-        processor.connect(gainNode)
-        gainNode.connect(audioContext.destination)
-
-        processor.onaudioprocess = (e) => {
-          // Jika AI sedang berbicara atau berpikir, kita pause VAD (kecuali untuk barge-in)
-          if (statusRef.current === 'speaking' || statusRef.current === 'thinking') {
-            const input = e.inputBuffer.getChannelData(0)
-            let sum = 0
-            for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
-            const rms = Math.sqrt(sum / input.length)
-
-            // Barge-in threshold: jika user teriak / bicara keras saat Mark bicara
-            if (statusRef.current === 'speaking' && rms > 0.05) {
-              if (audioRef.current) {
-                audioRef.current.pause()
-                audioRef.current = null
-              }
-              setStatus('listening')
-            }
-            return
-          }
-
-          const input = e.inputBuffer.getChannelData(0)
-          let sum = 0
-          for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
-          const rms = Math.sqrt(sum / input.length)
-
-          // Threshold suara (VAD sederhana) diturunkan agar lebih sensitif
-          if (rms > 0.01) {
-            if (!isSpeakingRef.current) {
-              isSpeakingRef.current = true
-              audioChunksRef.current = []
-            }
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-
-            silenceTimerRef.current = setTimeout(() => {
-              isSpeakingRef.current = false
-
-              const totalLength = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
-              // Minimal 0.5 detik audio untuk dikirim ke Whisper (8000 samples @ 16kHz)
-              if (totalLength < 8000) {
-                return // Abaikan noise singkat
-              }
-
-              const merged = new Float32Array(totalLength)
-              let offset = 0
-              for (let arr of audioChunksRef.current) {
-                merged.set(arr, offset)
-                offset += arr.length
-              }
-
-              setStatus('thinking')
-
-              // Memberikan jeda 150ms agar UI React sempat re-render sebelum thread diblokir oleh WASM
-              setTimeout(() => {
-                transcribeAudioLocal(merged)
-                  .then((text) => {
-                    if (text && text.trim() !== '') {
-                      setMessage(`(Mikrofon) ${text.trim()}`)
-                      handlePlanningCommand(`(Mikrofon) ${text.trim()}`)
-                    } else {
-                      setStatus('listening')
-                    }
-                  })
-                  .catch((err) => {
-                    console.error('Local STT Error:', err)
-                    setToastMessage('Gagal memuat atau memproses Whisper Local.')
-                    setTimeout(() => setToastMessage(''), 5000)
-                    setStatus('listening')
-                  })
-              }, 150)
-            }, 1200) // Diam 1.2 detik = kirim ke Groq
-          }
-
-          if (isSpeakingRef.current) {
-            audioChunksRef.current.push(new Float32Array(input))
-          }
-        }
-
-        setIsActive(true)
-        setStatus('listening')
-        isStartingRef.current = false
-      } catch (error) {
-        console.error('Error starting mic:', error)
-        alert('Gagal mengakses mikrofon. Pastikan Anda telah memberikan izin.')
-        setIsActive(false)
-        setStatus('idle')
-        isStartingRef.current = false
-      }
     }
-  }
+  }, [startListeningSession])
 
   // Memantau chatData untuk auto-play respons TTS
   useEffect(() => {
@@ -291,39 +232,13 @@ const LiveAudio = () => {
         !lastMsg.isSummarizing &&
         !lastMsg.isSearchingMusic
       ) {
-        // Cek apakah pesan ini sudah diucapkan agar tidak dobel
         if (lastSpokenMessageContentRef.current !== lastMsg.content) {
           lastSpokenMessageContentRef.current = lastMsg.content
           playAIResponse(lastMsg.content)
         }
       }
     }
-  }, [chatData, isActive, status])
-
-  const playAIResponse = async (text) => {
-    try {
-      setStatus('speaking')
-      const configList = await getAllConfig()
-      const rate = configList[0]?.ttsRate ?? 0
-      const pitch = configList[0]?.ttsPitch ?? 0
-
-      const audioBase64 = await window.api.textToSpeech(text, rate, pitch)
-      if (audioBase64) {
-        const audio = new Audio(audioBase64)
-        audioRef.current = audio
-
-        audio.onended = () => {
-          setStatus('listening')
-        }
-        audio.play()
-      } else {
-        setStatus('listening')
-      }
-    } catch (e) {
-      console.error(e)
-      setStatus('listening')
-    }
-  }
+  }, [chatData, isActive, playAIResponse])
 
   const getStatusText = () => {
     switch (status) {
@@ -356,7 +271,7 @@ const LiveAudio = () => {
   }
 
   const handleBack = () => {
-    stopRecordingCleanup()
+    stopRecognitionCleanup()
     setIsActive(false)
     setStatus('idle')
     navigate('/')

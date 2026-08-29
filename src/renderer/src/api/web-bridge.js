@@ -183,13 +183,34 @@ export const webApi = {
   },
 
   // 3. Audio & Voice
-  textToSpeech: async (text, voice = 'id-ID-ArdiNeural') => {
-    const res = await fetch(`${API_BASE}/api/tts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice })
-    })
-    return await res.json()
+  textToSpeech: async (text, rate = 0, pitch = 0, voice = 'id-ID-ArdiNeural') => {
+    // Normalisasi jika pemanggil mempassing (text, voice) atau (text, rate, pitch, voice)
+    let finalVoice = 'id-ID-ArdiNeural'
+    let finalRate = 0
+    let finalPitch = 0
+
+    if (typeof rate === 'string' && !/^-?\d+$/.test(rate.trim())) {
+      finalVoice = rate
+    } else {
+      finalRate = rate || 0
+      finalPitch = pitch || 0
+      if (typeof voice === 'string' && voice.trim()) {
+        finalVoice = voice
+      }
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: finalVoice, rate: finalRate, pitch: finalPitch })
+      })
+      const json = await res.json()
+      return json.audioBase64 || json.data?.audioBase64 || null
+    } catch (err) {
+      console.error('[webBridge] textToSpeech error:', err)
+      return null
+    }
   },
 
   onAudioPlay: (callback) => {

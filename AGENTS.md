@@ -16,7 +16,7 @@
 - **Database & Storage:** Centralized SQLite (`~/.config/mark-agent/mark.db`) with 12 relational stores, transparent frontend REST proxy (`src/renderer/src/api/db.js`), and full backup/restore compatibility for legacy V4 Dexie JSON dumps.
 - **Web Capabilities:** Multi-Session background browser automation via `puppeteer-core` (`src/main/browser-agent.js`) with DOM parsing (max 80 interactive elements tagged with `data-mark-id`), animated cursor injection, React-compatible input binding, and Multi-Card Holo Preview (`BrowserPreviewWidget.jsx`).
 - **Desktop Automation:** Persistent C# Win32 daemon (`src/main/pc-agent-scripts/pc-daemon.ps1`) executing mouse clicks, keyboard typing (SendInput Unicode), shortcuts, app opening, and window management via `src/server/tools/pc-agent.js`.
-- **Voice/Audio:** Groq API (Speech-to-Text via `whisper-large-v3`), Edge-TTS (`msedge-tts`, voice: `id-ID-ArdiNeural`), Web Audio API (Voice Activity Detection via `useVAD.js`, 16kHz sample rate, RMS threshold 0.015).
+- **Voice/Audio:** Native Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`) for zero-dependency high-speed STT with background Wake Word Engine ("Hey Mark" / "Mark" + custom triggers), Edge-TTS (`msedge-tts`, voice: `id-ID-ArdiNeural`), and Web Audio API.
 - **Media/Integrations:** `youtube-transcript-plus`, `ytmusic-api` (YouTube Music with ad-blaster), `yt-search`, `youtube-dl-exec` + `ffmpeg-static`.
 - **Communication:** `telegraf` (Telegram Bot Framework).
 

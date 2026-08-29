@@ -518,7 +518,7 @@ export async function getAllConfig() {
       if (!conf.geminiWebModel) conf.geminiWebModel = 'gemini-3.6-flash'
       if (!conf.aiProvider) conf.aiProvider = 'gemini-web'
       if (conf.windowOpacity === undefined) conf.windowOpacity = 0.85
-      if (!conf.localWhisperModel) conf.localWhisperModel = 'whisper-small'
+      if (!conf.speechLanguage) conf.speechLanguage = 'id-ID'
       return [conf]
     }
     return []

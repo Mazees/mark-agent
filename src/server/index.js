@@ -934,10 +934,10 @@ app.post('/api/tools/needs-approval', async (req, res) => {
 
 // 9. Edge-TTS Speech Synthesis API
 app.post('/api/tts', async (req, res) => {
-  const { text, voice } = req.body || {}
+  const { text, voice, rate = 0, pitch = 0 } = req.body || {}
   try {
     const { synthesizeTTS } = await import('./tools/media-tools.js')
-    const result = await synthesizeTTS(text, voice)
+    const result = await synthesizeTTS(text, voice, rate, pitch)
     res.json({ success: true, ...result })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })

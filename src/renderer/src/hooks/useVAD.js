@@ -1,7 +1,60 @@
-import { useState, useRef, useEffect } from 'react'
-import { transcribeAudioLocal } from '../api/localWhisper'
-import { transcribeAudioGroq } from '../api/groq'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  startWebSpeechRecognition,
+  stopWebSpeechRecognition,
+  isWebSpeechSupported
+} from '../api/webSpeech'
+import { detectWakeWord, cleanSpokenCommand } from '../api/wakeWord'
 import { getAllConfig } from '../api/db'
+
+/**
+ * Memainkan suara beep/chime konfirmasi sci-fi lembut ("tutt-ting")
+ * menggunakan Web Audio API murni tanpa load aset eksternal.
+ */
+let sharedAudioContext = null
+
+export async function playWakeChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!AudioCtx) return
+
+    if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
+      sharedAudioContext = new AudioCtx()
+    }
+    if (sharedAudioContext.state === 'suspended') {
+      await sharedAudioContext.resume()
+    }
+
+    const ctx = sharedAudioContext
+    const now = ctx.currentTime
+
+    // Tone 1 (587.33 Hz - D5)
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.setValueAtTime(587.33, now)
+    gain1.gain.setValueAtTime(0, now)
+    gain1.gain.linearRampToValueAtTime(0.12, now + 0.02)
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    osc1.start(now)
+    osc1.stop(now + 0.12)
+
+    // Tone 2 (880.00 Hz - A5, lebih tinggi dan manis)
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.setValueAtTime(880.0, now + 0.08)
+    gain2.gain.setValueAtTime(0, now + 0.08)
+    gain2.gain.linearRampToValueAtTime(0.15, now + 0.1)
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.26)
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    osc2.start(now + 0.08)
+    osc2.stop(now + 0.26)
+  } catch (_) {}
+}
 
 export const useVAD = ({
   onTranscript // Function to call when STT finishes
@@ -11,282 +64,366 @@ export const useVAD = ({
   const [audioIntensity, setAudioIntensity] = useState(0)
   const [toastMessage, setToastMessage] = useState('')
 
-  const streamRef = useRef(null)
-  const audioContextRef = useRef(null)
-  const processorRef = useRef(null)
-  const isSpeakingRef = useRef(false)
-  const audioChunksRef = useRef([])
-  const isStartingRef = useRef(false)
   const isRecordingRef = useRef(false)
-  const silenceFramesRef = useRef(0)
-  const isProcessingSpeechRef = useRef(false)
+  const isProcessingRef = useRef(false)
+  const isWakeListeningRef = useRef(false)
+  const wakeRecognitionRef = useRef(null)
+  const manualRecognitionRef = useRef(null)
+  const currentConfigRef = useRef({})
+  const onTranscriptRef = useRef(onTranscript)
 
-  const stopVADCleanup = () => {
-    const totalLength = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
+  // Real-time Web Audio Analyser references
+  const audioContextRef = useRef(null)
+  const mediaStreamRef = useRef(null)
+  const analyserRef = useRef(null)
+  const animFrameRef = useRef(null)
 
-    // Jika ada pending audio saat user menekan stop manual
-    let pendingAudio = null
-    if (totalLength >= 8000) {
-      pendingAudio = new Float32Array(totalLength)
-      let offset = 0
-      for (let arr of audioChunksRef.current) {
-        pendingAudio.set(arr, offset)
-        offset += arr.length
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript
+  }, [onTranscript])
+
+  // Muat konfigurasi terbaru
+  const refreshConfig = async () => {
+    try {
+      const data = await getAllConfig()
+      if (data && data.length > 0) {
+        currentConfigRef.current = data[0] || {}
+      }
+    } catch (_) {}
+  }
+
+  useEffect(() => {
+    refreshConfig()
+
+    const handleConfigUpdated = (e) => {
+      if (e?.detail) {
+        currentConfigRef.current = { ...currentConfigRef.current, ...e.detail }
       }
     }
+    window.addEventListener('config-updated', handleConfigUpdated)
+    return () => window.removeEventListener('config-updated', handleConfigUpdated)
+  }, [])
 
-    if (processorRef.current) {
-      processorRef.current.disconnect()
-      processorRef.current = null
+  /**
+   * Menghentikan audio visualizer stream & context
+   */
+  const stopAudioAnalyser = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current)
+      animFrameRef.current = null
+    }
+    if (analyserRef.current) {
+      analyserRef.current = null
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop())
+      mediaStreamRef.current = null
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close()
+      try {
+        audioContextRef.current.close()
+      } catch (_) {}
       audioContextRef.current = null
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
-    isSpeakingRef.current = false
-    audioChunksRef.current = []
-    isRecordingRef.current = false
-    setIsRecording(false)
-    isStartingRef.current = false
-    silenceFramesRef.current = 0
-    isProcessingSpeechRef.current = false
+    setAudioIntensity(0)
+  }, [])
 
-    return pendingAudio
-  }
-
-  const finishSpeechAndTranscribe = () => {
-    if (isProcessingSpeechRef.current) return
-    isProcessingSpeechRef.current = true
-
-    const totalLength = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
-    if (totalLength < 8000) {
-      stopVADCleanup()
-      return
-    }
-
-    const merged = new Float32Array(totalLength)
-    let offset = 0
-    for (let arr of audioChunksRef.current) {
-      merged.set(arr, offset)
-      offset += arr.length
-    }
-
-    // Hapus pemotongan silence agresif. Whisper bisa menangani sedikit silence di akhir.
-    // Menyimpan sedikit silence di akhir justru mencegah plosif terakhir terpotong.
-    const trimmedAudio = merged
-
-    stopVADCleanup()
-    setIsProcessing(true)
-
-    // Beri waktu 150ms agar React sempat me-render state (mis. mematikan lampu indikator)
-    // sebelum thread diblokir oleh eksekusi ONNX WebAssembly
-    setTimeout(async () => {
-      try {
-        const config = await getAllConfig()
-        const sttEngine = config[0]?.localWhisperModel || 'whisper-small'
-        let text = ''
-
-        if (sttEngine === 'groq-whisper') {
-          setToastMessage('Mentranskrip via Groq API...')
-          text = await transcribeAudioGroq(trimmedAudio)
-          setToastMessage('')
-        } else {
-          text = await transcribeAudioLocal(trimmedAudio, (progressData) => {
-            if (progressData && progressData.progress !== undefined) {
-              setToastMessage(`Mengunduh model AI Suara... ${Math.round(progressData.progress)}%`)
-              if (progressData.progress >= 100) {
-                setTimeout(() => setToastMessage(''), 2000)
-              }
-            }
-          })
-        }
-
-        setIsProcessing(false)
-        if (text && text.trim() !== '') {
-          const cleanText = text.replace(
-            /\b(mbak|mak|makh|marg|mart|marck|marc|mac|mag)\b/gi,
-            'Mark'
-          )
-          onTranscript(cleanText.trim())
-        }
-      } catch (err) {
-        setIsProcessing(false)
-        console.error('[VAD] STT Error:', err)
-        setToastMessage(`Gagal memproses STT: ${err.message}`)
-        setTimeout(() => setToastMessage(''), 5000)
-      }
-    }, 150)
-  }
-
-  const startVADRecording = async () => {
-    if (isStartingRef.current || isRecordingRef.current) return
-    isStartingRef.current = true
-
-    let isActive = true
-    const currentStopVAD = stopVADCleanup
-
+  /**
+   * Memulai audio visualizer stream menggunakan Web Audio API AnalyserNode
+   */
+  const startAudioAnalyser = useCallback(async () => {
     try {
-      stopVADCleanup()
-      isStartingRef.current = true
+      stopAudioAnalyser()
 
-      const config = await getAllConfig()
-      if (!isActive || !isStartingRef.current) return
-
-      const micId = config[0]?.micDeviceId
-      const audioSettings = {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      }
-
+      const micId = currentConfigRef.current?.micDeviceId
       const constraints = {
         audio:
           micId && micId !== 'default'
-            ? { deviceId: { exact: micId }, ...audioSettings }
-            : audioSettings
+            ? {
+                deviceId: { exact: micId },
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
+            : {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
       }
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      if (!isActive || !isStartingRef.current) {
+      if (!isRecordingRef.current) {
         stream.getTracks().forEach((t) => t.stop())
         return
       }
 
-      streamRef.current = stream
+      mediaStreamRef.current = stream
 
-      const AudioContext = window.AudioContext || window.webkitAudioContext
-      const audioContext = new AudioContext({ sampleRate: 16000 })
-      audioContextRef.current = audioContext
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
 
-      const source = audioContext.createMediaStreamSource(stream)
-      const processor = audioContext.createScriptProcessor(4096, 1, 1)
-      processorRef.current = processor
+      const ctx = new AudioCtx()
+      audioContextRef.current = ctx
 
-      const gainNode = audioContext.createGain()
-      gainNode.gain.value = 0 // Mute output
+      const source = ctx.createMediaStreamSource(stream)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.4
+      analyserRef.current = analyser
 
-      source.connect(processor)
-      processor.connect(gainNode)
-      gainNode.connect(audioContext.destination)
+      source.connect(analyser)
 
-      isRecordingRef.current = true
-      setIsRecording(true)
-      silenceFramesRef.current = 0
+      const bufferLength = analyser.frequencyBinCount
+      const dataArray = new Uint8Array(bufferLength)
 
-      // Each buffer is 4096 samples at 16000Hz = 0.256s (256ms)
-      // 8 frames silence = ~2.0s silence (memberi waktu jeda nafas/berpikir sedikit)
-      const MAX_SILENCE_FRAMES = 8
-      const RMS_THRESHOLD = 0.01 // Diturunkan agar suara pelan/ujung kata tidak dianggap silence
+      const updateIntensity = () => {
+        if (!isRecordingRef.current || !analyserRef.current) {
+          setAudioIntensity(0)
+          return
+        }
 
-      processor.onaudioprocess = (e) => {
-        if (window.isMarkSpeaking || isProcessingSpeechRef.current) return
-
-        const input = e.inputBuffer.getChannelData(0)
+        analyserRef.current.getByteFrequencyData(dataArray)
         let sum = 0
-        for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
-        const rms = Math.sqrt(sum / input.length)
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i]
+        }
+        const avg = sum / bufferLength
+        // Normalisasi 0 - 255 menjadi 0.0 - 1.0 dengan kurva sensitif untuk percakapan
+        const normalized = Math.min(1, Math.max(0, (avg - 8) / 60))
+        setAudioIntensity(normalized)
 
-        // Normalisasi RMS untuk visualisasi (RMS biasanya berkisar antara 0.01 - 0.15)
-        const normalized = Math.min(1, (rms - RMS_THRESHOLD) * 15)
-        setAudioIntensity(Math.max(0, normalized))
+        animFrameRef.current = requestAnimationFrame(updateIntensity)
+      }
 
-        if (rms > RMS_THRESHOLD) {
-          if (!isSpeakingRef.current) {
-            isSpeakingRef.current = true
-            audioChunksRef.current = []
-          }
-          silenceFramesRef.current = 0
-          audioChunksRef.current.push(new Float32Array(input))
-        } else if (isSpeakingRef.current) {
-          // Push low audio chunk so end of word isn't clipped
-          audioChunksRef.current.push(new Float32Array(input))
-          silenceFramesRef.current += 1
+      updateIntensity()
+    } catch (err) {
+      console.warn('[VAD] Audio visualizer analyser failed:', err.message)
+      // Fallback tetap memberi sedikit visual bernafas jika mic analyser terblokir
+      setAudioIntensity(0.3)
+    }
+  }, [stopAudioAnalyser])
 
-          // Total recording length check (hard max 15 seconds)
-          const totalSamples = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
-          if (silenceFramesRef.current >= MAX_SILENCE_FRAMES || totalSamples >= 240000) {
-            finishSpeechAndTranscribe()
+  /**
+   * Menghentikan rekognisi manual secara bersih
+   */
+  const stopManualRecording = useCallback(() => {
+    isRecordingRef.current = false
+    setIsRecording(false)
+    stopAudioAnalyser()
+    stopWebSpeechRecognition()
+    manualRecognitionRef.current = null
+  }, [stopAudioAnalyser])
+
+  /**
+   * Memulai perekaman manual suara (Push-to-Talk / Klik Tombol Mic / Shortcut)
+   */
+  const startManualRecording = useCallback(async () => {
+    if (!isWebSpeechSupported()) {
+      setToastMessage('Web Speech API tidak didukung di browser ini.')
+      setTimeout(() => setToastMessage(''), 4000)
+      return
+    }
+
+    // Jika wake word background listener sedang aktif, stop sementara
+    if (wakeRecognitionRef.current || isWakeListeningRef.current) {
+      stopWebSpeechRecognition()
+      wakeRecognitionRef.current = null
+      isWakeListeningRef.current = false
+    }
+
+    await refreshConfig()
+    const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
+    const customWakeWords = currentConfigRef.current?.customWakeWords || ''
+
+    isRecordingRef.current = true
+    setIsRecording(true)
+    setIsProcessing(false)
+
+    // Bunyikan chime feedback setiap mic manual mulai aktif
+    playWakeChime()
+
+    // Aktifkan visualizer amplitude mic seketika
+    startAudioAnalyser()
+
+    let accumulatedFinal = ''
+
+    const rec = await startWebSpeechRecognition({
+      lang,
+      continuous: false,
+      onInterim: (_interim) => {},
+      onResult: (finalText) => {
+        if (finalText && finalText.trim()) {
+          accumulatedFinal = finalText.trim()
+        }
+      },
+      onError: (err) => {
+        console.warn('[VAD] Speech recognition error:', err.message)
+        stopManualRecording()
+      },
+      onEnd: () => {
+        stopManualRecording()
+        if (accumulatedFinal && accumulatedFinal.trim()) {
+          const cleanText = cleanSpokenCommand(accumulatedFinal, customWakeWords)
+          const textToSend = cleanText || accumulatedFinal
+          if (textToSend) {
+            onTranscriptRef.current(textToSend, { isWakeWord: false, wakePhrase: null })
           }
         }
       }
-      isStartingRef.current = false
-    } catch (error) {
-      console.error('[VAD] Error starting mic:', error)
-      currentStopVAD()
-      setToastMessage('Gagal mengakses mikrofon.')
-      setTimeout(() => setToastMessage(''), 5000)
+    })
+
+    manualRecognitionRef.current = rec
+  }, [startAudioAnalyser, stopManualRecording])
+
+  /**
+   * Toggle manual voice recording
+   */
+  const toggleRecording = useCallback(() => {
+    if (isRecordingRef.current) {
+      stopManualRecording()
+    } else {
+      startManualRecording()
     }
-  }
+  }, [startManualRecording, stopManualRecording])
+
+  /**
+   * Background Wake Word Listener Watchdog Loop
+   * Berjalan terus-menerus selama component mounted.
+   * Secara otomatis mengaktifkan kembali wake word recognition setelah manual mic selesai,
+   * setelah Mark selesai berbicara TTS, atau setelah recognition session terputus/cycling.
+   */
+  useEffect(() => {
+    let isMounted = true
+    let isStartingWake = false
+
+    const checkAndEnsureWakeListener = async () => {
+      if (!isMounted || isStartingWake) return
+
+      await refreshConfig()
+      const wakeEnabled = currentConfigRef.current?.wakeWordEnabled !== false
+
+      // Jangan jalankan jika: fitur dimatikan, sedang manual recording, Mark sedang bicara TTS, atau tidak didukung
+      if (!wakeEnabled || isRecordingRef.current || window.isMarkSpeaking || !isWebSpeechSupported()) {
+        if (isWakeListeningRef.current) {
+          console.log('[WakeWord] ⏸️ Menjeda deteksi wake word latar belakang...')
+          isWakeListeningRef.current = false
+          stopWebSpeechRecognition()
+          wakeRecognitionRef.current = null
+        }
+        return
+      }
+
+      // Jika sudah mendengarkan dengan baik, biarkan
+      if (isWakeListeningRef.current) return
+
+      isStartingWake = true
+      isWakeListeningRef.current = true
+
+      const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
+      const customWakeWords = currentConfigRef.current?.customWakeWords || ''
+
+      console.log('[WakeWord] 🎙️ Standby mendengarkan kata pemicu ("Hey Mark" / "Mark")...', { lang, customWakeWords })
+
+      try {
+        const rec = await startWebSpeechRecognition({
+          lang,
+          continuous: true,
+          onInterim: (interim) => {
+            if (!interim || window.isMarkSpeaking || isRecordingRef.current) return
+            console.log('[WakeWord] Hearing (interim):', interim)
+            const check = detectWakeWord(interim, customWakeWords)
+            if (check.detected) {
+              console.log('[WakeWord] ⚡ Wake word terdeteksi pada interim!', check)
+              if (check.command) {
+                stopWebSpeechRecognition()
+                isWakeListeningRef.current = false
+                playWakeChime()
+                console.log('[WakeWord] 🚀 Menjalankan perintah suara langsung:', check.command)
+                onTranscriptRef.current(check.command, {
+                  isWakeWord: true,
+                  wakePhrase: check.wakePhrase || 'Mark'
+                })
+              }
+            }
+          },
+          onResult: (finalText) => {
+            if (!finalText || window.isMarkSpeaking || isRecordingRef.current) return
+            console.log('[WakeWord] Heard (final):', finalText)
+            const check = detectWakeWord(finalText, customWakeWords)
+            if (check.detected) {
+              console.log('[WakeWord] ⚡ Wake word terdeteksi pada final text!', check)
+              stopWebSpeechRecognition()
+              isWakeListeningRef.current = false
+              playWakeChime()
+              if (check.command) {
+                console.log('[WakeWord] 🚀 Menjalankan perintah suara langsung:', check.command)
+                onTranscriptRef.current(check.command, {
+                  isWakeWord: true,
+                  wakePhrase: check.wakePhrase || 'Mark'
+                })
+              } else {
+                console.log('[WakeWord] 🔔 Nama dipanggil tanpa perintah, otomatis menyalakan mic manual...')
+                startManualRecording()
+              }
+            }
+          },
+          onError: (err) => {
+            console.warn('[WakeWord] Session warning:', err?.message || err)
+            isWakeListeningRef.current = false
+          },
+          onEnd: () => {
+            isWakeListeningRef.current = false
+            wakeRecognitionRef.current = null
+          }
+        })
+        wakeRecognitionRef.current = rec
+      } catch (err) {
+        console.warn('[WakeWord] Gagal mengaktifkan session:', err?.message || err)
+        isWakeListeningRef.current = false
+        wakeRecognitionRef.current = null
+      } finally {
+        isStartingWake = false
+      }
+    }
+
+    // Polling Watchdog: memeriksa kondisi setiap 600ms
+    const watchdogInterval = setInterval(() => {
+      checkAndEnsureWakeListener()
+    }, 600)
+
+    // Panggil langsung pada start
+    checkAndEnsureWakeListener()
+
+    return () => {
+      isMounted = false
+      clearInterval(watchdogInterval)
+      if (wakeRecognitionRef.current || isWakeListeningRef.current) {
+        console.log('[WakeWord] Mematikan background listener on unmount...')
+        isWakeListeningRef.current = false
+        stopWebSpeechRecognition()
+        wakeRecognitionRef.current = null
+      }
+    }
+  }, [startManualRecording])
 
   useEffect(() => {
     window.isVADRecording = isRecording
   }, [isRecording])
 
-  const toggleRecording = () => {
-    if (isRecordingRef.current) {
-      const pendingAudio = stopVADCleanup()
-
-      if (pendingAudio) {
-        // Jika user secara eksplisit mematikan mic saat ngomong, transkrip!
-        setIsProcessing(true)
-        setTimeout(async () => {
-          try {
-            const config = await getAllConfig()
-            const sttEngine = config[0]?.localWhisperModel || 'whisper-small'
-            let text = ''
-
-            if (sttEngine === 'groq-whisper') {
-              setToastMessage('Mentranskrip via Groq API...')
-              text = await transcribeAudioGroq(pendingAudio)
-              setToastMessage('')
-            } else {
-              text = await transcribeAudioLocal(pendingAudio, (progressData) => {
-                if (progressData && progressData.progress !== undefined) {
-                  setToastMessage(
-                    `Mengunduh model AI Suara... ${Math.round(progressData.progress)}%`
-                  )
-                  if (progressData.progress >= 100) {
-                    setTimeout(() => setToastMessage(''), 2000)
-                  }
-                }
-              })
-            }
-
-            setIsProcessing(false)
-            if (text && text.trim() !== '') {
-              const cleanText = text.replace(
-                /\b(mbak|mak|makh|marg|mart|marck|marc|mac|mag)\b/gi,
-                'Mark'
-              )
-              onTranscript(cleanText.trim())
-            }
-          } catch (err) {
-            setIsProcessing(false)
-            console.error('[VAD] STT Error:', err)
-            setToastMessage(`Gagal memproses STT: ${err.message}`)
-            setTimeout(() => setToastMessage(''), 5000)
-          }
-        }, 150)
-      }
-    } else {
-      startVADRecording()
-    }
-  }
-
   useEffect(() => {
-    return () => stopVADCleanup()
-  }, [])
+    return () => {
+      stopAudioAnalyser()
+    }
+  }, [stopAudioAnalyser])
 
   return {
     isRecording,
     isProcessing,
     audioIntensity,
     toggleRecording,
-    startRecording: startVADRecording,
-    stopRecording: finishSpeechAndTranscribe,
+    startRecording: startManualRecording,
+    stopRecording: stopManualRecording,
     toastMessage
   }
 }

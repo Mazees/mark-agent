@@ -105,8 +105,9 @@ const MarkHome = () => {
     }
   }, [])
 
-  const handleVoiceTranscript = (text) => {
-    const prefixedText = `(Mikrofon) ${text}`
+  const handleVoiceTranscript = (text, meta = {}) => {
+    const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
+    const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
     setMessage(prefixedText)
     setIsSpeak(true) // Sets global state
     handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true }) // Pass forceSpeak option
