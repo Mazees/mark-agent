@@ -90,14 +90,12 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     speechLanguage: 'id-ID',
     tgBotToken: '',
     tgAdminIds: '',
-    micDeviceId: 'default',
     awarenessEnabled: true,
     cameraDeviceId: 'default',
     cameraEnabled: true
   })
   const [relationalTraits, setRelationalTraits] = useState(null)
   const [memories, setMemories] = useState([])
-  const [audioDevices, setAudioDevices] = useState([])
   const [videoDevices, setVideoDevices] = useState([])
   const [loadingMemory, setLoadingMemory] = useState(true)
   const [playingTest, setPlayingTest] = useState(false)
@@ -133,14 +131,12 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     loadMemories()
 
     navigator.mediaDevices
-      .getUserMedia({ audio: true, video: true })
+      .getUserMedia({ video: true })
       .then((stream) => {
         navigator.mediaDevices
           .enumerateDevices()
           .then((devices) => {
-            const mics = devices.filter((d) => d.kind === 'audioinput')
             const cameras = devices.filter((d) => d.kind === 'videoinput')
-            setAudioDevices(mics)
             setVideoDevices(cameras)
           })
           .catch((err) => console.error('Error enumerating devices', err))
@@ -148,7 +144,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
         // Stop stream immediately since we just needed permission
         stream.getTracks().forEach((track) => track.stop())
       })
-      .catch((err) => console.error('Mic/Cam permission denied', err))
+      .catch((err) => console.error('Cam permission denied', err))
   }, [])
 
   useEffect(() => {
@@ -508,7 +504,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   const handleAwarenessEnabledChange = (e) =>
     setConfig((prev) => ({ ...prev, awarenessEnabled: e.target.checked }))
   const handlePersonalityChange = (e) =>
-  setConfig((prev) => ({ ...prev, personality: e.target.value }))
+    setConfig((prev) => ({ ...prev, personality: e.target.value }))
   const handleCustomWakeWordsChange = (e) =>
     setConfig((prev) => ({ ...prev, customWakeWords: e.target.value }))
   const handleSpeechLanguageChange = (e) =>
@@ -516,8 +512,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   const handleTemperatureChange = (e) =>
     setConfig((prev) => ({ ...prev, temperature: e.target.value }))
   const handleContextChange = (e) => setConfig((prev) => ({ ...prev, context: e.target.value }))
-  const handleMicDeviceIdChange = (e) =>
-    setConfig((prev) => ({ ...prev, micDeviceId: e.target.value }))
   const handleCameraDeviceIdChange = (e) => {
     console.log(
       '[Config] Camera device changed to:',
@@ -1030,13 +1024,15 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                   onChange={handleCustomWakeWordsChange}
                 />
                 <p className="text-xs opacity-50">
-                  Pola bawaan seperti <strong>"Hey Mark"</strong>, <strong>"Halo Mark"</strong>, dan <strong>"Mark"</strong> sudah aktif otomatis di latar belakang. Masukkan kata atau nama panggilan tambahan di atas (pisahkan dengan koma).
+                  Pola bawaan seperti <strong>"Hey Mark"</strong>, <strong>"Halo Mark"</strong>, dan{' '}
+                  <strong>"Mark"</strong> sudah aktif otomatis di latar belakang. Masukkan kata atau
+                  nama panggilan tambahan di atas (pisahkan dengan koma).
                 </p>
               </div>
 
               {/* Speech Recognition Language */}
               <div className="space-y-1.5">
-                <p className="text-sm font-semibold">Bahasa Input Suara (STT)</p>
+                <p className="text-sm font-semibold">Bahasa Input Suara</p>
                 <select
                   className="select select-bordered w-full"
                   value={config.speechLanguage || 'id-ID'}
@@ -1048,25 +1044,69 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                   <option value="su-ID">Bahasa Sunda (su-ID)</option>
                 </select>
                 <p className="text-xs opacity-40">
-                  Ditenagai oleh Web Speech API bawaan Microsoft Edge / Google Chrome (cepat, hemat daya, dan tanpa model lokal berat).
+                  Pilih bahasa utama yang kamu gunakan saat berbicara dengan Mark.
                 </p>
               </div>
 
-              {/* Microphone Source Selection */}
-              <div className="space-y-1.5">
-                <p className="text-sm font-semibold">Mikrofon (Voice Input)</p>
-                <select
-                  className="select select-bordered w-full"
-                  value={config.micDeviceId || 'default'}
-                  onChange={handleMicDeviceIdChange}
-                >
-                  <option value="default">Default System Microphone</option>
-                  {audioDevices.map((mic) => (
-                    <option key={mic.deviceId} value={mic.deviceId}>
-                      {mic.label || `Microphone ${mic.deviceId.substring(0, 5)}...`}
-                    </option>
-                  ))}
-                </select>
+              {/* Microphone Information & OS Shortcut */}
+              <div className="space-y-2.5 p-3.5 bg-base-200/50 rounded-xl border border-white/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                    <p className="text-sm font-semibold">Perangkat Mikrofon</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (window.api && window.api.osOpen) {
+                        try {
+                          await window.api.osOpen('ms-settings:sound')
+                        } catch (_) {
+                          if (window.api.executeNativeTool) {
+                            await window.api.executeNativeTool(
+                              'run-powershell',
+                              'start ms-settings:sound'
+                            )
+                          }
+                        }
+                      } else if (window.api && window.api.executeNativeTool) {
+                        await window.api.executeNativeTool(
+                          'run-powershell',
+                          'start ms-settings:sound'
+                        )
+                      }
+                    }}
+                    className="btn btn-xs btn-primary gap-1.5 shadow-sm"
+                    title="Buka Pengaturan Suara Windows untuk memilih Mikrofon Utama"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                    <span>Ganti Mikrofon di Windows</span>
+                  </button>
+                </div>
+
+                <p className="font-medium text-xs text-white/90">
+                  Mark otomatis menggunakan{' '}
+                  <strong>mikrofon utama (default) laptop atau PC kamu</strong>.
+                </p>
+                <p className="text-xs opacity-50" >
+                  Kalau kamu punya mikrofon eksternal (seperti headset atau mic USB) dan ingin
+                  menggunakannya, klik tombol <em>"Ganti Mikrofon di Windows"</em> di atas lalu
+                  pilih mikrofon tersebut sebagai perangkat utama.
+                </p>
               </div>
 
               {/* TTS Rate */}
@@ -1180,7 +1220,9 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                   <div>
                     <p className="text-sm font-semibold">Pencadangan & Migrasi Database</p>
                     <p className="text-xs opacity-50 mt-0.5">
-                      Simpan atau pulihkan seluruh penyimpanan Mark (termasuk chat history, pengaturan, dan data lainnya) dalam format JSON. Gunakan fitur ini untuk migrasi ke perangkat lain atau sebagai cadangan.
+                      Simpan atau pulihkan seluruh penyimpanan Mark (termasuk chat history,
+                      pengaturan, dan data lainnya) dalam format JSON. Gunakan fitur ini untuk
+                      migrasi ke perangkat lain atau sebagai cadangan.
                     </p>
                   </div>
 

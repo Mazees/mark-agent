@@ -1341,6 +1341,23 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+  'os-open': {
+    needsApproval: false,
+    handler: async (query) => {
+      try {
+        const target = query?.trim() || ''
+        if (target.startsWith('ms-settings:') || target.startsWith('http://') || target.startsWith('https://')) {
+          const { exec } = await import('child_process')
+          exec(`start ${target}`)
+          return { success: true, data: `Opened URI: ${target}` }
+        }
+        const result = await openApp(target)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
   'os-search': {
     needsApproval: false,
     handler: async (query) => {

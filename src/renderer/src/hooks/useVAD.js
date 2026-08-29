@@ -136,21 +136,12 @@ export const useVAD = ({
     try {
       stopAudioAnalyser()
 
-      const micId = currentConfigRef.current?.micDeviceId
       const constraints = {
-        audio:
-          micId && micId !== 'default'
-            ? {
-                deviceId: { exact: micId },
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-              }
-            : {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-              }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       }
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints)

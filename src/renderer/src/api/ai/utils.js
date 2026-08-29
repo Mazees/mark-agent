@@ -35,7 +35,8 @@ export const cleanTextForTTS = (text) => {
 }
 
 /**
- * Speech Queue Manager untuk memutar audio per kalimat secara berurutan dan mulus
+ * Speech Queue Manager untuk memutar audio per kalimat secara berurutan,
+ * mulus, dan gapless dengan audio pre-buffering.
  */
 class SpeechQueueManager {
   constructor() {
@@ -47,24 +48,81 @@ class SpeechQueueManager {
 
   reset() {
     this.activeSessionId++
+    // Bersihkan dan pause semua item di antrean yang mungkin sudah di-preload
+    for (const item of this.queue) {
+      if (item.audio) {
+        try {
+          item.audio.pause()
+          item.audio.currentTime = 0
+          item.audio.src = ''
+        } catch (_) {}
+      }
+    }
     this.queue = []
+
     if (this.currentAudio) {
       try {
         this.currentAudio.pause()
         this.currentAudio.currentTime = 0
+        this.currentAudio.src = ''
       } catch (_) {}
       this.currentAudio = null
     }
+    if (currentAudioElement) {
+      try {
+        currentAudioElement.pause()
+        currentAudioElement.currentTime = 0
+        currentAudioElement.src = ''
+      } catch (_) {}
+      currentAudioElement = null
+    }
+
     this.isPlaying = false
     window.isMarkSpeaking = false
     window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+  }
+
+  async preloadItem(item) {
+    if (item.audioPromise) return item.audioPromise
+    item.audioPromise = (async () => {
+      try {
+        const config = await getAllConfig()
+        const rate = config[0]?.ttsRate ?? 0
+        const pitch = config[0]?.ttsPitch ?? 0
+
+        const audioSrc = await window.api.textToSpeech(item.text, rate, pitch)
+        if (!audioSrc || item.sessionId !== this.activeSessionId) return null
+
+        const audio = new Audio(audioSrc)
+        audio.crossOrigin = 'anonymous'
+        audio.preload = 'auto'
+        // Picu buffer awal audio di latar belakang
+        audio.load()
+        item.audio = audio
+        return audio
+      } catch (err) {
+        console.warn('[SpeechQueue] Preload audio failed:', err)
+        return null
+      }
+    })()
+    return item.audioPromise
   }
 
   enqueue(text) {
     const clean = cleanTextForTTS(text)
     if (!clean) return
     const sessionId = this.activeSessionId
-    this.queue.push({ text: clean, sessionId })
+    const item = {
+      text: clean,
+      sessionId,
+      audio: null,
+      audioPromise: null
+    }
+
+    // Segera mulai preload audio di latar belakang
+    this.preloadItem(item)
+    this.queue.push(item)
+
     if (!this.isPlaying) {
       this.playNext()
     }
@@ -85,20 +143,26 @@ class SpeechQueueManager {
       return
     }
 
+    // Pastikan item berikutnya di queue (jika ada) sedang di-preload
+    if (this.queue.length > 0) {
+      this.preloadItem(this.queue[0])
+    }
+
     this.isPlaying = true
     try {
-      const config = await getAllConfig()
-      const rate = config[0]?.ttsRate ?? 0
-      const pitch = config[0]?.ttsPitch ?? 0
+      // Dapatkan audio yang sudah di-preload atau tunggu sampai siap
+      let audio = item.audio
+      if (!audio && item.audioPromise) {
+        audio = await item.audioPromise
+      } else if (!audio) {
+        audio = await this.preloadItem(item)
+      }
 
-      const audioSrc = await window.api.textToSpeech(item.text, rate, pitch)
-      if (!audioSrc || item.sessionId !== this.activeSessionId) {
+      if (!audio || item.sessionId !== this.activeSessionId) {
         this.playNext()
         return
       }
 
-      const audio = new Audio(audioSrc)
-      audio.crossOrigin = 'anonymous'
       this.currentAudio = audio
       currentAudioElement = audio
 
