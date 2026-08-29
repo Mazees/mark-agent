@@ -1,9 +1,39 @@
 import React, { useState, useEffect } from 'react'
 
 /**
+ * Mapping warna terpadu berdasarkan Mood & Status AI Mark
+ */
+export const getMoodColor = (mood = 'neutral', status = 'idle') => {
+  if (status === 'error') {
+    return { hex: '#ef4444', glow: 'bg-red-500/40' }
+  }
+  switch (mood) {
+    case 'joy':
+      return { hex: '#facc15', glow: 'bg-yellow-400/40' }
+    case 'sadness':
+      return { hex: '#3b82f6', glow: 'bg-blue-500/40' }
+    case 'fear':
+      return { hex: '#a855f7', glow: 'bg-purple-500/40' }
+    case 'anger':
+      return { hex: '#ef4444', glow: 'bg-red-500/40' }
+    case 'disgust':
+      return { hex: '#84cc16', glow: 'bg-lime-400/40' }
+    case 'anxiety':
+      return { hex: '#f97316', glow: 'bg-orange-500/40' }
+    case 'envy':
+      return { hex: '#14b8a6', glow: 'bg-teal-500/40' }
+    case 'embarrassment':
+      return { hex: '#ec4899', glow: 'bg-pink-500/40' }
+    case 'ennui':
+      return { hex: '#6b7280', glow: 'bg-gray-500/40' }
+    default: // neutral
+      return { hex: '#1fb854', glow: 'bg-green-500/40' }
+  }
+}
+
+/**
  * Sentient Cybernetic Digital Face (Mark Core Avatar)
- * Desain avatar AI holografik murni tanpa kotak kaku, dengan ekspresi mata digital
- * ekspresif yang langsung mencerminkan 10 emosi secara jelas dan dinamis.
+ * Desain avatar AI holografik murni dengan ekspresi mata digital yang responsif terhadap 10 mood.
  */
 const SentientCyberEyes = ({
   mood = 'neutral',
@@ -40,7 +70,7 @@ const SentientCyberEyes = ({
       style={{
         transform: `scale(${voiceScale})`,
         transition: 'transform 75ms ease-out'
-    }}
+      }}
     >
       {/* SVG Container untuk Mata Digital Holografik */}
       <svg
@@ -145,7 +175,6 @@ const SentientCyberEyes = ({
             {/* 4. ANXIETY (Cemas / Gelisah / Nervous: Alis Tegang, Pupil Bergetar, Tetesan Keringat Cyber) */}
             {mood === 'anxiety' && (
               <>
-                {/* Alis Tegang Bergelombang */}
                 <path
                   d="M 18 16 Q 34 22 50 16"
                   fill="none"
@@ -160,8 +189,6 @@ const SentientCyberEyes = ({
                   strokeWidth="2.5"
                   strokeLinecap="round"
                 />
-
-                {/* Mata dengan Pupil Micro-Vibrate */}
                 <g className="animate-[anxiety-vibrate_0.15s_linear_infinite]">
                   <rect
                     x="20"
@@ -189,8 +216,6 @@ const SentientCyberEyes = ({
                   <circle cx="90" cy="29" r="4" fill="currentColor" />
                   <circle cx="91" cy="28" r="1.5" fill="#ffffff" />
                 </g>
-
-                {/* Cyber Sweat Drop di Sudut Samping */}
                 <g className="animate-[sweat-drip_2s_ease-in-out_infinite]">
                   <path
                     d="M 109 10 C 109 10, 114 16, 114 20 A 3.5 3.5 0 1 1 104 20 C 104 16, 109 10, 109 10 Z"
@@ -354,59 +379,113 @@ const SentientCyberEyes = ({
   )
 }
 
-const CubeVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => {
-  const [glowClass, setGlowClass] = useState('bg-green-500/40')
-  const [colorHex, setColorHex] = useState('#1fb854')
+/**
+ * Jarvis-Style Holographic HUD SVG Circles & Crosshairs
+ */
+const JarvisHolographicHUD = ({ colorHex = '#1fb854' }) => {
+  return (
+    <div className="absolute inset-0 m-auto flex items-center justify-center pointer-events-none mix-blend-screen opacity-50 z-0 scale-125">
+      <svg viewBox="0 0 500 500" className="w-[500px] h-[500px] absolute">
+        {/* Outer Ring */}
+        <circle
+          cx="250"
+          cy="250"
+          r="230"
+          fill="none"
+          stroke={colorHex}
+          strokeWidth="1"
+          strokeDasharray="2 10"
+          className="origin-center animate-[spin-slow_40s_linear_infinite]"
+        />
 
-  useEffect(() => {
-    if (status === 'error') {
-      setGlowClass('bg-red-500/40')
-      setColorHex('#ef4444')
-    } else {
-      switch (mood) {
-        case 'joy':
-          setGlowClass('bg-yellow-400/40')
-          setColorHex('#facc15')
-          break
-        case 'sadness':
-          setGlowClass('bg-blue-500/40')
-          setColorHex('#3b82f6')
-          break
-        case 'fear':
-          setGlowClass('bg-purple-500/40')
-          setColorHex('#a855f7')
-          break
-        case 'anger':
-          setGlowClass('bg-red-500/40')
-          setColorHex('#ef4444')
-          break
-        case 'disgust':
-          setGlowClass('bg-lime-400/40')
-          setColorHex('#84cc16') // Acid Lime Green (sangat kontras dari Emerald neutral #1fb854)
-          break
-        case 'anxiety':
-          setGlowClass('bg-orange-500/40')
-          setColorHex('#f97316')
-          break
-        case 'envy':
-          setGlowClass('bg-teal-500/40')
-          setColorHex('#14b8a6')
-          break
-        case 'embarrassment':
-          setGlowClass('bg-pink-500/40')
-          setColorHex('#ec4899')
-          break
-        case 'ennui':
-          setGlowClass('bg-gray-500/40')
-          setColorHex('#9ca3af')
-          break
-        default: // neutral
-          setGlowClass('bg-green-500/40')
-          setColorHex('#1fb854') // Emerald signature green
-          break
-      }
-    }
-  }, [mood, status])
+        {/* Middle Segmented Ring */}
+        <circle
+          cx="250"
+          cy="250"
+          r="180"
+          fill="none"
+          stroke={colorHex}
+          strokeWidth="2"
+          strokeDasharray="80 20 10 20"
+          className="origin-center animate-[spin-slow-reverse_30s_linear_infinite]"
+        />
+
+        {/* Inner Ring */}
+        <circle
+          cx="250"
+          cy="250"
+          r="140"
+          fill="none"
+          stroke={colorHex}
+          strokeWidth="1"
+          strokeDasharray="5 15"
+          className="origin-center animate-[spin-slow_20s_linear_infinite]"
+        />
+
+        {/* Solid Inner Border */}
+        <circle
+          cx="250"
+          cy="250"
+          r="125"
+          fill="none"
+          stroke={colorHex}
+          strokeWidth="0.5"
+          className="opacity-50"
+        />
+
+        {/* Crosshairs */}
+        <line
+          x1="250"
+          y1="0"
+          x2="250"
+          y2="110"
+          stroke={colorHex}
+          strokeWidth="0.5"
+          className="opacity-40"
+        />
+        <line
+          x1="250"
+          y1="390"
+          x2="250"
+          y2="500"
+          stroke={colorHex}
+          strokeWidth="0.5"
+          className="opacity-40"
+        />
+        <line
+          x1="0"
+          y1="250"
+          x2="110"
+          y2="250"
+          stroke={colorHex}
+          strokeWidth="0.5"
+          className="opacity-40"
+        />
+        <line
+          x1="390"
+          y1="250"
+          x2="500"
+          y2="250"
+          stroke={colorHex}
+          strokeWidth="0.5"
+          className="opacity-40"
+        />
+
+        {/* Decorative Tech Nodes */}
+        <circle cx="250" cy="20" r="3" fill={colorHex} />
+        <circle cx="250" cy="480" r="3" fill={colorHex} />
+        <circle cx="20" cy="250" r="3" fill={colorHex} />
+        <circle cx="480" cy="250" r="3" fill={colorHex} />
+      </svg>
+    </div>
+  )
+}
+
+/**
+ * OrbVisualizer (Main Holographic Orb + Jarvis HUD Component)
+ */
+const OrbVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => {
+  const { hex: colorHex, glow: glowClass } = getMoodColor(mood, status)
 
   // Scale dinamis berdasarkan status eksekusi
   let targetScale = 1
@@ -419,6 +498,14 @@ const CubeVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) =>
     <>
       <style>
         {`
+          @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          @keyframes spin-slow-reverse {
+            from { transform: rotate(360deg); }
+            to { transform: rotate(0deg); }
+          }
           @keyframes orbital-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -440,11 +527,18 @@ const CubeVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) =>
             75% { transform: translateY(8px) scale(1.1); opacity: 0.8; }
             100% { transform: translateY(14px) scale(0.4); opacity: 0; }
           }
+          @keyframes orb-breathe {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+          }
         `}
       </style>
-      <div className="relative shrink-0 w-56 h-56 flex items-center justify-center my-8 select-none">
+      <div className="relative shrink-0 w-64 h-64 md:w-80 md:h-80 flex items-center justify-center select-none">
+        {/* Layer 0: Jarvis-Style Holographic HUD SVG Background */}
+        <JarvisHolographicHUD colorHex={colorHex} />
+
         {/* Layer 1: Constant Breathing Wrapper */}
-        <div className="relative w-full h-full flex items-center justify-center animate-[orb-breathe_5s_ease-in-out_infinite] will-change-transform">
+        <div className="relative w-full h-full flex items-center justify-center animate-[orb-breathe_5s_ease-in-out_infinite] will-change-transform z-10">
           {/* Layer 2: State & Audio Scaler */}
           <div
             className="relative w-full h-full flex items-center justify-center ease-out will-change-transform"
@@ -456,12 +550,12 @@ const CubeVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) =>
           >
             {/* Background Aura Glow */}
             <div
-              className={`absolute inset-0 m-auto w-40 h-40 rounded-full ${glowClass} blur-[50px] will-change-transform opacity-75`}
+              className={`absolute inset-0 m-auto w-44 h-44 rounded-full ${glowClass} blur-[60px] will-change-transform opacity-75`}
             />
 
             {/* Holographic Orbital Rings */}
             <div
-              className="absolute inset-0 m-auto w-44 h-44 rounded-full border border-dashed opacity-30 animate-[orbital-spin_20s_linear_infinite]"
+              className="absolute inset-0 m-auto w-48 h-48 rounded-full border border-dashed opacity-30 animate-[orbital-spin_20s_linear_infinite]"
               style={{ borderColor: colorHex }}
             />
             <div
@@ -469,7 +563,7 @@ const CubeVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) =>
               style={{ borderColor: colorHex }}
             />
 
-            {/* Holographic HUD Center Visor */}
+            {/* Holographic HUD Center Visor / Eyes */}
             <div className="relative z-20 flex items-center justify-center">
               <SentientCyberEyes
                 mood={mood}
@@ -485,4 +579,4 @@ const CubeVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) =>
   )
 }
 
-export default CubeVisualizer
+export default OrbVisualizer

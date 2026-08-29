@@ -26,14 +26,76 @@ const GlobalListener = () => {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const handleShortcut = (event, action) => {
-      // Navigate to Home (MarkHome) and trigger microphone auto-toggle
+    let currentShortcut = 'CommandOrControl+Alt+M'
+
+    const updateConfig = async () => {
+      try {
+        const data = await getAllConfig()
+        if (data && data[0]?.shortcutKey) {
+          currentShortcut = data[0].shortcutKey
+        }
+      } catch (_) {}
+    }
+    updateConfig()
+
+    const handleConfigUpdated = (e) => {
+      if (e?.detail?.shortcutKey) {
+        currentShortcut = e.detail.shortcutKey
+      }
+    }
+    window.addEventListener('config-updated', handleConfigUpdated)
+
+    const triggerMicShortcut = () => {
       navigate('/', { state: { autoToggleMic: Date.now() } })
     }
 
+    const matchesShortcut = (e, shortcutStr) => {
+      if (!shortcutStr) return false
+      const parts = shortcutStr.split('+').map((p) => p.trim())
+      const reqCtrl = parts.some((p) => /^(commandorcontrol|ctrl|control|cmd|meta)$/i.test(p))
+      const reqAlt = parts.some((p) => /^alt$/i.test(p))
+      const reqShift = parts.some((p) => /^shift$/i.test(p))
+      const keyPart = parts.find(
+        (p) => !/^(commandorcontrol|ctrl|control|cmd|meta|alt|shift)$/i.test(p)
+      )
+
+      if (reqCtrl && !(e.ctrlKey || e.metaKey)) return false
+      if (!reqCtrl && (e.ctrlKey || e.metaKey)) return false
+
+      if (reqAlt && !e.altKey) return false
+      if (!reqAlt && e.altKey) return false
+
+      if (reqShift && !e.shiftKey) return false
+      if (!reqShift && e.shiftKey) return false
+
+      if (!keyPart) return false
+
+      const expectedKey = keyPart.toUpperCase()
+      const actualKey = e.key.toUpperCase()
+      const actualCode = e.code.toUpperCase()
+
+      if (expectedKey === 'SPACE' && (actualKey === ' ' || actualCode === 'SPACE')) return true
+      if (actualKey === expectedKey || actualCode === `KEY${expectedKey}` || actualCode === expectedKey) return true
+
+      return false
+    }
+
+    const handleKeyDown = (e) => {
+      // Abaikan jika user sedang merekam shortcut di Configuration.jsx
+      if (e.target && e.target.tagName === 'INPUT' && e.target.readOnly) return
+
+      if (matchesShortcut(e, currentShortcut)) {
+        e.preventDefault()
+        e.stopPropagation()
+        triggerMicShortcut()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true)
+
     let unsubTg = null
     if (window.api?.onLiveAudioShortcut) {
-      window.api.onLiveAudioShortcut(handleShortcut)
+      window.api.onLiveAudioShortcut(triggerMicShortcut)
     }
 
     if (window.api?.onTgRequestAgentExecution) {
@@ -43,6 +105,8 @@ const GlobalListener = () => {
     }
 
     return () => {
+      window.removeEventListener('config-updated', handleConfigUpdated)
+      window.removeEventListener('keydown', handleKeyDown, true)
       if (typeof unsubTg === 'function') {
         unsubTg()
       }
