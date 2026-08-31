@@ -77,8 +77,8 @@ const FloatingMenu = () => {
             <img src={markLogo} alt="Mark Logo" className="size-20 object-contain" />
             <div>
               <h2 className="text-sm font-bold font-mono text-white tracking-wider">MARK AGENT</h2>
-              <p className="text-[10px] font-mono text-base-content/50 uppercase tracking-widest">
-                INTELLIGENT OS
+              <p className="text-[10px] font-mono text-primary uppercase tracking-widest font-semibold">
+                v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '5.0.0'}
               </p>
             </div>
           </div>

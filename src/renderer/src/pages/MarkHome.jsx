@@ -238,7 +238,7 @@ const MarkHome = () => {
   const { hex: bgGlowColor } = getMoodColor(mood, orbStatus)
 
   return (
-    <div className="h-screen w-screen text-white overflow-hidden relative select-none bg-[#060a08]">
+    <div className="h-screen w-screen text-white overflow-hidden relative bg-[#060a08]">
       {/* ── 1. LAYER 1: Deep Cosmos Solar System Canvas (Pusat di width/2, height/2) ── */}
       <div className="absolute inset-0 w-full h-full z-0 pointer-events-none">
         <SolarSystemCanvas
