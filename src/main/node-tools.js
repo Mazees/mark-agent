@@ -7,7 +7,18 @@ import util from 'util'
 export const _getOSMeta = () =>
   'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
 import { validateFileSyntax } from './syntax-validator.js'
-import { navigateTo, readDOM, executeAction, closeBrowser, executeScript, extractData, takeScreenshot, downloadFile, showBrowserWindow, hideBrowserWindow } from './browser-agent.js'
+import {
+  navigateTo,
+  readDOM,
+  executeAction,
+  closeBrowser,
+  executeScript,
+  extractData,
+  takeScreenshot,
+  downloadFile,
+  showBrowserWindow,
+  hideBrowserWindow
+} from './browser-agent.js'
 import {
   readDesktop,
   executeClick,
@@ -37,7 +48,12 @@ import { listEvents, createEvent, deleteEvent } from './google/google-calendar.j
 import { searchEmails, readEmail, sendEmail, markAsRead } from './google/google-gmail.js'
 import { sendTelegramMessage, sendTelegramFile } from './telegram/telegram-service.js'
 import { getGitStatus, getGitDiff, gitCommit, gitRevert } from './git-service.js'
-import { spawnBackgroundTask, readBackgroundTaskOutput, killBackgroundTask, listBackgroundTasks } from './task-daemon.js'
+import {
+  spawnBackgroundTask,
+  readBackgroundTaskOutput,
+  killBackgroundTask,
+  listBackgroundTasks
+} from './task-daemon.js'
 import { searchYoutube, getTranscript, synthesizeTTS } from '../server/tools/media-tools.js'
 
 const DANGEROUS_KEY_COMBOS = [
@@ -49,23 +65,28 @@ const DANGEROUS_KEY_COMBOS = [
   'ctrl+shift+esc'
 ]
 export const isDangerousKeyCombo = (combo = '') => {
-  const normalized = combo.toLowerCase().replace(/\s+/g, '')
+  const normalized = String(combo).toLowerCase().replace(/\s+/g, '')
   return DANGEROUS_KEY_COMBOS.some((bad) => normalized.includes(bad.replace(/\s+/g, '')))
 }
 
 const execPromise = util.promisify(exec)
 
-const parsePagination = (str) => {
+const parsePagination = (pagination) => {
   let start = 0,
     end = 10
-  if (!str) return { start, end, fetchCount: end }
-  const s = String(str).trim()
-  if (s.includes('-')) {
-    const p = s.split('-')
-    start = parseInt(p[0], 10) || 0
-    end = parseInt(p[1], 10) || 10
+  if (!pagination) return { start, end, fetchCount: end }
+  if (typeof pagination === 'object') {
+    start = parseInt(pagination.start, 10) || 0
+    end = parseInt(pagination.end, 10) || 10
   } else {
-    end = parseInt(s, 10) || 10
+    const s = String(pagination).trim()
+    if (s.includes('-')) {
+      const p = s.split('-')
+      start = parseInt(p[0], 10) || 0
+      end = parseInt(p[1], 10) || 10
+    } else {
+      end = parseInt(s, 10) || 10
+    }
   }
   if (start < 0) start = 0
   if (end <= start) end = start + 10
@@ -77,7 +98,8 @@ const parsePagination = (str) => {
 // Helper: Ekstraksi Google Client ID & Secret dengan fallback ke config DB
 const getGoogleCredentials = (config) => {
   let clientId = config?.googleClientId || (Array.isArray(config) ? config[0]?.googleClientId : null)
-  let clientSecret = config?.googleClientSecret || (Array.isArray(config) ? config[0]?.googleClientSecret : null)
+  let clientSecret =
+    config?.googleClientSecret || (Array.isArray(config) ? config[0]?.googleClientSecret : null)
 
   if (!clientId || !clientSecret) {
     try {
@@ -110,14 +132,16 @@ const DANGEROUS_KEYWORDS = [
   'shutdown',
   'reg delete'
 ]
-export const isDangerousCommand = (cmd) =>
-  DANGEROUS_KEYWORDS.some((k) => cmd.toLowerCase().includes(k.toLowerCase()))
+export const isDangerousCommand = (cmd) => {
+  const str = typeof cmd === 'object' ? (cmd?.command || '') : String(cmd || '')
+  return DANGEROUS_KEYWORDS.some((k) => str.toLowerCase().includes(k.toLowerCase()))
+}
 
 export const NATIVE_TOOLS = {
   'read-skill': {
     needsApproval: false,
-    handler: async (query) => {
-      const skillName = (query || '').trim()
+    handler: async (args) => {
+      const skillName = (typeof args === 'object' && args !== null ? args.skill_name || args.name : String(args || '')).trim()
       if (!skillName) return { success: false, error: 'Nama skill kosong' }
       const skillDir = path.join(os.homedir(), 'Documents', 'Mark Skills')
 
@@ -148,11 +172,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-search': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const searchQuery = query ? query.trim() : ''
+        const searchQuery = (typeof args === 'object' && args !== null ? args.query || args.keyword : String(args || '')).trim()
         if (!searchQuery) return { success: false, message: 'Query pencarian kosong.' }
 
         let results = []
@@ -225,12 +250,27 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'read-file': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        let filePath = parts[0].trim()
+        let filePath = ''
+        let startLine = null
+        let endLine = null
+
+        if (typeof args === 'object' && args !== null) {
+          filePath = (args.path || '').trim()
+          startLine = args.start_line !== undefined ? parseInt(args.start_line, 10) : null
+          endLine = args.end_line !== undefined ? parseInt(args.end_line, 10) : null
+        } else {
+          const parts = String(args || '').split('||')
+          filePath = parts[0].trim()
+          if (parts.length >= 3) {
+            startLine = parseInt(parts[1].trim(), 10)
+            endLine = parseInt(parts[2].trim(), 10)
+          }
+        }
 
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
@@ -259,22 +299,17 @@ export const NATIVE_TOOLS = {
         const lines = content.split('\n')
         const totalLines = lines.length
 
-        if (parts.length >= 3) {
-          const startLine = parseInt(parts[1].trim(), 10)
-          const endLine = parseInt(parts[2].trim(), 10)
-
-          if (!isNaN(startLine) && !isNaN(endLine)) {
-            const sliceLines = lines.slice(
-              Math.max(0, startLine - 1),
-              Math.min(totalLines, endLine)
-            )
-            const sliceContent = sliceLines.map((l, i) => `[${startLine + i}] ${l}`).join('\n')
-            return {
-              success: true,
-              totalLines,
-              showing: `Baris ${startLine} - ${endLine}`,
-              content: sliceContent
-            }
+        if (startLine !== null && endLine !== null && !isNaN(startLine) && !isNaN(endLine)) {
+          const sliceLines = lines.slice(
+            Math.max(0, startLine - 1),
+            Math.min(totalLines, endLine)
+          )
+          const sliceContent = sliceLines.map((l, i) => `[${startLine + i}] ${l}`).join('\n')
+          return {
+            success: true,
+            totalLines,
+            showing: `Baris ${startLine} - ${endLine}`,
+            content: sliceContent
           }
         }
 
@@ -287,7 +322,7 @@ export const NATIVE_TOOLS = {
           content: defaultContent,
           note:
             totalLines > 400
-              ? 'File panjang. Hanya menampilkan 400 baris awal. Gunakan read-file dengan argumen startLine||endLine untuk melihat sisa baris.'
+              ? 'File panjang. Hanya menampilkan 400 baris awal. Gunakan read-file dengan argumen start_line & end_line untuk melihat sisa baris.'
               : ''
         }
       } catch (e) {
@@ -295,11 +330,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'file-outline': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        let filePath = query.trim()
+        let filePath = (typeof args === 'object' && args !== null ? args.path : String(args || '')).trim()
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
@@ -311,7 +347,6 @@ export const NATIVE_TOOLS = {
         const lines = content.split('\n')
         const totalLines = lines.length
 
-        // Regex for structural elements across JS, TS, Python, Go, HTML, Markdown, etc.
         const structuralRegex =
           /^(?:\s*)(?:export\s+|async\s+|function\s+|class\s+|const\s+\w+\s*=\s*(?:async\s*)?\(|let\s+\w+\s*=\s*(?:async\s*)?\(|var\s+\w+\s*=\s*(?:async\s*)?\(|def\s+|type\s+|interface\s+|struct\s+|#+\s+|ipcMain\.|window\.api\.|return\s+\()/i
 
@@ -346,14 +381,33 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'read-document': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const parts = query.split('||')
-        const filePath = parts[0].trim()
-        const param2 = parts[1] ? parts[1].trim() : ''
-        const param3 = parts[2] ? parts[2].trim() : ''
+        let filePath = ''
+        let searchQuery = ''
+        let startLine = null
+        let endLine = null
+
+        if (typeof args === 'object' && args !== null) {
+          filePath = (args.path || '').trim()
+          searchQuery = (args.keyword || '').trim()
+          startLine = args.start_line !== undefined ? parseInt(args.start_line, 10) : null
+          endLine = args.end_line !== undefined ? parseInt(args.end_line, 10) : null
+        } else {
+          const parts = String(args || '').split('||')
+          filePath = parts[0].trim()
+          const param2 = parts[1] ? parts[1].trim() : ''
+          const param3 = parts[2] ? parts[2].trim() : ''
+          if (param2 && !isNaN(param2) && param3 && !isNaN(param3)) {
+            startLine = parseInt(param2, 10)
+            endLine = parseInt(param3, 10)
+          } else {
+            searchQuery = param2
+          }
+        }
 
         if (!fs.existsSync(filePath))
           return { success: false, message: 'File tidak ditemukan di path tersebut.' }
@@ -390,7 +444,6 @@ export const NATIVE_TOOLS = {
         }
 
         let cleanText = rawText.replace(/\r\n/g, '\n').trim()
-        // Format single giant lines (e.g. PDF text without newlines) to prevent V8 freezes
         cleanText = cleanText.replace(/([^\n]{150,250})\s+/g, '$1\n')
         const totalChars = cleanText.length
 
@@ -401,32 +454,30 @@ export const NATIVE_TOOLS = {
         const allLines = cleanText.split('\n')
         const totalLines = allLines.length
 
-        // MODE 1: Line Slicing (path||startLine||endLine)
-        if (param2 && !isNaN(param2) && param3 && !isNaN(param3)) {
-          const startLine = Math.max(1, parseInt(param2, 10))
-          const endLine = Math.min(totalLines, parseInt(param3, 10))
+        // MODE 1: Line Slicing
+        if (startLine !== null && endLine !== null && !isNaN(startLine) && !isNaN(endLine)) {
+          const s = Math.max(1, startLine)
+          const e = Math.min(totalLines, endLine)
           const sliced = allLines
-            .slice(startLine - 1, endLine)
-            .map((line, idx) => `${startLine + idx}: ${line}`)
+            .slice(s - 1, e)
+            .map((line, idx) => `${s + idx}: ${line}`)
             .join('\n')
 
           return {
             success: true,
             filePath,
             totalLines,
-            startLine,
-            endLine,
-            content: `[RENTANG BARIS ${startLine} s/d ${endLine} DARI TOTAL ${totalLines} BARIS]:\n${sliced}`
+            startLine: s,
+            endLine: e,
+            content: `[RENTANG BARIS ${s} s/d ${e} DARI TOTAL ${totalLines} BARIS]:\n${sliced}`
           }
         }
 
-        // MODE 2: Keyword / Semantic Search (path||searchQuery)
-        const searchQuery = param2
+        // MODE 2: Keyword Search
         if (searchQuery) {
           let resultsHeader = `[PENCARIAN PADA DOKUMEN: "${searchQuery}"]\n`
           let matchedSections = []
 
-          // 2a. Direct Line / Keyword Matching
           const searchLower = searchQuery.toLowerCase()
           for (let i = 0; i < allLines.length; i++) {
             if (allLines[i].toLowerCase().includes(searchLower)) {
@@ -441,21 +492,9 @@ export const NATIVE_TOOLS = {
             }
           }
 
-          // 2b. Orama Semantic Vector Search
-          // Orama search berjalan di Renderer process, tidak bisa diakses dari Main
-          let oramaText = ''
-          try {
-            oramaText = ''
-          } catch (oramaErr) {
-            // Silently skip
-          }
-
           let combinedContent = ''
           if (matchedSections.length > 0) {
             combinedContent += `--- HASIL PENCOCOKAN KATAKUNCI PERSIS ---\n${matchedSections.join('\n\n')}\n\n`
-          }
-          if (oramaText) {
-            combinedContent += `--- HASIL VEKTOR SEMANTIK ORAMA ---\n${oramaText}`
           }
 
           if (combinedContent) {
@@ -479,15 +518,13 @@ export const NATIVE_TOOLS = {
           }
         }
 
-        // MODE 3: Default Full / Smart Overview Read (tanpa query - Hybrid Structural + Strided)
+        // MODE 3: Default Overview Read
         if (totalLines > 80) {
-          // 3a. First 40 lines (Judul, Header, Intro)
           const firstBlock = allLines
             .slice(0, 40)
             .map((l, idx) => `${idx + 1}: ${l}`)
             .join('\n')
 
-          // 3b. Universal Structural Heading Detection across middle body (Lines 41 to totalLines - 30)
           const middleStart = 40
           const middleEnd = Math.max(middleStart + 1, totalLines - 30)
 
@@ -496,10 +533,6 @@ export const NATIVE_TOOLS = {
             const line = allLines[i].trim()
             if (!line) continue
 
-            // Universal structural patterns (Language-agnostic):
-            // 1. Markdown/HTML headings: #, ##, ###, <h1>, <h2>
-            // 2. Numbered sections in any language: 1., 1.1, 2.1.3, I., II., A., B.
-            // 3. Short standalone lines (< 65 chars) in ALL CAPS or ending with a colon ':'
             const isMdHeading = /^#{1,6}\s+/.test(line) || /^<h[1-6]>/i.test(line)
             const isNumberedSection = /^([0-9]+\.[0-9.]*|[A-Z]\.|[IVXLCDM]+\.)\s+[A-Z0-9]/i.test(
               line
@@ -520,7 +553,6 @@ export const NATIVE_TOOLS = {
             }
           }
 
-          // 3c. Fallback / Complementary Uniform Strided Sampling if structural headings are few (< 4)
           const sampledBody = []
           if (structuralHeadings.length < 4) {
             const middleTotal = middleEnd - middleStart
@@ -539,7 +571,6 @@ export const NATIVE_TOOLS = {
             }
           }
 
-          // 3d. Last 30 lines (Kesimpulan / Penutup)
           const lastStart = Math.max(40, totalLines - 30)
           const lastBlock = allLines
             .slice(lastStart)
@@ -580,20 +611,36 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'write-file': {
     needsApproval: true,
-    approvalMessage: (query) => `Mark ingin menulis/membuat file:\n${query.split('||')[0].trim()}`,
-    handler: async (query, config) => {
+    approvalMessage: (args) => {
+      const p = typeof args === 'object' && args !== null ? args.path : String(args || '').split('||')[0]
+      return `Mark ingin menulis/membuat file:\n${(p || '').trim()}`
+    },
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        if (parts.length < 2)
-          return {
-            success: false,
-            message: "Format salah. Gunakan separator '||' (contoh: D:\\file.txt||Halo)"
-          }
+        let filePath = ''
+        let content = ''
 
-        let filePath = parts[0].trim()
-        const content = parts.slice(1).join('||')
+        if (typeof args === 'object' && args !== null) {
+          filePath = (args.path || '').trim()
+          content = typeof args.content === 'string' ? args.content : JSON.stringify(args.content ?? '', null, 2)
+        } else {
+          const parts = String(args || '').split('||')
+          if (parts.length < 2) {
+            return {
+              success: false,
+              message: 'Argumen write-file tidak lengkap (memerlukan path dan content).'
+            }
+          }
+          filePath = parts[0].trim()
+          content = parts.slice(1).join('||')
+        }
+
+        if (!filePath) {
+          return { success: false, message: 'Path file tidak boleh kosong.' }
+        }
 
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
@@ -622,25 +669,35 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'replace-content': {
     needsApproval: true,
-    approvalMessage: (query) => {
-      const parts = query.split('||')
-      return `Mark ingin mengedit isi kode pada berkas:\n${parts[0]?.trim()}`
+    approvalMessage: (args) => {
+      const p = typeof args === 'object' && args !== null ? args.path : String(args || '').split('||')[0]
+      return `Mark ingin mengedit isi kode pada berkas:\n${(p || '').trim()}`
     },
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        if (parts.length < 3) {
-          return {
-            success: false,
-            message: 'Format salah. Gunakan: filePath||targetContent||replacementContent'
-          }
-        }
+        let filePath = ''
+        let targetContent = ''
+        let replacementContent = ''
 
-        let filePath = parts[0].trim()
-        const targetContent = parts[1]
-        const replacementContent = parts.slice(2).join('||')
+        if (typeof args === 'object' && args !== null) {
+          filePath = (args.path || '').trim()
+          targetContent = args.target_content ?? ''
+          replacementContent = args.replacement_content ?? ''
+        } else {
+          const parts = String(args || '').split('||')
+          if (parts.length < 3) {
+            return {
+              success: false,
+              message: 'Format salah. Memerlukan path, target_content, dan replacement_content.'
+            }
+          }
+          filePath = parts[0].trim()
+          targetContent = parts[1]
+          replacementContent = parts.slice(2).join('||')
+        }
 
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
@@ -691,31 +748,46 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'replace-lines': {
     needsApproval: true,
-    approvalMessage: (query) => {
-      const parts = query.split('||')
+    approvalMessage: (args) => {
+      if (typeof args === 'object' && args !== null) {
+        return `Mark ingin mengganti baris ${args.start_line} hingga ${args.end_line} di file:\n${(args.path || '').trim()}`
+      }
+      const parts = String(args || '').split('||')
       return `Mark ingin mengganti baris ${parts[1]} hingga ${parts[2]} di file:\n${parts[0].trim()}`
     },
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        if (parts.length < 4)
-          return {
-            success: false,
-            message: 'Format salah. Gunakan: path||startLine||endLine||kode_baru'
-          }
+        let filePath = ''
+        let startLine = 0
+        let endLine = 0
+        let newContent = ''
 
-        let filePath = parts[0].trim()
+        if (typeof args === 'object' && args !== null) {
+          filePath = (args.path || '').trim()
+          startLine = parseInt(args.start_line, 10)
+          endLine = parseInt(args.end_line, 10)
+          newContent = args.new_code !== undefined ? args.new_code : (args.content || '')
+        } else {
+          const parts = String(args || '').split('||')
+          if (parts.length < 4) {
+            return {
+              success: false,
+              message: 'Format salah. Memerlukan path, start_line, end_line, dan new_code.'
+            }
+          }
+          filePath = parts[0].trim()
+          startLine = parseInt(parts[1].trim(), 10)
+          endLine = parseInt(parts[2].trim(), 10)
+          newContent = parts.slice(3).join('||')
+        }
 
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
-
-        const startLine = parseInt(parts[1].trim(), 10)
-        const endLine = parseInt(parts[2].trim(), 10)
-        const newContent = parts.slice(3).join('||')
 
         if (!fs.existsSync(filePath))
           return { success: false, message: `File tidak ditemukan di path: ${filePath}` }
@@ -739,12 +811,16 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'delete-file': {
     needsApproval: true,
-    approvalMessage: (query) => `Mark ingin MENGHAPUS file secara permanen:\n${query}`,
-    handler: async (query, config) => {
+    approvalMessage: (args) => {
+      const p = typeof args === 'object' && args !== null ? args.path : String(args || '')
+      return `Mark ingin MENGHAPUS file secara permanen:\n${(p || '').trim()}`
+    },
+    handler: async (args, config) => {
       try {
-        let filePath = query.trim()
+        let filePath = (typeof args === 'object' && args !== null ? args.path : String(args || '')).trim()
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
@@ -758,11 +834,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'list-dir': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        let targetDir = query?.trim() || ''
+        let targetDir = (typeof args === 'object' && args !== null ? args.path : String(args || '')).trim()
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(targetDir)) {
           targetDir = targetDir ? path.join(activeRoot, targetDir) : activeRoot
@@ -776,13 +853,22 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'find-files': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query ? query.split('||') : []
-        const pattern = parts[0]?.trim() || '*'
-        const subDir = parts[1]?.trim() || ''
+        let pattern = '*'
+        let subDir = ''
+
+        if (typeof args === 'object' && args !== null) {
+          pattern = args.pattern || '*'
+          subDir = args.subfolder || args.path || ''
+        } else {
+          const parts = String(args || '').split('||')
+          pattern = parts[0]?.trim() || '*'
+          subDir = parts[1]?.trim() || ''
+        }
 
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         const targetDir = path.isAbsolute(subDir) ? subDir : (subDir ? path.join(activeRoot, subDir) : activeRoot)
@@ -853,19 +939,28 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'grep-search': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        if (parts.length < 2)
-          return {
-            success: false,
-            message: "Format salah. Gunakan separator '||' (contoh: D:\\Project||nama_fungsi atau .||nama_fungsi)"
-          }
+        let dirPath = ''
+        let keyword = ''
 
-        let dirPath = parts[0].trim()
-        const keyword = parts[1].trim()
+        if (typeof args === 'object' && args !== null) {
+          dirPath = (args.path || '').trim()
+          keyword = (args.keyword || '').trim()
+        } else {
+          const parts = String(args || '').split('||')
+          if (parts.length < 2) {
+            return {
+              success: false,
+              message: 'Argumen grep-search tidak lengkap (memerlukan path dan keyword).'
+            }
+          }
+          dirPath = parts[0].trim()
+          keyword = parts[1].trim()
+        }
 
         if (!keyword) {
           return { success: false, message: 'Kata kunci pencarian tidak boleh kosong.' }
@@ -969,15 +1064,19 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'run-powershell': {
-    needsApproval: (query) => isDangerousCommand(query),
-    approvalMessage: (query) =>
-      `Mark ingin mengeksekusi perintah PowerShell yang berpotensi BERBAHAYA:\n\n${query}`,
-    handler: async (query, config) => {
-      if (!query) return { success: false, message: 'Tidak ada perintah yang diberikan.' }
+    needsApproval: (args) => isDangerousCommand(args),
+    approvalMessage: (args) => {
+      const cmd = typeof args === 'object' && args !== null ? args.command : String(args || '')
+      return `Mark ingin mengeksekusi perintah PowerShell yang berpotensi BERBAHAYA:\n\n${cmd}`
+    },
+    handler: async (args, config) => {
+      const command = (typeof args === 'object' && args !== null ? args.command : String(args || '')).trim()
+      if (!command) return { success: false, message: 'Tidak ada perintah yang diberikan.' }
       try {
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-        const { stdout, stderr } = await execPromise(`powershell.exe -Command "${query}"`, {
+        const { stdout, stderr } = await execPromise(`powershell.exe -Command "${command}"`, {
           cwd: activeRoot
         })
         const outputText = stdout.trim() || (stderr.trim() ? `[STDERR]: ${stderr.trim()}` : 'Perintah berhasil dieksekusi tanpa output teks.')
@@ -996,44 +1095,80 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'git-status': {
     needsApproval: false,
-    handler: async (query, config) => {
-      const activeRoot = config?.workspaceRoot || (query?.trim() ? query.trim() : path.join(os.homedir(), 'Documents', 'Mark Workspace'))
+    handler: async (args, config) => {
+      const customPath = typeof args === 'object' && args !== null ? args.path : String(args || '').trim()
+      const activeRoot = customPath || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
       return await getGitStatus(activeRoot)
     }
   },
+
   'git-diff': {
     needsApproval: false,
-    handler: async (query, config) => {
-      const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-      return await getGitDiff(activeRoot, query?.trim() || '')
+    handler: async (args, config) => {
+      let file = ''
+      let customPath = ''
+      if (typeof args === 'object' && args !== null) {
+        file = args.file || ''
+        customPath = args.path || ''
+      } else {
+        file = String(args || '').trim()
+      }
+      const activeRoot = customPath || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      return await getGitDiff(activeRoot, file)
     }
   },
+
   'git-commit': {
     needsApproval: true,
-    approvalMessage: (query) => `Mark ingin melakukan git commit dengan pesan:\n"${query}"`,
-    handler: async (query, config) => {
-      const parts = query ? query.split('||') : []
-      const message = parts[0]?.trim() || 'Mark Agent Commit'
-      const customCwd = parts[1]?.trim()
+    approvalMessage: (args) => {
+      const msg = typeof args === 'object' && args !== null ? args.message : String(args || '').split('||')[0]
+      return `Mark ingin melakukan git commit dengan pesan:\n"${msg}"`
+    },
+    handler: async (args, config) => {
+      let message = 'Mark Agent Commit'
+      let customCwd = ''
+      if (typeof args === 'object' && args !== null) {
+        message = args.message || 'Mark Agent Commit'
+        customCwd = args.path || ''
+      } else {
+        const parts = String(args || '').split('||')
+        message = parts[0]?.trim() || 'Mark Agent Commit'
+        customCwd = parts[1]?.trim()
+      }
       const activeRoot = customCwd || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
       return await gitCommit(activeRoot, message)
     }
   },
+
   'git-revert': {
     needsApproval: true,
-    approvalMessage: (query) => `Mark ingin me-rollback perubahan git:\n"${query || 'Seluruh file (reset --hard)'}"`,
-    handler: async (query, config) => {
-      const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-      return await gitRevert(activeRoot, query?.trim() || '')
+    approvalMessage: (args) => {
+      const target = typeof args === 'object' && args !== null ? (args.file || args.path || 'Seluruh file') : String(args || 'Seluruh file (reset --hard)')
+      return `Mark ingin me-rollback perubahan git:\n"${target}"`
+    },
+    handler: async (args, config) => {
+      let file = ''
+      let customPath = ''
+      if (typeof args === 'object' && args !== null) {
+        file = args.file || ''
+        customPath = args.path || ''
+      } else {
+        file = String(args || '').trim()
+      }
+      const activeRoot = customPath || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      return await gitRevert(activeRoot, file)
     }
   },
+
   'select-directory': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const desc = (query || 'Pilih Folder Workspace Proyek').replace(/'/g, "''").replace(/"/g, '`"')
+        const descText = typeof args === 'object' && args !== null ? (args.description || 'Pilih Folder Workspace Proyek') : String(args || 'Pilih Folder Workspace Proyek')
+        const desc = descText.replace(/'/g, "''").replace(/"/g, '`"')
         const script = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::EnableVisualStyles(); $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${desc}'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }`
         const { stdout } = await execPromise(`powershell.exe -NoProfile -STA -Command "${script}"`)
         const selectedPath = stdout.trim()
@@ -1047,11 +1182,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'open-folder': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        let targetPath = query?.trim()
+        let targetPath = typeof args === 'object' && args !== null ? (args.path || '') : String(args || '').trim()
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!targetPath) targetPath = activeRoot
         else if (!path.isAbsolute(targetPath)) targetPath = path.join(activeRoot, targetPath)
@@ -1062,49 +1198,77 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'run-task': {
-    needsApproval: (query) => isDangerousCommand(query?.split('||')[1] || query || ''),
-    approvalMessage: (query) => `Mark ingin menjalankan background task:\n${query}`,
-    handler: async (query, config) => {
-      const parts = query.split('||')
-      if (parts.length < 2) {
-        return { success: false, message: 'Format salah. Gunakan: taskId||command (contoh: dev-server||npm run dev)' }
+    needsApproval: (args) => {
+      const cmd = typeof args === 'object' && args !== null ? args.command : String(args || '').split('||')[1]
+      return isDangerousCommand(cmd || '')
+    },
+    approvalMessage: (args) => {
+      const cmd = typeof args === 'object' && args !== null ? `${args.task_id}: ${args.command}` : String(args || '')
+      return `Mark ingin menjalankan background task:\n${cmd}`
+    },
+    handler: async (args, config) => {
+      let taskId = ''
+      let command = ''
+      if (typeof args === 'object' && args !== null) {
+        taskId = (args.task_id || args.taskId || '').trim()
+        command = (args.command || '').trim()
+      } else {
+        const parts = String(args || '').split('||')
+        if (parts.length < 2) {
+          return { success: false, message: 'Format salah. Memerlukan task_id dan command.' }
+        }
+        taskId = parts[0].trim()
+        command = parts.slice(1).join('||').trim()
       }
-      const taskId = parts[0].trim()
-      const command = parts.slice(1).join('||').trim()
       const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
       return spawnBackgroundTask(taskId, command, activeRoot)
     }
   },
+
   'read-task-output': {
     needsApproval: false,
-    handler: async (query) => {
-      const parts = query ? query.split('||') : []
-      const taskId = parts[0]?.trim()
-      const lines = parts[1] ? parseInt(parts[1].trim(), 10) : 40
-      if (!taskId) return { success: false, message: 'Wajib menyertakan taskId' }
+    handler: async (args) => {
+      let taskId = ''
+      let lines = 40
+      if (typeof args === 'object' && args !== null) {
+        taskId = (args.task_id || args.taskId || '').trim()
+        lines = args.lines ? parseInt(args.lines, 10) : 40
+      } else {
+        const parts = String(args || '').split('||')
+        taskId = parts[0]?.trim()
+        lines = parts[1] ? parseInt(parts[1].trim(), 10) : 40
+      }
+      if (!taskId) return { success: false, message: 'Wajib menyertakan task_id' }
       return readBackgroundTaskOutput(taskId, lines)
     }
   },
+
   'kill-task': {
     needsApproval: false,
-    handler: async (query) => {
-      const taskId = query?.trim()
-      if (!taskId) return { success: false, message: 'Wajib menyertakan taskId' }
+    handler: async (args) => {
+      const taskId = (typeof args === 'object' && args !== null ? (args.task_id || args.taskId) : String(args || '')).trim()
+      if (!taskId) return { success: false, message: 'Wajib menyertakan task_id' }
       return killBackgroundTask(taskId)
     }
   },
+
   'list-tasks': {
     needsApproval: false,
     handler: async () => {
       return listBackgroundTasks()
     }
   },
+
+  // ----------------------------------------------------------------------
+  // BROWSER TOOLS
+  // ----------------------------------------------------------------------
   'browser-navigate': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        let url = query.trim()
+        let url = (typeof args === 'object' && args !== null ? args.url : String(args || '')).trim()
         if (!url.startsWith('http://') && !url.startsWith('https://')) {
           url = 'https://' + url
         }
@@ -1116,10 +1280,11 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-close': {
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const sessionId = config?.sessionId || (query?.trim() ? query.trim() : 'default')
+        const sessionId = config?.sessionId || (typeof args === 'object' && args !== null ? (args.session_id || 'default') : String(args || '').trim() || 'default')
         const result = await closeBrowser(sessionId)
         return { success: true, data: result }
       } catch (e) {
@@ -1127,11 +1292,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-show': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const sessionId = config?.sessionId || (query?.trim() ? query.trim() : 'default')
+        const sessionId = config?.sessionId || (typeof args === 'object' && args !== null ? (args.session_id || 'default') : String(args || '').trim() || 'default')
         const result = await showBrowserWindow(sessionId)
         return { success: true, data: result }
       } catch (e) {
@@ -1139,11 +1305,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-hide': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const sessionId = config?.sessionId || (query?.trim() ? query.trim() : 'default')
+        const sessionId = config?.sessionId || (typeof args === 'object' && args !== null ? (args.session_id || 'default') : String(args || '').trim() || 'default')
         const result = await hideBrowserWindow(sessionId)
         return { success: true, data: result }
       } catch (e) {
@@ -1151,9 +1318,10 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-read': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (_args, config) => {
       try {
         const sessionId = config?.sessionId || 'default'
         const result = await readDOM(sessionId)
@@ -1163,11 +1331,17 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-click': {
     needsApproval: false,
-    handler: async (query, config) => {
-      const id = parseInt(query.trim(), 10)
-      if (isNaN(id)) return { success: false, error: 'ID harus berupa angka.' }
+    handler: async (args, config) => {
+      let id = NaN
+      if (typeof args === 'object' && args !== null) {
+        id = parseInt(args.element_id ?? args.id, 10)
+      } else {
+        id = parseInt(String(args || '').trim(), 10)
+      }
+      if (isNaN(id)) return { success: false, error: 'element_id harus berupa angka.' }
       try {
         const sessionId = config?.sessionId || 'default'
         const result = await executeAction({ action: 'click', id }, sessionId)
@@ -1177,14 +1351,22 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-type': {
     needsApproval: false,
-    handler: async (query, config) => {
-      const parts = query.split('||')
-      if (parts.length < 2) return { success: false, error: 'Format: ID||teks' }
-      const id = parseInt(parts[0].trim(), 10)
-      const text = parts.slice(1).join('||')
-      if (isNaN(id)) return { success: false, error: 'ID harus berupa angka.' }
+    handler: async (args, config) => {
+      let id = NaN
+      let text = ''
+      if (typeof args === 'object' && args !== null) {
+        id = parseInt(args.element_id ?? args.id, 10)
+        text = String(args.text ?? '')
+      } else {
+        const parts = String(args || '').split('||')
+        if (parts.length < 2) return { success: false, error: 'Format: ID||teks' }
+        id = parseInt(parts[0].trim(), 10)
+        text = parts.slice(1).join('||')
+      }
+      if (isNaN(id)) return { success: false, error: 'element_id harus berupa angka.' }
       try {
         const sessionId = config?.sessionId || 'default'
         const result = await executeAction({ action: 'type', id, value: text }, sessionId)
@@ -1194,10 +1376,11 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-scroll': {
     needsApproval: false,
-    handler: async (query, config) => {
-      const direction = query.trim().toLowerCase()
+    handler: async (args, config) => {
+      const direction = (typeof args === 'object' && args !== null ? args.direction : String(args || '')).trim().toLowerCase()
       if (direction !== 'up' && direction !== 'down') {
         return { success: false, error: "Gunakan 'up' atau 'down'." }
       }
@@ -1210,142 +1393,193 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'browser-ask-user': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const prompt = typeof args === 'object' && args !== null ? (args.prompt || '') : String(args || '')
         const sessionId = config?.sessionId || 'default'
-        const result = await executeAction({ action: 'unblock', value: query }, sessionId)
+        const result = await executeAction({ action: 'unblock', value: prompt }, sessionId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'browser-script': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const script = typeof args === 'object' && args !== null ? (args.script || '') : String(args || '')
         const sessionId = config?.sessionId || 'default'
-        const result = await executeScript(query, sessionId)
+        const result = await executeScript(script, sessionId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'browser-extract': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const selector = typeof args === 'object' && args !== null ? (args.selector || '') : String(args || '')
         const sessionId = config?.sessionId || 'default'
-        const result = await extractData(query, sessionId)
+        const result = await extractData(selector, sessionId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'browser-screenshot': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const filename = typeof args === 'object' && args !== null ? (args.filename || 'screenshot.png') : String(args || 'screenshot.png')
         const sessionId = config?.sessionId || 'default'
-        const result = await takeScreenshot(query || 'screenshot.png', sessionId)
+        const result = await takeScreenshot(filename, sessionId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'browser-download': {
     needsApproval: true,
-    approvalMessage: (query) => `Mark ingin mendownload file dari browser:\n\n${query}`,
-    handler: async (query, config) => {
-      const parts = query.split('||')
-      if (parts.length < 2) return { success: false, error: 'Format: URL||namafile.ext' }
+    approvalMessage: (args) => {
+      const url = typeof args === 'object' && args !== null ? `${args.url} -> ${args.filename}` : String(args || '')
+      return `Mark ingin mendownload file dari browser:\n\n${url}`
+    },
+    handler: async (args, config) => {
+      let url = ''
+      let filename = ''
+      if (typeof args === 'object' && args !== null) {
+        url = (args.url || '').trim()
+        filename = (args.filename || '').trim()
+      } else {
+        const parts = String(args || '').split('||')
+        if (parts.length < 2) return { success: false, error: 'Format: url||filename' }
+        url = parts[0].trim()
+        filename = parts[1].trim()
+      }
       try {
         const sessionId = config?.sessionId || 'default'
-        const result = await downloadFile(parts[0].trim(), parts[1].trim(), sessionId)
+        const result = await downloadFile(url, filename, sessionId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
+  // ----------------------------------------------------------------------
+  // DESKTOP OS AUTOMATION TOOLS
+  // ----------------------------------------------------------------------
   'os-read': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const result = await readDesktop({}, query)
+        const mode = typeof args === 'object' && args !== null ? (args.mode || 'all') : String(args || 'all')
+        const result = await readDesktop({}, mode)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'os-click': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const result = await executeClick(query)
+        const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+        const result = await executeClick(target)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'os-type': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const result = await executeType(query)
+        const text = typeof args === 'object' && args !== null ? (args.text ?? '') : String(args ?? '')
+        const result = await executeType(text)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'os-key': {
-    needsApproval: (query) => isDangerousKeyCombo(query),
-    approvalMessage: (query) =>
-      `Mark ingin menekan shortcut keyboard yang berpotensi BERBAHAYA:\n\n${query}`,
-    handler: async (query) => {
+    needsApproval: (args) => {
+      const combo = typeof args === 'object' && args !== null ? args.combo : String(args || '')
+      return isDangerousKeyCombo(combo)
+    },
+    approvalMessage: (args) => {
+      const combo = typeof args === 'object' && args !== null ? args.combo : String(args || '')
+      return `Mark ingin menekan shortcut keyboard yang berpotensi BERBAHAYA:\n\n${combo}`
+    },
+    handler: async (args) => {
       try {
-        const result = await executeKey(query)
+        const combo = typeof args === 'object' && args !== null ? (args.combo ?? '') : String(args ?? '')
+        const result = await executeKey(combo)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'os-scroll': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const result = await executeScroll(query)
+        let direction = 'down'
+        let amount = 3
+        if (typeof args === 'object' && args !== null) {
+          direction = args.direction || 'down'
+          amount = args.amount !== undefined ? Number(args.amount) : 3
+        } else {
+          const parts = String(args || '').split('||')
+          direction = parts[0] || 'down'
+          amount = parts[1] ? Number(parts[1]) : 3
+        }
+        const result = await executeScroll(direction, amount)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'open': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const result = await openApp(query)
+        const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+        const result = await openApp(target)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'os-open': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const target = query?.trim() || ''
+        const target = (typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')).trim()
         if (target.startsWith('ms-settings:') || target.startsWith('http://') || target.startsWith('https://')) {
           const { exec } = await import('child_process')
           exec(`start ${target}`)
@@ -1358,15 +1592,14 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'os-search': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        // Press windows key
+        const query = typeof args === 'object' && args !== null ? (args.keyword || '') : String(args || '')
         await executeKey('win')
-        // Wait for Start Menu to open
         await new Promise((r) => setTimeout(r, 800))
-        // Type the query
         const result = await executeType(query)
         return {
           success: true,
@@ -1377,22 +1610,26 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'os-double-click': {
     needsApproval: false,
-    handler: async (query) => {
-      return await executeDoubleClick(query)
+    handler: async (args) => {
+      const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+      return await executeDoubleClick(target)
     }
   },
+
   'os-delay': {
     needsApproval: false,
-    handler: async (query) => {
-      let ms = parseInt(query)
+    handler: async (args) => {
+      let ms = typeof args === 'object' && args !== null ? parseInt(args.ms, 10) : parseInt(args, 10)
       if (isNaN(ms) || ms < 0) ms = 1000
       if (ms > 10000) ms = 10000
       await new Promise((r) => setTimeout(r, ms))
       return { success: true, data: `[PC-Agent] Delayed for ${ms}ms.` }
     }
   },
+
   'os-list-windows': {
     needsApproval: false,
     handler: async () => {
@@ -1404,17 +1641,20 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'os-focus-window': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const result = await focusWindow(query)
+        const title = typeof args === 'object' && args !== null ? (args.title || '') : String(args || '')
+        const result = await focusWindow(title)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'os-control-open': {
     needsApproval: () => !isPCSessionOpen(),
     approvalMessage: () =>
@@ -1428,6 +1668,7 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'os-control-close': {
     needsApproval: false,
     handler: async () => {
@@ -1445,7 +1686,7 @@ export const NATIVE_TOOLS = {
   // ----------------------------------------------------------------------
   'gdrive-info': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (_args, config) => {
       try {
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await getDriveInfo(clientId, clientSecret)
@@ -1455,13 +1696,22 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gdrive-search': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const q = parts[0].trim()
-        const { start, end, fetchCount } = parsePagination(parts[1] || '')
+        let q = ''
+        let pagination = null
+        if (typeof args === 'object' && args !== null) {
+          q = (args.query || '').trim()
+          pagination = args.pagination
+        } else {
+          const parts = String(args || '').split('||')
+          q = parts[0].trim()
+          pagination = parts[1]
+        }
+        const { start, end, fetchCount } = parsePagination(pagination)
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchFiles(clientId, clientSecret, q, fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
@@ -1470,13 +1720,22 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gdrive-list': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const folderId = parts[0].trim() || null
-        const { start, end, fetchCount } = parsePagination(parts[1] || '')
+        let folderId = null
+        let pagination = null
+        if (typeof args === 'object' && args !== null) {
+          folderId = (args.folder_id || args.folderId || '').trim() || null
+          pagination = args.pagination
+        } else {
+          const parts = String(args || '').split('||')
+          folderId = parts[0].trim() || null
+          pagination = parts[1]
+        }
+        const { start, end, fetchCount } = parsePagination(pagination)
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await listFiles(clientId, clientSecret, folderId, fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
@@ -1485,27 +1744,39 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gdrive-read': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const fileId = (typeof args === 'object' && args !== null ? (args.file_id || args.fileId) : String(args || '')).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
-        const result = await readFile(clientId, clientSecret, query.trim())
+        const result = await readFile(clientId, clientSecret, fileId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'gdrive-upload': {
     needsApproval: true,
-    approvalMessage: (query) =>
-      `Mark ingin mengunggah file ke Google Drive-mu:\n${query.split('||')[0]}`,
-    handler: async (query, config) => {
+    approvalMessage: (args) => {
+      const name = typeof args === 'object' && args !== null ? args.name : String(args || '').split('||')[0]
+      return `Mark ingin mengunggah file ke Google Drive-mu:\n${name}`
+    },
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const name = parts[0].trim()
-        const content = parts.slice(1).join('||')
+        let name = ''
+        let content = ''
+        if (typeof args === 'object' && args !== null) {
+          name = (args.name || '').trim()
+          content = args.content || ''
+        } else {
+          const parts = String(args || '').split('||')
+          name = parts[0].trim()
+          content = parts.slice(1).join('||')
+        }
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await uploadFile(clientId, clientSecret, name, content)
         return { success: true, data: result }
@@ -1514,17 +1785,34 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gdrive-create': {
     needsApproval: true,
-    approvalMessage: (query) => {
-      const parts = query.split('||')
-      return `Mark ingin membuat dokumen kosong baru di Google Drive:\nNama: ${parts[0]}\nTipe: ${parts[1] || 'doc'}`
+    approvalMessage: (args) => {
+      let name = ''
+      let type = 'doc'
+      if (typeof args === 'object' && args !== null) {
+        name = args.name
+        type = args.type || 'doc'
+      } else {
+        const parts = String(args || '').split('||')
+        name = parts[0]
+        type = parts[1] || 'doc'
+      }
+      return `Mark ingin membuat dokumen kosong baru di Google Drive:\nNama: ${name}\nTipe: ${type}`
     },
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const name = parts[0].trim()
-        const type = parts[1] ? parts[1].trim() : 'doc'
+        let name = ''
+        let type = 'doc'
+        if (typeof args === 'object' && args !== null) {
+          name = (args.name || '').trim()
+          type = (args.type || 'doc').trim()
+        } else {
+          const parts = String(args || '').split('||')
+          name = parts[0].trim()
+          type = parts[1] ? parts[1].trim() : 'doc'
+        }
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await createFile(clientId, clientSecret, name, type)
         return { success: true, data: result }
@@ -1533,15 +1821,34 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gdrive-move': {
     needsApproval: true,
-    approvalMessage: (query) =>
-      `Mark ingin memindahkan file di Google Drive.\nFile ID: ${query.split('||')[0]}\nFolder Tujuan ID: ${query.split('||')[1]}`,
-    handler: async (query, config) => {
+    approvalMessage: (args) => {
+      let fileId = ''
+      let folderId = ''
+      if (typeof args === 'object' && args !== null) {
+        fileId = args.file_id || args.fileId
+        folderId = args.folder_id || args.folderId
+      } else {
+        const parts = String(args || '').split('||')
+        fileId = parts[0]
+        folderId = parts[1]
+      }
+      return `Mark ingin memindahkan file di Google Drive.\nFile ID: ${fileId}\nFolder Tujuan ID: ${folderId}`
+    },
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const fileId = parts[0].trim()
-        const folderId = parts[1].trim()
+        let fileId = ''
+        let folderId = ''
+        if (typeof args === 'object' && args !== null) {
+          fileId = (args.file_id || args.fileId || '').trim()
+          folderId = (args.folder_id || args.folderId || '').trim()
+        } else {
+          const parts = String(args || '').split('||')
+          fileId = parts[0].trim()
+          folderId = parts[1].trim()
+        }
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await moveFile(clientId, clientSecret, fileId, folderId)
         return { success: true, data: result }
@@ -1550,15 +1857,34 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gdrive-copy': {
     needsApproval: true,
-    approvalMessage: (query) =>
-      `Mark ingin menduplikasi file di Google Drive.\nFile ID: ${query.split('||')[0]}\nNama Baru: ${query.split('||')[1]}`,
-    handler: async (query, config) => {
+    approvalMessage: (args) => {
+      let fileId = ''
+      let newName = ''
+      if (typeof args === 'object' && args !== null) {
+        fileId = args.file_id || args.fileId
+        newName = args.new_name || args.newName
+      } else {
+        const parts = String(args || '').split('||')
+        fileId = parts[0]
+        newName = parts[1]
+      }
+      return `Mark ingin menduplikasi file di Google Drive.\nFile ID: ${fileId}\nNama Baru: ${newName}`
+    },
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const fileId = parts[0].trim()
-        const newName = parts[1].trim()
+        let fileId = ''
+        let newName = ''
+        if (typeof args === 'object' && args !== null) {
+          fileId = (args.file_id || args.fileId || '').trim()
+          newName = (args.new_name || args.newName || '').trim()
+        } else {
+          const parts = String(args || '').split('||')
+          fileId = parts[0].trim()
+          newName = parts[1].trim()
+        }
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await copyFile(clientId, clientSecret, fileId, newName)
         return { success: true, data: result }
@@ -1573,11 +1899,19 @@ export const NATIVE_TOOLS = {
   // ----------------------------------------------------------------------
   'gcalendar-list': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const { start, end, fetchCount } = parsePagination(parts[0])
-        const timeMin = parts[1] ? parts[1].trim() : new Date().toISOString()
+        let pagination = null
+        let timeMin = new Date().toISOString()
+        if (typeof args === 'object' && args !== null) {
+          pagination = args.pagination
+          timeMin = args.time_min || args.timeMin || new Date().toISOString()
+        } else {
+          const parts = String(args || '').split('||')
+          pagination = parts[0]
+          timeMin = parts[1] ? parts[1].trim() : new Date().toISOString()
+        }
+        const { start, end, fetchCount } = parsePagination(pagination)
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await listEvents(clientId, clientSecret, fetchCount, timeMin)
         return { success: true, data: rawResult.slice(start, end) }
@@ -1586,19 +1920,40 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gcalendar-create': {
     needsApproval: true,
-    approvalMessage: (query) => {
-      const parts = query.split('||')
-      return `Mark ingin membuat jadwal baru di kalendermu:\nJudul: ${parts[0]}\nWaktu Mulai: ${parts[2]}`
+    approvalMessage: (args) => {
+      let summary = ''
+      let startTime = ''
+      if (typeof args === 'object' && args !== null) {
+        summary = args.summary
+        startTime = args.start_time || args.startTime
+      } else {
+        const parts = String(args || '').split('||')
+        summary = parts[0]
+        startTime = parts[2]
+      }
+      return `Mark ingin membuat jadwal baru di kalendermu:\nJudul: ${summary}\nWaktu Mulai: ${startTime}`
     },
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const summary = parts[0].trim()
-        const description = parts[1].trim()
-        const startTime = parts[2].trim()
-        const endTime = parts[3].trim()
+        let summary = ''
+        let description = ''
+        let startTime = ''
+        let endTime = ''
+        if (typeof args === 'object' && args !== null) {
+          summary = (args.summary || '').trim()
+          description = (args.description || '').trim()
+          startTime = (args.start_time || args.startTime || '').trim()
+          endTime = (args.end_time || args.endTime || '').trim()
+        } else {
+          const parts = String(args || '').split('||')
+          summary = parts[0].trim()
+          description = parts[1].trim()
+          startTime = parts[2].trim()
+          endTime = parts[3].trim()
+        }
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await createEvent(
           clientId,
@@ -1614,13 +1969,18 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gcalendar-delete': {
     needsApproval: true,
-    approvalMessage: (query) => `Mark ingin MENGHAPUS jadwal/event ini:\nEvent ID: ${query}`,
-    handler: async (query, config) => {
+    approvalMessage: (args) => {
+      const id = typeof args === 'object' && args !== null ? (args.event_id || args.eventId) : String(args || '')
+      return `Mark ingin MENGHAPUS jadwal/event ini:\nEvent ID: ${id}`
+    },
+    handler: async (args, config) => {
       try {
+        const eventId = (typeof args === 'object' && args !== null ? (args.event_id || args.eventId) : String(args || '')).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
-        const result = await deleteEvent(clientId, clientSecret, query.trim())
+        const result = await deleteEvent(clientId, clientSecret, eventId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
@@ -1633,11 +1993,19 @@ export const NATIVE_TOOLS = {
   // ----------------------------------------------------------------------
   'gmail-search': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const q = parts[0].trim() || 'is:unread'
-        const { start, end, fetchCount } = parsePagination(parts[1] || '')
+        let q = 'is:unread'
+        let pagination = null
+        if (typeof args === 'object' && args !== null) {
+          q = (args.query || 'is:unread').trim()
+          pagination = args.pagination
+        } else {
+          const parts = String(args || '').split('||')
+          q = parts[0].trim() || 'is:unread'
+          pagination = parts[1] || ''
+        }
+        const { start, end, fetchCount } = parsePagination(pagination)
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchEmails(clientId, clientSecret, q, fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
@@ -1646,11 +2014,13 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gmail-list': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const { start, end, fetchCount } = parsePagination(query)
+        const pagination = typeof args === 'object' && args !== null ? args.pagination : args
+        const { start, end, fetchCount } = parsePagination(pagination)
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchEmails(clientId, clientSecret, 'is:unread', fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
@@ -1659,11 +2029,13 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'new-gmail-list': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const { start, end, fetchCount } = parsePagination(query)
+        const pagination = typeof args === 'object' && args !== null ? args.pagination : args
+        const { start, end, fetchCount } = parsePagination(pagination)
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const rawResult = await searchEmails(clientId, clientSecret, 'is:unread', fetchCount)
         return { success: true, data: rawResult.slice(start, end) }
@@ -1672,30 +2044,54 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gmail-read': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const messageId = (typeof args === 'object' && args !== null ? (args.message_id || args.messageId || args.id) : String(args || '')).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
-        const result = await readEmail(clientId, clientSecret, query.trim())
+        const result = await readEmail(clientId, clientSecret, messageId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
+
   'gmail-send': {
     needsApproval: true,
-    approvalMessage: (query) => {
-      const parts = query.split('||')
-      return `Mark ingin MENGIRIM EMAIL baru.\nTujuan: ${parts[0]}\nSubjek: ${parts[1]}\nIsi Pesan:\n${parts[2].slice(0, 100)}...`
+    approvalMessage: (args) => {
+      let to = ''
+      let subject = ''
+      let body = ''
+      if (typeof args === 'object' && args !== null) {
+        to = args.to
+        subject = args.subject
+        body = args.body || ''
+      } else {
+        const parts = String(args || '').split('||')
+        to = parts[0]
+        subject = parts[1]
+        body = parts[2] || ''
+      }
+      return `Mark ingin MENGIRIM EMAIL baru.\nTujuan: ${to}\nSubjek: ${subject}\nIsi Pesan:\n${body.slice(0, 100)}...`
     },
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
-        const parts = query.split('||')
-        const to = parts[0].trim()
-        const subject = parts[1].trim()
-        const bodyText = parts.slice(2).join('||')
+        let to = ''
+        let subject = ''
+        let bodyText = ''
+        if (typeof args === 'object' && args !== null) {
+          to = (args.to || '').trim()
+          subject = (args.subject || '').trim()
+          bodyText = args.body || ''
+        } else {
+          const parts = String(args || '').split('||')
+          to = parts[0].trim()
+          subject = parts[1].trim()
+          bodyText = parts.slice(2).join('||')
+        }
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await sendEmail(clientId, clientSecret, to, subject, bodyText)
         return { success: true, data: result }
@@ -1704,51 +2100,52 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'gmail-mark-read': {
     needsApproval: false,
-    handler: async (query, config) => {
+    handler: async (args, config) => {
       try {
+        const messageId = (typeof args === 'object' && args !== null ? (args.message_id || args.messageId || args.id) : String(args || '')).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
-        const result = await markAsRead(clientId, clientSecret, query.trim())
+        const result = await markAsRead(clientId, clientSecret, messageId)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
-  
+
   // ----------------------------------------------------------------------
   // TELEGRAM TOOLS
   // ----------------------------------------------------------------------
   'tg-send': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const logPath = path.join(os.homedir(), 'Desktop', 'tg_debug.txt')
-        fs.appendFileSync(logPath, `\n\n--- NEW RUN ---\nRaw Query: ${query}\n`)
-        
-        const parts = query.split(/\|+/)
-        if (parts.length < 2) return { success: false, error: 'Format: chatId||tipe(text/file)||konten' }
-        const chatId = parts[0].trim()
-        const type = parts[1].trim().toLowerCase()
-        const content = parts.slice(2).join('||').trim()
-        
-        fs.appendFileSync(logPath, `Type evaluated to: "${type}"\nContent evaluated to: "${content}"\n`)
+        let chatId = ''
+        let type = 'text'
+        let content = ''
+
+        if (typeof args === 'object' && args !== null) {
+          chatId = String(args.chat_id || args.chatId || '').trim()
+          type = String(args.type || 'text').trim().toLowerCase()
+          content = args.content ?? ''
+        } else {
+          const parts = String(args || '').split(/\|+/)
+          if (parts.length < 2) return { success: false, error: 'Format: chatId||type||content' }
+          chatId = parts[0].trim()
+          type = parts[1].trim().toLowerCase()
+          content = parts.slice(2).join('||').trim()
+        }
 
         if (type === 'file') {
-          fs.appendFileSync(logPath, `Branch: FILE. Calling sendTelegramFile...\n`)
           const result = await sendTelegramFile(chatId, content)
-          fs.appendFileSync(logPath, `Result: ${JSON.stringify(result)}\n`)
           return { success: result.success, data: result.success ? `Berhasil mengirim file ke Telegram.` : `Gagal: ${result.error}` }
         } else {
-          fs.appendFileSync(logPath, `Branch: TEXT. Calling sendTelegramMessage...\n`)
           const result = await sendTelegramMessage(chatId, content)
-          fs.appendFileSync(logPath, `Result: ${JSON.stringify(result)}\n`)
           return { success: result.success, data: result.success ? `Berhasil mengirim pesan ke Telegram.` : `Gagal: ${result.error}` }
         }
       } catch (e) {
-        const errPath = path.join(os.homedir(), 'Desktop', 'tg_debug.txt')
-        fs.appendFileSync(errPath, `CRASH: ${e.stack}\n`)
         return { success: false, error: e.message }
       }
     }
@@ -1759,9 +2156,9 @@ export const NATIVE_TOOLS = {
   // ----------------------------------------------------------------------
   'search-youtube': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const q = (query || '').trim()
+        const q = (typeof args === 'object' && args !== null ? (args.query || '') : String(args || '')).trim()
         const result = await searchYoutube(q)
         return { success: true, data: result }
       } catch (e) {
@@ -1769,11 +2166,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'youtube-transcript': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const url = (query || '').trim()
+        const url = (typeof args === 'object' && args !== null ? (args.url || '') : String(args || '')).trim()
         const result = await getTranscript(url)
         return { success: true, data: result }
       } catch (e) {
@@ -1781,11 +2179,12 @@ export const NATIVE_TOOLS = {
       }
     }
   },
+
   'tts-speak': {
     needsApproval: false,
-    handler: async (query) => {
+    handler: async (args) => {
       try {
-        const text = (query || '').trim()
+        const text = (typeof args === 'object' && args !== null ? (args.text || '') : String(args || '')).trim()
         const result = await synthesizeTTS(text)
         return { success: true, data: result }
       } catch (e) {

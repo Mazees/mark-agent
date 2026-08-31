@@ -60,243 +60,6 @@ const convertFilePathToBase64 = async (filePath) => {
   }
 }
 
-/**
- * Konversi objek parameter OpenAPI Function Call menjadi query string yang kompatibel dengan dispatcher legacy / node-tools.
- */
-const normalizeToolQuery = (tool, queryOrArgs) => {
-  if (typeof queryOrArgs === 'string') return queryOrArgs
-  if (!queryOrArgs || typeof queryOrArgs !== 'object') return ''
-
-  const a = queryOrArgs
-
-  switch (tool) {
-    case 'read-file':
-      if (a.start_line !== undefined && a.end_line !== undefined) {
-        return `${a.path || ''}||${a.start_line}||${a.end_line}`
-      }
-      return a.path || ''
-
-    case 'write-file':
-      return `${a.path || ''}||${a.content || ''}`
-
-    case 'replace-content':
-      return `${a.path || ''}||${a.target_content || ''}||${a.replacement_content || ''}`
-
-    case 'replace-lines':
-      return `${a.path || ''}||${a.start_line || 1}||${a.end_line || 1}||${a.new_code || ''}`
-
-    case 'delete-file':
-    case 'file-outline':
-      return a.path || ''
-
-    case 'list-dir':
-      return a.path || ''
-
-    case 'find-files':
-      if (a.subfolder) return `${a.pattern || ''}||${a.subfolder}`
-      return a.pattern || ''
-
-    case 'grep-search':
-      if (a.path) return `${a.keyword || ''}||${a.path}`
-      return a.keyword || ''
-
-    case 'read-document':
-      if (a.keyword) return `${a.path || ''}||${a.keyword}`
-      return a.path || ''
-
-    case 'read-skill':
-      return a.skill_name || ''
-
-    case 'read-tools':
-      return a.group_name || ''
-
-    case 'run-powershell':
-      return a.command || ''
-
-    case 'open':
-      return a.target || ''
-
-    case 'browser-navigate':
-      return a.url || ''
-
-    case 'browser-read':
-    case 'browser-show':
-    case 'browser-hide':
-      return ''
-
-    case 'browser-click':
-      return String(a.element_id ?? '')
-
-    case 'browser-type':
-      return `${a.element_id ?? ''}||${a.text || ''}`
-
-    case 'browser-scroll':
-      return a.direction || 'down'
-
-    case 'browser-extract':
-      return a.selector || ''
-
-    case 'browser-script':
-      return a.script || ''
-
-    case 'browser-screenshot':
-      return a.filename || 'screenshot.png'
-
-    case 'browser-download':
-      return `${a.url || ''}||${a.filename || ''}`
-
-    case 'browser-ask-user':
-      return a.prompt || ''
-
-    case 'browser-close':
-      return ''
-
-    case 'os-click':
-    case 'os-double-click':
-      return String(a.target || '')
-
-    case 'os-type':
-      return a.text || ''
-
-    case 'os-key':
-      return a.combo || ''
-
-    case 'os-scroll':
-      return `${a.direction || 'down'}||${a.amount || 3}`
-
-    case 'os-delay':
-      return String(a.ms || 1000)
-
-    case 'os-search':
-      return a.keyword || ''
-
-    case 'os-focus-window':
-      return a.title || ''
-
-    case 'os-list-windows':
-    case 'os-control-open':
-    case 'os-control-close':
-      return ''
-
-    case 'gdrive-info':
-      return 'all'
-
-    case 'gdrive-search':
-      if (a.pagination) return `${a.query || ''}||${a.pagination}`
-      return a.query || ''
-
-    case 'gdrive-list':
-      if (a.pagination) return `${a.folder_id || ''}||${a.pagination}`
-      return a.folder_id || ''
-
-    case 'gdrive-read':
-      return a.file_id || ''
-
-    case 'gdrive-upload':
-      return `${a.name || ''}||${a.content || ''}`
-
-    case 'gdrive-create':
-      return `${a.name || ''}||${a.type || 'doc'}`
-
-    case 'gdrive-move':
-      return `${a.file_id || ''}||${a.folder_id || ''}`
-
-    case 'gdrive-copy':
-      return `${a.file_id || ''}||${a.new_name || ''}`
-
-    case 'gcalendar-list':
-      if (a.time_min) return `${a.pagination || '0-10'}||${a.time_min}`
-      return a.pagination || '0-10'
-
-    case 'gcalendar-create':
-      return `${a.summary || ''}||${a.description || ''}||${a.start_time || ''}||${a.end_time || ''}`
-
-    case 'gcalendar-delete':
-      return a.event_id || ''
-
-    case 'gmail-search':
-      if (a.pagination) return `${a.query || 'is:unread'}||${a.pagination}`
-      return a.query || 'is:unread'
-
-    case 'gmail-list':
-      return a.pagination || '0-10'
-
-    case 'gmail-read':
-    case 'gmail-mark-read':
-      return a.message_id || ''
-
-    case 'gmail-send':
-      return `${a.to || ''}||${a.subject || ''}||${a.body || ''}`
-
-    case 'screenshot-to-tg':
-      return ''
-
-    case 'tg-send':
-      return `${a.chat_id || ''}||${a.type || 'text'}||${a.content || ''}`
-
-    case 'speak':
-      return a.text || ''
-
-    case 'analyze-screen':
-    case 'camera-look':
-      return a.query || ''
-
-    case 'yt-search':
-      return a.query || ''
-
-    case 'yt-summary':
-      return a.url || ''
-
-    case 'music-play':
-      return a.title || a.query || a.song || a.keyword || a.name || a.track || a.reason || ''
-
-    case 'music-toggle':
-    case 'music-next':
-    case 'music-prev':
-      return ''
-
-    case 'git-status':
-      return a.path || ''
-
-    case 'git-diff':
-      return a.file_path || ''
-
-    case 'git-commit':
-      return a.message || ''
-
-    case 'git-revert':
-      return a.file_path || ''
-
-    case 'run-task':
-      return `${a.task_id || ''}||${a.command || ''}`
-
-    case 'read-task-output':
-      return `${a.task_id || ''}||${a.lines || 50}`
-
-    case 'kill-task':
-      return a.task_id || ''
-
-    case 'spawn_subagent':
-      return `${a.name || 'Worker'}||${a.role || 'Specialist'}||${a.goal || ''}||${a.initial_message || a.goal || ''}||${a.tools || '*'}`
-
-    case 'send_message':
-      return `${a.subagent_id || ''}||${a.message || ''}`
-
-    case 'wait_subagents':
-      return `${a.targets || 'all'}||${a.timeout || 40}`
-
-    case 'kill_subagent':
-      return `${a.subagent_id || ''}||${a.reason || ''}`
-
-    case 'memory-search':
-      return a.query || ''
-
-    default:
-      if (a.query) return a.query
-      return JSON.stringify(a)
-  }
-}
-
 // ============================================================================
 // MAIN HOOK: useMarkPlan
 // ============================================================================
@@ -437,18 +200,23 @@ export const useMarkPlan = ({
     const currentSignal = signal || abortControllerRef?.current?.signal
     let resultString = 'Tidak ada hasil.'
 
-    const query = normalizeToolQuery(tool, rawArgs)
+    const stringQuery =
+      typeof rawArgs === 'string'
+        ? rawArgs
+        : typeof rawArgs === 'object' && rawArgs !== null
+          ? rawArgs.query || rawArgs.prompt || rawArgs.text || rawArgs.path || JSON.stringify(rawArgs)
+          : ''
 
     try {
       // 1. YouTube Search
       if (tool === 'yt-search') {
-        const q = typeof rawArgs === 'object' && rawArgs.query ? rawArgs.query : query
+        const q = typeof rawArgs === 'object' && rawArgs?.query ? rawArgs.query : stringQuery
         const ytResults = await window.api.searchYoutube(q)
         resultString = JSON.stringify(ytResults)
       }
       // 2. YouTube Summary
       else if (tool === 'yt-summary') {
-        const url = typeof rawArgs === 'object' && rawArgs.url ? rawArgs.url : query
+        const url = typeof rawArgs === 'object' && rawArgs?.url ? rawArgs.url : stringQuery
         targetSetChatData((prev) => [
           ...prev,
           {
@@ -464,16 +232,17 @@ export const useMarkPlan = ({
       }
       // 3. Music Control
       else if (tool.startsWith('music')) {
-        resultString = await handleMusic(tool, query, targetSetChatData)
+        const musicQuery = typeof rawArgs === 'object' && rawArgs?.query ? rawArgs.query : stringQuery
+        resultString = await handleMusic(tool, musicQuery, targetSetChatData)
       }
       // 4. Memory Vector Search
       else if (tool === 'memory-search') {
-        const q = typeof rawArgs === 'object' && rawArgs.query ? rawArgs.query : query
+        const q = typeof rawArgs === 'object' && rawArgs?.query ? rawArgs.query : stringQuery
         resultString = await executeMemorySearch(q)
       }
       // 5. Memory Management Tool
       else if (tool === 'manage-memory') {
-        const memArgs = typeof rawArgs === 'object' ? rawArgs : {}
+        const memArgs = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
         const action = memArgs.action || 'insert'
         const type = memArgs.type || 'profile'
         const summary = memArgs.summary || ''
@@ -499,7 +268,7 @@ export const useMarkPlan = ({
                 return {
                   resultString,
                   rejected: false,
-                  toolExecution: { action: tool, query, result: resultString }
+                  toolExecution: { action: tool, query: stringQuery, result: resultString }
                 }
               }
             }
@@ -525,7 +294,7 @@ export const useMarkPlan = ({
       }
       // 6. Working Memory Update Tool
       else if (tool === 'update-working-memory') {
-        const notes = typeof rawArgs === 'object' && rawArgs.notes ? rawArgs.notes : query
+        const notes = typeof rawArgs === 'object' && rawArgs?.notes ? rawArgs.notes : stringQuery
         if (context?.workspaceRoot && notes) {
           await saveWorkspaceWorkingMemory(context.workspaceRoot, { notes })
           resultString = `Catatan progres koding berhasil disimpan ke .mark/working-memory.json.`
@@ -535,7 +304,7 @@ export const useMarkPlan = ({
       }
       // 7. Speak (TTS)
       else if (tool === 'speak') {
-        const textToSpeak = typeof rawArgs === 'object' && rawArgs.text ? rawArgs.text : query
+        const textToSpeak = typeof rawArgs === 'object' && rawArgs?.text ? rawArgs.text : stringQuery
         if (textToSpeak && textToSpeak.trim() !== '') {
           targetSetChatData((prev) => {
             const filtered = prev.filter((item) => !item.isThinking)
@@ -580,10 +349,15 @@ export const useMarkPlan = ({
               { role: 'ai', content: 'Memproses Vision AI...', isThinking: true }
             ])
 
+            const promptText =
+              (typeof rawArgs === 'object' && rawArgs?.prompt) ||
+              (typeof rawArgs === 'string' ? rawArgs : '') ||
+              'Jelaskan apa yang kamu lihat di layar ini secara ringkas.'
+
             const contentArray = [
               {
                 type: 'text',
-                text: query || 'Jelaskan apa yang kamu lihat di layar ini secara ringkas.'
+                text: promptText
               },
               ...screenArray.map((scr) => ({
                 type: 'image_url',
@@ -638,10 +412,15 @@ export const useMarkPlan = ({
                 { role: 'ai', content: 'Menganalisis hasil kamera...', isThinking: true }
               ])
 
+              const promptText =
+                (typeof rawArgs === 'object' && rawArgs?.prompt) ||
+                (typeof rawArgs === 'string' ? rawArgs : '') ||
+                'Jelaskan dengan detail apa yang terlihat dari kamera ini.'
+
               const contentArray = [
                 {
                   type: 'text',
-                  text: query || 'Jelaskan dengan detail apa yang terlihat dari kamera ini.'
+                  text: promptText
                 },
                 { type: 'image_url', image_url: { url: cameraFrame } }
               ]
@@ -668,16 +447,16 @@ export const useMarkPlan = ({
       }
       // 11. Built-in Native Tools & Sub-Agent Orchestration
       else if (checkTools(tool)) {
-        const approvalCheck = await window.api.checkToolApproval(tool, query)
+        const approvalCheck = await window.api.checkToolApproval(tool, rawArgs)
 
         if (approvalCheck.needsApproval && requestApproval) {
-          const userApproved = await requestApproval(approvalCheck.message, tool, query)
+          const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs)
           if (!userApproved) {
             resultString = `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
             return {
               resultString,
               rejected: true,
-              toolExecution: { action: tool, query, result: resultString }
+              toolExecution: { action: tool, query: stringQuery, result: resultString }
             }
           }
         }
@@ -686,19 +465,20 @@ export const useMarkPlan = ({
         if (tool === 'spawn_subagent') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')
           const { runSubagentTurn } = await import('../../api/subagent/subagentExecutor.js')
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const parts = (query || '').split('||')
-          const name = a.name || parts[0]?.trim() || 'Specialist-Agent'
-          const role = a.role || parts[1]?.trim() || 'Technical Specialist'
-          const goal = a.goal || parts[2]?.trim() || 'Selesaikan misi teknis'
-          const initialMessage = a.initial_message || parts[3]?.trim() || goal
-          const rawTools = a.tools || parts[4]
-          const tools = rawTools
-            ? String(rawTools)
-                .split(',')
-                .map((t) => t.trim())
-                .filter(Boolean)
-            : ['*']
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const name = a.name || 'Specialist-Agent'
+          const role = a.role || 'Technical Specialist'
+          const goal = a.goal || 'Selesaikan misi teknis'
+          const initialMessage = a.initial_message || goal
+          const rawTools = a.tools
+          const tools = Array.isArray(rawTools)
+            ? rawTools
+            : rawTools
+              ? String(rawTools)
+                  .split(',')
+                  .map((t) => t.trim())
+                  .filter(Boolean)
+              : ['*']
 
           const sub = await subagentStore.createSubagent({
             name,
@@ -720,10 +500,9 @@ export const useMarkPlan = ({
         } else if (tool === 'message_agent') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')
           const { runSubagentTurn } = await import('../../api/subagent/subagentExecutor.js')
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const parts = (query || '').split('||')
-          const targetQuery = a.target_agent || a.targetAgent || parts[0]?.trim()
-          const msgText = a.message || parts[1]?.trim()
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const targetQuery = a.target_agent || a.targetAgent || ''
+          const msgText = a.message || ''
 
           if (!targetQuery || !msgText) {
             res = {
@@ -758,20 +537,21 @@ export const useMarkPlan = ({
           }
         } else if (tool === 'wait_subagents') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const parts = (query || '').split('||')
-          const targetIdsRaw = a.targets || parts[0]?.trim() || 'all'
-          const maxWaitSeconds = Number(a.timeout || parts[1]?.trim() || 40) || 40
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const targetIdsRaw = a.targets || 'all'
+          const maxWaitSeconds = Number(a.timeout || 40) || 40
 
           let targetIds = []
           if (targetIdsRaw === 'all' || !targetIdsRaw) {
             const running = await subagentStore.listSubagents('running')
             targetIds = running.map((s) => s.id)
           } else {
-            targetIds = String(targetIdsRaw)
-              .split(',')
-              .map((id) => id.trim())
-              .filter(Boolean)
+            targetIds = Array.isArray(targetIdsRaw)
+              ? targetIdsRaw
+              : String(targetIdsRaw)
+                  .split(',')
+                  .map((id) => id.trim())
+                  .filter(Boolean)
           }
 
           if (targetIds.length === 0) {
@@ -847,10 +627,9 @@ export const useMarkPlan = ({
           }
         } else if (tool === 'send_message') {
           const { runSubagentTurn } = await import('../../api/subagent/subagentExecutor.js')
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const parts = (query || '').split('||')
-          const targetId = a.subagent_id || parts[0]?.trim()
-          const msgText = a.message || parts[1]?.trim()
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const targetId = a.subagent_id || ''
+          const msgText = a.message || ''
 
           if (!targetId || !msgText) {
             res = {
@@ -870,8 +649,8 @@ export const useMarkPlan = ({
           }
         } else if (tool === 'list_subagents') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const filter = a.status || (query ? query.trim().toLowerCase() : null)
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const filter = a.status || (typeof rawArgs === 'string' ? rawArgs.trim().toLowerCase() : null)
           const list = await subagentStore.listSubagents(filter)
           if (!list || list.length === 0) {
             res = { success: true, data: 'Tidak ada sub-agent yang aktif/tersedia saat ini.' }
@@ -886,9 +665,8 @@ export const useMarkPlan = ({
           }
         } else if (tool === 'kill_subagent') {
           const { killSubagentExecution } = await import('../../api/subagent/subagentExecutor.js')
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const parts = (query || '').split('||')
-          const targetId = a.subagent_id || parts[0]?.trim()
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const targetId = a.subagent_id || (typeof rawArgs === 'string' ? rawArgs.trim() : '')
           if (!targetId) {
             res = { success: false, error: 'Sebutkan subagent_id yang ingin dihentikan.' }
           } else {
@@ -898,8 +676,8 @@ export const useMarkPlan = ({
         } else if (tool === 'read-tools') {
           const { group_tools } = await import('../../api/tools/group-tools.js')
           const groups = await group_tools()
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const groupName = (a.group_name || query || '').trim()
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const groupName = (a.group_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()
           if (!groupName) {
             res = {
               success: false,
@@ -921,8 +699,8 @@ export const useMarkPlan = ({
             }
           }
         } else if (tool === 'read-skill') {
-          const a = typeof rawArgs === 'object' ? rawArgs : {}
-          const skillName = (a.skill_name || query || '').trim()
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const skillName = (a.skill_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()
           if (!skillName) {
             res = { success: false, message: 'Harap sebutkan skill_name yang ingin dibaca.' }
           } else {
@@ -975,7 +753,7 @@ export const useMarkPlan = ({
             ...(Array.isArray(config) ? config[0] : config),
             workspaceRoot: context?.workspaceRoot
           }
-          const nativePromise = window.api.executeNativeTool(tool, query, activeConfig)
+          const nativePromise = window.api.executeNativeTool(tool, rawArgs, activeConfig)
           const abortPromise = new Promise((_, reject) => {
             const onAbort = () => reject(new Error('AbortError'))
             if (currentSignal?.aborted) return onAbort()
@@ -1003,7 +781,6 @@ export const useMarkPlan = ({
 
           // Pemotongan isi dokumen jika terlalu panjang
           if (tool === 'read-document') {
-            const parts = query.split('||')
             let fullText =
               typeof res.data === 'object' && res.data !== null
                 ? res.data.content || ''
@@ -1019,7 +796,7 @@ export const useMarkPlan = ({
         return {
           resultString,
           rejected: false,
-          toolExecution: { action: tool, query, result: resultString },
+          toolExecution: { action: tool, query: stringQuery, result: resultString },
           loadedGroup: res?.loaded_group || null
         }
       }
@@ -1029,10 +806,10 @@ export const useMarkPlan = ({
           id: pluginProcessId,
           type: 'plugin-execution',
           status: 'active',
-          data: { action: tool, query }
+          data: { action: tool, query: stringQuery }
         })
 
-        const pluginPromise = window.api.executePlugin(tool, query)
+        const pluginPromise = window.api.executePlugin(tool, rawArgs)
         const abortPromise = new Promise((_, reject) => {
           const onAbort = () => reject(new Error('AbortError'))
           if (currentSignal?.aborted) return onAbort()
@@ -1050,13 +827,13 @@ export const useMarkPlan = ({
           id: pluginProcessId,
           type: 'plugin-execution',
           status: 'done',
-          data: { action: tool, query, result: resultString }
+          data: { action: tool, query: stringQuery, result: resultString }
         })
 
         return {
           resultString,
           rejected: false,
-          toolExecution: { action: tool, query, result: resultString }
+          toolExecution: { action: tool, query: stringQuery, result: resultString }
         }
       }
     } catch (toolError) {
@@ -1069,7 +846,7 @@ export const useMarkPlan = ({
     return {
       resultString,
       rejected: false,
-      toolExecution: { action: tool, query, result: resultString }
+      toolExecution: { action: tool, query: stringQuery, result: resultString }
     }
   }
 

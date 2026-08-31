@@ -33,49 +33,58 @@ function getCurrentTimeInfo() {
 /**
  * Eksekusi tool native secara langsung di server
  */
-async function executeTool(toolName, query) {
-  wsHub.emitToolStatus(toolName, 'running', { query })
+async function executeTool(toolName, args) {
+  wsHub.emitToolStatus(toolName, 'running', { query: typeof args === 'object' ? JSON.stringify(args) : String(args) })
 
   try {
+    const isObj = typeof args === 'object' && args !== null
     switch (toolName) {
       case 'os-read': {
         const res = await readDesktop()
         return typeof res === 'string' ? res : JSON.stringify(res)
       }
       case 'os-click': {
-        const [x, y] = (query || '').split('||').map(Number)
+        const x = isObj ? Number(args.x || args.target?.split(',')[0]) : Number(String(args).split('||')[0])
+        const y = isObj ? Number(args.y || args.target?.split(',')[1]) : Number(String(args).split('||')[1])
         return await executeClick(x, y)
       }
       case 'os-type': {
-        const [text] = (query || '').split('||')
+        const text = isObj ? (args.text || '') : String(args || '')
         return await executeType(text)
       }
       case 'os-key': {
-        return await executeKey(query)
+        const combo = isObj ? (args.combo || args.key || '') : String(args || '')
+        return await executeKey(combo)
       }
       case 'os-scroll': {
-        const [dir, amt] = (query || '').split('||')
-        return await executeScroll(dir || 'down', Number(amt) || 3)
+        const dir = isObj ? (args.direction || 'down') : (String(args || '').split('||')[0] || 'down')
+        const amt = isObj ? Number(args.amount || 3) : (Number(String(args || '').split('||')[1]) || 3)
+        return await executeScroll(dir, amt)
       }
       case 'os-open': {
-        return await executeApp(query)
+        const target = isObj ? (args.target || args.app || '') : String(args || '')
+        return await openApp(target)
       }
       case 'os-list-windows': {
         const res = await listWindows()
         return JSON.stringify(res)
       }
       case 'os-focus-window': {
-        return await focusWindow(query)
+        const title = isObj ? (args.title || '') : String(args || '')
+        return await focusWindow(title)
       }
       case 'search-youtube': {
+        const query = isObj ? (args.query || '') : String(args || '')
         const res = await searchYoutube(query)
         return JSON.stringify(res)
       }
       case 'youtube-transcript': {
-        return await getTranscript(query)
+        const url = isObj ? (args.url || '') : String(args || '')
+        return await getTranscript(url)
       }
       case 'tts-speak': {
-        const { audioBase64 } = await synthesizeTTS(query)
+        const text = isObj ? (args.text || '') : String(args || '')
+        const { audioBase64 } = await synthesizeTTS(text)
         wsHub.broadcast('audio:play', { audioBase64 })
         return 'Suara berhasil disintesis dan diputar ke antarmuka.'
       }

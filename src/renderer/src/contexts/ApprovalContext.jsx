@@ -5,7 +5,12 @@ import { getAlwaysAllowedPaths, addAlwaysAllowedPath } from '../api/db'
 const ApprovalContext = createContext()
 
 function getPathFromQuery(query) {
-  if (!query || typeof query !== 'string') return ''
+  if (!query) return ''
+  if (typeof query === 'object' && query !== null) {
+    const rawPath = query.path || query.filePath || query.cwd || ''
+    return rawPath.replace(/^["']|["']$/g, '').replace(/[\\/]+/g, '/').toLowerCase()
+  }
+  if (typeof query !== 'string') return ''
   const firstPart = query.split('||')[0].trim()
   return firstPart.replace(/^["']|["']$/g, '').replace(/[\\/]+/g, '/').toLowerCase()
 }

@@ -8,228 +8,6 @@ import { GROUP_TOOLS_SCHEMA } from '../tools/group-tools'
 const subagentAbortControllers = new Map()
 
 /**
- * Normalisasi query/argumen tool OpenAPI ke parameter native tool execution
- */
-const normalizeSubagentToolQuery = (tool, queryOrArgs) => {
-  if (typeof queryOrArgs === 'string') return queryOrArgs
-  if (!queryOrArgs || typeof queryOrArgs !== 'object') return ''
-
-  const a = queryOrArgs
-
-  switch (tool) {
-    case 'read-file':
-      if (a.start_line !== undefined && a.end_line !== undefined) {
-        return `${a.path || ''}||${a.start_line}||${a.end_line}`
-      }
-      return a.path || ''
-
-    case 'write-file':
-      return `${a.path || ''}||${a.content || ''}`
-
-    case 'replace-content':
-      return `${a.path || ''}||${a.target_content || ''}||${a.replacement_content || ''}`
-
-    case 'replace-lines':
-      return `${a.path || ''}||${a.start_line || 1}||${a.end_line || 1}||${a.new_code || ''}`
-
-    case 'delete-file':
-    case 'file-outline':
-      return a.path || ''
-
-    case 'list-dir':
-      return a.path || ''
-
-    case 'find-files':
-      if (a.subfolder) return `${a.pattern || ''}||${a.subfolder}`
-      return a.pattern || ''
-
-    case 'grep-search':
-      if (a.path) return `${a.keyword || ''}||${a.path}`
-      return a.keyword || ''
-
-    case 'read-document':
-      if (a.keyword) return `${a.path || ''}||${a.keyword}`
-      return a.path || ''
-
-    case 'read-tools':
-      return a.group_name || ''
-
-    case 'run-powershell':
-      return a.command || ''
-
-    case 'open':
-      return a.target || ''
-
-    case 'browser-navigate':
-      return a.url || ''
-
-    case 'browser-read':
-    case 'browser-show':
-    case 'browser-hide':
-      return ''
-
-    case 'browser-click':
-      return String(a.element_id ?? '')
-
-    case 'browser-type':
-      return `${a.element_id ?? ''}||${a.text || ''}`
-
-    case 'browser-scroll':
-      return a.direction || 'down'
-
-    case 'browser-extract':
-      return a.selector || ''
-
-    case 'browser-script':
-      return a.script || ''
-
-    case 'browser-screenshot':
-      return a.filename || 'screenshot.png'
-
-    case 'browser-download':
-      return `${a.url || ''}||${a.filename || ''}`
-
-    case 'browser-ask-user':
-      return a.prompt || ''
-
-    case 'browser-close':
-      return ''
-
-    case 'os-click':
-    case 'os-double-click':
-      return String(a.target || '')
-
-    case 'os-type':
-      return a.text || ''
-
-    case 'os-key':
-      return a.combo || ''
-
-    case 'os-scroll':
-      return `${a.direction || 'down'}||${a.amount || 3}`
-
-    case 'os-delay':
-      return String(a.ms || 1000)
-
-    case 'os-search':
-      return a.keyword || ''
-
-    case 'os-focus-window':
-      return a.title || ''
-
-    case 'os-list-windows':
-    case 'os-control-open':
-    case 'os-control-close':
-      return ''
-
-    case 'gdrive-info':
-      return 'all'
-
-    case 'gdrive-search':
-      if (a.pagination) return `${a.query || ''}||${a.pagination}`
-      return a.query || ''
-
-    case 'gdrive-list':
-      if (a.pagination) return `${a.folder_id || ''}||${a.pagination}`
-      return a.folder_id || ''
-
-    case 'gdrive-read':
-      return a.file_id || ''
-
-    case 'gdrive-upload':
-      return `${a.name || ''}||${a.content || ''}`
-
-    case 'gdrive-create':
-      return `${a.name || ''}||${a.type || 'doc'}`
-
-    case 'gdrive-move':
-      return `${a.file_id || ''}||${a.folder_id || ''}`
-
-    case 'gdrive-copy':
-      return `${a.file_id || ''}||${a.new_name || ''}`
-
-    case 'gcalendar-list':
-      if (a.time_min) return `${a.pagination || '0-10'}||${a.time_min}`
-      return a.pagination || '0-10'
-
-    case 'gcalendar-create':
-      return `${a.summary || ''}||${a.description || ''}||${a.start_time || ''}||${a.end_time || ''}`
-
-    case 'gcalendar-delete':
-      return a.event_id || ''
-
-    case 'gmail-search':
-      if (a.pagination) return `${a.query || 'is:unread'}||${a.pagination}`
-      return a.query || 'is:unread'
-
-    case 'gmail-list':
-      return a.pagination || '0-10'
-
-    case 'gmail-read':
-    case 'gmail-mark-read':
-      return a.message_id || ''
-
-    case 'gmail-send':
-      return `${a.to || ''}||${a.subject || ''}||${a.body || ''}`
-
-    case 'screenshot-to-tg':
-      return ''
-
-    case 'tg-send':
-      return `${a.chat_id || ''}||${a.type || 'text'}||${a.content || ''}`
-
-    case 'speak':
-      return a.text || ''
-
-    case 'analyze-screen':
-    case 'camera-look':
-      return a.query || ''
-
-    case 'yt-search':
-      return a.query || ''
-
-    case 'yt-summary':
-      return a.url || ''
-
-    case 'music-play':
-      return a.title || ''
-
-    case 'music-toggle':
-    case 'music-next':
-    case 'music-prev':
-      return ''
-
-    case 'git-status':
-      return a.path || ''
-
-    case 'git-diff':
-      return a.file_path || ''
-
-    case 'git-commit':
-      return a.message || ''
-
-    case 'git-revert':
-      return a.file_path || ''
-
-    case 'run-task':
-      return `${a.task_id || ''}||${a.command || ''}`
-
-    case 'read-task-output':
-      return `${a.task_id || ''}||${a.lines || 50}`
-
-    case 'kill-task':
-      return a.task_id || ''
-
-    case 'memory-search':
-      return a.query || ''
-
-    default:
-      if (a.query) return a.query
-      return JSON.stringify(a)
-  }
-}
-
-/**
  * Menjalankan satu putaran eksekusi ReAct untuk sub-agent menggunakan Native Function Calling & SSE Streaming.
  * @param {string} subagentId ID sub-agent
  * @param {string|null} incomingMessage Pesan baru dari Lead Agent (Mark) atau User
@@ -392,13 +170,12 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
 
           if (!toolName || abortController.signal.aborted) continue
 
-          const query = normalizeSubagentToolQuery(toolName, parsedArgs)
           let resultString = ''
 
           try {
             let res
             if (toolName === 'message_agent') {
-              const targetQuery = parsedArgs.target_agent || parsedArgs.targetAgent || query || ''
+              const targetQuery = parsedArgs.target_agent || parsedArgs.targetAgent || ''
               const msgText = parsedArgs.message || ''
 
               if (!targetQuery || !msgText) {
@@ -437,7 +214,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                 }
               }
             } else if (toolName === 'report_to_lead') {
-              const summary = parsedArgs.summary || query || 'Misi telah selesai.'
+              const summary = parsedArgs.summary || 'Misi telah selesai.'
               const artifact = parsedArgs.artifact || null
 
               // Broadcast push notification ke WebSocket Hub jika tersedia
@@ -466,7 +243,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
             } else if (toolName === 'read-tools') {
               const { group_tools } = await import('../tools/group-tools.js')
               const groups = await group_tools()
-              const groupName = (parsedArgs.group_name || query || '').trim()
+              const groupName = (parsedArgs.group_name || '').trim()
               if (!groupName) {
                 res = { success: false, error: 'Harap sebutkan nama_grup (misal: "advanced_browser").' }
               } else if (groups[groupName]) {
@@ -479,10 +256,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               }
             } else if (toolName === 'memory-search') {
               const { executeMemorySearch } = await import('../vectorMemory.js')
-              const formatted = await executeMemorySearch(parsedArgs.query || query)
+              const formatted = await executeMemorySearch(parsedArgs.query || '')
               res = { success: true, data: formatted }
             } else if (window.api && window.api.executeNativeTool) {
-              res = await window.api.executeNativeTool(toolName, query, { sessionId: subagentId })
+              res = await window.api.executeNativeTool(toolName, parsedArgs, { sessionId: subagentId })
             } else {
               res = { success: false, error: 'IPC executeNativeTool tidak tersedia.' }
             }
