@@ -5,7 +5,6 @@ import InputBar from '../components/core/InputBar'
 import ResponseArea from '../components/core/ResponseArea'
 import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
-import HistoryDrawer from '../components/core/HistoryDrawer'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
 import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
 import BrowserPreviewWidget from '../components/core/BrowserPreviewWidget'
@@ -48,7 +47,6 @@ const MarkHome = () => {
   const { isPlaying, currentTrack } = useYoutubeMusic()
   useMemoryGroomer(true)
 
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isChatStudioOpen, setIsChatStudioOpen] = useState(false)
   const [currentResponse, setCurrentResponse] = useState(null)
   const [showMusicWidget, setShowMusicWidget] = useState(false)
@@ -272,7 +270,7 @@ const MarkHome = () => {
       <header className="absolute top-0 inset-x-0 h-14 px-6 z-40 flex items-center justify-between">
         {/* Left: Menu & Studio */}
         <div className="flex items-center gap-2.5">
-          <FloatingMenu onOpenHistory={() => setIsHistoryOpen(false)} />
+          <FloatingMenu />
           <button
             onClick={() => setIsChatStudioOpen(true)}
             className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-2 transition-all text-white/80 hover:text-white rounded-xl cursor-pointer text-xs font-mono font-semibold"
@@ -451,8 +449,7 @@ const MarkHome = () => {
         />
       </footer>
 
-      {/* Drawers & Modals */}
-      <HistoryDrawer isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
+      {/* Modals */}
       <ChatStudioModal
         isOpen={isChatStudioOpen}
         onClose={() => setIsChatStudioOpen(false)}

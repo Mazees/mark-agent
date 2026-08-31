@@ -2,9 +2,13 @@ import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import pkg from './package.json'
 
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version)
+  },
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer/src'),

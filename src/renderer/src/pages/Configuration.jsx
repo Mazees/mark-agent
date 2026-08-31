@@ -761,9 +761,6 @@ const handleSaveConfiguration = async () => {
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-sm font-semibold">Transparansi Lapisan Layar (Background Overlay)</p>
-                    <p className="text-xs opacity-50">
-                      Mengatur tingkat kegelapan lapisan di atas tata surya kosmik agar teks dan avatar tetap terbaca kontras.
-                    </p>
                   </div>
                   <span className="text-xs font-mono font-bold bg-primary/20 text-primary px-2.5 py-1 rounded-lg border border-primary/30">
                     {config.bgOverlayOpacity ?? 65}% Kegelapan
@@ -784,7 +781,7 @@ const handleSaveConfiguration = async () => {
                       return updated
                     })
                   }}
-                  className="range range-primary range-sm w-full"
+                  className="range range-primary range-xs w-full  "
                 />
 
                 <div className="flex justify-between text-[10px] font-mono opacity-50">
