@@ -972,9 +972,27 @@ app.get('/api/tts/stream', async (req, res) => {
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Transfer-Encoding', 'chunked')
     res.setHeader('Cache-Control', 'no-cache, no-store')
+
+    // Handle client disconnect gracefully without crashing the server or hanging the socket
+    req.on('close', () => {
+      if (!audioStream.destroyed) {
+        audioStream.destroy()
+      }
+    })
+
+    audioStream.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: err.message })
+      } else {
+        res.end()
+      }
+    })
+
     audioStream.pipe(res)
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message })
+    }
   }
 })
 
@@ -986,9 +1004,26 @@ app.post('/api/tts/stream', async (req, res) => {
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Transfer-Encoding', 'chunked')
     res.setHeader('Cache-Control', 'no-cache, no-store')
+
+    req.on('close', () => {
+      if (!audioStream.destroyed) {
+        audioStream.destroy()
+      }
+    })
+
+    audioStream.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: err.message })
+      } else {
+        res.end()
+      }
+    })
+
     audioStream.pipe(res)
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message })
+    }
   }
 })
 

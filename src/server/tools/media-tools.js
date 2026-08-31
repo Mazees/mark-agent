@@ -5,6 +5,70 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 
+// Patch MsEdgeTTS prototype to prevent unhandled crashes when streams close prematurely or receive lingering packets
+if (!MsEdgeTTS.__mark_patched) {
+  MsEdgeTTS.__mark_patched = true
+
+  MsEdgeTTS.prototype._pushAudioData = function (data, requestId) {
+    if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
+      try {
+        if (!this._streams[requestId].audio.destroyed) {
+          this._streams[requestId].audio.push(data)
+        }
+      } catch (_) {}
+    }
+  }
+
+  MsEdgeTTS.prototype._pushMetadata = function (data, requestId) {
+    if (this._streams && this._streams[requestId] && this._streams[requestId].metadata) {
+      try {
+        if (!this._streams[requestId].metadata.destroyed) {
+          this._streams[requestId].metadata.push(data)
+        }
+      } catch (_) {}
+    }
+  }
+
+  const originalInitClient = MsEdgeTTS.prototype._initClient
+  MsEdgeTTS.prototype._initClient = async function () {
+    const res = await originalInitClient.apply(this, arguments)
+    if (this._ws) {
+      const origOnMessage = this._ws.onmessage
+      this._ws.onmessage = (m) => {
+        try {
+          const buffer = Buffer.from(m.data)
+          const message = buffer.toString()
+          const match = /X-RequestId:(.*?)\r\n/gm.exec(message)
+          const requestId = match ? match[1] : null
+
+          if (message.includes('Path:turn.end') && requestId) {
+            if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
+              try {
+                if (!this._streams[requestId].audio.destroyed) {
+                  this._streams[requestId].audio.push(null)
+                }
+              } catch (_) {}
+            }
+            return
+          }
+
+          if (origOnMessage) {
+            origOnMessage.call(this._ws, m)
+          }
+        } catch (_) {
+          // Ignore unparseable or orphaned socket packets
+        }
+      }
+
+      this._ws.onerror = (error) => {
+        // Prevent unhandled WebSocket error from crashing the process
+        console.warn('[Edge-TTS] WebSocket connection error:', error?.message || error)
+      }
+    }
+    return res
+  }
+}
+
 const TEMP_DIR = path.join(os.tmpdir(), 'mark-audio')
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true })
