@@ -59,6 +59,15 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Global crash safety: prevent unhandled promise rejections (e.g. transient TTS/WebSocket errors) from crashing the server
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Server Warning] Handled UnhandledRejection:', typeof reason === 'string' ? reason : reason?.message || reason)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('[Server Error] Handled UncaughtException:', err?.message || err)
+})
+
 // Filter out DaisyUI CSS banner from leaking into stdout
 const _origStdoutWrite = process.stdout.write.bind(process.stdout)
 process.stdout.write = (chunk, encoding, callback) => {

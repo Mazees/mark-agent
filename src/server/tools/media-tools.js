@@ -5,7 +5,8 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 
-// Patch MsEdgeTTS prototype to prevent unhandled crashes when streams close prematurely or receive lingering packets
+// Patch MsEdgeTTS prototype to prevent unhandled crashes when streams close prematurely,
+// when connections are rejected, or when WebSocket events throw without handler.
 if (!MsEdgeTTS.__mark_patched) {
   MsEdgeTTS.__mark_patched = true
 
@@ -29,43 +30,77 @@ if (!MsEdgeTTS.__mark_patched) {
     }
   }
 
+  // Override _rawSSMLRequest to catch internal _send().then() rejections
+  const originalRawSSMLRequest = MsEdgeTTS.prototype._rawSSMLRequest
+  MsEdgeTTS.prototype._rawSSMLRequest = function (requestSSML) {
+    const result = originalRawSSMLRequest.apply(this, arguments)
+    // Tangkap error jika _send() gagal tersambung ke server Microsoft
+    if (this._lastSendPromise && typeof this._lastSendPromise.catch === 'function') {
+      this._lastSendPromise.catch((err) => {
+        if (result?.audioStream && !result.audioStream.destroyed) {
+          result.audioStream.destroy(new Error(typeof err === 'string' ? err : err?.message || 'TTS connection failed'))
+        }
+      })
+    }
+    return result
+  }
+
+  // Patch _send to store promise and avoid dangling unhandled rejection
+  const originalSend = MsEdgeTTS.prototype._send
+  MsEdgeTTS.prototype._send = async function (message) {
+    try {
+      const p = originalSend.apply(this, arguments)
+      this._lastSendPromise = p
+      return await p
+    } catch (err) {
+      // Catch connection errors cleanly so Node does not trigger UnhandledPromiseRejection
+      console.warn('[Edge-TTS] _send connection warning:', typeof err === 'string' ? err : err?.message || err)
+      throw err
+    }
+  }
+
   const originalInitClient = MsEdgeTTS.prototype._initClient
   MsEdgeTTS.prototype._initClient = async function () {
-    const res = await originalInitClient.apply(this, arguments)
-    if (this._ws) {
-      const origOnMessage = this._ws.onmessage
-      this._ws.onmessage = (m) => {
-        try {
-          const buffer = Buffer.from(m.data)
-          const message = buffer.toString()
-          const match = /X-RequestId:(.*?)\r\n/gm.exec(message)
-          const requestId = match ? match[1] : null
+    try {
+      const res = await originalInitClient.apply(this, arguments)
+      if (this._ws) {
+        const origOnMessage = this._ws.onmessage
+        this._ws.onmessage = (m) => {
+          try {
+            const buffer = Buffer.from(m.data)
+            const message = buffer.toString()
+            const match = /X-RequestId:(.*?)\r\n/gm.exec(message)
+            const requestId = match ? match[1] : null
 
-          if (message.includes('Path:turn.end') && requestId) {
-            if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
-              try {
-                if (!this._streams[requestId].audio.destroyed) {
-                  this._streams[requestId].audio.push(null)
-                }
-              } catch (_) {}
+            if (message.includes('Path:turn.end') && requestId) {
+              if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
+                try {
+                  if (!this._streams[requestId].audio.destroyed) {
+                    this._streams[requestId].audio.push(null)
+                  }
+                } catch (_) {}
+              }
+              return
             }
-            return
-          }
 
-          if (origOnMessage) {
-            origOnMessage.call(this._ws, m)
+            if (origOnMessage) {
+              origOnMessage.call(this._ws, m)
+            }
+          } catch (_) {
+            // Ignore unparseable or orphaned socket packets
           }
-        } catch (_) {
-          // Ignore unparseable or orphaned socket packets
+        }
+
+        this._ws.onerror = (error) => {
+          // Prevent unhandled WebSocket error from crashing the process
+          console.warn('[Edge-TTS] WebSocket connection error:', error?.message || error)
         }
       }
-
-      this._ws.onerror = (error) => {
-        // Prevent unhandled WebSocket error from crashing the process
-        console.warn('[Edge-TTS] WebSocket connection error:', error?.message || error)
-      }
+      return res
+    } catch (connectErr) {
+      console.warn('[Edge-TTS] _initClient error:', typeof connectErr === 'string' ? connectErr : connectErr?.message || connectErr)
+      throw connectErr
     }
-    return res
   }
 }
 
@@ -116,12 +151,18 @@ export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitc
     const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
     return streamObj.audioStream
   } catch (err) {
-    // Retry sekali jika socket terputus/stale
+    // Retry sekali dengan membuat koneksi baru jika socket sebelumnya terputus/stale
+    console.warn('[Edge-TTS] Re-initializing stale TTS instance after error:', err?.message || err)
     persistentTTSInstance = null
     currentConfiguredVoice = null
-    const tts = await getOrCreateTTSInstance(selectedVoice)
-    const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
-    return streamObj.audioStream
+    try {
+      const tts = await getOrCreateTTSInstance(selectedVoice)
+      const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
+      return streamObj.audioStream
+    } catch (retryErr) {
+      console.error('[Edge-TTS] Failed to stream TTS on retry:', retryErr?.message || retryErr)
+      throw retryErr
+    }
   }
 }
 
@@ -178,15 +219,23 @@ export async function searchYoutube(query) {
 }
 
 /**
- * Ambil transkrip video YouTube
+ * Mengambil transkrip dari video YouTube
  * @param {string} url
+ * @param {string} [lang='id']
  */
-export async function getTranscript(url) {
-  if (!url) return ''
+export async function getTranscript(url, lang = 'id') {
+  if (!url || typeof url !== 'string') return ''
   try {
-    const transcript = await YoutubeTranscript.fetchTranscript(url)
-    return transcript.map((t) => t.text).join(' ')
+    const transcriptList = await YoutubeTranscript.fetchTranscript(url, { lang })
+    if (transcriptList && transcriptList.length > 0) {
+      return transcriptList.map((t) => t.text).join(' ')
+    }
+    // Fallback tanpa filter bahasa jika bahasa target tidak tersedia
+    const fallbackList = await YoutubeTranscript.fetchTranscript(url)
+    return fallbackList.map((t) => t.text).join(' ')
   } catch (err) {
-    throw new Error(`Gagal mengambil transkrip: ${err.message}`)
+    console.warn('[YouTube Transcript] Gagal mengambil transkrip:', err?.message || err)
+    return `Gagal mengambil transkrip video: ${err?.message || 'Video tidak memiliki transkrip atau dibatasi'}`
   }
 }
+

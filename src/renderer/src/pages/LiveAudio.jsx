@@ -9,7 +9,7 @@ import {
   isWebSpeechSupported
 } from '../api/webSpeech'
 import { detectWakeWord, cleanSpokenCommand } from '../api/wakeWord'
-import { FaChevronLeft, FaMicrophone, FaStop, FaExclamationTriangle } from 'react-icons/fa'
+import { FaChevronLeft, FaMicrophone, FaStop, FaExclamationTriangle, FaHandPaper } from 'react-icons/fa'
 
 const LiveAudio = () => {
   const {
@@ -94,34 +94,27 @@ const LiveAudio = () => {
       return
     }
 
+    // Jika saat ini sedang memutar suara AI (speaking), jangan aktifkan mic agar tidak terjadi loopback
+    if (statusRef.current === 'speaking') {
+      return
+    }
+
     await refreshConfig()
     const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
     const customWakeWords = currentConfigRef.current?.customWakeWords || ''
 
-    stopRecognitionCleanup()
+    stopWebSpeechRecognition()
+    recognitionRef.current = null
 
     try {
       const rec = await startWebSpeechRecognition({
         lang,
         continuous: true,
-        onInterim: (_interim) => {
-          // Barge-in: jika user mulai bicara saat AI sedang bicara, hentikan suara AI seketika
-          if (statusRef.current === 'speaking' && audioRef.current) {
-            audioRef.current.pause()
-            audioRef.current = null
-            window.isMarkSpeaking = false
-            setStatus('listening')
-          }
-        },
         onResult: (finalText) => {
           if (!finalText || !finalText.trim()) return
 
-          // Hentikan suara AI jika sedang bersuara (barge-in)
-          if (audioRef.current) {
-            audioRef.current.pause()
-            audioRef.current = null
-            window.isMarkSpeaking = false
-          }
+          // Cegah eksekusi jika status sudah berubah ke thinking/speaking
+          if (statusRef.current === 'thinking' || statusRef.current === 'speaking') return
 
           const rawText = finalText.trim()
           const check = detectWakeWord(rawText, customWakeWords)
@@ -131,6 +124,8 @@ const LiveAudio = () => {
 
           if (commandToRun) {
             setStatus('thinking')
+            stopWebSpeechRecognition()
+            recognitionRef.current = null
             const fullMessage = `(Mikrofon) ${wakePrefix}${commandToRun}`.trim()
             setMessage(fullMessage)
             handlePlanningCommand(fullMessage)
@@ -140,10 +135,10 @@ const LiveAudio = () => {
           console.warn('[LiveAudio] Web Speech Error:', err.message)
         },
         onEnd: () => {
-          if (isActiveRef.current && statusRef.current !== 'thinking') {
-            // Restart listening jika masih aktif
+          // Restart listening jika sesi masih aktif dan tidak sedang thinking/speaking
+          if (isActiveRef.current && statusRef.current === 'listening') {
             setTimeout(() => {
-              if (isActiveRef.current && statusRef.current !== 'thinking') {
+              if (isActiveRef.current && statusRef.current === 'listening') {
                 startListeningSession()
               }
             }, 300)
@@ -160,15 +155,31 @@ const LiveAudio = () => {
       setIsActive(false)
       setStatus('idle')
     }
-  }, [handlePlanningCommand, setMessage, stopRecognitionCleanup])
+  }, [handlePlanningCommand, setMessage])
 
+  // Tap-to-Interrupt & Mic Toggle Handler
   const handleMicToggle = useCallback(async () => {
+    // 1. Jika Mark sedang berbicara -> TAP TO INTERRUPT (Sela Mark seketika dan buka mic)
+    if (statusRef.current === 'speaking') {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      window.isMarkSpeaking = false
+      setStatus('listening')
+      await startListeningSession()
+      return
+    }
+
+    // 2. Jika sesi aktif (sedang mendengarkan / thinking) -> Matikan sesi
     if (isActive) {
       setIsActive(false)
       setStatus('idle')
       stopRecognitionCleanup()
     } else {
+      // 3. Jika sedang idle -> Mulai sesi live
       setIsActive(true)
+      setStatus('listening')
       await startListeningSession()
     }
   }, [isActive, startListeningSession, stopRecognitionCleanup])
@@ -185,6 +196,10 @@ const LiveAudio = () => {
 
   const playAIResponse = useCallback(async (text) => {
     try {
+      // Stop Web Speech selama Mark berbicara agar suara speaker tidak masuk ke mic
+      stopWebSpeechRecognition()
+      recognitionRef.current = null
+
       setStatus('speaking')
       window.isMarkSpeaking = true
 
@@ -202,6 +217,7 @@ const LiveAudio = () => {
         audio.onended = () => {
           audioRef.current = null
           window.isMarkSpeaking = false
+          // Begitu Mark selesai bicara, otomatis aktifkan mic kembali (Auto-loop)
           if (isActiveRef.current) {
             setStatus('listening')
             startListeningSession()
@@ -271,9 +287,9 @@ const LiveAudio = () => {
       case 'listening':
         return 'Mendengarkan...'
       case 'thinking':
-        return 'Mark sedang memikirkan balasan...'
+        return 'Mark sedang memproses...'
       case 'speaking':
-        return 'Mark sedang berbicara...'
+        return 'Mark sedang berbicara'
       default:
         return 'Tap untuk mulai bicara'
     }
@@ -282,13 +298,13 @@ const LiveAudio = () => {
   const getStatusSubtext = () => {
     switch (status) {
       case 'idle':
-        return 'Tekan tombol mikrofon untuk memulai percakapan live dengan Mark'
+        return 'Tekan tombol mikrofon untuk memulai percakapan live'
       case 'listening':
-        return 'Silakan bicara, Mark sedang mendengarkan'
+        return 'Silakan bicara secara wajar, Mark sedang mendengarkan'
       case 'thinking':
-        return 'Tunggu sebentar, Mark sedang memproses ucapanmu'
+        return 'Menyiapkan respons dan sintesis suara...'
       case 'speaking':
-        return 'Tunggu sebentar, Mark sedang merespon'
+        return 'Tap tombol atau lingkaran di tengah untuk menyela ucapan Mark'
       default:
         return ''
     }
@@ -310,10 +326,10 @@ const LiveAudio = () => {
       {/* Ambient background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div
-          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl transition-all duration-1000 ${isActive ? 'scale-110 bg-primary/10' : 'scale-100'}`}
+          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 rounded-full bg-primary/5 blur-3xl transition-all duration-1000 ${isActive ? 'scale-110 bg-primary/10' : 'scale-100'}`}
         />
         <div
-          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-success/5 blur-3xl transition-all duration-1000 delay-200 ${isActive ? 'scale-125 bg-success/10' : 'scale-100'}`}
+          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-100 h-100 rounded-full bg-success/5 blur-3xl transition-all duration-1000 delay-200 ${isActive ? 'scale-125 bg-success/10' : 'scale-100'}`}
         />
       </div>
 
@@ -335,11 +351,15 @@ const LiveAudio = () => {
           </div>
           <h1 className="text-2xl font-bold">Live Audio</h1>
         </div>
-        <p className="text-sm opacity-50">Percakapan suara real-time dengan Mark</p>
+        <p className="text-sm opacity-50">Percakapan suara real-time tanpa jeda</p>
       </div>
 
-      {/* Audio Visualizer Circle */}
-      <div className="relative z-10 flex items-center justify-center mb-10">
+      {/* Audio Visualizer Circle (Clickable to interrupt when speaking) */}
+      <div
+        className={`relative z-10 flex items-center justify-center mb-10 ${status === 'speaking' ? 'cursor-pointer' : ''}`}
+        onClick={status === 'speaking' ? handleMicToggle : undefined}
+        title={status === 'speaking' ? 'Tap untuk menyela ucapan Mark' : undefined}
+      >
         {/* Outer pulse rings */}
         {isActive && (
           <>
@@ -360,7 +380,7 @@ const LiveAudio = () => {
           className={`relative w-52 h-52 rounded-full flex items-center justify-center transition-all duration-700 ${
             isActive
               ? status === 'speaking'
-                ? 'audio-glow-speaking'
+                ? 'audio-glow-speaking hover:scale-105'
                 : 'audio-glow-listening'
               : 'audio-glow-idle'
           }`}
@@ -405,7 +425,7 @@ const LiveAudio = () => {
       </div>
 
       {/* Status text */}
-      <div className="relative z-10 text-center mb-12 select-none">
+      <div className="relative z-10 text-center mb-10 select-none">
         <p
           className={`text-lg font-semibold mb-1 transition-colors duration-300 ${
             status === 'listening'
@@ -420,32 +440,45 @@ const LiveAudio = () => {
         <p className="text-sm opacity-40 max-w-xs">{getStatusSubtext()}</p>
       </div>
 
-      {/* Mic button */}
+      {/* Mic / Interrupt Button */}
       <div className="relative z-10 flex flex-col items-center">
         <button
           onClick={handleMicToggle}
           className={`relative w-18 h-18 rounded-full flex items-center justify-center transition-all duration-500 active:scale-95 cursor-pointer shadow-xl ${
-            isActive
-              ? 'bg-error shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:bg-error/90'
-              : 'bg-primary shadow-[0_0_20px_rgba(31,184,84,0.4)] hover:bg-primary/90'
+            status === 'speaking'
+              ? 'bg-warning text-black shadow-[0_0_25px_rgba(234,179,8,0.5)] hover:bg-warning/90'
+              : isActive
+                ? 'bg-error shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:bg-error/90 text-white'
+                : 'bg-primary shadow-[0_0_20px_rgba(31,184,84,0.4)] hover:bg-primary/90 text-white'
           }`}
+          title={status === 'speaking' ? 'Tap untuk menyela' : isActive ? 'Hentikan percakapan' : 'Mulai bicara'}
         >
-          {isActive ? (
-            <FaStop className="text-white" size={24} />
+          {status === 'speaking' ? (
+            <FaHandPaper size={22} className="animate-pulse" />
+          ) : isActive ? (
+            <FaStop size={24} />
           ) : (
-            <FaMicrophone className="text-white" size={24} />
+            <FaMicrophone size={24} />
           )}
         </button>
 
-        {/* Active ring animation around mic button */}
+        {/* Active ring animation around button */}
         {isActive && (
-          <div className="absolute top-0 w-18 h-18 rounded-full border-2 border-error/50 audio-pulse-ring pointer-events-none" />
+          <div
+            className={`absolute top-0 w-18 h-18 rounded-full border-2 audio-pulse-ring pointer-events-none ${
+              status === 'speaking' ? 'border-warning/50' : 'border-error/50'
+            }`}
+          />
         )}
       </div>
 
       {/* Bottom hint */}
       <p className="relative z-10 mt-8 text-xs opacity-30 select-none">
-        {isActive ? 'Tekan tombol untuk menghentikan' : 'Pastikan mikrofon sudah tersambung'}
+        {status === 'speaking'
+          ? 'Tap tombol di atas atau lingkaran visualizer untuk menyela Mark'
+          : isActive
+            ? 'Tekan tombol untuk menghentikan percakapan'
+            : 'Pastikan mikrofon sudah tersambung'}
       </p>
 
       {/* Floating Toast Error */}
