@@ -783,12 +783,6 @@ const handleSaveConfiguration = async () => {
                   }}
                   className="range range-primary range-xs w-full  "
                 />
-
-                <div className="flex justify-between text-[10px] font-mono opacity-50">
-                  <span>0% (Transparan Penuh / Cosmos Terang)</span>
-                  <span>50% (Seimbang)</span>
-                  <span>100% (Solid Gelap)</span>
-                </div>
               </div>
             </section>
 
