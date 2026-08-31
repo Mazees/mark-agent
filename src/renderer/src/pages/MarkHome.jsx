@@ -18,7 +18,6 @@ import {
 import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
-import { useVAD } from '../hooks/useVAD'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
 import { db, setSessionWorkspace, getAllConfig } from '../api/db'
 
@@ -42,7 +41,13 @@ const MarkHome = () => {
     inputSource,
     handleStop,
     isBooting,
-    requestCameraCaptureRef
+    requestCameraCaptureRef,
+    isRecording,
+    isProcessing,
+    audioIntensity,
+    startRecording,
+    stopRecording,
+    toastMessage
   } = chatContext
   const { isPlaying, currentTrack } = useYoutubeMusic()
   useMemoryGroomer(true)
@@ -116,25 +121,6 @@ const MarkHome = () => {
       window.removeEventListener('open-chat-studio', handleOpenChat)
     }
   }, [navigate])
-
-  const handleVoiceTranscript = (text, meta = {}) => {
-    const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
-    const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
-    setMessage(prefixedText)
-    setIsSpeak(true)
-    handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
-  }
-
-  const {
-    isRecording,
-    isProcessing,
-    audioIntensity,
-    startRecording,
-    stopRecording,
-    toastMessage
-  } = useVAD({
-    onTranscript: handleVoiceTranscript
-  })
 
   // Handle music widget exit animation
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useApproval } from '../contexts/ApprovalContext'
 import { fetchAI } from '../api/ai/core'
@@ -7,6 +7,7 @@ import { useMarkState, useMarkYoutube, useMarkMusic, useMarkPlan } from './agent
 import { useAwareness } from './useAwareness'
 import { useRelationalGrowth } from './agent/useRelationalGrowth'
 import { useChatArchiver } from './useChatArchiver'
+import { useVAD } from './useVAD'
 import { formatForTelegram, getCurrentTimeInfo } from '../api/ai/utils'
 
 export const useMarkAgent = () => {
@@ -368,6 +369,19 @@ export const useMarkAgent = () => {
     }
   }
 
+  const handleVoiceTranscript = useCallback((text, meta = {}) => {
+    if (!text || !text.trim()) return
+    const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
+    const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
+    setMessage(prefixedText)
+    setIsSpeak(true)
+    handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
+  }, [setMessage, setIsSpeak, handlePlanningCommand])
+
+  const vad = useVAD({
+    onTranscript: handleVoiceTranscript
+  })
+
   return {
     chatData,
     setChatData,
@@ -401,6 +415,14 @@ export const useMarkAgent = () => {
     handleStop: planHandleStop || handleStop,
     handleSubmit,
     isBooting,
-    requestCameraCaptureRef
+    requestCameraCaptureRef,
+    // VAD & Voice Engine
+    isRecording: vad.isRecording,
+    isProcessing: vad.isProcessing,
+    audioIntensity: vad.audioIntensity,
+    startRecording: vad.startRecording,
+    stopRecording: vad.stopRecording,
+    toggleRecording: vad.toggleRecording,
+    toastMessage: vad.toastMessage
   }
 }
