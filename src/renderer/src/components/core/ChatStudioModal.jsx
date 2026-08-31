@@ -47,11 +47,18 @@ export const ChatStudioModal = ({ isOpen, onClose, chatContext }) => {
     audioIntensity,
     startRecording,
     stopRecording,
-    inputSource
+    inputSource,
+    setCurrentActiveSessionId
   } = chatContext || {}
 
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
+
+  useEffect(() => {
+    if (isOpen && typeof setCurrentActiveSessionId === 'function') {
+      setCurrentActiveSessionId(String(activeSessionId))
+    }
+  }, [isOpen, activeSessionId, setCurrentActiveSessionId])
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')

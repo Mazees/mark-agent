@@ -9,7 +9,8 @@ export const subagentStore = {
     role = 'Technical Specialist',
     goal = 'Selesaikan misi yang ditugaskan',
     allowedTools = ['*'],
-    parentSessionId = 'default'
+    parentSessionId = '1',
+    parentSessionTitle = 'Main Thread'
   }) {
     const id = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
     const subagent = {
@@ -19,7 +20,8 @@ export const subagentStore = {
       goal,
       allowedTools,
       status: 'running',
-      parentSessionId,
+      parentSessionId: String(parentSessionId || '1'),
+      parentSessionTitle: parentSessionTitle || (String(parentSessionId) === '1' ? 'Main Thread' : `Sesi #${parentSessionId}`),
       turnCount: 0,
       createdAt: Date.now(),
       updatedAt: Date.now(),

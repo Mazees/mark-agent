@@ -2,12 +2,12 @@ import { useEffect, useRef } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useApproval } from '../contexts/ApprovalContext'
 import { fetchAI } from '../api/ai/core'
-import { db } from '../api/db'
+import { saveSession, getChatData, saveMainThread, getMainThread } from '../api/db'
 import { useMarkState, useMarkYoutube, useMarkMusic, useMarkPlan } from './agent'
 import { useAwareness } from './useAwareness'
 import { useRelationalGrowth } from './agent/useRelationalGrowth'
 import { useChatArchiver } from './useChatArchiver'
-import { formatForTelegram } from '../api/ai/utils'
+import { formatForTelegram, getCurrentTimeInfo } from '../api/ai/utils'
 
 export const useMarkAgent = () => {
   const { requestApproval } = useApproval()
@@ -50,6 +50,8 @@ export const useMarkAgent = () => {
     setInputSource,
     activeTopic,
     setActiveTopic,
+    currentActiveSessionId,
+    setCurrentActiveSessionId,
     isChatLoaded,
     isBooting,
     setIsBooting
@@ -210,26 +212,82 @@ export const useMarkAgent = () => {
   useEffect(() => {
     if (!window.api?.onSubagentReport) return
 
-    const unsubReport = window.api.onSubagentReport((data) => {
+    const unsubReport = window.api.onSubagentReport(async (data) => {
       console.log('[useMarkAgent] Menerima subagent:report push event:', data)
       if (data && data.summary) {
+        const targetSessionId = String(data.parentSessionId || '1')
+        const targetSessionTitle =
+          data.parentSessionTitle ||
+          (targetSessionId === '1' ? 'Main Thread' : `Sesi #${targetSessionId}`)
+        const activeSession = String(currentActiveSessionId || activeTopic?.id || '1')
+        const isCurrentSession = activeSession === targetSessionId
+
+        // 1. Desktop Notification
         pushNotification({
-          title: `Laporan @${data.subagentName || 'Sub-Agent'}`,
+          title: isCurrentSession
+            ? `Laporan @${data.subagentName || 'Sub-Agent'}`
+            : `Laporan @${data.subagentName || 'Sub-Agent'} [${targetSessionTitle}]`,
           message: data.summary,
           type: 'info'
         })
-        // Suntikkan update proaktif ke sesi Mark jika Mark tidak sedang sibuk
-        if (!isAgentBusy) {
-          handlePlanningCommand(
-            `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}\nBeri tanggapan atau rangkumkan secara singkat kepada user.`,
-            null,
-            false,
-            null,
-            { disableTools: false },
-            true
-          ).catch((err) => {
-            console.error('[useMarkAgent] Error handling subagent report turn:', err)
-          })
+
+        // 2. Jika sesi yang menerima laporan sedang dibuka aktif oleh user
+        if (isCurrentSession) {
+          if (!isAgentBusy) {
+            handlePlanningCommand(
+              `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}\nBeri tanggapan atau rangkumkan secara singkat kepada user.`,
+              null,
+              false,
+              null,
+              { sessionId: targetSessionId, disableTools: false },
+              true
+            ).catch((err) => {
+              console.error('[useMarkAgent] Error handling active session subagent report turn:', err)
+            })
+          }
+        } else {
+          // 3. Jika user sedang berada di sesi lain / background delivery
+          try {
+            const timestampStr = getCurrentTimeInfo()
+            const existingData =
+              targetSessionId === '1'
+                ? (await getMainThread()) || []
+                : (await getChatData(targetSessionId)) || []
+
+            const userReportMessage = {
+              role: 'user',
+              content: `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}`,
+              timestamp: timestampStr,
+              created_at: Date.now(),
+              source: 'subagent',
+              sender: `@${data.subagentName || 'Sub-Agent'}`
+            }
+
+            const aiSummaryMessage = {
+              role: 'ai',
+              content: `Laporan dari @${data.subagentName || 'Specialist'} telah diterima dan diarsipkan ke sesi ini:\n\n${data.summary}${data.artifact ? `\n\n**Artefak:**\n${data.artifact}` : ''}`,
+              timestamp: timestampStr,
+              created_at: Date.now() + 1,
+              isThinking: false
+            }
+
+            const updatedHistory = [...existingData, userReportMessage, aiSummaryMessage]
+
+            if (targetSessionId === '1') {
+              await saveMainThread(updatedHistory)
+            } else {
+              await saveSession(targetSessionId, updatedHistory)
+            }
+
+            // Pancarkan event reactive update agar UI sesi yang sedang di background otomatis ter-update
+            window.dispatchEvent(
+              new CustomEvent('session-updated', {
+                detail: { sessionId: targetSessionId, data: updatedHistory }
+              })
+            )
+          } catch (dbErr) {
+            console.error('[useMarkAgent] Gagal menyimpan background subagent report:', dbErr)
+          }
         }
       }
     })
@@ -237,7 +295,13 @@ export const useMarkAgent = () => {
     return () => {
       if (unsubReport) unsubReport()
     }
-  }, [handlePlanningCommand, isAgentBusy, pushNotification])
+  }, [
+    handlePlanningCommand,
+    isAgentBusy,
+    pushNotification,
+    currentActiveSessionId,
+    activeTopic
+  ])
 
   const isInitialSyncDoneRef = useRef(false)
   const lastSyncedMsgIdRef = useRef(null)

@@ -34,6 +34,7 @@ export const useMarkState = () => {
   const [activeProcesses, setActiveProcesses] = useState([])
   const [inputSource, setInputSource] = useState('pc')
   const [activeTopic, setActiveTopic] = useState(null)
+  const [currentActiveSessionId, setCurrentActiveSessionId] = useState('1')
   const [isChatLoaded, setIsChatLoaded] = useState(false)
   const [isBooting, setIsBooting] = useState(true)
   const sessionId = useRef('mark-main-thread')
@@ -147,6 +148,8 @@ export const useMarkState = () => {
     setInputSource,
     activeTopic,
     setActiveTopic,
+    currentActiveSessionId,
+    setCurrentActiveSessionId,
     isChatLoaded,
     isBooting,
     setIsBooting,

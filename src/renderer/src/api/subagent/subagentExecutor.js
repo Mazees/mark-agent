@@ -216,6 +216,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
             } else if (toolName === 'report_to_lead') {
               const summary = parsedArgs.summary || 'Misi telah selesai.'
               const artifact = parsedArgs.artifact || null
+              const parentSessionId = String(subagent.parentSessionId || '1')
+              const parentSessionTitle =
+                subagent.parentSessionTitle ||
+                (parentSessionId === '1' ? 'Main Thread' : `Sesi #${parentSessionId}`)
 
               // Broadcast push notification ke WebSocket Hub jika tersedia
               try {
@@ -226,6 +230,8 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                     role: subagent.role,
                     summary,
                     artifact,
+                    parentSessionId,
+                    parentSessionTitle,
                     timestamp: Date.now()
                   })
                 }
@@ -233,12 +239,13 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
 
               // Simpan record report ke subagent
               await subagentStore.updateSubagent(subagentId, {
+                status: 'completed',
                 finalAnswer: summary
               })
 
               res = {
                 success: true,
-                data: `[LAPORAN TERKIRIM KE LEAD AGENT (MARK)]\nLaporan berhasil disampaikan. Mark telah menerima push notification.`
+                data: `[LAPORAN TERKIRIM KE LEAD AGENT (MARK)]\nLaporan berhasil disampaikan ke sesi "${parentSessionTitle}". Mark telah menerima push notification.`
               }
             } else if (toolName === 'read-tools') {
               const { group_tools } = await import('../tools/group-tools.js')

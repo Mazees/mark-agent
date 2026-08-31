@@ -45,11 +45,18 @@ const ChatStudio = () => {
     audioIntensity,
     startRecording,
     stopRecording,
-    inputSource
+    inputSource,
+    setCurrentActiveSessionId
   } = chatContext || {}
 
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
+
+  useEffect(() => {
+    if (typeof setCurrentActiveSessionId === 'function') {
+      setCurrentActiveSessionId(String(activeSessionId))
+    }
+  }, [activeSessionId, setCurrentActiveSessionId])
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')

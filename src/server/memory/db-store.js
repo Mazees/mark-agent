@@ -107,6 +107,7 @@ sqlite.exec(`
     status TEXT DEFAULT 'running',
     turn_count INTEGER DEFAULT 0,
     parent_session_id TEXT DEFAULT '1',
+    parent_session_title TEXT DEFAULT '',
     final_answer TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER
@@ -214,7 +215,9 @@ ensureTableColumns('relationships', {
 
 ensureTableColumns('subagents', {
   allowed_tools: 'TEXT',
-  final_answer: 'TEXT'
+  final_answer: 'TEXT',
+  parent_session_id: "TEXT DEFAULT '1'",
+  parent_session_title: 'TEXT'
 })
 
 ensureTableColumns('subagent_messages', {

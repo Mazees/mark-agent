@@ -480,12 +480,22 @@ export const useMarkPlan = ({
                   .filter(Boolean)
               : ['*']
 
+          const originatingSessionId = String(
+            context?.sessionId || activeSessionNum || activeTopic?.id || 1
+          )
+          const originatingSessionTitle =
+            context?.sessionTitle ||
+            activeTopic?.title ||
+            activeTopic?.name ||
+            (originatingSessionId === '1' ? 'Main Thread' : `Sesi #${originatingSessionId}`)
+
           const sub = await subagentStore.createSubagent({
             name,
             role,
             goal,
             allowedTools: tools,
-            parentSessionId: 'main_chat'
+            parentSessionId: originatingSessionId,
+            parentSessionTitle: originatingSessionTitle
           })
 
           // Jalankan loop eksekusi ReAct secara otonom di background (non-blocking)
@@ -1355,6 +1365,11 @@ export const useMarkPlan = ({
 
             // Eksekusi tool
             const pluginProcessId = `plugin-${Date.now()}`
+            const currentSessionTitle =
+              activeSessionNum === 1
+                ? activeTopic?.title || activeTopic?.name || 'Main Thread'
+                : `Sesi #${activeSessionNum}`
+
             const execResult = await executeSingleTool(toolName, parsedArgs, {
               tgContext,
               isAutonomous,
@@ -1362,6 +1377,8 @@ export const useMarkPlan = ({
               pluginProcessId,
               targetSetChatData,
               workspaceRoot: opts.workspaceRoot,
+              sessionId: String(activeSessionNum || 1),
+              sessionTitle: currentSessionTitle,
               signal: sessionAbortController.signal
             })
 
