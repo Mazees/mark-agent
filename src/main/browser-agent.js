@@ -59,6 +59,9 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
       '--disable-infobars',
       '--no-first-run',
       '--no-default-browser-check',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       '--window-position=-32000,-32000',
       '--window-size=1280,800',
       '--lang=id-ID,id,en-US,en'
@@ -83,16 +86,48 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
 
   // Comprehensive Anti-Bot Detection Stealth Overrides
   await page.evaluateOnNewDocument(() => {
-    // 1. Delete & Overwrite webdriver on Navigator prototype
+    const makeNative = (fn, name) => {
+      Object.defineProperty(fn, 'name', { value: name, configurable: true })
+      const toString = () => `function ${name}() { [native code] }`
+      Object.defineProperty(fn, 'toString', { value: toString, configurable: true })
+      return fn
+    }
+
+    // 1. Mock Screen & Window Coordinates (Bypasses -32000 off-screen window detection)
+    Object.defineProperties(window, {
+      screenX: { get: () => 80, configurable: true },
+      screenY: { get: () => 60, configurable: true },
+      screenLeft: { get: () => 80, configurable: true },
+      screenTop: { get: () => 60, configurable: true },
+      outerWidth: { get: () => 1280, configurable: true },
+      outerHeight: { get: () => 800, configurable: true },
+      innerWidth: { get: () => 1280, configurable: true },
+      innerHeight: { get: () => 800, configurable: true }
+    })
+
+    Object.defineProperties(window.screen, {
+      availLeft: { get: () => 0, configurable: true },
+      availTop: { get: () => 0, configurable: true },
+      availWidth: { get: () => 1920, configurable: true },
+      availHeight: { get: () => 1040, configurable: true },
+      width: { get: () => 1920, configurable: true },
+      height: { get: () => 1080, configurable: true }
+    })
+
+    // 2. WebDriver stealth: returns false with native getter signature
     try {
       delete Object.getPrototypeOf(navigator).webdriver
     } catch (_) {}
+    const webdriverGetter = makeNative(() => false, 'get webdriver')
     Object.defineProperty(Navigator.prototype, 'webdriver', {
-      get: () => undefined,
+      get: webdriverGetter,
+      enumerable: true,
       configurable: true
     })
 
-    // 2. Complete window.chrome structure matching official Edge
+    // 3. Native Chrome runtime structure matching official Edge
+    const sendMessageFn = makeNative(function () {}, 'sendMessage')
+    const connectFn = makeNative(function () {}, 'connect')
     window.chrome = {
       app: {
         isInstalled: false,
@@ -106,10 +141,10 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
         PlatformNaclArch: {},
         PlatformOs: {},
         RequestUpdateCheckStatus: {},
-        connect: function () {},
-        sendMessage: function () {}
+        connect: connectFn,
+        sendMessage: sendMessageFn
       },
-      loadTimes: function () {
+      loadTimes: makeNative(function () {
         return {
           requestTime: performance.now() / 1000,
           startLoadTime: performance.now() / 1000,
@@ -125,64 +160,63 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
           wasAlternateProtocolAvailable: false,
           connectionInfo: 'http/1.1'
         }
-      },
-      csi: function () {
+      }, 'loadTimes'),
+      csi: makeNative(function () {
         return {
           startE: performance.now(),
           onloadT: performance.now(),
           pageT: performance.now(),
           tran: 15
         }
-      }
+      }, 'csi')
     }
 
-    // 3. Mock navigator.plugins & mimeTypes
-    const fakePlugins = [
+    // 4. PluginArray and MimeTypeArray Prototype emulation
+    const pluginData = [
       { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
       { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
       { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
       { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
       { name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format' }
     ]
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => fakePlugins,
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'mimeTypes', {
-      get: () => [
-        {
-          type: 'application/pdf',
-          suffixes: 'pdf',
-          description: 'Portable Document Format',
-          enabledPlugin: fakePlugins[0]
-        }
-      ],
-      configurable: true
-    })
 
-    // 4. Mock navigator hardware properties
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['id-ID', 'id', 'en-US', 'en'],
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'language', {
-      get: () => 'id-ID',
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'platform', {
-      get: () => 'Win32',
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'hardwareConcurrency', {
-      get: () => 8,
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'deviceMemory', {
-      get: () => 8,
-      configurable: true
-    })
+    const createPluginArray = (plugins) => {
+      const arr = Object.create(PluginArray.prototype)
+      plugins.forEach((p, idx) => {
+        const pluginObj = Object.create(Plugin.prototype)
+        Object.defineProperties(pluginObj, {
+          name: { value: p.name, enumerable: true },
+          filename: { value: p.filename, enumerable: true },
+          description: { value: p.description, enumerable: true },
+          length: { value: 1, enumerable: true }
+        })
+        arr[idx] = pluginObj
+        arr[p.name] = pluginObj
+      })
+      Object.defineProperty(arr, 'length', { value: plugins.length, enumerable: true })
+      arr.item = makeNative((i) => arr[i] || null, 'item')
+      arr.namedItem = makeNative((name) => arr[name] || null, 'namedItem')
+      arr.refresh = makeNative(() => {}, 'refresh')
+      return arr
+    }
 
-    // 5. Mock navigator.userAgentData (Edge Client Hints for Cloudflare)
+    try {
+      const fakePlugins = createPluginArray(pluginData)
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => fakePlugins,
+        configurable: true
+      })
+    } catch (_) {}
+
+    // 5. Hardware and Locale properties
+    Object.defineProperty(navigator, 'languages', { get: () => ['id-ID', 'id', 'en-US', 'en'], configurable: true })
+    Object.defineProperty(navigator, 'language', { get: () => 'id-ID', configurable: true })
+    Object.defineProperty(navigator, 'platform', { get: () => 'Win32', configurable: true })
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true })
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true })
+    Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0, configurable: true })
+
+    // 6. User Agent Data (Edge Client Hints)
     Object.defineProperty(navigator, 'userAgentData', {
       get: () => ({
         brands: [
@@ -214,28 +248,28 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
       configurable: true
     })
 
-    // 6. Fix notification permissions
+    // 7. Notification Permissions
     const originalQuery = window.navigator.permissions?.query
     if (originalQuery) {
-      window.navigator.permissions.query = (parameters) =>
+      window.navigator.permissions.query = makeNative((parameters) =>
         parameters && parameters.name === 'notifications'
           ? Promise.resolve({ state: Notification.permission || 'default', onchange: null })
-          : originalQuery.call(window.navigator.permissions, parameters)
+          : originalQuery.call(window.navigator.permissions, parameters),
+        'query'
+      )
     }
 
-    // 7. Fix WebGL Vendor & Renderer (Spoof Intel GPU)
-    const getParam1 = WebGLRenderingContext.prototype.getParameter
-    WebGLRenderingContext.prototype.getParameter = function (parameter) {
-      if (parameter === 37445) return 'Google Inc. (Intel)'
-      if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
-      return getParam1.apply(this, arguments)
+    // 8. WebGL Vendor and Renderer
+    const patchParam = (proto) => {
+      const original = proto.getParameter
+      proto.getParameter = makeNative(function (param) {
+        if (param === 37445) return 'Google Inc. (Intel)'
+        if (param === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
+        return original.apply(this, arguments)
+      }, 'getParameter')
     }
-    const getParam2 = WebGL2RenderingContext.prototype.getParameter
-    WebGL2RenderingContext.prototype.getParameter = function (parameter) {
-      if (parameter === 37445) return 'Google Inc. (Intel)'
-      if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
-      return getParam2.apply(this, arguments)
-    }
+    patchParam(WebGLRenderingContext.prototype)
+    patchParam(WebGL2RenderingContext.prototype)
   })
 
   session = {
@@ -531,6 +565,26 @@ async function detectChallenge(page) {
   return { isBlocked: false }
 }
 
+async function seedAntiBotCookies(page) {
+  try {
+    const cookies = [
+      {
+        name: 'SOCS',
+        value: 'CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJpZCADGgYIgJnPpwY',
+        domain: '.google.com',
+        path: '/'
+      },
+      {
+        name: 'CONSENT',
+        value: 'PENDING+999',
+        domain: '.google.com',
+        path: '/'
+      }
+    ]
+    await page.setCookie(...cookies)
+  } catch (_) {}
+}
+
 export async function navigateTo(url, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   let targetUrl = url.trim()
@@ -538,9 +592,48 @@ export async function navigateTo(url, sessionId = 'default') {
     targetUrl = 'https://' + targetUrl
   }
 
+  // Normalisasi URL Google Search dengan query params browser alami
+  if (targetUrl.includes('google.com/search') && !targetUrl.includes('sourceid=')) {
+    const separator = targetUrl.includes('?') ? '&' : '?'
+    targetUrl = `${targetUrl}${separator}sourceid=chrome&ie=UTF-8`
+  }
+
+  if (targetUrl.includes('google.com')) {
+    await seedAntiBotCookies(session.page)
+  }
+
   await session.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
   session.url = session.page.url()
   session.title = await session.page.title()
+
+  // Auto-dismiss Google Consent / Cookie dialog jika muncul
+  try {
+    if (session.url.includes('google.com') || session.url.includes('consent.google')) {
+      const consentHandled = await session.page.evaluate(() => {
+        const consentSelectors = [
+          'button[aria-label*="Setuju"]',
+          'button[aria-label*="Accept"]',
+          '#L2AGLb',
+          'button:has-text("Saya setuju")',
+          'button:has-text("Accept all")',
+          'form[action*="consent"] button'
+        ]
+        for (const selector of consentSelectors) {
+          const btn = document.querySelector(selector)
+          if (btn && btn.offsetParent !== null) {
+            btn.click()
+            return true
+          }
+        }
+        return false
+      })
+      if (consentHandled) {
+        await session.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {})
+        session.url = session.page.url()
+        session.title = await session.page.title()
+      }
+    }
+  } catch (_) {}
 
   await broadcastPreview(session)
 

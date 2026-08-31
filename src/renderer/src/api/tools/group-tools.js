@@ -10,6 +10,21 @@ export const GROUP_TOOLS_SCHEMA = {
       {
         type: 'function',
         function: {
+          name: 'browser-search',
+          description: 'Mencari informasi di web secara instan menggunakan query pencarian. Mengembalikan 5 hasil teratas (judul, URL, cuplikan teks).',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Kata kunci pencarian web' }
+            },
+            required: ['query'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'browser-navigate',
           description: 'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
           parameters: {

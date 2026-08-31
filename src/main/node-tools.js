@@ -181,49 +181,130 @@ export const NATIVE_TOOLS = {
         if (!searchQuery) return { success: false, message: 'Query pencarian kosong.' }
 
         let results = []
-        try {
-          const { search: ddgSearch, SafeSearchType } = await import('duck-duck-scrape')
-          const searchRes = await ddgSearch(searchQuery, {
-            safeSearch: SafeSearchType.OFF
-          })
-          if (searchRes && searchRes.results && searchRes.results.length > 0) {
-            results = searchRes.results.slice(0, 5).map((r) => ({
-              title: r.title,
-              url: r.url,
-              snippet: r.description || r.snippet || ''
-            }))
+        const clean = (s) =>
+          (s || '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&#0183;/g, '·')
+            .replace(/\s+/g, ' ')
+            .trim()
+
+        const decodeBingUrl = (url) => {
+          if (!url || !url.includes('bing.com/ck/')) return url
+          const match = url.match(/[?&]u=a1([^&]+)/i) || url.match(/[?&amp;]u=a1([^&]+)/i)
+          if (match) {
+            try {
+              let b64 = match[1].replace(/-/g, '+').replace(/_/g, '/')
+              while (b64.length % 4) b64 += '='
+              return Buffer.from(b64, 'base64').toString('utf8')
+            } catch (_) {}
           }
-        } catch (ddgErr) {
-          console.warn('[browser-search] duck-duck-scrape failed, trying HTTP fallback:', ddgErr.message)
+          return url
         }
 
+        // 1. Primary Engine: Bing Web Search HTML
+        try {
+          const axios = (await import('axios')).default
+          const bingRes = await axios.get(
+            `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}&count=10`,
+            {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9,id;q=0.8'
+              },
+              timeout: 8000
+            }
+          )
+          const html = bingRes.data || ''
+          const regex = /<li class="b_algo"[\s\S]*?<\/li>/gi
+          let match
+          while ((match = regex.exec(html)) !== null && results.length < 5) {
+            const li = match[0]
+            const anchors = [...li.matchAll(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
+            let realUrl = ''
+            let rawTitle = ''
+
+            for (const a of anchors) {
+              const href = a[1]
+              const inner = a[2] || ''
+              if (href.includes('bing.com/ck/') || href.startsWith('http')) {
+                if (!realUrl) realUrl = decodeBingUrl(href)
+                if (!rawTitle && !inner.includes('class="tpic"') && !inner.includes('class="wr_fav"')) {
+                  rawTitle = inner
+                }
+              }
+            }
+
+            const snippetMatch =
+              li.match(/<div class="b_caption"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i) ||
+              li.match(/<p[^>]*>([\s\S]*?)<\/p>/i)
+
+            if (realUrl && !realUrl.includes('bing.com/search') && !realUrl.endsWith('.css') && !realUrl.endsWith('.js')) {
+              const title = clean(rawTitle.includes('›') ? rawTitle.split('›').pop() : rawTitle)
+              const snippet = clean(snippetMatch ? snippetMatch[1] : '')
+              if (title) {
+                results.push({ title: title || 'Web Result', url: realUrl, snippet })
+              }
+            }
+          }
+        } catch (bingErr) {
+          console.warn('[browser-search] Bing HTML search error:', bingErr.message)
+        }
+
+        // 2. Fallback Engine: Bing RSS Feed
         if (results.length === 0) {
           try {
             const axios = (await import('axios')).default
-            const htmlRes = await axios.get(
-              `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`,
+            const rssRes = await axios.get(
+              `https://www.bing.com/search?format=rss&q=${encodeURIComponent(searchQuery)}`,
               {
                 headers: {
-                  'User-Agent':
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
-                timeout: 10000
+                timeout: 8000
               }
             )
-            const html = htmlRes.data || ''
-            const matches = [...html.matchAll(/<a class="result__url" href="([^"]+)">/g)]
-            const snippetMatches = [...html.matchAll(/<a class="result__snippet[^>]*>([^<]+)<\/a>/g)]
-            const titleMatches = [...html.matchAll(/<a class="result__a"[^>]*>([^<]+)<\/a>/g)]
-
-            for (let i = 0; i < Math.min(5, titleMatches.length); i++) {
-              results.push({
-                title: titleMatches[i]?.[1] || 'Web Result',
-                url: matches[i]?.[1] || '',
-                snippet: snippetMatches[i]?.[1] || ''
-              })
+            const xml = rssRes.data || ''
+            const items = xml.match(/<item>[\s\S]*?<\/item>/gi) || []
+            for (const item of items.slice(0, 5)) {
+              const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/i)
+              const linkMatch = item.match(/<link>([\s\S]*?)<\/link>/i)
+              const descMatch = item.match(/<description>([\s\S]*?)<\/description>/i)
+              if (linkMatch && titleMatch) {
+                results.push({
+                  title: clean(titleMatch[1]),
+                  url: clean(linkMatch[1]),
+                  snippet: clean(descMatch ? descMatch[1] : '')
+                })
+              }
             }
-          } catch (fetchErr) {
-            console.error('[browser-search] HTTP fallback error:', fetchErr.message)
+          } catch (rssErr) {
+            console.warn('[browser-search] Bing RSS fallback error:', rssErr.message)
+          }
+        }
+
+        // 3. Fallback Engine: duck-duck-scrape
+        if (results.length === 0) {
+          try {
+            const { search: ddgSearch, SafeSearchType } = await import('duck-duck-scrape')
+            const searchRes = await ddgSearch(searchQuery, {
+              safeSearch: SafeSearchType.OFF
+            })
+            if (searchRes && searchRes.results && searchRes.results.length > 0) {
+              results = searchRes.results.slice(0, 5).map((r) => ({
+                title: r.title,
+                url: r.url,
+                snippet: r.description || r.snippet || ''
+              }))
+            }
+          } catch (ddgErr) {
+            console.warn('[browser-search] duck-duck-scrape fallback error:', ddgErr.message)
           }
         }
 

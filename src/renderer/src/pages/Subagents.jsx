@@ -74,10 +74,12 @@ export default function Subagents() {
         status: 'running'
       })
 
-      // Jalankan initial turn di background secara otonom
-      runSubagentTurn(sub.id, newAgentGoal.trim(), 'user').catch((err) => {
-        console.error('[Subagent Spawn Error]', err)
-      })
+      // Jika subagent belum aktif berjalan sebelumnya, jalankan initial turn
+      if (!sub.wasRunning) {
+        runSubagentTurn(sub.id, newAgentGoal.trim(), 'user').catch((err) => {
+          console.error('[Subagent Spawn Error]', err)
+        })
+      }
 
       setSelectedSubagentId(sub.id)
       setIsSpawnModalOpen(false)

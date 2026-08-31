@@ -6,6 +6,24 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
+      name: 'browser-search',
+      description: 'Mencari informasi di web secara instan menggunakan query pencarian. Mengembalikan 5 hasil teratas (judul, URL, cuplikan teks) tanpa perlu membuka browser fisik secara lambat.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Kata kunci atau pertanyaan pencarian web'
+          }
+        },
+        required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'read-tools',
       description: 'WAJIB dipanggil jika kamu membutuhkan dokumentasi atau fungsi tambahan dari grup tool tertentu sebelum mengeksekusinya.',
       parameters: {

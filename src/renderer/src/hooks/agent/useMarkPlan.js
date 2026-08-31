@@ -498,14 +498,22 @@ export const useMarkPlan = ({
             parentSessionTitle: originatingSessionTitle
           })
 
-          // Jalankan loop eksekusi ReAct secara otonom di background (non-blocking)
-          runSubagentTurn(sub.id, initialMessage, 'lead').catch((err) => {
-            console.error(`[Sub-Agent ${sub.id}] Background execution error:`, err)
-          })
+          // Jika sub-agent sudah ada dan sudah berjalan aktif, tidak perlu re-trigger turn baru
+          if (sub.isExisting && sub.wasRunning) {
+            res = {
+              success: true,
+              data: `[SUB-AGENT @${sub.name} SUDAH AKTIF BERJALAN]\n- ID: ${sub.id}\n- Role: ${sub.role}\n- Status: ${sub.status}\nSub-agent @${sub.name} saat ini sedang aktif mengerjakan tugas sebelumnya. Tidak ada duplikasi yang dibuat. Gunakan 'message_agent' jika ingin menambahkan pesan ke agen ini, atau tunggu hingga laporannya selesai.`
+            }
+          } else {
+            // Jalankan loop eksekusi ReAct secara otonom di background (non-blocking)
+            runSubagentTurn(sub.id, initialMessage, 'lead').catch((err) => {
+              console.error(`[Sub-Agent ${sub.id}] Background execution error:`, err)
+            })
 
-          res = {
-            success: true,
-            data: `[SUB-AGENT BERHASIL DILUNCURKAN SECARA ASINKRON (NON-BLOCKING)]\n- Nama: ${name}\n- ID: ${sub.id}\n- Role: ${role}\n- Goal: ${goal}\nSub-agent telah mulai bekerja secara mandiri di background. Kamu TIDAK PERLU menunggu (dilarang mem-blocking). Langsung beritahu user bahwa tugas telah didelegasikan ke @${name} dan dia akan melapor secara otomatis via push notification ketika selesai.`
+            res = {
+              success: true,
+              data: `[SUB-AGENT BERHASIL DILUNCURKAN SECARA ASINKRON (NON-BLOCKING)]\n- Nama: ${sub.name}\n- ID: ${sub.id}\n- Role: ${sub.role}\n- Goal: ${sub.goal}\nSub-agent telah mulai bekerja secara mandiri di background. Kamu TIDAK PERLU menunggu (dilarang mem-blocking). Langsung beritahu user bahwa tugas telah didelegasikan ke @${sub.name} dan dia akan melapor secara otomatis via push notification ketika selesai.`
+            }
           }
         } else if (tool === 'message_agent') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')

@@ -368,6 +368,35 @@ app.post('/api/relationships', (req, res) => {
 })
 
 // 5f. Subagents & Messages API
+// PENTING: Rute spesifik (/api/subagents/messages) HARUS didaftarkan sebelum wildcard (:id)
+app.get('/api/subagents/messages', (_req, res) => {
+  res.json({ success: true, data: dbStore.subagentMessages.getAll() })
+})
+
+app.get('/api/subagents/messages/:id', (req, res) => {
+  const { id } = req.params
+  const msg = dbStore.subagentMessages.getById(id)
+  res.json({ success: true, data: msg })
+})
+
+app.post('/api/subagents/messages', (req, res) => {
+  const item = req.body
+  const record = dbStore.subagentMessages.insert(item)
+  res.json({ success: true, data: record })
+})
+
+app.post('/api/subagents/messages/batch', (req, res) => {
+  const items = req.body || []
+  const records = dbStore.subagentMessages.insertBatch(items)
+  res.json({ success: true, count: records.length, data: records })
+})
+
+app.delete('/api/subagents/messages/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.subagentMessages.delete(id)
+  res.json({ success })
+})
+
 app.get('/api/subagents', (_req, res) => {
   res.json({ success: true, data: dbStore.subagents.getAll() })
 })
@@ -378,10 +407,23 @@ app.get('/api/subagents/:id', (req, res) => {
   res.json({ success: true, data: agent })
 })
 
+app.get('/api/subagents/:id/messages', (req, res) => {
+  const { id } = req.params
+  const allMessages = dbStore.subagentMessages.getAll()
+  const agentMessages = allMessages.filter((m) => m.subagent_id === id || m.subagentId === id)
+  res.json({ success: true, data: agentMessages })
+})
+
 app.post('/api/subagents', (req, res) => {
   const item = req.body
   const record = dbStore.subagents.insert(item)
   res.json({ success: true, data: record })
+})
+
+app.post('/api/subagents/batch', (req, res) => {
+  const items = req.body || []
+  const records = dbStore.subagents.insertBatch(items)
+  res.json({ success: true, count: records.length, data: records })
 })
 
 app.delete('/api/subagents/:id', (req, res) => {
@@ -393,35 +435,6 @@ app.delete('/api/subagents/:id', (req, res) => {
       sqlite.prepare('DELETE FROM subagent_messages WHERE subagent_id = ?').run(String(id))
     }
   } catch (_) {}
-  res.json({ success })
-})
-
-app.get('/api/subagents/messages', (_req, res) => {
-  res.json({ success: true, data: dbStore.subagentMessages.getAll() })
-})
-
-app.get('/api/subagents/messages/:id', (req, res) => {
-  const { id } = req.params
-  const msg = dbStore.subagentMessages.getById(id)
-  res.json({ success: true, data: msg })
-})
-
-app.get('/api/subagents/:id/messages', (req, res) => {
-  const { id } = req.params
-  const allMessages = dbStore.subagentMessages.getAll()
-  const agentMessages = allMessages.filter((m) => m.subagent_id === id || m.subagentId === id)
-  res.json({ success: true, data: agentMessages })
-})
-
-app.post('/api/subagents/messages', (req, res) => {
-  const item = req.body
-  const record = dbStore.subagentMessages.insert(item)
-  res.json({ success: true, data: record })
-})
-
-app.delete('/api/subagents/messages/:id', (req, res) => {
-  const { id } = req.params
-  const success = dbStore.subagentMessages.delete(id)
   res.json({ success })
 })
 

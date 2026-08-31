@@ -371,14 +371,18 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
 
 /**
  * Membatalkan paksa eksekusi sub-agent yang sedang berjalan
+ * @param {string} subagentId ID sub-agent
+ * @param {boolean} isDeleting Apakah pembatalan ini karena penghapusan entitas
  */
-export function killSubagentExecution(subagentId) {
+export function killSubagentExecution(subagentId, isDeleting = false) {
   const ctrl = subagentAbortControllers.get(subagentId)
   if (ctrl) {
     ctrl.abort()
     subagentAbortControllers.delete(subagentId)
   }
-  subagentStore.updateSubagent(subagentId, { status: 'killed' })
+  if (!isDeleting) {
+    subagentStore.updateSubagent(subagentId, { status: 'killed' }).catch(() => {})
+  }
   if (window.api && window.api.executeNativeTool) {
     window.api.executeNativeTool('browser-close', '', { sessionId: subagentId }).catch(() => {})
   }
