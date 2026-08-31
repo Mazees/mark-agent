@@ -25,11 +25,16 @@ export const CLUSTER_THEMES = {
 /**
  * Membangun registry kluster tools lengkap langsung dari GROUP_TOOLS_SCHEMA & core_tools_schema
  */
-export function buildCompleteToolClusters() {
+export function buildCompleteToolClusters(dynamicPlugins = []) {
   const clusters = []
 
-  // 1. Ambil seluruh group tools dari GROUP_TOOLS_SCHEMA
+  // 1. Ambil seluruh group tools dari GROUP_TOOLS_SCHEMA (kecuali custom_plugins jika diisi dynamicPlugins)
+  const hasDynamicPlugins = Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0
+
   Object.entries(GROUP_TOOLS_SCHEMA).forEach(([groupKey, groupData]) => {
+    // Jika custom_plugins memiliki dynamic plugin tersendiri, kita gantikan schema statis list-plugins dengan daftar action plugins dinamis
+    if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
+
     const theme = CLUSTER_THEMES[groupKey] || {
       name: groupKey.replace(/_/g, ' ').toUpperCase(),
       color: '#00e5ff',
@@ -162,6 +167,46 @@ export function buildCompleteToolClusters() {
       size: CLUSTER_THEMES.core_system.size,
       tools: coreControlTools
     })
+  }
+
+  // 3. Tambahkan Custom Plugins jika ada
+  if (Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0) {
+    const pluginTools = []
+    dynamicPlugins.forEach((p) => {
+      if (p.isEnabled !== false && Array.isArray(p.actions)) {
+        p.actions.forEach((act) => {
+          const actionName = act.name
+          const fullPrefix = `plugin-${p.name}-${actionName}`
+          pluginTools.push({
+            id: `plugin-tool-${p.name}-${actionName}`,
+            name: `${p.name}/${actionName}`,
+            label: actionName,
+            description: act.description || p.description || `Custom plugin ${p.name}`,
+            clusterKey: 'custom_plugins',
+            matchTools: [
+              actionName,
+              fullPrefix,
+              `plugin-${actionName}`,
+              `plugin_${p.name}_${actionName}`,
+              `plugin_${actionName}`
+            ]
+          })
+        })
+      }
+    })
+
+    if (pluginTools.length > 0) {
+      clusters.push({
+        id: 'cluster-custom_plugins',
+        key: 'custom_plugins',
+        name: CLUSTER_THEMES.custom_plugins.name,
+        color: CLUSTER_THEMES.custom_plugins.color,
+        radius: CLUSTER_THEMES.custom_plugins.radius,
+        speed: CLUSTER_THEMES.custom_plugins.speed,
+        size: CLUSTER_THEMES.custom_plugins.size,
+        tools: pluginTools
+      })
+    }
   }
 
   return clusters

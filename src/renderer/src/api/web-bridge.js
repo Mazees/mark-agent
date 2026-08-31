@@ -481,6 +481,10 @@ export const webApi = {
     return await res.json()
   },
 
+  executePlugin: async (action, query) => {
+    return webApi.executePluginAction(action, query)
+  },
+
   openPluginFolder: async () => {
     return webApi.executeNativeTool('run-powershell', 'explorer.exe "$HOME\\Documents\\Mark Plugins"')
   },

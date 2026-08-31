@@ -930,26 +930,10 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'list-plugins',
-          description: 'Melihat daftar seluruh custom plugin lokal yang terinstall dan status aktifnya.',
+          description: 'Melihat daftar seluruh custom plugin lokal yang terinstall beserta action/sub-tool di dalamnya dan status aktifnya.',
           parameters: {
             type: 'object',
             properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'execute-plugin',
-          description: 'Mengeksekusi custom action dari plugin lokal buatan user berdasarkan nama action dan parameter query.',
-          parameters: {
-            type: 'object',
-            properties: {
-              action: { type: 'string', description: 'Nama action plugin yang akan dieksekusi' },
-              query: { type: 'string', description: 'Parameter input query untuk aksi plugin' }
-            },
-            required: ['action'],
             additionalProperties: false
           }
         }

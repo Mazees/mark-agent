@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useChat } from '../contexts/ChatContext'
 import OrbVisualizer, { getMoodColor } from '../components/core/OrbVisualizer'
 import InputBar from '../components/core/InputBar'
@@ -6,15 +6,13 @@ import ResponseArea from '../components/core/ResponseArea'
 import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import HistoryDrawer from '../components/core/HistoryDrawer'
-import ProcessPanel from '../components/core/ProcessPanel'
-import SolarSystemCanvas, { STATIC_TOOL_CLUSTERS } from '../components/core/SolarSystemCanvas'
+import ToolClustersDeck from '../components/core/ToolClustersDeck'
+import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
 import MemoryVisualizer from '../components/core/MemoryVisualizer'
 import BrowserPreviewWidget from '../components/core/BrowserPreviewWidget'
 import { ChatStudioModal } from '../components/core/ChatStudioModal'
 import {
   MessageSquare,
-  Activity,
-  Layers,
   Sparkles,
   Terminal
 } from 'lucide-react'
@@ -57,7 +55,6 @@ const MarkHome = () => {
   const [ttsIntensity, setTtsIntensity] = useState(0)
   const [workspaceRoot, setWorkspaceRoot] = useState(null)
   const [bgOverlayOpacity, setBgOverlayOpacity] = useState(65)
-  const [selectedClusterKey, setSelectedClusterKey] = useState(null)
 
   // Muat konfigurasi workspace & overlay opacity dari database
   useEffect(() => {
@@ -238,27 +235,8 @@ const MarkHome = () => {
     }
   }
 
-  // Active Tool Names set for Cockpit Deck
-  const activeToolNames = useMemo(() => {
-    const active = new Set()
-    activeProcesses.forEach((p) => {
-      if (p.status === 'active' || p.status === 'running' || p.status === 'executing') {
-        if (p.type) active.add(p.type.toLowerCase())
-        if (p.name) active.add(p.name.toLowerCase())
-        if (p.tool) active.add(p.tool.toLowerCase())
-        if (p.data?.task) active.add(String(p.data.task).toLowerCase())
-        if (p.data?.tool) active.add(String(p.data.tool).toLowerCase())
-      }
-    })
-    return active
-  }, [activeProcesses])
-
   const mood = currentResponse?.mood || 'neutral'
   const { hex: bgGlowColor } = getMoodColor(mood, orbStatus)
-
-  const totalToolsCount = useMemo(() => {
-    return STATIC_TOOL_CLUSTERS.reduce((acc, c) => acc + c.tools.length, 0)
-  }, [])
 
   return (
     <div className="h-screen w-screen text-white overflow-hidden relative select-none bg-[#060a08]">
@@ -381,106 +359,11 @@ const MarkHome = () => {
         </div>
       </div>
 
-      {/* ── 5. LEFT PANEL: TOOL CLUSTER DECK (Docked Left, In-Place Process Panel) ── */}
-      <aside className="absolute left-6 top-18 bottom-24 w-72 lg:w-76 z-20 flex flex-col gap-2.5 pointer-events-auto">
-        <div className="flex-1 bg-black/40 backdrop-blur-xl border border-white/5 rounded-2xl p-3 shadow-2xl flex flex-col min-h-0 overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5 px-1">
-            <div className="flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5 text-primary" />
-              <h3 className="text-xs font-bold font-mono tracking-wider text-white uppercase">
-                TOOL CLUSTERS
-              </h3>
-            </div>
-            <span className="text-[10px] font-mono text-white/40">
-              {STATIC_TOOL_CLUSTERS.length} Hubs · {totalToolsCount} Tools
-            </span>
-          </div>
-
-          {/* Active Process In-Place Card (Jika ada proses/task yang sedang berjalan) */}
-          {activeProcesses && activeProcesses.length > 0 && (
-            <div className="mb-2 shrink-0 max-h-[35vh] overflow-y-auto no-scrollbar">
-              <ProcessPanel processes={activeProcesses} onDismiss={dismissProcess} isEmbedded={true} />
-            </div>
-          )}
-
-          {/* List of Tool Clusters */}
-          <div className="flex-1 overflow-y-auto no-scrollbar space-y-1 pr-0.5">
-            {STATIC_TOOL_CLUSTERS.map((c) => {
-              const isClusterActive = c.tools.some((t) =>
-                t.matchTools.some(
-                  (mt) => activeToolNames.has(mt) || [...activeToolNames].some((an) => an.includes(mt))
-                )
-              )
-              const isSelected = selectedClusterKey === c.key
-
-              return (
-                <div key={c.id} className="flex flex-col">
-                  <button
-                    onClick={() => setSelectedClusterKey(isSelected ? null : c.key)}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer ${
-                      isClusterActive
-                        ? 'bg-primary/20 text-white font-semibold shadow-[0_0_10px_rgba(0,255,204,0.2)]'
-                        : isSelected
-                          ? 'bg-white/10 text-white'
-                          : 'text-white/70 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${isClusterActive ? 'animate-ping' : ''}`}
-                        style={{ backgroundColor: c.color }}
-                      />
-                      <span className="truncate">{c.name}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {isClusterActive && (
-                        <span className="px-1.5 py-0.2 rounded text-[8px] bg-primary text-black font-bold uppercase">
-                          RUN
-                        </span>
-                      )}
-                      <span className="text-[10px] opacity-40">({c.tools.length})</span>
-                    </div>
-                  </button>
-
-                  {/* Expanded Sub-Tools */}
-                  {isSelected && (
-                    <div className="pl-4 pr-1 py-1 flex flex-col gap-1 border-l border-white/10 ml-2.5 my-1">
-                      {c.tools.map((t) => {
-                        const isToolActive = t.matchTools.some(
-                          (mt) => activeToolNames.has(mt) || [...activeToolNames].some((an) => an.includes(mt))
-                        )
-                        return (
-                          <div
-                            key={t.id}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-mono flex items-center justify-between ${
-                              isToolActive
-                                ? 'bg-primary text-black font-bold'
-                                : 'text-white/50 hover:text-white hover:bg-white/5'
-                            }`}
-                          >
-                            <span className="truncate">{t.name}</span>
-                            {isToolActive && <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Bottom Telemetry One-Liner */}
-          <div className="pt-2 mt-1 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-white/50 px-1">
-            <div className="flex items-center gap-1.5">
-              <Activity className="w-3 h-3 text-primary" />
-              <span>Telemetry / CPU</span>
-            </div>
-            <span className="font-bold text-primary">{activeProcesses.length} Active</span>
-          </div>
-        </div>
-      </aside>
+      {/* ── 5. LEFT PANEL: TOOL CLUSTER DECK (Docked Left, In-Place Process Panel & Plugins) ── */}
+      <ToolClustersDeck
+        activeProcesses={activeProcesses}
+        dismissProcess={dismissProcess}
+      />
 
       {/* ── 6. RIGHT PANEL: ACTIVE STREAM FEED (Docked Right, Clean Minimalist Glass) ── */}
       <aside className="absolute right-6 top-18 bottom-24 w-80 lg:w-92 z-20 flex flex-col gap-2.5 pointer-events-auto">

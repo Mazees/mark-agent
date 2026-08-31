@@ -108,14 +108,70 @@ export const loadPlugins = loadAllPlugins
 export const getLoadedPlugins = () => loadedPlugins
 export const getPluginHandlers = () => Object.fromEntries(pluginActionHandlers.entries())
 
+/**
+ * Normalisasi query input dari AI/UI menjadi string tunggal bersih
+ */
+export function normalizePluginQuery(rawQuery) {
+  if (rawQuery === null || rawQuery === undefined) return ''
+  if (typeof rawQuery === 'string') return rawQuery
+  if (typeof rawQuery === 'number' || typeof rawQuery === 'boolean') return String(rawQuery)
+  if (typeof rawQuery === 'object') {
+    if (rawQuery.query !== undefined) {
+      return typeof rawQuery.query === 'object' ? JSON.stringify(rawQuery.query) : String(rawQuery.query)
+    }
+    if (rawQuery.value !== undefined) return String(rawQuery.value)
+    if (rawQuery.volume !== undefined) return String(rawQuery.volume)
+    if (rawQuery.text !== undefined) return String(rawQuery.text)
+    if (rawQuery.prompt !== undefined) return String(rawQuery.prompt)
+    if (rawQuery.target !== undefined) return String(rawQuery.target)
+    if (rawQuery.input !== undefined) return String(rawQuery.input)
+    const vals = Object.values(rawQuery)
+    if (vals.length === 1 && typeof vals[0] !== 'object') {
+      return String(vals[0])
+    }
+    return JSON.stringify(rawQuery)
+  }
+  return String(rawQuery)
+}
+
 export async function executePluginAction(actionName, query) {
-  const registered = pluginActionHandlers.get(actionName)
+  let registered = pluginActionHandlers.get(actionName)
+
+  // Fallback: Jika actionName berformat plugin-<pluginName>-<actionName> atau memiliki prefix plugin-
+  if (!registered && typeof actionName === 'string') {
+    // 1. Cek exact match jika disimpan dengan prefix
+    for (const [key, value] of pluginActionHandlers.entries()) {
+      const fullKey = `plugin-${value.pluginName}-${value.actionName}`.toLowerCase()
+      if (
+        key.toLowerCase() === actionName.toLowerCase() ||
+        fullKey === actionName.toLowerCase() ||
+        actionName.toLowerCase().endsWith(`-${key.toLowerCase()}`) ||
+        actionName.toLowerCase().endsWith(`_${key.toLowerCase()}`)
+      ) {
+        registered = value
+        break
+      }
+    }
+  }
+
   if (!registered) {
     return { success: false, error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.` }
   }
 
   try {
-    const result = await registered.handler({ query })
+    const cleanQuery = normalizePluginQuery(query)
+
+    // Buat polymorphic payload agar kompatibel dengan handler `{ query }` maupun `(query)` atau direct template literals
+    const payload = {
+      query: cleanQuery,
+      ...(typeof query === 'object' && query !== null ? query : {}),
+      toString: () => cleanQuery,
+      valueOf: () => cleanQuery,
+      [Symbol.toPrimitive]: () => cleanQuery
+    }
+    payload.query = cleanQuery
+
+    const result = await registered.handler(payload)
     return { success: true, data: result }
   } catch (err) {
     console.error(`[Plugin Execution Error] ${actionName}:`, err)

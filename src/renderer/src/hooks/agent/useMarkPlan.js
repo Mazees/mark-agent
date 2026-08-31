@@ -708,16 +708,6 @@ export const useMarkPlan = ({
           } catch (pErr) {
             res = { success: false, error: `Gagal memuat plugin: ${pErr.message}` }
           }
-        } else if (tool === 'execute-plugin') {
-          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
-          const actionName = a.action || ''
-          const queryVal = a.query || stringQuery || ''
-          if (!actionName) {
-            res = { success: false, error: 'Parameter action wajib diisi untuk execute-plugin.' }
-          } else {
-            const pRes = await window.api.executePlugin(actionName, queryVal)
-            res = pRes
-          }
         } else if (tool === 'read-tools') {
           const { group_tools } = await import('../../api/tools/group-tools.js')
           const groups = await group_tools()

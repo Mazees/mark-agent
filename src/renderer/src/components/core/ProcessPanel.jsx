@@ -125,11 +125,28 @@ const ProcessPanel = ({ processes = [], onDismiss, isEmbedded = false }) => {
                       suffix = '...'
                     }
 
+                    const hasQuery = typeof step === 'object' && step.query
+                    const taskTitle = typeof step === 'object' ? step.task : step
+
                     return (
                       <div key={idx} className={`flex items-start text-[10px] font-mono ${opacity}`}>
                         <span className="w-3.5 shrink-0 inline-block">{prefix}</span>
-                        <div className="flex-1 truncate">
-                          {typeof step === 'object' ? step.task : step} {suffix}
+                        <div className="flex-1 min-w-0">
+                          {hasQuery ? (
+                            <details className="group/step outline-none">
+                              <summary className="cursor-pointer select-none flex items-center hover:opacity-100 outline-none list-none [&::-webkit-details-marker]:hidden transition-opacity">
+                                <FaChevronRight className="group-open/step:rotate-90 transition-transform text-[8px] mr-1 opacity-50 shrink-0" />
+                                <span className="truncate">{taskTitle} {suffix}</span>
+                              </summary>
+                              <div className="mt-1 pl-2 opacity-80 text-[9px] border-l border-primary/30 ml-1 mb-1 break-words font-mono bg-black/40 p-1.5 rounded text-primary/90 max-h-32 overflow-y-auto">
+                                {typeof step.query === 'object' ? JSON.stringify(step.query, null, 2) : step.query}
+                              </div>
+                            </details>
+                          ) : (
+                            <div className="truncate">
+                              {taskTitle} {suffix}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
@@ -141,14 +158,15 @@ const ProcessPanel = ({ processes = [], onDismiss, isEmbedded = false }) => {
         }
 
         if (proc.type === 'plugin-execution') {
+          const hasQuery = !!proc.data?.query
           return (
             <div
               key={proc.id}
-              className="bg-black/60 border border-primary/20 rounded-xl p-2.5 shadow-lg text-xs font-mono text-white/80"
+              className="bg-black/60 border border-primary/20 rounded-xl p-2.5 shadow-lg text-xs font-mono text-white/80 animate-[holo-project-in_0.2s_ease-out_forwards]"
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="text-primary flex items-center gap-1 text-[11px] font-bold">
-                  <FaBolt size={10} /> {proc.data?.action}
+                  <FaBolt size={10} className="animate-pulse" /> {proc.data?.action}
                 </div>
                 {onDismiss && (
                   <button
@@ -159,9 +177,32 @@ const ProcessPanel = ({ processes = [], onDismiss, isEmbedded = false }) => {
                   </button>
                 )}
               </div>
-              <div className="text-[10px] text-white/70 truncate">
-                Mengeksekusi: <span className="text-primary">{proc.data?.query || proc.data?.action}</span>
-              </div>
+              {hasQuery ? (
+                <details className="group/plugin outline-none">
+                  <summary className="text-[10px] text-white/70 cursor-pointer select-none flex items-center hover:opacity-100 outline-none list-none [&::-webkit-details-marker]:hidden transition-opacity">
+                    <FaChevronRight className="group-open/plugin:rotate-90 transition-transform text-[8px] mr-1 opacity-50 shrink-0" />
+                    <span className="truncate">
+                      Mengeksekusi: <span className="text-primary font-semibold">{proc.data?.action}</span>
+                    </span>
+                  </summary>
+                  <div className="mt-1 pl-2 opacity-80 text-[9px] border-l border-primary/30 ml-1 mb-1 font-mono bg-black/40 p-1.5 rounded text-primary/90 max-h-28 overflow-y-auto whitespace-pre-wrap break-all">
+                    {typeof proc.data.query === 'object'
+                      ? JSON.stringify(proc.data.query, null, 2)
+                      : String(proc.data.query)}
+                  </div>
+                </details>
+              ) : (
+                <div className="text-[10px] text-white/70 truncate">
+                  Mengeksekusi: <span className="text-primary">{proc.data?.action}</span>
+                </div>
+              )}
+              {proc.data?.result && (
+                <div className="mt-1 p-1.5 bg-primary/10 text-primary border border-primary/20 rounded text-[9px] font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">
+                  {typeof proc.data.result === 'object'
+                    ? JSON.stringify(proc.data.result, null, 2)
+                    : String(proc.data.result)}
+                </div>
+              )}
             </div>
           )
         }
