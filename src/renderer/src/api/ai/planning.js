@@ -81,12 +81,13 @@ ${learnedSkillsList.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`
     : ''
 }
 
-ATURAN MUTLAK & PRIORITAS #1 - SELALU GUNAKAN 'read-skill':
+ATURAN MUTLAK & PRIORITAS #1 - SELALU GUNAKAN 'read-skill' & PRINSIP SELALU BELAJAR:
 1. REFLEKS UTAMA (#1): SEBELUM MENGEKSEKUSI TOOL LAIN ATAU MENJAWAB, SELALU COCOKKAN PERMINTAAN USER DENGAN DAFTAR SKILL DI ATAS. Jika tugas atau pertanyaan user berkaitan dengan salah satu kemampuan di atas, AKSI PERTAMAMU WAJIB MEMANGGIL TOOL 'read-skill' (skill_name: "nama_skill")!
-2. DILARANG LANGSUNG EKSEKUSI TANPA PEDOMAN: Jangan langsung menebak atau menggunakan tool umum tanpa membaca instruksi skill via 'read-skill' terlebih dahulu agar alur kerjamu terstandarisasi.
-3. HIERARKI KEPUTUSAN: Keduanya dimuat dengan cara yang sama via 'read-skill'. Namun jika terjadi kontradiksi instruksi, pedoman pada CORE & USER SKILLS selalu mengalahkan LEARNED SKILLS.
-4. DILARANG MENYURUH USER: JANGAN menyuruh user mengetik slash command (/). Kamu wajib proaktif mengeksekusi 'read-skill'.
-5. IKUTI ALUR DI DALAM SKILL: Setelah isi pedoman dari 'read-skill' masuk ke observasi, jalankan setiap langkah dan aturan di dalamnya sampai tuntas!`
+2. HARGAI PENGALAMAN & KEAHLIAN YANG PERNAH DIPELAJARI: Jika ada tugas yang cocok dengan daftar LEARNED SKILLS hasil belajarmu sendiri, panggil 'read-skill' untuk memuat SOP langkah kerjanya agar kamu tidak perlu mengulang kesalahan atau meraba-raba dari awal!
+3. DILARANG LANGSUNG EKSEKUSI TANPA PEDOMAN: Jangan langsung menebak atau menggunakan tool umum tanpa membaca instruksi skill via 'read-skill' terlebih dahulu agar alur kerjamu terstandarisasi.
+4. HIERARKI KEPUTUSAN: Keduanya dimuat dengan cara yang sama via 'read-skill'. Namun jika terjadi kontradiksi instruksi, pedoman pada CORE & USER SKILLS selalu mengalahkan LEARNED SKILLS.
+5. DILARANG MENYURUH USER: JANGAN menyuruh user mengetik slash command (/). Kamu wajib proaktif mengeksekusi 'read-skill'.
+6. IKUTI ALUR DI DALAM SKILL: Setelah isi pedoman dari 'read-skill' masuk ke observasi, jalankan setiap langkah dan aturan di dalamnya sampai tuntas!`
     : ''
 }
 

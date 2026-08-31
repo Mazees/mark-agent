@@ -55,6 +55,7 @@ import {
   listBackgroundTasks
 } from './task-daemon.js'
 import { searchYoutube, getTranscript, synthesizeTTS } from '../server/tools/media-tools.js'
+import { dbStore } from '../server/memory/db-store.js'
 
 const DANGEROUS_KEY_COMBOS = [
   'alt+f4',
@@ -166,9 +167,24 @@ export const NATIVE_TOOLS = {
         return { success: true, content, data: content }
       }
 
+      // 4. Fallback: Cek apakah tersimpan di SQLite database learned_skills
+      if (dbStore && dbStore.learnedSkills) {
+        try {
+          const allLearned = dbStore.learnedSkills.getAll()
+          const matched = allLearned.find(
+            (s) =>
+              s.name?.toLowerCase() === skillName.toLowerCase() ||
+              s.id?.toLowerCase() === skillName.toLowerCase()
+          )
+          if (matched && matched.content) {
+            return { success: true, content: matched.content, data: matched.content, source: 'learned_skills_db' }
+          }
+        } catch (_) {}
+      }
+
       return {
         success: false,
-        error: `Skill '${skillName}' tidak ditemukan di folder 'Documents/Mark Skills'.`
+        error: `Skill '${skillName}' tidak ditemukan di folder 'Documents/Mark Skills' maupun di basis data Learned Skills.`
       }
     }
   },

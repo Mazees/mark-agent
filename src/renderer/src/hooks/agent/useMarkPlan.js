@@ -29,6 +29,7 @@ import {
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import { buildOptimizedChatSession } from '../../api/ai/contextCompactor'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
+import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 
 // ============================================================================
 // HELPER UTILITIES
@@ -1510,6 +1511,24 @@ export const useMarkPlan = ({
 
           return [...filtered, aiMsg]
         })
+
+        // Meta-Learning: Sintesis skill otomatis jika turn berhasil mengeksekusi tool bermakna
+        if (
+          !isAutonomous &&
+          !isSystem &&
+          executedToolsList &&
+          executedToolsList.length > 0 &&
+          finalContentAccumulator
+        ) {
+          synthesizeSkillAndSave({
+            userPrompt: lastUserPromptRef.current || userInput,
+            executedTools: executedToolsList,
+            finalAnswer: finalContentAccumulator,
+            thought: currentTurnReasoning || accumulatedThoughts.join('\n\n')
+          }).catch((err) => {
+            console.warn('[useMarkPlan] Background Meta-Learning error:', err)
+          })
+        }
 
         break
       }

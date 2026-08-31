@@ -226,7 +226,7 @@ export const db = {
   subagents: new TableProxy('/api/subagents'),
   subagent_messages: new TableProxy('/api/subagents/messages'),
   subagentMessages: new TableProxy('/api/subagents/messages'),
-  learnedSkills: new TableProxy('/api/skills'),
+  learnedSkills: new TableProxy('/api/learned-skills'),
   agentTasks: new TableProxy('/api/tasks'),
   agentTaskSteps: new TableProxy('/api/tasks/steps'),
   transaction: async (...args) => {
@@ -648,8 +648,21 @@ export async function getAllLearnedSkills() {
 
 export async function saveLearnedSkill(skill) {
   try {
-    const id = skill.id || `skill_${Date.now()}`
-    const record = { ...skill, id, updatedAt: Date.now() }
+    const all = await getAllLearnedSkills()
+    const targetName = String(skill.name || '').toLowerCase().trim()
+    const existing = all.find(
+      (s) =>
+        s.id === skill.id ||
+        String(s.name || '').toLowerCase().trim() === targetName
+    )
+
+    const id = existing ? existing.id : (skill.id || `skill_${Date.now()}`)
+    const record = {
+      ...existing,
+      ...skill,
+      id,
+      updatedAt: Date.now()
+    }
     await db.learnedSkills.put(record)
     return record
   } catch (error) {
