@@ -3,45 +3,51 @@ import { GROUP_TOOLS_SCHEMA } from '../../api/tools/group-tools'
 import { core_tools_schema } from '../../api/tools/core-tools'
 
 /**
- * Palet warna holographic untuk setiap orbit planet kluster tools MARK V5
+ * Format string cluster key menjadi judul display yang rapi & ramah dibaca
  */
-export const CLUSTER_THEMES = {
-  advanced_browser: { name: 'Web Browser', color: '#00e5ff', radius: 170, speed: 0.0008, size: 6.5 },
-  pc_automation: { name: 'OS Automation', color: '#facc15', radius: 230, speed: 0.0006, size: 7.5 },
-  youtube_music: { name: 'Media & Music', color: '#f43f5e', radius: 290, speed: -0.0005, size: 6 },
-  subagents: { name: 'Sub-Agents', color: '#c084fc', radius: 350, speed: 0.0004, size: 8.5 },
-  file_system: { name: 'File System', color: '#10b981', radius: 410, speed: -0.00035, size: 7 },
-  memory_rag: { name: 'Memory RAG', color: '#ec4899', radius: 470, speed: 0.0003, size: 6.5 },
-  google_drive: { name: 'Google Drive', color: '#38bdf8', radius: 520, speed: -0.00025, size: 5.5 },
-  google_calendar: { name: 'Calendar', color: '#0284c7', radius: 570, speed: 0.00022, size: 5.5 },
-  google_gmail: { name: 'Gmail Inbox', color: '#ea580c', radius: 620, speed: -0.0002, size: 5.5 },
-  system_vision_tg: { name: 'Vision & TG', color: '#14b8a6', radius: 670, speed: 0.00018, size: 6 },
-  git_vcs: { name: 'Git VCS', color: '#8b5cf6', radius: 720, speed: -0.00015, size: 6 },
-  task_terminal: { name: 'CLI Daemon', color: '#f97316', radius: 770, speed: 0.00012, size: 6 },
-  custom_plugins: { name: 'Plugins', color: '#a855f7', radius: 820, speed: -0.00011, size: 6.5 },
-  core_system: { name: 'Core Shell', color: '#6366f1', radius: 870, speed: -0.0001, size: 6.5 }
+function formatClusterName(key) {
+  if (!key) return 'TOOLS'
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 /**
- * Membangun registry kluster tools lengkap langsung dari GROUP_TOOLS_SCHEMA & core_tools_schema
+ * Deterministic hash-based neon/holographic color generator
+ * Memberikan warna cerah/neon acak namun konsisten untuk setiap tool / cluster key.
+ */
+export function getDeterministicColor(str = '') {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  // Ambil hue dari 0 - 360, saturasi tinggi 85-100%, lightness 55-65% untuk efek neon futuristik
+  const hue = Math.abs(hash % 360)
+  const sat = 85 + Math.abs((hash >> 3) % 15)
+  const light = 55 + Math.abs((hash >> 6) % 10)
+  return `hsl(${hue}, ${sat}%, ${light}%)`
+}
+
+/**
+ * Membangun registry kluster tools secara dinamis dari GROUP_TOOLS_SCHEMA, core_tools_schema, & dynamicPlugins
  */
 export function buildCompleteToolClusters(dynamicPlugins = []) {
   const clusters = []
-
-  // 1. Ambil seluruh group tools dari GROUP_TOOLS_SCHEMA (kecuali custom_plugins jika diisi dynamicPlugins)
   const hasDynamicPlugins = Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0
 
+  let currentRadius = 170
+  let isClockwise = true
+
+  // 1. Ambil seluruh tool groups dari GROUP_TOOLS_SCHEMA
   Object.entries(GROUP_TOOLS_SCHEMA).forEach(([groupKey, groupData]) => {
-    // Jika custom_plugins memiliki dynamic plugin tersendiri, kita gantikan schema statis list-plugins dengan daftar action plugins dinamis
+    // Jika custom_plugins memiliki dynamic plugin terpasang, tangani terpisah di bawah
     if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
 
-    const theme = CLUSTER_THEMES[groupKey] || {
-      name: groupKey.replace(/_/g, ' ').toUpperCase(),
-      color: '#00e5ff',
-      radius: 300,
-      speed: 0.0005,
-      size: 6
-    }
+    const clusterName = formatClusterName(groupKey)
+    const clusterColor = getDeterministicColor(groupKey)
+    const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
+    isClockwise = !isClockwise
+
     const tools = (groupData.tools || []).map((t) => {
       const fn = t.function || t
       return {
@@ -50,6 +56,7 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
         label: fn.name.replace(/^(browser|os|gdrive|gcalendar|gmail|music|git|tg)-/, ''),
         description: fn.description,
         clusterKey: groupKey,
+        color: getDeterministicColor(fn.name),
         matchTools: [fn.name, fn.name.replace(/-/g, '_'), fn.name.replace(/_/g, '-')]
       }
     })
@@ -57,16 +64,18 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
     clusters.push({
       id: `cluster-${groupKey}`,
       key: groupKey,
-      name: theme.name,
-      color: theme.color,
-      radius: theme.radius || 300,
-      speed: theme.speed || 0.0005,
-      size: theme.size || 7,
+      name: clusterName,
+      color: clusterColor,
+      radius: currentRadius,
+      speed: speed || 0.0004,
+      size: 6.5,
       tools
     })
+
+    currentRadius += 55
   })
 
-  // 2. Kumpulkan core tools yang belum termasuk di dalam group tools
+  // 2. Kumpulkan core tools dari core_tools_schema yang belum ada di dalam group tools
   const existingToolNames = new Set()
   clusters.forEach((c) => c.tools.forEach((t) => existingToolNames.add(t.name)))
 
@@ -84,6 +93,7 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
       name: fn.name,
       label: fn.name.replace(/^(browser|os|gdrive|gcalendar|gmail|music|git|tg)-/, ''),
       description: fn.description,
+      color: getDeterministicColor(fn.name),
       matchTools: [fn.name, fn.name.replace(/-/g, '_'), fn.name.replace(/_/g, '-')]
     }
 
@@ -117,57 +127,31 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
     }
   })
 
-  if (subagentTools.length > 0) {
-    clusters.push({
-      id: 'cluster-subagents',
-      key: 'subagents',
-      name: CLUSTER_THEMES.subagents.name,
-      color: CLUSTER_THEMES.subagents.color,
-      radius: CLUSTER_THEMES.subagents.radius,
-      speed: CLUSTER_THEMES.subagents.speed,
-      size: CLUSTER_THEMES.subagents.size,
-      tools: subagentTools
-    })
-  }
+  const additionalCoreGroups = [
+    { key: 'subagents', name: 'Sub-Agents', tools: subagentTools, size: 8 },
+    { key: 'file_system', name: 'File System', tools: fileTools, size: 7 },
+    { key: 'memory_rag', name: 'Memory RAG', tools: memoryTools, size: 6.5 },
+    { key: 'core_system', name: 'Core System', tools: coreControlTools, size: 6.5 }
+  ]
 
-  if (fileTools.length > 0) {
-    clusters.push({
-      id: 'cluster-file_system',
-      key: 'file_system',
-      name: CLUSTER_THEMES.file_system.name,
-      color: CLUSTER_THEMES.file_system.color,
-      radius: CLUSTER_THEMES.file_system.radius,
-      speed: CLUSTER_THEMES.file_system.speed,
-      size: CLUSTER_THEMES.file_system.size,
-      tools: fileTools
-    })
-  }
+  additionalCoreGroups.forEach((cg) => {
+    if (cg.tools.length > 0) {
+      const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
+      isClockwise = !isClockwise
 
-  if (memoryTools.length > 0) {
-    clusters.push({
-      id: 'cluster-memory_rag',
-      key: 'memory_rag',
-      name: CLUSTER_THEMES.memory_rag.name,
-      color: CLUSTER_THEMES.memory_rag.color,
-      radius: CLUSTER_THEMES.memory_rag.radius,
-      speed: CLUSTER_THEMES.memory_rag.speed,
-      size: CLUSTER_THEMES.memory_rag.size,
-      tools: memoryTools
-    })
-  }
-
-  if (coreControlTools.length > 0) {
-    clusters.push({
-      id: 'cluster-core_system',
-      key: 'core_system',
-      name: CLUSTER_THEMES.core_system.name,
-      color: CLUSTER_THEMES.core_system.color,
-      radius: CLUSTER_THEMES.core_system.radius,
-      speed: CLUSTER_THEMES.core_system.speed,
-      size: CLUSTER_THEMES.core_system.size,
-      tools: coreControlTools
-    })
-  }
+      clusters.push({
+        id: `cluster-${cg.key}`,
+        key: cg.key,
+        name: cg.name,
+        color: getDeterministicColor(cg.key),
+        radius: currentRadius,
+        speed: speed || 0.0003,
+        size: cg.size,
+        tools: cg.tools
+      })
+      currentRadius += 55
+    }
+  })
 
   // 3. Tambahkan Custom Plugins jika ada
   if (Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0) {
@@ -183,6 +167,7 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
             label: actionName,
             description: act.description || p.description || `Custom plugin ${p.name}`,
             clusterKey: 'custom_plugins',
+            color: getDeterministicColor(`${p.name}-${actionName}`),
             matchTools: [
               actionName,
               fullPrefix,
@@ -196,16 +181,18 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
     })
 
     if (pluginTools.length > 0) {
+      const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
       clusters.push({
         id: 'cluster-custom_plugins',
         key: 'custom_plugins',
-        name: CLUSTER_THEMES.custom_plugins.name,
-        color: CLUSTER_THEMES.custom_plugins.color,
-        radius: CLUSTER_THEMES.custom_plugins.radius,
-        speed: CLUSTER_THEMES.custom_plugins.speed,
-        size: CLUSTER_THEMES.custom_plugins.size,
+        name: 'Custom Plugins',
+        color: getDeterministicColor('custom_plugins'),
+        radius: currentRadius,
+        speed: speed || -0.0002,
+        size: 7,
         tools: pluginTools
       })
+      currentRadius += 55
     }
   }
 

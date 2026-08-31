@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Layers, Activity, Puzzle, ChevronRight, CheckCircle2 } from 'lucide-react'
 import ProcessPanel from './ProcessPanel'
-import { buildCompleteToolClusters, CLUSTER_THEMES } from './SolarSystemCanvas'
+import { buildCompleteToolClusters } from './SolarSystemCanvas'
 import { webApi } from '../../api/web-bridge'
 
 /**
@@ -157,7 +157,13 @@ const ToolClustersDeck = ({
                               : 'text-white/60 hover:text-white hover:bg-white/5'
                           }`}
                         >
-                          <span className="truncate flex-1 pr-1">{t.name}</span>
+                          <div className="flex items-center gap-1.5 truncate flex-1 pr-1">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: t.color || c.color }}
+                            />
+                            <span className="truncate">{t.name}</span>
+                          </div>
                           {isToolActive && <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse shrink-0" />}
                         </div>
                       )
