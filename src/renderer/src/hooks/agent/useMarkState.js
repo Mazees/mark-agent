@@ -56,9 +56,20 @@ export const useMarkState = () => {
       }
     }
 
+    const handleAiReset = () => {
+      setChatData([])
+      setCurrentActiveSessionId('1')
+      setActiveTopic(null)
+      setCurrentResponse(null)
+      setNotifications([])
+      setActiveProcesses([])
+    }
+
     window.addEventListener('config-updated', handleConfigUpdate)
+    window.addEventListener('ai-reset-complete', handleAiReset)
     return () => {
       window.removeEventListener('config-updated', handleConfigUpdate)
+      window.removeEventListener('ai-reset-complete', handleAiReset)
     }
   }, [])
 

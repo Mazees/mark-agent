@@ -12,7 +12,6 @@ import {
   FaBrain,
   FaTerminal,
   FaVolumeUp,
-  FaDatabase,
   FaCog
 } from 'react-icons/fa'
 import {
@@ -20,9 +19,7 @@ import {
   getAllConfig,
   saveConfiguration,
   deleteMemory,
-  db,
-  getRelationship,
-  saveRelationship
+  db
 } from '../api/db'
 import { getExtractor } from '../api/vectorMemory'
 import { driver } from 'driver.js'
@@ -286,141 +283,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     setLoadingMemory(false)
   }
 
-  const handleDeleteMemory = async (mem) => {
-    const result = await confirm({
-      title: 'Hapus Memori?',
-      message: `Yakin ingin menghapus memori ini?\n"${mem.summary || mem.memory}"`,
-      isError: true,
-      confirmText: 'Ya, Hapus'
-    })
-
-    if (result.isConfirmed) {
-      await deleteMemory({ id: mem.id })
-      setMemories((prev) => prev.filter((m) => m.id !== mem.id))
-    }
-  }
-
-  const handleClearAllChat = async () => {
-    const result = await confirm({
-      title: 'Hapus Semua Chat?',
-      message: 'Semua riwayat sesi chat akan dihapus permanen dan tidak bisa dikembalikan.',
-      isError: true,
-      confirmText: 'Ya, Hapus Semua'
-    })
-
-    if (result.isConfirmed) {
-      await db.sessions.clear()
-      await db.chatArchive.clear()
-    }
-  }
-
-  const handleExportChat = async () => {
-    const session = await db.sessions.get(1)
-    const exportData = session ? session.data : []
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `mark-chat-history-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  // Backup & Restore Database
-  const [isExportingDb, setIsExportingDb] = useState(false)
-  const [isRestoringDb, setIsRestoringDb] = useState(false)
-  const fileInputRef = useRef(null)
-
-  const handleExportFullDatabase = async () => {
-    try {
-      setIsExportingDb(true)
-      let exportData
-      if (window.api && window.api.exportDatabase) {
-        exportData = await window.api.exportDatabase()
-      } else {
-        const memory = await db.memory.toArray()
-        const sessions = await db.sessions.toArray()
-        const configs = await db.config.toArray()
-        const chatArchive = await db.chatArchive.toArray()
-        const documents = await db.documents.toArray()
-        const relationships = await db.relationships.toArray()
-        const learnedSkills = await db.learnedSkills.toArray()
-        const chatTurns = await db.chatTurns.toArray()
-        exportData = {
-          app: 'MARK',
-          version: '4.x',
-          exportedAt: new Date().toISOString(),
-          tables: {
-            memory,
-            sessions,
-            config: configs,
-            chatArchive,
-            documents,
-            relationships,
-            learnedSkills,
-            chatTurns
-          }
-        }
-      }
-
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `mark-full-backup-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      alert(`Gagal export database: ${err.message}`)
-    } finally {
-      setIsExportingDb(false)
-    }
-  }
-
-  const handleFileRestoreSelect = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const result = await confirm({
-      title: 'Restore Database?',
-      message:
-        'Data saat ini akan ditimpa dengan data backup dari file JSON yang kamu pilih. Lanjutkan?',
-      isError: true,
-      confirmText: 'Ya, Restore Sekarang'
-    })
-
-    if (!result.isConfirmed) {
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      return
-    }
-
-    setIsRestoringDb(true)
-    try {
-      const text = await file.text()
-      const dumpData = JSON.parse(text)
-
-      if (window.api && window.api.restoreDatabase) {
-        await window.api.restoreDatabase(dumpData, true)
-      } else if (dumpData.tables) {
-        for (const [tblName, rows] of Object.entries(dumpData.tables)) {
-          if (db[tblName] && Array.isArray(rows)) {
-            await db[tblName].clear()
-            await db[tblName].bulkAdd(rows)
-          }
-        }
-      }
-
-      alert('Database MARK berhasil dipulihkan / dimigrasikan!')
-      window.location.reload()
-    } catch (err) {
-      alert(`Gagal restore database: ${err.message}`)
-    } finally {
-      setIsRestoringDb(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  const handleSaveConfiguration = async () => {
+const handleSaveConfiguration = async () => {
     if (config.aiProvider === 'custom') {
       const endpoint = config.customEndpoint?.trim() || ''
       if (!endpoint.endsWith('/chat/completions')) {
@@ -1192,110 +1055,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
           </section>
 
           {/* ── Telegram Bot Settings ── */}
-
-          {!isFirstSetup && (
-            <>
-              <div className="divider"></div>
-
-              {/* ── Memory & Data ── */}
-              <section className="space-y-5">
-                <h2 className="text-base font-bold uppercase tracking-wider opacity-70">
-                  Memory & Data
-                </h2>
-
-                {/* Chat History */}
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Chat History</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button className="btn btn-soft btn-error btn-sm" onClick={handleClearAllChat}>
-                      Hapus Semua Chat
-                    </button>
-                    <button className="btn btn-soft btn-info btn-sm" onClick={handleExportChat}>
-                      Export Chat ke JSON
-                    </button>
-                  </div>
-                </div>
-
-                {/* Database Backup & Restore */}
-                <div className="space-y-3 pt-2">
-                  <div>
-                    <p className="text-sm font-semibold">Pencadangan & Migrasi Database</p>
-                    <p className="text-xs opacity-50 mt-0.5">
-                      Simpan atau pulihkan seluruh penyimpanan Mark (termasuk chat history,
-                      pengaturan, dan data lainnya) dalam format JSON. Gunakan fitur ini untuk
-                      migrasi ke perangkat lain atau sebagai cadangan.
-                    </p>
-                  </div>
-
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileRestoreSelect}
-                    accept=".json"
-                    className="hidden"
-                  />
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-primary btn-sm gap-2"
-                      onClick={handleExportFullDatabase}
-                      disabled={isExportingDb || isRestoringDb}
-                    >
-                      {isExportingDb ? (
-                        <span className="loading loading-spinner loading-xs"></span>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                      )}
-                      Backup Seluruh Database (JSON)
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-warning btn-sm gap-2"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isExportingDb || isRestoringDb}
-                    >
-                      {isRestoringDb ? (
-                        <span className="loading loading-spinner loading-xs"></span>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                      )}
-                      Restore Database
-                    </button>
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
 
           <div className="flex flex-col items-end pt-2">
             {isDownloadingModel && (

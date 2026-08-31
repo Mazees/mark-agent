@@ -8,14 +8,15 @@ import FloatingMenu from '../components/core/FloatingMenu'
 import HistoryDrawer from '../components/core/HistoryDrawer'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
 import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
-import MemoryVisualizer from '../components/core/MemoryVisualizer'
 import BrowserPreviewWidget from '../components/core/BrowserPreviewWidget'
 import { ChatStudioModal } from '../components/core/ChatStudioModal'
 import {
   MessageSquare,
   Sparkles,
-  Terminal
+  Terminal,
+  Brain
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useVAD } from '../hooks/useVAD'
@@ -23,6 +24,7 @@ import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
 import { db, setSessionWorkspace, getAllConfig } from '../api/db'
 
 const MarkHome = () => {
+  const navigate = useNavigate()
   const chatContext = useChat()
   const {
     chatData,
@@ -48,7 +50,6 @@ const MarkHome = () => {
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isChatStudioOpen, setIsChatStudioOpen] = useState(false)
-  const [isMemoryMapOpen, setIsMemoryMapOpen] = useState(false)
   const [currentResponse, setCurrentResponse] = useState(null)
   const [showMusicWidget, setShowMusicWidget] = useState(false)
   const [isMusicAnimatingOut, setIsMusicAnimatingOut] = useState(false)
@@ -106,7 +107,7 @@ const MarkHome = () => {
   }, [setOrbStatus])
 
   useEffect(() => {
-    const handleOpenMap = () => setIsMemoryMapOpen(true)
+    const handleOpenMap = () => navigate('/neural-core?tab=synaptic')
     const handleOpenChat = () => setIsChatStudioOpen(true)
 
     window.addEventListener('open-memory-map', handleOpenMap)
@@ -116,7 +117,7 @@ const MarkHome = () => {
       window.removeEventListener('open-memory-map', handleOpenMap)
       window.removeEventListener('open-chat-studio', handleOpenChat)
     }
-  }, [])
+  }, [navigate])
 
   const handleVoiceTranscript = (text, meta = {}) => {
     const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
@@ -279,17 +280,6 @@ const MarkHome = () => {
           >
             <MessageSquare className="w-3.5 h-3.5 text-primary" />
             <span className="hidden md:inline">Studio</span>
-          </button>
-        </div>
-
-        {/* Right: Memory Map & Online Status */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setIsMemoryMapOpen(true)}
-            className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-xs font-mono text-white/80 flex items-center gap-1.5 cursor-pointer transition-all"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            <span className="hidden md:inline">Memory Map</span>
           </button>
         </div>
       </header>
@@ -463,7 +453,6 @@ const MarkHome = () => {
 
       {/* Drawers & Modals */}
       <HistoryDrawer isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
-      <MemoryVisualizer isOpen={isMemoryMapOpen} onClose={() => setIsMemoryMapOpen(false)} />
       <ChatStudioModal
         isOpen={isChatStudioOpen}
         onClose={() => setIsChatStudioOpen(false)}

@@ -8,7 +8,7 @@ import Skills from './pages/Skills'
 import SkillEditor from './pages/SkillEditor'
 import Knowledge from './pages/Knowledge'
 import Guidebook from './pages/Guidebook'
-import RelationalGrowth from './pages/RelationalGrowth'
+import NeuralCore from './pages/NeuralCore'
 import GoogleWorkspace from './pages/GoogleWorkspace'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
@@ -152,7 +152,7 @@ const MainLayout = () => {
               <Route path="/google-workspace" element={<GoogleWorkspace />} />
               <Route path="/knowledge" element={<Knowledge />} />
               <Route path="/guidebook" element={<Guidebook />} />
-              <Route path="/relational" element={<RelationalGrowth />} />
+              <Route path="/neural-core" element={<NeuralCore />} />
               <Route path="/subagents" element={<Subagents />} />
             </Routes>
           </div>

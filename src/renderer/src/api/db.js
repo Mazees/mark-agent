@@ -680,4 +680,49 @@ export async function deleteLearnedSkill(id) {
   }
 }
 
+// --- RESET AI DATABASE (EXCEPT CONFIG) ---
+export async function resetAiDatabase() {
+  try {
+    const res = await apiPost('/api/db/reset-ai', {})
+    // Re-inisialisasi Orama index di frontend agar sinkron
+    try {
+      const { initOramaIndices, hydrateFromDb } = await import('./oramaStore')
+      await initOramaIndices()
+      await hydrateFromDb()
+    } catch (e) {
+      console.warn('[DB Proxy] Gagal re-hydrate Orama setelah reset:', e)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ai-reset-complete', { detail: res }))
+    }
+
+    return res || { success: true }
+  } catch (error) {
+    console.error('Error in resetAiDatabase logic:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+// --- DATABASE BACKUP & RESTORE HELPERS ---
+export async function exportDatabaseDump() {
+  try {
+    const res = await apiGet('/api/db/export')
+    return res || null
+  } catch (error) {
+    console.error('Error in exportDatabaseDump:', error)
+    throw error
+  }
+}
+
+export async function restoreDatabaseDump(dumpData, overwrite = true) {
+  try {
+    const res = await apiPost('/api/db/restore', { dumpData, overwrite })
+    return res || { success: true }
+  } catch (error) {
+    console.error('Error in restoreDatabaseDump:', error)
+    throw error
+  }
+}
+
 

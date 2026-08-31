@@ -517,6 +517,54 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
   return { success: true, imported: results }
 }
 
+/**
+ * Reset seluruh data memori dan riwayat AI (semua tabel kecuali tabel 'config')
+ */
+export function resetAllExceptConfig() {
+  const resetTransaction = sqlite.transaction(() => {
+    // 1. Bersihkan tabel memori & percakapan
+    dbStore.memories.clear()
+    dbStore.sessions.clear()
+    dbStore.chatTurns.clear()
+    dbStore.chatArchives.clear()
+    dbStore.documents.clear()
+    dbStore.subagents.clear()
+    dbStore.subagentMessages.clear()
+    dbStore.learnedSkills.clear()
+    dbStore.agentTasks.clear()
+    dbStore.agentTaskSteps.clear()
+
+    // 2. Reset hubungan / sifat relasional ke nilai default awal
+    dbStore.relationships.clear()
+    dbStore.relationships.insert({
+      user_id: 'owner',
+      warmth: 0.5,
+      sarcasm_level: 0.5,
+      trust: 0.5,
+      energy: 0.5,
+      obedience: 0.8,
+      reasoning: 'Karakter dan memori AI direset ke pengaturan awal.',
+      new_relational_memory: '',
+      last_evaluation: null,
+      eval_count: 0,
+      last_chat_index: 0
+    })
+
+    // 3. Buat sesi awal default
+    dbStore.sessions.insert({
+      id: '1',
+      title: 'Main Thread',
+      data: JSON.stringify([]),
+      timestamp: Date.now(),
+      created_at: Date.now(),
+      updated_at: Date.now()
+    })
+  })
+
+  resetTransaction()
+  return { success: true, message: 'Seluruh data AI berhasil direset ke kondisi awal (konfigurasi dipertahankan).' }
+}
+
 export const dbStore = {
   sqlite,
   config: new SqliteTable('config'),
@@ -532,5 +580,6 @@ export const dbStore = {
   agentTasks: new SqliteTable('agent_tasks'),
   agentTaskSteps: new SqliteTable('agent_task_steps'),
   exportFullDatabase,
-  restoreFullDatabase
+  restoreFullDatabase,
+  resetAllExceptConfig
 }

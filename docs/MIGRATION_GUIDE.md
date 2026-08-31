@@ -74,14 +74,14 @@ Jika pada MARK versi sebelumnya belum tersedia tombol ekspor di menu Pengaturan,
 
 ## 3. Cara Restore / Impor ke MARK V5 (Versi Baru)
 
-
-1. Buka **MARK VERSI TERBARU**
-2. Masuk ke menu **Pengaturan** (ikon gear di pojok kiri bawah).
-3. Gulir ke bagian **Pencadangan & Migrasi Database**.
-4. Klik tombol **Restore Database**.
+1. Buka **MARK VERSI TERBARU**.
+2. Masuk ke menu **Pusat Otak Mark (Neural Core)** (ikon otak di pojok kiri bawah atau tombol *Neural Core* di dashboard atas).
+3. Di panel **Sifat & Karakter** (atau tab **Karakter & Emosi**), cari bagian **Pencadangan & Migrasi Database**.
+4. Klik tombol **Restore Database** (atau **Restore JSON**).
 5. Pilih file backup `.json` yang telah diekspor pada Langkah 2.
 6. Tunggu beberapa saat hingga notifikasi konfirmasi berhasil muncul, lalu aplikasi akan me-reload data secara otomatis.
 
+---
 
 ## 4. Kompatibilitas Pemetaan Skema Otomatis
 
@@ -109,7 +109,7 @@ Di MARK V5, seluruh data tersimpan terpusat dalam database SQLite tunggal:
    * **`mark.db`** (Database utama SQLite)
    * **`mark.db-wal`** (Write-Ahead Log)
    * **`mark.db-shm`** (Shared Memory index)
-3. Untuk backup manual sewaktu-waktu, cukup salin file `mark.db` ke tempat aman atau gunakan tombol **Backup Seluruh Database (JSON)** di menu Pengaturan.
+3. Untuk backup manual sewaktu-waktu, cukup salin file `mark.db` ke tempat aman atau gunakan tombol **Backup Database (JSON)** di menu **Pusat Otak Mark (Neural Core)**.
 
 ---
 
@@ -118,4 +118,4 @@ Di MARK V5, seluruh data tersimpan terpusat dalam database SQLite tunggal:
 * **Riwayat obrolan tidak langsung muncul setelah restore?**
   * Klik menu *Chat Studio* atau refresh halaman (`Ctrl + R`) untuk memuat ulang daftar sesi.
 * **Memori lama belum terindeks di pencarian cerdas?**
-  * Masuk ke menu **Pengaturan** -> klik tombol **Re-index Search (Orama)** untuk memperbarui indeks vektor lokal.
+  * Masuk ke menu **Pusat Otak Mark (Neural Core)** -> klik tab **Peta Memori** -> klik tombol pembersihan/konsolidasi memori untuk sinkronisasi indeks vektor lokal.

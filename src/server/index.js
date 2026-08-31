@@ -836,6 +836,17 @@ app.post('/api/db/restore', async (req, res) => {
   }
 })
 
+app.post('/api/db/reset-ai', async (_req, res) => {
+  try {
+    const result = dbStore.resetAllExceptConfig()
+    initOramaIndices().catch(() => {})
+    wsHub.broadcast('db:restored', { timestamp: Date.now(), reset: true })
+    res.json({ success: true, data: result })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 // 6. Vector Embedding API
 app.post('/api/vector', async (req, res) => {
   const { text } = req.body || {}

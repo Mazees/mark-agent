@@ -8,8 +8,6 @@ import {
   FaHistory,
   FaTelegram,
   FaDatabase,
-  FaNetworkWired,
-  FaHeartbeat,
   FaBook,
   FaGoogle,
   FaBrain,
@@ -73,12 +71,17 @@ const FloatingMenu = ({ onOpenHistory, tgStatus = 'disconnected' }) => {
           >
             <FaPuzzlePiece className="text-primary" /> Plugins
           </button>
-
+          <button
+            onClick={() => handleNav('/neural-core')}
+            className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/80 hover:text-white text-xs font-medium text-left cursor-pointer"
+          >
+            <FaBrain className="text-primary" /> Neural Core
+          </button>
           <button
             onClick={() => handleNav('/skills')}
             className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/80 hover:text-white text-xs font-medium text-left cursor-pointer"
           >
-            <FaBrain className="text-primary" /> Mark Skills
+            <FaPuzzlePiece className="text-primary" /> User Skills
           </button>
 
           <button
@@ -114,23 +117,6 @@ const FloatingMenu = ({ onOpenHistory, tgStatus = 'disconnected' }) => {
             className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/80 hover:text-white text-xs font-medium text-left cursor-pointer"
           >
             <FaBook className="text-primary" /> Guidebook
-          </button>
-
-          <button
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('open-memory-map'))
-              setIsOpen(false)
-            }}
-            className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/80 hover:text-white text-xs font-medium text-left cursor-pointer"
-          >
-            <FaNetworkWired className="text-primary" /> Memory Map
-          </button>
-
-          <button
-            onClick={() => handleNav('/relational')}
-            className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/80 hover:text-white text-xs font-medium text-left cursor-pointer"
-          >
-            <FaHeartbeat className="text-primary" /> Relational Growth
           </button>
 
           <button
