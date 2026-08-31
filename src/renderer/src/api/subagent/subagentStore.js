@@ -2,7 +2,7 @@ import { db } from '../db'
 
 export const subagentStore = {
   /**
-   * Membuat entitas Sub-Agent baru di database Dexie
+   * Membuat entitas Sub-Agent baru di database SQLite
    */
   async createSubagent({
     name = 'Specialist-Agent',
@@ -61,22 +61,28 @@ export const subagentStore = {
    */
   async deleteSubagent(id) {
     if (!id) return
+    try {
+      const { killSubagentExecution } = await import('./subagentExecutor')
+      killSubagentExecution(id)
+    } catch (_) {}
     await db.subagents.delete(id)
-    await db.subagent_messages.where('subagentId').equals(id).delete()
   },
 
   /**
    * Menambahkan pesan ke riwayat percakapan AI-to-AI Sub-Agent
    */
-  async addMessage(subagentId, { sender, role, content, thought = null, action = null }) {
+  async addMessage(subagentId, { sender, role, content, thought = null, action = null, tool_calls = null, tool_call_id = null, name = null }) {
     if (!subagentId) return null
     const msg = {
       subagentId,
-      sender, // 'mark' | 'subagent' | 'system' | 'tool'
-      role, // 'user' | 'assistant' | 'system'
-      content: typeof content === 'string' ? content : JSON.stringify(content),
+      sender, // 'mark' | 'subagent' | 'user' | 'system' | 'tool'
+      role, // 'user' | 'assistant' | 'system' | 'tool'
+      content: typeof content === 'string' ? content : (content ? JSON.stringify(content) : ''),
       thought: thought || null,
       action: action || null,
+      tool_calls: tool_calls || null,
+      tool_call_id: tool_call_id || null,
+      name: name || null,
       timestamp: Date.now()
     }
     const id = await db.subagent_messages.add(msg)

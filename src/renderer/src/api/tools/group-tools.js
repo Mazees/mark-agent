@@ -346,24 +346,6 @@ export const GROUP_TOOLS_SCHEMA = {
             additionalProperties: false
           }
         }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'analyze-screen',
-          description: 'Mengambil screenshot seluruh monitor/layar Windows saat ini dan menganalisis tampilan visual antarmuka/aplikasi menggunakan AI Vision.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat atau analisis dari layar pengguna'
-              }
-            },
-            required: ['query'],
-            additionalProperties: false
-          }
-        }
       }
     ]
   },

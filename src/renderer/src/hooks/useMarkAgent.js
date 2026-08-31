@@ -206,6 +206,39 @@ export const useMarkAgent = () => {
     return () => window.removeEventListener('tg-admin-message', handleTgAdminMessage)
   }, [handlePlanningCommand, setInputSource, handleStop, setIsSpeak])
 
+  // Subagent Push Notification & Completion Listener
+  useEffect(() => {
+    if (!window.api?.onSubagentReport) return
+
+    const unsubReport = window.api.onSubagentReport((data) => {
+      console.log('[useMarkAgent] Menerima subagent:report push event:', data)
+      if (data && data.summary) {
+        pushNotification({
+          title: `Laporan @${data.subagentName || 'Sub-Agent'}`,
+          message: data.summary,
+          type: 'info'
+        })
+        // Suntikkan update proaktif ke sesi Mark jika Mark tidak sedang sibuk
+        if (!isAgentBusy) {
+          handlePlanningCommand(
+            `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}\nBeri tanggapan atau rangkumkan secara singkat kepada user.`,
+            null,
+            false,
+            null,
+            { disableTools: false },
+            true
+          ).catch((err) => {
+            console.error('[useMarkAgent] Error handling subagent report turn:', err)
+          })
+        }
+      }
+    })
+
+    return () => {
+      if (unsubReport) unsubReport()
+    }
+  }, [handlePlanningCommand, isAgentBusy, pushNotification])
+
   const isInitialSyncDoneRef = useRef(false)
   const lastSyncedMsgIdRef = useRef(null)
 

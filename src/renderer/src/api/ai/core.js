@@ -46,7 +46,6 @@ export const fetchAIStream = async ({
       hasResolved = true
       if (unsubToken) unsubToken()
       if (unsubMood) unsubMood()
-      if (window.api && window.api.abortFetchAI) window.api.abortFetchAI()
       const err = new Error('AbortError')
       err.name = 'AbortError'
       reject(err)
@@ -127,7 +126,6 @@ export const fetchAI = async (
     const onAbort = () => {
       if (hasResolved) return
       hasResolved = true
-      if (window.api && window.api.abortFetchAI) window.api.abortFetchAI()
       const err = new Error('AbortError')
       err.name = 'AbortError'
       reject(err)

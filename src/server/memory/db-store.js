@@ -121,6 +121,9 @@ sqlite.exec(`
     content TEXT NOT NULL,
     thought TEXT,
     action TEXT,
+    tool_calls TEXT,
+    tool_call_id TEXT,
+    name TEXT,
     timestamp INTEGER NOT NULL
   );
 
@@ -216,7 +219,10 @@ ensureTableColumns('subagents', {
 
 ensureTableColumns('subagent_messages', {
   thought: 'TEXT',
-  action: 'TEXT'
+  action: 'TEXT',
+  tool_calls: 'TEXT',
+  tool_call_id: 'TEXT',
+  name: 'TEXT'
 })
 
 ensureTableColumns('agent_tasks', {
@@ -407,6 +413,8 @@ class SqliteTable {
       turnCount: 'turn_count',
       parentSessionId: 'parent_session_id',
       subagentId: 'subagent_id',
+      toolCalls: 'tool_calls',
+      toolCallId: 'tool_call_id',
       taskId: 'task_id',
       stepIndex: 'step_index'
     }
@@ -507,6 +515,7 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
 }
 
 export const dbStore = {
+  sqlite,
   config: new SqliteTable('config'),
   memories: new SqliteTable('memories'),
   sessions: new SqliteTable('sessions'),

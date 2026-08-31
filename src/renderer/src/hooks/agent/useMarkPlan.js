@@ -688,7 +688,7 @@ export const useMarkPlan = ({
           const { runSubagentTurn } = await import('../../api/subagent/subagentExecutor.js')
           const a = typeof rawArgs === 'object' ? rawArgs : {}
           const parts = (query || '').split('||')
-          const name = a.name || parts[0]?.trim() || 'Worker-Agent'
+          const name = a.name || parts[0]?.trim() || 'Specialist-Agent'
           const role = a.role || parts[1]?.trim() || 'Technical Specialist'
           const goal = a.goal || parts[2]?.trim() || 'Selesaikan misi teknis'
           const initialMessage = a.initial_message || parts[3]?.trim() || goal
@@ -708,14 +708,53 @@ export const useMarkPlan = ({
             parentSessionId: 'main_chat'
           })
 
-          // Jalankan loop eksekusi ReAct secara paralel di background (non-blocking)
-          runSubagentTurn(sub.id, initialMessage).catch((err) => {
-            console.error(`[Sub-Agent ${sub.id}] Background error:`, err)
+          // Jalankan loop eksekusi ReAct secara otonom di background (non-blocking)
+          runSubagentTurn(sub.id, initialMessage, 'lead').catch((err) => {
+            console.error(`[Sub-Agent ${sub.id}] Background execution error:`, err)
           })
 
           res = {
             success: true,
-            data: `[SUB-AGENT BERHASIL DIBUAT & BERJALAN DI BACKGROUND]\n- Nama: ${name}\n- ID: ${sub.id}\n- Role: ${role}\n- Goal: ${goal}\nSub-agent ini telah mulai bekerja secara paralel di background. Kamu bisa langsung membuat sub-agent lain (batch) atau gunakan tool 'wait_subagents' (targets: "all" atau ID-nya) untuk menunggu dan mengumpulkan hasil laporannya.`
+            data: `[SUB-AGENT BERHASIL DILUNCURKAN SECARA ASINKRON (NON-BLOCKING)]\n- Nama: ${name}\n- ID: ${sub.id}\n- Role: ${role}\n- Goal: ${goal}\nSub-agent telah mulai bekerja secara mandiri di background. Kamu TIDAK PERLU menunggu (dilarang mem-blocking). Langsung beritahu user bahwa tugas telah didelegasikan ke @${name} dan dia akan melapor secara otomatis via push notification ketika selesai.`
+          }
+        } else if (tool === 'message_agent') {
+          const { subagentStore } = await import('../../api/subagent/subagentStore.js')
+          const { runSubagentTurn } = await import('../../api/subagent/subagentExecutor.js')
+          const a = typeof rawArgs === 'object' ? rawArgs : {}
+          const parts = (query || '').split('||')
+          const targetQuery = a.target_agent || a.targetAgent || parts[0]?.trim()
+          const msgText = a.message || parts[1]?.trim()
+
+          if (!targetQuery || !msgText) {
+            res = {
+              success: false,
+              error: 'Parameter message_agent tidak lengkap (target_agent dan message wajib ada).'
+            }
+          } else {
+            const allAgents = await subagentStore.listSubagents()
+            const targetAgent = allAgents.find(
+              (s) =>
+                s.id === targetQuery ||
+                s.name.toLowerCase() === targetQuery.toLowerCase() ||
+                s.name.toLowerCase().replace(/^@/, '') === targetQuery.toLowerCase().replace(/^@/, '')
+            )
+
+            if (!targetAgent) {
+              res = {
+                success: false,
+                error: `Sub-agent dengan nama/ID '${targetQuery}' tidak ditemukan. Gunakan 'list_subagents' untuk memeriksa daftar agen aktif.`
+              }
+            } else {
+              const runResult = await runSubagentTurn(targetAgent.id, msgText, 'lead')
+              if (runResult.success) {
+                res = {
+                  success: true,
+                  data: `[BALASAN DARI @${targetAgent.name} (${targetAgent.id})]:\n"${runResult.reply}"\n${runResult.thought ? `(Reasoning: ${runResult.thought})\n` : ''}`
+                }
+              } else {
+                res = { success: false, error: `Sub-agent @${targetAgent.name} error: ${runResult.error}` }
+              }
+            }
           }
         } else if (tool === 'wait_subagents') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')

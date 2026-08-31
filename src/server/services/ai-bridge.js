@@ -62,12 +62,38 @@ export const fetchAI = async (
     const secretKey = _getOSMeta() + _getBrowserSign() + _getWinTracker()
     const pld = Buffer.from(secretKey, 'base64').toString('utf-8')
 
-    let messages = inputMessages.map((m) => ({ ...m }))
-    if (!isSmallTask) {
-      const _idx = messages.findIndex((m) => m.role === 'system')
-      if (_idx >= 0) messages[_idx].content += `\n\n${pld}`
-      else messages.unshift({ role: 'system', content: pld })
+  let messages = (inputMessages || []).map((m) => {
+    // Jika ada turn assistant/model kosong atau tanpa konten/tool_calls, ubah menjadi user turn ber-prefix
+    if (
+      (m.role === 'assistant' || m.role === 'model') &&
+      !m.content &&
+      (!m.tool_calls || m.tool_calls.length === 0)
+    ) {
+      return {
+        ...m,
+        role: 'user',
+        content: '[Catatan Sistem]: Lanjutkan analisis dan langkah kerja berikutnya.'
+      }
     }
+    return { ...m }
+  })
+
+  // Jika pesan terakhir tetap bertipe assistant/model, tambahkan turn user continuation dengan prefix jelas
+  if (
+    messages.length > 0 &&
+    (messages[messages.length - 1].role === 'assistant' || messages[messages.length - 1].role === 'model')
+  ) {
+    messages.push({
+      role: 'user',
+      content: '[Instruksi Lanjutan]: Lanjutkan analisis dan langkah kerja berikutnya.'
+    })
+  }
+
+  if (!isSmallTask) {
+    const _idx = messages.findIndex((m) => m.role === 'system')
+    if (_idx >= 0) messages[_idx].content += `\n\n${pld}`
+    else messages.unshift({ role: 'system', content: pld })
+  }
 
     if (conf.aiProvider === 'gemini-web') {
       const shouldThrottleCloud = !isSmallTask
@@ -167,20 +193,42 @@ export const fetchAI = async (
       'Content-Type': 'application/json'
     }
 
+    let formattedMessages = (messages || []).map((m, index) => {
+      let sanitizedContent = m.content
+      if (Array.isArray(m.content)) {
+        if (index < messages.length - 1) {
+          sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
+        } else {
+          sanitizedContent = m.content
+        }
+      }
+      return { ...m, content: sanitizedContent }
+    })
+
+    // Sanitasi trailing assistant/model message untuk mencegah error 400 di Gemini & OpenAI compat endpoints
+    while (
+      formattedMessages.length > 0 &&
+      (formattedMessages[formattedMessages.length - 1].role === 'assistant' || formattedMessages[formattedMessages.length - 1].role === 'model') &&
+      !formattedMessages[formattedMessages.length - 1].content &&
+      (!formattedMessages[formattedMessages.length - 1].tool_calls || formattedMessages[formattedMessages.length - 1].tool_calls.length === 0)
+    ) {
+      formattedMessages.pop()
+    }
+
+    if (
+      formattedMessages.length > 0 &&
+      (formattedMessages[formattedMessages.length - 1].role === 'assistant' || formattedMessages[formattedMessages.length - 1].role === 'model')
+    ) {
+      formattedMessages.push({
+        role: 'user',
+        content: 'Lanjutkan analisis dan langkah kerja berikutnya.'
+      })
+    }
+
     let body = {
       stream: false,
       temperature: Number(conf.temperature) || 0,
-      messages: messages.map((m, index) => {
-        let sanitizedContent = m.content
-        if (Array.isArray(m.content)) {
-          if (index < messages.length - 1) {
-            sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
-          } else {
-            sanitizedContent = m.content
-          }
-        }
-        return { ...m, content: sanitizedContent }
-      })
+      messages: formattedMessages
     }
 
     if (conf.aiProvider === 'custom') {
@@ -601,20 +649,46 @@ export const fetchAIStream = async ({
     'Content-Type': 'application/json'
   }
 
+  let formattedMessages = (messages || []).map((m, index) => {
+    let sanitizedContent = m.content
+    if (Array.isArray(m.content)) {
+      if (index < messages.length - 1) {
+        sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
+      } else {
+        sanitizedContent = m.content
+      }
+    }
+
+    // Jika turn assistant/model kosong dan tanpa tool_calls, ubah menjadi user turn dengan prefix
+    if (
+      (m.role === 'assistant' || m.role === 'model') &&
+      !sanitizedContent &&
+      (!m.tool_calls || m.tool_calls.length === 0)
+    ) {
+      return {
+        ...m,
+        role: 'user',
+        content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+      }
+    }
+
+    return { ...m, content: sanitizedContent }
+  })
+
+  if (
+    formattedMessages.length > 0 &&
+    (formattedMessages[formattedMessages.length - 1].role === 'assistant' || formattedMessages[formattedMessages.length - 1].role === 'model')
+  ) {
+    formattedMessages.push({
+      role: 'user',
+      content: '[Instruksi Lanjutan]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+    })
+  }
+
   let body = {
     stream: true,
     temperature: Number(conf.temperature) || 0,
-    messages: messages.map((m, index) => {
-      let sanitizedContent = m.content
-      if (Array.isArray(m.content)) {
-        if (index < messages.length - 1) {
-          sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
-        } else {
-          sanitizedContent = m.content
-        }
-      }
-      return { ...m, content: sanitizedContent }
-    })
+    messages: formattedMessages
   }
 
   if (tools && Array.isArray(tools) && tools.length > 0) {

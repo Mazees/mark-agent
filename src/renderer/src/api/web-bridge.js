@@ -724,6 +724,23 @@ export const webApi = {
   searchMusic: async (query) => {
     const res = await webApi.executeNativeTool('search-youtube', query)
     return res.data || []
+  },
+
+  // 13. Inter-Agent & WebSocket Broadcast Bridge
+  broadcastWsEvent: (event, data) => {
+    if (typeof window === 'undefined') return
+    const socket = getWebSocket()
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ event: 'ws:broadcast', payload: { event, data } }))
+    }
+  },
+  onSubagentReport: (cb) => {
+    addWebListener('subagent:report', cb)
+    return () => removeWebListener('subagent:report', cb)
+  },
+  onSubagentCompleted: (cb) => {
+    addWebListener('subagent:completed', cb)
+    return () => removeWebListener('subagent:completed', cb)
   }
 }
 

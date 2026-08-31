@@ -341,42 +341,6 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
-      name: 'analyze-screen',
-      description: 'Mengambil screenshot seluruh monitor/layar Windows saat ini dan menganalisis tampilan visual antarmuka/aplikasi menggunakan AI Vision.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat atau analisis dari layar pengguna (contoh: "Analisis layout halaman ini", "Apa error yang muncul di layar?")'
-          }
-        },
-        required: ['query'],
-        additionalProperties: false
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'camera-look',
-      description: 'Mengambil frame gambar dari webcam/kamera laptop/PC pengguna dan menganalisis apa yang terlihat di depan kamera secara real-time menggunakan AI Vision.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat dari kamera (contoh: "Jelaskan apa yang terlihat di depan kamera", "Apakah user sedang duduk di depan layar?")'
-          }
-        },
-        required: ['query'],
-        additionalProperties: false
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'open',
       description: 'Membuka aplikasi Windows via shell execute atau membuka URL di browser default.',
       parameters: {
@@ -414,17 +378,33 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'spawn_subagent',
-      description: 'Mendelegasikan tugas ke sub-agent baru yang bekerja di background.',
+      description: 'Mendelegasikan tugas ke sub-agent baru yang bekerja mandiri di background secara non-blocking. Sub-agent akan mengeksekusi misi dan melapor kembali secara otomatis via push notification tanpa Lead Agent perlu memanggil wait_subagents.',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Nama sub-agent' },
+          name: { type: 'string', description: 'Nama sub-agent spesialis (misal: "Developer", "Mr Tester", "Researcher")' },
           role: { type: 'string', description: 'Peran sub-agent' },
           goal: { type: 'string', description: 'Tujuan utama sub-agent' },
-          initial_message: { type: 'string', description: 'Pesan instruksi awal' },
-          tools: { type: 'string', description: 'Daftar tool yang diizinkan (dipisah koma)' }
+          initial_message: { type: 'string', description: 'Pesan instruksi awal tugas yang didelegasikan' },
+          tools: { type: 'string', description: 'Daftar tool yang diizinkan (dipisah koma, atau "*")' }
         },
         required: ['name', 'role', 'goal', 'initial_message'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'message_agent',
+      description: 'Mengirim pesan atau instruksi teknis langsung ke sub-agent spesialis lain (atau membalas sub-agent) dan menerima responnya.',
+      parameters: {
+        type: 'object',
+        properties: {
+          target_agent: { type: 'string', description: 'Nama atau ID sub-agent tujuan (misal: "Developer", "Mr Tester", atau "sub_xxx")' },
+          message: { type: 'string', description: 'Pesan, instruksi, atau pertanyaan teknis' }
+        },
+        required: ['target_agent', 'message'],
         additionalProperties: false
       }
     }
@@ -462,15 +442,15 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
-      name: 'wait_subagents',
-      description: 'Menunggu dan mengumpulkan laporan hasil eksekusi dari sub-agent yang sedang berjalan.',
+      name: 'report_to_lead',
+      description: 'Melaporkan hasil akhir misi, rangkuman eksekusi, atau temuan penting langsung ke Lead Agent (Mark) dan memicu push notification di chat utama.',
       parameters: {
         type: 'object',
         properties: {
-          targets: { type: 'string', description: '"all" atau daftar ID dipisah koma' },
-          timeout: { type: 'number', description: 'Batas waktu tunggu dalam detik' }
+          summary: { type: 'string', description: 'Rangkuman lengkap hasil pekerjaan yang telah selesai' },
+          artifact: { type: 'string', description: 'Path berkas atau artefak yang berhasil dibuat/dimodifikasi jika ada' }
         },
-        required: ['targets'],
+        required: ['summary'],
         additionalProperties: false
       }
     }

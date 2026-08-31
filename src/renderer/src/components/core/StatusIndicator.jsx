@@ -12,14 +12,15 @@ const StatusIndicator = ({ notifications }) => {
         const enhancedNotifs = newNotifs.map(notif => {
           let alertType = 'alert-info';
           let Icon = FaInfoCircle;
-          
-          if (notif.type.includes('memory') || notif.type === 'plugin-done' || notif.type === 'success') {
+          const typeStr = String(notif?.type || '').toLowerCase();
+
+          if (typeStr.includes('memory') || typeStr === 'plugin-done' || typeStr === 'success') {
             alertType = 'alert-success';
             Icon = FaCheckCircle;
-          } else if (notif.type === 'plugin-executing') {
+          } else if (typeStr === 'plugin-executing') {
             alertType = 'alert-warning';
             Icon = FaExclamationTriangle;
-          } else if (notif.type === 'error') {
+          } else if (typeStr === 'error') {
             alertType = 'alert-error';
             Icon = FaTimesCircle;
           }

@@ -65,8 +65,9 @@ class CollectionProxy {
     return new CollectionProxy(this.tableProxy, combined, this.sortField, this.isReverse, this.limitCount)
   }
 
-  sortBy(field) {
-    return new CollectionProxy(this.tableProxy, this.filterFn, field, this.isReverse, this.limitCount)
+  async sortBy(field) {
+    const proxy = new CollectionProxy(this.tableProxy, this.filterFn, field, this.isReverse, this.limitCount)
+    return await proxy.toArray()
   }
 
   reverse() {
@@ -185,15 +186,24 @@ class TableProxy {
   where(field) {
     return {
       equals: (val) => {
-        return new CollectionProxy(this, (item) => String(item[field]) === String(val))
+        return new CollectionProxy(this, (item) => {
+          const v = item[field] ?? (field === 'subagentId' ? item.subagent_id : field === 'subagent_id' ? item.subagentId : undefined)
+          return String(v) === String(val)
+        })
       },
       equalsIgnoreCase: (val) => {
         const lowerVal = String(val || '').toLowerCase()
-        return new CollectionProxy(this, (item) => String(item[field] || '').toLowerCase() === lowerVal)
+        return new CollectionProxy(this, (item) => {
+          const v = item[field] ?? (field === 'subagentId' ? item.subagent_id : field === 'subagent_id' ? item.subagentId : undefined)
+          return String(v || '').toLowerCase() === lowerVal
+        })
       },
       anyOf: (values) => {
         const set = new Set((Array.isArray(values) ? values : [values]).map((v) => String(v)))
-        return new CollectionProxy(this, (item) => set.has(String(item[field])))
+        return new CollectionProxy(this, (item) => {
+          const v = item[field] ?? (field === 'subagentId' ? item.subagent_id : field === 'subagent_id' ? item.subagentId : undefined)
+          return set.has(String(v))
+        })
       }
     }
   }

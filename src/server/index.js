@@ -99,6 +99,15 @@ wsHub.on('ai:abort', async () => {
   return { success: true }
 })
 
+// Relaying WebSocket events dari client (misal: subagent:report) ke semua client
+wsHub.on('ws:broadcast', async (payload) => {
+  const { event, data } = payload || {}
+  if (event) {
+    wsHub.broadcast(event, data)
+  }
+  return { success: true }
+})
+
 // --- Konfigurasi Persisten ---
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json')
@@ -378,7 +387,23 @@ app.post('/api/subagents', (req, res) => {
 app.delete('/api/subagents/:id', (req, res) => {
   const { id } = req.params
   const success = dbStore.subagents.delete(id)
+  try {
+    const { sqlite } = dbStore
+    if (sqlite) {
+      sqlite.prepare('DELETE FROM subagent_messages WHERE subagent_id = ?').run(String(id))
+    }
+  } catch (_) {}
   res.json({ success })
+})
+
+app.get('/api/subagents/messages', (_req, res) => {
+  res.json({ success: true, data: dbStore.subagentMessages.getAll() })
+})
+
+app.get('/api/subagents/messages/:id', (req, res) => {
+  const { id } = req.params
+  const msg = dbStore.subagentMessages.getById(id)
+  res.json({ success: true, data: msg })
 })
 
 app.get('/api/subagents/:id/messages', (req, res) => {
@@ -392,6 +417,12 @@ app.post('/api/subagents/messages', (req, res) => {
   const item = req.body
   const record = dbStore.subagentMessages.insert(item)
   res.json({ success: true, data: record })
+})
+
+app.delete('/api/subagents/messages/:id', (req, res) => {
+  const { id } = req.params
+  const success = dbStore.subagentMessages.delete(id)
+  res.json({ success })
 })
 
 // 5g. Learned Skills Database API
