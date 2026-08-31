@@ -8,10 +8,10 @@
 }
 
 @plugin "daisyui/theme" {
-  name: "forest";
+  name: 'forest';
   default: false;
   prefersdark: false;
-  color-scheme: "dark";
+  color-scheme: 'dark';
   --color-base-100: oklch(20.84% 0.008 17.911);
   --color-base-200: oklch(18.522% 0.007 17.911);
   --color-base-300: oklch(16.203% 0.007 17.911);
@@ -43,11 +43,17 @@
 }
 
 @theme {
-  --font-sans: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   background-color: #0f1715;
   color: #cac9c9;
   min-height: 100vh;
@@ -64,10 +70,14 @@ html {
 }
 
 * {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   background-color: transparent !important;
 }
 
@@ -365,6 +375,104 @@ html, body, #root {
   --glass-blur: blur(20px);
 }
 
+/* === ORB & HUD KEYFRAMES === */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-slow-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes orbital-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orbital-spin-rev {
+  0% {
+    transform: rotate(360deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes anxiety-vibrate {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-1.5px, 1px);
+  }
+  50% {
+    transform: translate(1.5px, -1px);
+  }
+  75% {
+    transform: translate(-1px, -1.5px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes sweat-drip {
+  0% {
+    transform: translateY(0) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    transform: translateY(2px) scale(1);
+    opacity: 0.9;
+  }
+  75% {
+    transform: translateY(8px) scale(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(14px) scale(0.4);
+    opacity: 0;
+  }
+}
+
+@keyframes slideUpFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes neuron-spin {
+  0% {
+    transform: rotateX(45deg) rotateY(0deg) rotateZ(45deg);
+  }
+  100% {
+    transform: rotateX(45deg) rotateY(360deg) rotateZ(45deg);
+  }
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
 /* === ORB ANIMATIONS === */
 @keyframes orb-breathe {
   0%,
@@ -516,7 +624,19 @@ html, body, #root {
   }
 }
 
-@keyframes slide-right { 0% { left: 0%; opacity: 0; } 50% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+@keyframes slide-right {
+  0% {
+    left: 0%;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
 
 /* === HOLOGRAPHIC UI SETTINGS === */
 

@@ -318,45 +318,6 @@ const MarkHome = () => {
             mood={mood}
           />
         </div>
-
-        {/* Center Standby & Audio Wave Badge */}
-        <div className="mt-1 flex flex-col items-center gap-1.5 pointer-events-auto">
-          <div className="flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/5 px-3 py-0.5 rounded-full shadow-md">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                isRecording ? 'bg-error animate-ping' : 'bg-primary'
-              }`}
-            />
-            <span className="text-[10px] font-mono tracking-wider uppercase text-white/70">
-              {orbStatus === 'speaking'
-                ? 'TRANSMITTING AUDIO'
-                : isRecording
-                  ? 'LISTENING MIC'
-                  : isProcessing
-                    ? 'PROCESSING INTENT'
-                    : 'SYSTEM STANDBY'}
-            </span>
-          </div>
-
-          {/* Audio Wave Visualizer */}
-          <div className="flex items-center gap-1 h-2 px-2">
-            {Array.from({ length: 8 }).map((_, i) => {
-              const val =
-                orbStatus === 'speaking'
-                  ? Math.sin(Date.now() * 0.01 + i) * ttsIntensity * 10
-                  : isRecording
-                    ? audioIntensity * (i % 2 === 0 ? 10 : 6)
-                    : 2
-              return (
-                <span
-                  key={i}
-                  className="w-1 bg-primary/70 rounded-full transition-all duration-75"
-                  style={{ height: `${Math.max(2, Math.min(10, val + 2))}px` }}
-                />
-              )
-            })}
-          </div>
-        </div>
       </div>
 
       {/* ── 5. LEFT PANEL: TOOL CLUSTER DECK (Docked Left, In-Place Process Panel & Plugins) ── */}
@@ -369,16 +330,63 @@ const MarkHome = () => {
       <aside className="absolute right-6 top-18 bottom-24 w-80 lg:w-92 z-20 flex flex-col gap-2.5 pointer-events-auto">
         <div className="flex-1 bg-black/40 backdrop-blur-xl border border-white/5 rounded-2xl p-3.5 shadow-2xl flex flex-col min-h-0 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5">
-            <div className="flex items-center gap-2">
-              <Terminal className="w-3.5 h-3.5 text-primary" />
-              <h3 className="text-xs font-bold font-mono tracking-wider text-white uppercase">
-                ACTIVE STREAM FEED
-              </h3>
+          <div className="flex flex-col gap-2 pb-2 mb-2 border-b border-white/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-3.5 h-3.5 text-primary" />
+                <h3 className="text-xs font-bold font-mono tracking-wider text-white uppercase">
+                  LIVE RESPONSE
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono text-primary uppercase">
+                {isLoading ? 'Streaming' : 'Ready'}
+              </span>
             </div>
-            <span className="text-[10px] font-mono text-primary uppercase">
-              {isLoading ? 'Streaming' : 'Ready'}
-            </span>
+
+            {/* Live Audio / Intent Telemetry Bar */}
+            <div className="flex items-center justify-between bg-black/40 border border-white/5 px-2.5 py-1 rounded-lg">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isRecording
+                      ? 'bg-error animate-ping'
+                      : orbStatus === 'speaking'
+                        ? 'bg-secondary animate-pulse'
+                        : isProcessing
+                          ? 'bg-warning animate-spin'
+                          : 'bg-primary'
+                  }`}
+                />
+                <span className="text-[9px] font-mono tracking-wider uppercase text-white/70">
+                  {orbStatus === 'speaking'
+                    ? 'TRANSMITTING'
+                    : isRecording
+                      ? 'LISTENING MIC'
+                      : isProcessing
+                        ? 'PROCESSING'
+                        : 'STANDBY'}
+                </span>
+              </div>
+
+              {/* Audio Waveform */}
+              <div className="flex items-center gap-0.5 h-2.5">
+                {Array.from({ length: 6 }).map((_, i) => {
+                  const val =
+                    orbStatus === 'speaking'
+                      ? Math.sin(Date.now() * 0.01 + i) * ttsIntensity * 8
+                      : isRecording
+                        ? audioIntensity * (i % 2 === 0 ? 8 : 4)
+                        : 1.5
+                  return (
+                    <span
+                      key={i}
+                      className="w-0.5 bg-primary/70 rounded-full transition-all duration-75"
+                      style={{ height: `${Math.max(2, Math.min(10, val + 2))}px` }}
+                    />
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           {/* Stream Response Area */}

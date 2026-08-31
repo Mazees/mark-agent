@@ -382,7 +382,7 @@ const SentientCyberEyes = ({
 /**
  * Jarvis-Style Holographic HUD SVG Circles & Crosshairs
  */
-const JarvisHolographicHUD = ({ colorHex = '#1fb854' }) => {
+const JarvisHolographicHUD = ({ colorHex = '#1fb854', isPaused = false }) => {
   return (
     <div className="absolute inset-0 m-auto flex items-center justify-center pointer-events-none mix-blend-screen opacity-50 z-0 scale-125">
       <svg viewBox="0 0 500 500" className="w-[500px] h-[500px] absolute">
@@ -395,7 +395,9 @@ const JarvisHolographicHUD = ({ colorHex = '#1fb854' }) => {
           stroke={colorHex}
           strokeWidth="1"
           strokeDasharray="2 10"
-          className="origin-center animate-[spin-slow_40s_linear_infinite]"
+          className={`origin-center animate-[spin-slow_40s_linear_infinite] transition-[opacity] duration-500 ${
+            isPaused ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+          }`}
         />
 
         {/* Middle Segmented Ring */}
@@ -407,7 +409,9 @@ const JarvisHolographicHUD = ({ colorHex = '#1fb854' }) => {
           stroke={colorHex}
           strokeWidth="2"
           strokeDasharray="80 20 10 20"
-          className="origin-center animate-[spin-slow-reverse_30s_linear_infinite]"
+          className={`origin-center animate-[spin-slow-reverse_30s_linear_infinite] transition-[opacity] duration-500 ${
+            isPaused ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+          }`}
         />
 
         {/* Inner Ring */}
@@ -419,7 +423,9 @@ const JarvisHolographicHUD = ({ colorHex = '#1fb854' }) => {
           stroke={colorHex}
           strokeWidth="1"
           strokeDasharray="5 15"
-          className="origin-center animate-[spin-slow_20s_linear_infinite]"
+          className={`origin-center animate-[spin-slow_20s_linear_infinite] transition-[opacity] duration-500 ${
+            isPaused ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+          }`}
         />
 
         {/* Solid Inner Border */}
@@ -494,88 +500,60 @@ const OrbVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => 
   else if (status === 'speaking') targetScale = 1 + intensity * 0.4
   else targetScale = 1
 
+  const isListening = status === 'listening'
+  const isSpeaking = status === 'speaking'
+
   return (
-    <>
-      <style>
-        {`
-          @keyframes spin-slow {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-          @keyframes spin-slow-reverse {
-            from { transform: rotate(360deg); }
-            to { transform: rotate(0deg); }
-          }
-          @keyframes orbital-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          @keyframes orbital-spin-rev {
-            0% { transform: rotate(360deg); }
-            100% { transform: rotate(0deg); }
-          }
-          @keyframes anxiety-vibrate {
-            0% { transform: translate(0, 0); }
-            25% { transform: translate(-1.5px, 1px); }
-            50% { transform: translate(1.5px, -1px); }
-            75% { transform: translate(-1px, -1.5px); }
-            100% { transform: translate(0, 0); }
-          }
-          @keyframes sweat-drip {
-            0% { transform: translateY(0) scale(0.8); opacity: 0; }
-            20% { transform: translateY(2px) scale(1); opacity: 0.9; }
-            75% { transform: translateY(8px) scale(1.1); opacity: 0.8; }
-            100% { transform: translateY(14px) scale(0.4); opacity: 0; }
-          }
-          @keyframes orb-breathe {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.03); }
-          }
-        `}
-      </style>
-      <div className="relative shrink-0 w-64 h-64 md:w-80 md:h-80 flex items-center justify-center select-none">
-        {/* Layer 0: Jarvis-Style Holographic HUD SVG Background */}
-        <JarvisHolographicHUD colorHex={colorHex} />
+    <div
+      className={`relative shrink-0 w-64 h-64 md:w-80 md:h-80 flex items-center justify-center select-none will-change-transform animate-[orb-breathe_5s_ease-in-out_infinite] ${
+        isListening || isSpeaking ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+      }`}
+    >
+      {/* Layer 0: Jarvis-Style Holographic HUD SVG Background */}
+      <JarvisHolographicHUD colorHex={colorHex} isPaused={isListening} />
 
-        {/* Layer 1: Constant Breathing Wrapper */}
-        <div className="relative w-full h-full flex items-center justify-center animate-[orb-breathe_5s_ease-in-out_infinite] will-change-transform z-10">
-          {/* Layer 2: State & Audio Scaler */}
+      {/* Layer 1: Container Wrapper */}
+      <div className="relative w-full h-full flex items-center justify-center z-10">
+        {/* Layer 2: State & Audio Scaler */}
+        <div
+          className="relative w-full h-full flex items-center justify-center ease-out will-change-transform"
+          style={{
+            transitionProperty: 'transform',
+            transitionDuration: status === 'speaking' ? '75ms' : '500ms',
+            transform: `scale(${targetScale})`
+          }}
+        >
+          {/* Background Aura Glow */}
           <div
-            className="relative w-full h-full flex items-center justify-center ease-out will-change-transform"
-            style={{
-              transitionProperty: 'transform',
-              transitionDuration: status === 'speaking' ? '75ms' : '500ms',
-              transform: `scale(${targetScale})`
-            }}
-          >
-            {/* Background Aura Glow */}
-            <div
-              className={`absolute inset-0 m-auto w-44 h-44 rounded-full ${glowClass} blur-[60px] will-change-transform opacity-75`}
-            />
+            className={`absolute inset-0 m-auto w-44 h-44 rounded-full ${glowClass} blur-[60px] will-change-transform opacity-75`}
+          />
 
-            {/* Holographic Orbital Rings */}
-            <div
-              className="absolute inset-0 m-auto w-48 h-48 rounded-full border border-dashed opacity-30 animate-[orbital-spin_20s_linear_infinite]"
-              style={{ borderColor: colorHex }}
-            />
-            <div
-              className="absolute inset-0 m-auto w-36 h-36 rounded-full border border-dotted opacity-20 animate-[orbital-spin-rev_15s_linear_infinite]"
-              style={{ borderColor: colorHex }}
-            />
+          {/* Holographic Orbital Rings */}
+          <div
+            className={`absolute inset-0 m-auto w-48 h-48 rounded-full border border-dashed opacity-30 animate-[orbital-spin_20s_linear_infinite] ${
+              isListening ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+            }`}
+            style={{ borderColor: colorHex }}
+          />
+          <div
+            className={`absolute inset-0 m-auto w-36 h-36 rounded-full border border-dotted opacity-20 animate-[orbital-spin-rev_15s_linear_infinite] ${
+              isListening ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+            }`}
+            style={{ borderColor: colorHex }}
+          />
 
-            {/* Holographic HUD Center Visor / Eyes */}
-            <div className="relative z-20 flex items-center justify-center">
-              <SentientCyberEyes
-                mood={mood}
-                status={status}
-                intensity={intensity}
-                colorHex={colorHex}
-              />
-            </div>
+          {/* Holographic HUD Center Visor / Eyes */}
+          <div className="relative z-20 flex items-center justify-center">
+            <SentientCyberEyes
+              mood={mood}
+              status={status}
+              intensity={intensity}
+              colorHex={colorHex}
+            />
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
 

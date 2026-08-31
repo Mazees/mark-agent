@@ -173,7 +173,7 @@ const ToolClustersDeck = ({
         <div className="pt-2 mt-1 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-white/50 px-1">
           <div className="flex items-center gap-1.5">
             <Activity className="w-3 h-3 text-primary" />
-            <span>Telemetry / CPU</span>
+            <span>Active Process</span>
           </div>
           <span className="font-bold text-primary">{activeProcesses.length} Active</span>
         </div>

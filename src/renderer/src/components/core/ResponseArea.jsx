@@ -69,66 +69,34 @@ const ResponseArea = ({ currentResponse }) => {
   }
 
   const renderContent = () => {
-    if (type === 'long') {
-      let tldr = ''
-      let restText = ''
-
-      const firstNewlineMatch = text.match(/\n/)
-      if (firstNewlineMatch) {
-        const index = firstNewlineMatch.index
-        tldr = text.substring(0, index).trim()
-        restText = text.substring(index).trim()
-      } else {
-        const firstPeriod = text.indexOf('. ')
-        if (firstPeriod !== -1 && firstPeriod < 180) {
-          tldr = text.substring(0, firstPeriod + 1).trim()
-          restText = text.substring(firstPeriod + 1).trim()
-        } else {
-          tldr = text.substring(0, 140) + '...'
-          restText = text
-        }
-      }
-
+    if (displayResponse.isThinking) {
       return (
-        <div className="flex flex-col gap-3 w-full">
-          {/* Main TLDR Thought */}
-          {tldr && (
-            <div className="p-3.5 rounded-xl bg-white/[0.03] text-left text-xs md:text-sm font-mono leading-relaxed text-white/90">
-              <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {tldr}
-              </Markdown>
-            </div>
-          )}
-
-          {/* Extended Content */}
-          {restText && (
-            <div className="p-3.5 rounded-xl bg-black/40 text-left text-xs md:text-sm font-mono leading-relaxed text-white/80 max-h-[35vh] overflow-y-auto no-scrollbar">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-primary mb-2 font-bold">
-                Detail Jawaban
-              </div>
-              <Markdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[[rehypeExternalLinks, { target: '_blank' }]]}
-                components={markdownComponents}
-              >
-                {restText}
-              </Markdown>
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    // Short response
-    return (
-      <div className="w-full">
-        <div className="p-4 rounded-xl bg-white/[0.03] text-left text-xs md:text-sm font-mono leading-relaxed text-white/90">
-          {displayResponse.isThinking ? (
+        <div className="w-full">
+          <div className="p-4 rounded-xl bg-white/[0.03] text-left text-xs md:text-sm font-mono leading-relaxed text-white/90">
             <div className="flex flex-col items-center justify-center gap-3 py-3">
               <div className="relative w-8 h-8 flex items-center justify-center text-primary">
                 <svg viewBox="0 0 50 50" className="w-full h-full animate-[spin_3s_linear_infinite]">
-                  <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="30 15" className="opacity-40" />
-                  <circle cx="25" cy="25" r="14" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="20 10" className="opacity-80 animate-[spin_2s_linear_infinite_reverse]" style={{ transformOrigin: 'center' }} />
+                  <circle
+                    cx="25"
+                    cy="25"
+                    r="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeDasharray="30 15"
+                    className="opacity-40"
+                  />
+                  <circle
+                    cx="25"
+                    cy="25"
+                    r="14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeDasharray="20 10"
+                    className="opacity-80 animate-[spin_2s_linear_infinite_reverse]"
+                    style={{ transformOrigin: 'center' }}
+                  />
                 </svg>
                 <FaLightbulb className="absolute animate-pulse text-primary" size={10} />
               </div>
@@ -136,11 +104,21 @@ const ResponseArea = ({ currentResponse }) => {
                 {text !== 'Bentar, mikir dlu...' && text !== 'Memproses...' ? text : 'PROCESSING DATA...'}
               </div>
             </div>
-          ) : (
-            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {text}
-            </Markdown>
-          )}
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="w-full">
+        <div className="p-3.5 rounded-xl bg-white/[0.03] text-left text-xs md:text-sm font-mono leading-relaxed text-white/90">
+          <Markdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[[rehypeExternalLinks, { target: '_blank' }]]}
+            components={markdownComponents}
+          >
+            {text}
+          </Markdown>
         </div>
       </div>
     )
