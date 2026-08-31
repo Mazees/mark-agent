@@ -31,7 +31,7 @@ export const core_tools_schema = [
         properties: {
           group_name: {
             type: 'string',
-            description: 'Nama grup tool yang ingin dibaca (misal: "advanced_browser", "pc_automation", "youtube_music", "git_vcs", "task_terminal")'
+            description: 'Nama grup tool yang ingin dibaca (misal: "advanced_browser", "pc_automation", "youtube_music", "git_vcs", "task_terminal", "custom_plugins")'
           }
         },
         required: ['group_name'],

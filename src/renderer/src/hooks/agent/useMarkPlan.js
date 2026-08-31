@@ -691,6 +691,33 @@ export const useMarkPlan = ({
             killSubagentExecution(targetId)
             res = { success: true, data: `Sub-agent ${targetId} berhasil dihentikan paksa.` }
           }
+        } else if (tool === 'list-plugins') {
+          try {
+            const plugins = await window.api.getPlugins()
+            if (!plugins || plugins.length === 0) {
+              res = { success: true, data: 'Belum ada custom plugin lokal yang terpasang di Documents/Mark Plugins.' }
+            } else {
+              const summary = plugins
+                .map((p) => {
+                  const acts = (p.actions || []).map((a) => `    * ${a.name}: ${a.description || a.triggerHint || ''}`).join('\n')
+                  return `- Plugin "${p.name}" (v${p.version || '1.0.0'}, Status: ${p.isEnabled !== false ? 'AKTIF' : 'NONAKTIF'}):\n  Deskripsi: ${p.description || '-'}\n  Actions:\n${acts || '    (Tidak ada action)'}`
+                })
+                .join('\n\n')
+              res = { success: true, data: `Daftar Custom Plugin Terpasang:\n${summary}` }
+            }
+          } catch (pErr) {
+            res = { success: false, error: `Gagal memuat plugin: ${pErr.message}` }
+          }
+        } else if (tool === 'execute-plugin') {
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const actionName = a.action || ''
+          const queryVal = a.query || stringQuery || ''
+          if (!actionName) {
+            res = { success: false, error: 'Parameter action wajib diisi untuk execute-plugin.' }
+          } else {
+            const pRes = await window.api.executePlugin(actionName, queryVal)
+            res = pRes
+          }
         } else if (tool === 'read-tools') {
           const { group_tools } = await import('../../api/tools/group-tools.js')
           const groups = await group_tools()

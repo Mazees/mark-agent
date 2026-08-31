@@ -92,7 +92,8 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     tgAdminIds: '',
     awarenessEnabled: true,
     cameraDeviceId: 'default',
-    cameraEnabled: true
+    cameraEnabled: true,
+    bgOverlayOpacity: 65
   })
   const [relationalTraits, setRelationalTraits] = useState(null)
   const [memories, setMemories] = useState([])
@@ -272,7 +273,8 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
         aiProvider: data[0].aiProvider || 'gemini-web',
         geminiWebModel: data[0].geminiWebModel || 'gemini-3.6-flash',
         micDeviceId: data[0].micDeviceId || 'default',
-        awarenessEnabled: data[0].awarenessEnabled ?? true
+        awarenessEnabled: data[0].awarenessEnabled ?? true,
+        bgOverlayOpacity: data[0].bgOverlayOpacity !== undefined ? Number(data[0].bgOverlayOpacity) : 65
       }))
     }
   }
@@ -837,36 +839,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
 
             <div className="divider"></div>
 
-            {/* Window Settings */}
-            <div className="space-y-2 p-2 -mx-2 rounded-lg">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Tingkat Transparansi Jendela</p>
-                <span className="font-mono text-sm text-primary font-bold">
-                  {Math.round((config.windowOpacity ?? 0.85) * 100)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.05"
-                value={config.windowOpacity ?? 0.85}
-                className="range range-primary range-xs w-full"
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value)
-                  setConfig((prev) => {
-                    const newConfig = { ...prev, windowOpacity: val }
-                    if (window.api && window.api.syncConfig) window.api.syncConfig(newConfig)
-                    return newConfig
-                  })
-                }}
-              />
-              <div className="flex justify-between mt-2 text-xs opacity-50">
-                <span>10% (Kaca Bening)</span>
-                <span>100% (Solid)</span>
-              </div>
-            </div>
-
             <div className="divider"></div>
 
             {/* Camera Settings */}
@@ -915,6 +887,52 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
                 />
               )}
             </div>
+
+            {/* ── Background & Visual Settings ── */}
+            <section className="space-y-5 p-2 -mx-2 rounded-lg">
+              <h2 className="text-base font-bold uppercase tracking-wider opacity-70">
+                Visual & Background Cosmos
+              </h2>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-semibold">Transparansi Lapisan Layar (Background Overlay)</p>
+                    <p className="text-xs opacity-50">
+                      Mengatur tingkat kegelapan lapisan di atas tata surya kosmik agar teks dan avatar tetap terbaca kontras.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold bg-primary/20 text-primary px-2.5 py-1 rounded-lg border border-primary/30">
+                    {config.bgOverlayOpacity ?? 65}% Kegelapan
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={config.bgOverlayOpacity ?? 65}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    setConfig((prev) => {
+                      const updated = { ...prev, bgOverlayOpacity: val }
+                      window.dispatchEvent(new CustomEvent('config-updated', { detail: updated }))
+                      return updated
+                    })
+                  }}
+                  className="range range-primary range-sm w-full"
+                />
+
+                <div className="flex justify-between text-[10px] font-mono opacity-50">
+                  <span>0% (Transparan Penuh / Cosmos Terang)</span>
+                  <span>50% (Seimbang)</span>
+                  <span>100% (Solid Gelap)</span>
+                </div>
+              </div>
+            </section>
+
+            <div className="divider"></div>
 
             {/* ── Global Shortcut Settings ── */}
             <section id="tour-shortcut" className="space-y-5 p-2 -mx-2 rounded-lg">

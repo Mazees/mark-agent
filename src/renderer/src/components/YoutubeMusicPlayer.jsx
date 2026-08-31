@@ -13,8 +13,7 @@ import {
   Music,
   ImageIcon,
   Tv,
-  X,
-  Radio
+  X
 } from 'lucide-react'
 
 function formatTime(seconds) {
@@ -28,7 +27,6 @@ export const YoutubeMusicPlayer = () => {
   const {
     currentTrack,
     queue,
-    currentIndex,
     isPlaying,
     isMuted,
     volume,
@@ -87,7 +85,8 @@ export const YoutubeMusicPlayer = () => {
   }, [])
 
   const currentSeek = isSeeking ? seekValue : currentTime
-  const progressRatio = duration > 0 ? Math.min(100, Math.max(0, (currentSeek / duration) * 100)) : 0
+  const progressRatio =
+    duration > 0 ? Math.min(100, Math.max(0, (currentSeek / duration) * 100)) : 0
   const remainingTime = duration > currentSeek ? duration - currentSeek : 0
 
   return (
@@ -116,7 +115,7 @@ export const YoutubeMusicPlayer = () => {
           <div className="relative z-10 flex items-center justify-between pb-3">
             <button
               onClick={() => setIsPlayerOpen(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
               title="Tutup Player"
             >
               <ChevronDown size={18} />
@@ -126,7 +125,7 @@ export const YoutubeMusicPlayer = () => {
             <div className="flex items-center bg-white/10 p-0.5 rounded-full border border-white/5 backdrop-blur-md">
               <button
                 onClick={() => setViewMode('thumbnail')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                   viewMode === 'thumbnail'
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'text-zinc-400 hover:text-zinc-200'
@@ -137,7 +136,7 @@ export const YoutubeMusicPlayer = () => {
               </button>
               <button
                 onClick={() => setViewMode('video')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                   viewMode === 'video'
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'text-zinc-400 hover:text-zinc-200'
@@ -151,7 +150,7 @@ export const YoutubeMusicPlayer = () => {
             {/* Queue Toggle Button */}
             <button
               onClick={() => setShowQueue(!showQueue)}
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                 showQueue
                   ? 'bg-red-600 text-white shadow-sm shadow-red-600/50'
                   : 'text-zinc-400 hover:text-white hover:bg-white/10'
@@ -238,7 +237,10 @@ export const YoutubeMusicPlayer = () => {
           {/* Song Meta (Title & Artist) */}
           <div className="relative z-10 mt-3 mb-2 flex items-center justify-between">
             <div className="flex flex-col min-w-0 pr-2">
-              <span className="font-semibold text-base text-white truncate tracking-tight" title={currentTrack.title}>
+              <span
+                className="font-semibold text-base text-white truncate tracking-tight"
+                title={currentTrack.title}
+              >
                 {currentTrack.title || 'Tidak ada lagu aktif'}
               </span>
               <span className="text-xs text-zinc-400 truncate mt-0.5" title={currentTrack.artist}>
@@ -277,7 +279,7 @@ export const YoutubeMusicPlayer = () => {
           <div className="relative z-10 flex items-center justify-center gap-6 py-2">
             <button
               onClick={prevTrack}
-              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/5 active:scale-90 transition-all"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/5 active:scale-90 transition-all cursor-pointer"
               title="Sebelumnya"
             >
               <SkipBack size={22} fill="currentColor" />
@@ -285,7 +287,7 @@ export const YoutubeMusicPlayer = () => {
 
             <button
               onClick={playPause}
-              className="w-13 h-13 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10"
+              className="w-13 h-13 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 cursor-pointer"
               title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
@@ -297,18 +299,18 @@ export const YoutubeMusicPlayer = () => {
 
             <button
               onClick={nextTrack}
-              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/5 active:scale-90 transition-all"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/5 active:scale-90 transition-all cursor-pointer"
               title="Berikutnya"
             >
               <SkipForward size={22} fill="currentColor" />
             </button>
           </div>
 
-          {/* Volume Control Bar (Apple Music Style) */}
+          {/* Volume Control Bar */}
           <div className="relative z-10 flex items-center gap-2 px-1 pt-1 pb-0.5">
             <button
               onClick={toggleMute}
-              className="text-zinc-400 hover:text-white transition-colors"
+              className="text-zinc-400 hover:text-white transition-colors cursor-pointer"
               title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume size={14} />}
@@ -335,9 +337,9 @@ export const YoutubeMusicPlayer = () => {
       <button
         onClick={togglePlayer}
         className={`
-          group relative w-11 h-11 rounded-full flex items-center justify-center pointer-events-auto
+          group relative w-10 h-10 rounded-full flex items-center justify-center pointer-events-auto
           shadow-lg shadow-black/80 border border-white/10
-          transition-all duration-200 ease-out
+          transition-all duration-200 ease-out cursor-pointer
           hover:scale-105 active:scale-95
           ${
             isPlayerOpen
@@ -352,9 +354,9 @@ export const YoutubeMusicPlayer = () => {
         )}
 
         {isPlayerOpen ? (
-          <X size={16} strokeWidth={2} />
+          <X size={15} strokeWidth={2} />
         ) : (
-          <Music size={17} className={isPlaying ? 'text-red-500 animate-pulse' : 'text-zinc-300'} />
+          <Music size={16} className={isPlaying ? 'text-red-500 animate-pulse' : 'text-zinc-300'} />
         )}
       </button>
     </div>

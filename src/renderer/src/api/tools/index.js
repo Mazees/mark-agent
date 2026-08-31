@@ -200,6 +200,16 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
           lowerQuery.includes('jalankan'))
       ) {
         isRelevant = true
+      } else if (
+        groupKey === 'custom_plugins' &&
+        (lowerQuery.includes('plugin') ||
+          lowerQuery.includes('plugins') ||
+          lowerQuery.includes('ekstensi') ||
+          lowerQuery.includes('extension') ||
+          lowerQuery.includes('custom skill') ||
+          lowerQuery.includes('custom tool'))
+      ) {
+        isRelevant = true
       }
     }
 

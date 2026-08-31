@@ -150,7 +150,7 @@ export const YoutubeMusicProvider = ({ children }) => {
     }
 
     setCurrentTrack(formattedTrack)
-    setIsPlayerOpen(true)
+    // Jangan auto-buka player raksasa secara agresif agar tidak menutupi Active Stream Feed
     setCurrentTime(0)
 
     if (newQueue && Array.isArray(newQueue) && newQueue.length > 0) {

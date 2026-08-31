@@ -922,6 +922,39 @@ export const GROUP_TOOLS_SCHEMA = {
         }
       }
     ]
+  },
+  custom_plugins: {
+    description: 'Custom plugin dan modul ekstensi JavaScript lokal buatan pengguna (Documents/Mark Plugins).',
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'list-plugins',
+          description: 'Melihat daftar seluruh custom plugin lokal yang terinstall dan status aktifnya.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'execute-plugin',
+          description: 'Mengeksekusi custom action dari plugin lokal buatan user berdasarkan nama action dan parameter query.',
+          parameters: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', description: 'Nama action plugin yang akan dieksekusi' },
+              query: { type: 'string', description: 'Parameter input query untuk aksi plugin' }
+            },
+            required: ['action'],
+            additionalProperties: false
+          }
+        }
+      }
+    ]
   }
 }
 
