@@ -505,8 +505,10 @@ const OrbVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => 
 
   return (
     <div
-      className={`relative shrink-0 w-64 h-64 md:w-80 md:h-80 flex items-center justify-center select-none will-change-transform animate-[orb-breathe_5s_ease-in-out_infinite] ${
-        isListening || isSpeaking ? '[animation-play-state:paused]' : '[animation-play-state:running]'
+      className={`relative shrink-0 w-64 h-64 md:w-80 md:h-80 mb-15 flex items-center justify-center select-none will-change-transform animate-[orb-breathe_5s_ease-in-out_infinite] ${
+        isListening || isSpeaking
+          ? '[animation-play-state:paused]'
+          : '[animation-play-state:running]'
       }`}
     >
       {/* Layer 0: Jarvis-Style Holographic HUD SVG Background */}

@@ -291,10 +291,6 @@ const MarkHome = () => {
             <Sparkles className="w-3.5 h-3.5 text-primary" />
             <span className="hidden md:inline">Memory Map</span>
           </button>
-          <div className="hidden sm:flex items-center gap-2 font-mono text-[10px] text-white/50 bg-black/40 px-2.5 py-1 rounded-xl border border-white/5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            ONLINE: 3000
-          </div>
         </div>
       </header>
 
