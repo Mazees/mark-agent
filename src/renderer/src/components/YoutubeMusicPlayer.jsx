@@ -90,18 +90,27 @@ export const YoutubeMusicPlayer = () => {
   const remainingTime = duration > currentSeek ? duration - currentSeek : 0
 
   return (
-    <div className="fixed bottom-5 right-5 z-120 flex flex-col items-end gap-2 select-none pointer-events-none">
-      {/* Player Main Card */}
+    <>
+      {/* Hidden Persistent YouTube IFrame Container to ensure continuous playback regardless of modal state */}
       <div
-        className={`
-          transition-all duration-300 ease-out origin-bottom-right
-          ${
-            isPlayerOpen
-              ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
-              : 'opacity-0 scale-95 translate-y-3 pointer-events-none'
-          }
-        `}
+        className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden"
+        style={{ visibility: 'hidden' }}
       >
+        <div id={containerId} />
+      </div>
+
+      <div className="fixed bottom-5 right-5 z-120 flex flex-col items-end gap-2 select-none pointer-events-none">
+        {/* Player Main Card */}
+        <div
+          className={`
+            transition-all duration-300 ease-out origin-bottom-right
+            ${
+              isPlayerOpen
+                ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+                : 'opacity-0 scale-95 translate-y-3 pointer-events-none'
+            }
+          `}
+        >
         <div className="relative w-80 sm:w-84 rounded-3xl overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] border border-white/10 bg-[#0d0d0e]/95 backdrop-blur-2xl text-white flex flex-col p-4">
           {/* Subtle Ambient Red Glow Background */}
           {currentTrack.thumbnail && (
@@ -163,16 +172,16 @@ export const YoutubeMusicPlayer = () => {
 
           {/* Media Display Screen (Artwork / Embedded Video) */}
           <div className="relative z-10 w-full aspect-square rounded-2xl overflow-hidden shadow-2xl shadow-black/80 bg-black/60 border border-white/5 group my-1 flex items-center justify-center">
-            {/* 1. YouTube Iframe Video (Kept mounted for continuous playback) */}
-            <div
-              className={`absolute inset-0 w-full h-full transition-opacity duration-200 ${
-                viewMode === 'video'
-                  ? 'opacity-100 pointer-events-auto z-20'
-                  : 'opacity-0 pointer-events-none -z-10'
-              }`}
-            >
-              <div id={containerId} className="w-full h-full pointer-events-auto" />
-            </div>
+            {/* 1. YouTube Video View */}
+            {viewMode === 'video' && currentTrack.videoId && (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=1&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
+                title={currentTrack.title}
+                className="w-full h-full border-none pointer-events-auto z-20"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            )}
 
             {/* 2. Cover / Artwork View */}
             {viewMode === 'thumbnail' && (
@@ -360,6 +369,7 @@ export const YoutubeMusicPlayer = () => {
         )}
       </button>
     </div>
+    </>
   )
 }
 
