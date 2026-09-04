@@ -90,27 +90,18 @@ export const YoutubeMusicPlayer = () => {
   const remainingTime = duration > currentSeek ? duration - currentSeek : 0
 
   return (
-    <>
-      {/* Hidden Persistent YouTube IFrame Container to ensure continuous playback regardless of modal state */}
+    <div className="fixed bottom-5 right-5 z-120 flex flex-col items-end gap-2 select-none pointer-events-none">
+      {/* Player Main Card */}
       <div
-        className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden"
-        style={{ visibility: 'hidden' }}
+        className={`
+          transition-all duration-300 ease-out origin-bottom-right
+          ${
+            isPlayerOpen
+              ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+              : 'opacity-0 scale-95 translate-y-3 pointer-events-none'
+          }
+        `}
       >
-        <div id={containerId} />
-      </div>
-
-      <div className="fixed bottom-5 right-5 z-120 flex flex-col items-end gap-2 select-none pointer-events-none">
-        {/* Player Main Card */}
-        <div
-          className={`
-            transition-all duration-300 ease-out origin-bottom-right
-            ${
-              isPlayerOpen
-                ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
-                : 'opacity-0 scale-95 translate-y-3 pointer-events-none'
-            }
-          `}
-        >
         <div className="relative w-80 sm:w-84 rounded-3xl overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] border border-white/10 bg-[#0d0d0e]/95 backdrop-blur-2xl text-white flex flex-col p-4">
           {/* Subtle Ambient Red Glow Background */}
           {currentTrack.thumbnail && (
@@ -170,49 +161,53 @@ export const YoutubeMusicPlayer = () => {
             </button>
           </div>
 
-          {/* Media Display Screen (Artwork / Embedded Video) */}
+          {/* Media Display Screen (Artwork / Single Unified Embedded Video) */}
           <div className="relative z-10 w-full aspect-square rounded-2xl overflow-hidden shadow-2xl shadow-black/80 bg-black/60 border border-white/5 group my-1 flex items-center justify-center">
-            {/* 1. YouTube Video View */}
-            {viewMode === 'video' && currentTrack.videoId && (
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=1&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
-                title={currentTrack.title}
-                className="w-full h-full border-none pointer-events-auto z-20"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            )}
+            {/* SATU-SATUNYA IFRAME PLAYER ASLI (Selalu ter-mount, hanya opacity/z-index yang berganti) */}
+            <div
+              className={`absolute inset-0 w-full h-full transition-opacity duration-200 ${
+                viewMode === 'video'
+                  ? 'opacity-100 pointer-events-auto z-20'
+                  : 'opacity-0 pointer-events-none z-0'
+              }`}
+            >
+              <div id={containerId} className="w-full h-full pointer-events-auto" />
+            </div>
 
-            {/* 2. Cover / Artwork View */}
-            {viewMode === 'thumbnail' && (
-              <div className="absolute inset-0 flex items-center justify-center z-10">
-                {currentTrack.thumbnail ? (
-                  <>
-                    <img
-                      src={currentTrack.thumbnail}
-                      alt={currentTrack.title}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-zinc-600">
-                    <Music size={40} strokeWidth={1.5} />
-                    <span className="text-xs font-mono">Belum ada lagu</span>
-                  </div>
-                )}
+            {/* Cover / Artwork View (Tampil saat viewMode === 'thumbnail') */}
+            <div
+              className={`absolute inset-0 flex items-center justify-center transition-opacity duration-200 ${
+                viewMode === 'thumbnail'
+                  ? 'opacity-100 pointer-events-auto z-10'
+                  : 'opacity-0 pointer-events-none z-0'
+              }`}
+            >
+              {currentTrack.thumbnail ? (
+                <>
+                  <img
+                    src={currentTrack.thumbnail}
+                    alt={currentTrack.title}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-zinc-600">
+                  <Music size={40} strokeWidth={1.5} />
+                  <span className="text-xs font-mono">Belum ada lagu</span>
+                </div>
+              )}
 
-                {/* Soundwave Animation Badge */}
-                {isPlaying && (
-                  <div className="absolute bottom-3 right-3 flex items-end gap-0.5 px-2 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-lg">
-                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-2.5" />
-                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.9s_ease-in-out_infinite] h-4" />
-                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.4s_ease-in-out_infinite] h-2" />
-                    <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.7s_ease-in-out_infinite] h-3.5" />
-                  </div>
-                )}
-              </div>
-            )}
+              {/* Soundwave Animation Badge */}
+              {isPlaying && (
+                <div className="absolute bottom-3 right-3 flex items-end gap-0.5 px-2 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-lg">
+                  <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-2.5" />
+                  <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.9s_ease-in-out_infinite] h-4" />
+                  <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.4s_ease-in-out_infinite] h-2" />
+                  <span className="w-0.5 bg-red-500 rounded-full animate-[pulse_0.7s_ease-in-out_infinite] h-3.5" />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Queue List Overlay Panel */}
@@ -369,7 +364,6 @@ export const YoutubeMusicPlayer = () => {
         )}
       </button>
     </div>
-    </>
   )
 }
 
