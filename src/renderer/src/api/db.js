@@ -646,6 +646,17 @@ export async function getAllLearnedSkills() {
   }
 }
 
+export async function getLearnedSkill(skillName) {
+  try {
+    const all = await getAllLearnedSkills();
+    const target = String(skillName || '').toLowerCase().trim();
+    return all.find((s) => String(s.id).toLowerCase() === target || String(s.name || '').toLowerCase().trim() === target) || null;
+  } catch (error) {
+    console.error('Error in getLearnedSkill logic:', error);
+    return null;
+  }
+}
+
 export async function saveLearnedSkill(skill) {
   try {
     const all = await getAllLearnedSkills()

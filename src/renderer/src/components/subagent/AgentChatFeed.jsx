@@ -180,7 +180,7 @@ function InlineToolExecution({ toolCall, observation }) {
             <div>
               <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">Output:</div>
               <pre className="p-2 rounded-lg bg-base-100/50 overflow-x-auto text-base-content/90 font-mono whitespace-pre-wrap max-h-56 overflow-y-auto border border-base-content/5">
-                {observation.replace(/^\[OBSERVATION\]:\s*/, '')}
+                {(typeof observation === 'string' ? observation : JSON.stringify(observation)).replace(/^\[OBSERVATION\]:\s*/, '')}
               </pre>
             </div>
           )}
