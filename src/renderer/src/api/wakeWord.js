@@ -2,7 +2,7 @@
 // Mendukung pola default "Hey Mark", "Halo Mark", "Mark" serta kata pemicu kustom pengguna
 
 // Pola kata Mark dan variasinya dalam pengenalan suara bahasa Indonesia Edge STT
-const DEFAULT_MARK_NAMES = '(?:mark|marc|mbak|mak|mart|marg|makh|smart|marck)'
+const DEFAULT_MARK_NAMES = '(?:mark|marc|mak|mart|marg|makh|smart|marck)'
 const GREETINGS = '(?:hey|hei|halo|hello|helo|hai|hi|woi|oi|bro)'
 
 /**
