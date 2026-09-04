@@ -240,7 +240,16 @@ export const useMarkAgent = () => {
               null,
               false,
               null,
-              { sessionId: targetSessionId, disableTools: false },
+              {
+                sessionId: targetSessionId,
+                disableTools: false,
+                customUserMessage: {
+                  role: 'user',
+                  source: 'subagent',
+                  sender: `@${data.subagentName || 'Sub-Agent'}`,
+                  content: `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}`
+                }
+              },
               true
             ).catch((err) => {
               console.error('[useMarkAgent] Error handling active session subagent report turn:', err)

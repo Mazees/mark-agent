@@ -728,8 +728,16 @@ export async function exportDatabaseDump() {
 
 export async function restoreDatabaseDump(dumpData, overwrite = true) {
   try {
-    const res = await apiPost('/api/db/restore', { dumpData, overwrite })
-    return res || { success: true }
+    const res = await fetch(`${API_BASE}/api/db/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dumpData, overwrite })
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal memulihkan database dari server.')
+    }
+    return json
   } catch (error) {
     console.error('Error in restoreDatabaseDump:', error)
     throw error

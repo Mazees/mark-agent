@@ -1026,17 +1026,23 @@ export const useMarkPlan = ({
       payloadContent = [{ type: 'text', text: finalContent }, ...imageVisionPayloads]
     }
 
-    const userMessage = {
-      role: 'user',
-      content: payloadContent,
-      timestamp: timestampStr,
-      created_at: Date.now(),
-      source: tgContext ? 'telegram' : 'pc',
-      sender:
-        tgContext?.from?.first_name ||
-        tgContext?.from?.username ||
-        (tgContext ? 'Telegram Admin' : undefined)
-    }
+    const userMessage = opts.customUserMessage
+      ? {
+          ...opts.customUserMessage,
+          timestamp: timestampStr,
+          created_at: Date.now()
+        }
+      : {
+          role: 'user',
+          content: payloadContent,
+          timestamp: timestampStr,
+          created_at: Date.now(),
+          source: tgContext ? 'telegram' : 'pc',
+          sender:
+            tgContext?.from?.first_name ||
+            tgContext?.from?.username ||
+            (tgContext ? 'Telegram Admin' : undefined)
+        }
 
     // Penyiapan data sesi terisolasi (Database-First Persistent Pipeline)
     let inMemorySessionData = []
