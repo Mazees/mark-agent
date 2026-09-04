@@ -223,14 +223,15 @@ export const useMarkAgent = () => {
         const activeSession = String(currentActiveSessionId || activeTopic?.id || '1')
         const isCurrentSession = activeSession === targetSessionId
 
-        // 1. Desktop Notification
-        pushNotification({
-          title: isCurrentSession
-            ? `Laporan @${data.subagentName || 'Sub-Agent'}`
-            : `Laporan @${data.subagentName || 'Sub-Agent'} [${targetSessionTitle}]`,
-          message: data.summary,
-          type: 'info'
-        })
+        // 1. Desktop Notification (Hanya jika window sedang tidak aktif / dibackground)
+        if (document.hidden && window.api?.showNotification) {
+          window.api.showNotification({
+            title: isCurrentSession
+              ? `Laporan @${data.subagentName || 'Sub-Agent'}`
+              : `Laporan @${data.subagentName || 'Sub-Agent'} [${targetSessionTitle}]`,
+            body: data.summary
+          })
+        }
 
         // 2. Jika sesi yang menerima laporan sedang dibuka aktif oleh user
         if (isCurrentSession) {
