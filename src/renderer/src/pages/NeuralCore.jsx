@@ -638,7 +638,7 @@ const NeuralCore = () => {
         cancelText="Batal"
         isError={true}
       />
-      {ModalComponent}
+      <ModalComponent />
 
       {/* ── TOAST NOTIFIKASI FEEDBACK ── */}
       {toastMessage && (
