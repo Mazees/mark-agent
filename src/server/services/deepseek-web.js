@@ -3,6 +3,12 @@
  * Reverse-engineered chat.deepseek.com client with native WASM PoW Solver
  */
 import https from 'https'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export const DEEPSEEK_WEB_MODELS = {
   'deepseek-chat': {
@@ -10,7 +16,14 @@ export const DEEPSEEK_WEB_MODELS = {
     thinking: false,
     search: false,
     name: 'deepseek-chat',
-    desc: 'DeepSeek-V3 model cepat & responsif'
+    desc: 'DeepSeek-V3/Chat model cepat & responsif'
+  },
+  'deepseek-v4': {
+    modelType: 'default',
+    thinking: false,
+    search: false,
+    name: 'deepseek-v4',
+    desc: 'DeepSeek-V4 (Next-Gen Web Model)'
   },
   'deepseek-reasoner': {
     modelType: 'expert',
@@ -48,6 +61,22 @@ async function getWasmSolver(wasmBuffer = null) {
   if (wasmInstanceCache) return wasmInstanceCache
 
   let buf = wasmBuffer
+  if (!buf) {
+    const localWasmPaths = [
+      path.resolve(__dirname, '../assets/sha3_wasm_bg.wasm'),
+      path.resolve(__dirname, '../../../resources/sha3_wasm_bg.wasm')
+    ]
+    for (const p of localWasmPaths) {
+      if (fs.existsSync(p)) {
+        try {
+          const fileBuf = fs.readFileSync(p)
+          buf = fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength)
+          break
+        } catch (_) {}
+      }
+    }
+  }
+
   if (!buf) {
     const res = await fetch(WASM_FALLBACK_URL)
     if (!res.ok) throw new Error(`Gagal mengunduh SHA3 WASM: ${res.statusText}`)

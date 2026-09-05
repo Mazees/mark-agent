@@ -1,19 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import {
-  FaSave,
-  FaCheckCircle,
-  FaTrash,
-  FaTimes,
-  FaMoon,
-  FaSun,
-  FaEye,
-  FaEyeSlash,
-  FaRobot,
-  FaBrain,
-  FaTerminal,
-  FaVolumeUp,
-  FaCog
-} from 'react-icons/fa'
+import { FaCog } from 'react-icons/fa'
 import {
   getAllMemory,
   getAllConfig,
@@ -82,6 +68,8 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     ttsPitch: 0,
     aiProvider: 'gemini-web',
     geminiWebModel: 'gemini-3.6-flash',
+    deepseekWebModel: 'deepseek-chat',
+    deepseekUserToken: '',
     wakeWordEnabled: true,
     customWakeWords: '',
     speechLanguage: 'id-ID',
@@ -103,6 +91,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
   const chatContext = useChat()
 
   const [showCustomKey, setShowCustomKey] = useState(false)
+  const [showDeepseekToken, setShowDeepseekToken] = useState(false)
 
   const handleTestVoice = async () => {
     setPlayingTest(true)
@@ -269,6 +258,8 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
         ...data[0],
         aiProvider: data[0].aiProvider || 'gemini-web',
         geminiWebModel: data[0].geminiWebModel || 'gemini-3.6-flash',
+        deepseekWebModel: data[0].deepseekWebModel || 'deepseek-chat',
+        deepseekUserToken: data[0].deepseekUserToken || '',
         micDeviceId: data[0].micDeviceId || 'default',
         awarenessEnabled: data[0].awarenessEnabled ?? true,
         bgOverlayOpacity: data[0].bgOverlayOpacity !== undefined ? Number(data[0].bgOverlayOpacity) : 65
@@ -483,13 +474,129 @@ const handleSaveConfiguration = async () => {
                 value={config.aiProvider || 'gemini-web'}
                 onChange={(e) => handleAiProviderChange(e.target.value)}
               >
-                <option value="gemini-web">Gemini (Gratis)</option>
+                <option value="gemini-web">Gemini Web (Gratis / RPC)</option>
+                <option value="deepseek-web">DeepSeek Web (V3, V4, R1 DeepThink)</option>
                 <option value="lm-studio">LM Studio (Local Offline)</option>
                 <option value="custom">Custom API (OpenAI-Compatible)</option>
               </select>
             </div>
 
-            {config.aiProvider === 'gemini-web' || !config.aiProvider ? (
+            {config.aiProvider === 'deepseek-web' ? (
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <p className="text-sm font-semibold">Model DeepSeek</p>
+                  <select
+                    className="select select-bordered w-full"
+                    value={config.deepseekWebModel || 'deepseek-chat'}
+                    onChange={(e) =>
+                      setConfig((prev) => ({ ...prev, deepseekWebModel: e.target.value }))
+                    }
+                  >
+                    <option value="deepseek-chat">deepseek-chat (DeepSeek-V3 Cepat & Responsif)</option>
+                    <option value="deepseek-v4">deepseek-v4 (DeepSeek-V4 Next-Gen Auto)</option>
+                    <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1 DeepThink)</option>
+                    <option value="deepseek-search">deepseek-search (DeepSeek-V3 + Web Search)</option>
+                    <option value="deepseek-reasoner-search">deepseek-reasoner-search (DeepSeek-R1 + Web Search)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-semibold">DeepSeek User Token (Bearer)</p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText()
+                          if (text) setConfig((prev) => ({ ...prev, deepseekUserToken: text.trim() }))
+                        } catch (_) {}
+                      }}
+                      className="text-xs text-primary hover:underline cursor-pointer"
+                    >
+                      Paste dari Clipboard
+                    </button>
+                  </div>
+                  <div className="relative w-full">
+                    <input
+                      type={showDeepseekToken ? 'text' : 'password'}
+                      placeholder="eyJhbGciOi..."
+                      className="input input-bordered w-full font-mono text-xs pr-10"
+                      value={config.deepseekUserToken || ''}
+                      onChange={(e) =>
+                        setConfig((prev) => ({ ...prev, deepseekUserToken: e.target.value }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100 cursor-pointer"
+                      onClick={() => setShowDeepseekToken(!showDeepseekToken)}
+                      title={showDeepseekToken ? 'Sembunyikan Token' : 'Tampilkan Token'}
+                    >
+                      {showDeepseekToken ? (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                          <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                          <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                          <line x1="2" x2="22" y1="2" y2="22" />
+                        </svg>
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Panduan Cara Mendapatkan Token */}
+                  <div className="p-3 bg-base-200/60 rounded-xl border border-white/5 space-y-2 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-primary">
+                      <FaCog className="w-3.5 h-3.5" />
+                      <span>Cara Mendapatkan User Token DeepSeek:</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-white/70">
+                      <li>Buka dan login ke akunmu di <a href="https://chat.deepseek.com" target="_blank" rel="noreferrer" className="text-primary underline">chat.deepseek.com</a> di browser.</li>
+                      <li>Tekan tombol keyboard <strong>F12</strong> (atau klik kanan &gt; Inspect) lalu buka tab <strong>Console</strong>.</li>
+                      <li>Copy dan paste baris kode berikut ke dalam Console lalu tekan Enter:</li>
+                    </ol>
+                    <div className="flex items-center justify-between bg-black/50 p-2 rounded-lg border border-white/10 font-mono text-[11px] text-success">
+                      <code className="truncate mr-2">JSON.parse(localStorage.getItem('userToken')).value</code>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText("JSON.parse(localStorage.getItem('userToken')).value")}
+                        className="btn btn-xs btn-ghost text-white/50 hover:text-white shrink-0"
+                        title="Salin snippet"
+                      >
+                        Salin Kode
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-white/40">
+                      Salin nilai token yang muncul (tanpa tanda kutip), lalu tempelkan ke kolom input di atas. Token ini otomatis memecahkan challenge anti-bot WASM DeepSeek secara lokal!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : config.aiProvider === 'gemini-web' || !config.aiProvider ? (
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <p className="text-sm font-semibold">Model Gemini</p>

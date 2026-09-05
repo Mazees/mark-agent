@@ -878,9 +878,11 @@ app.post('/api/ai/fetch', async (req, res) => {
     const resolvedModel =
       provider === 'gemini-web'
         ? finalConfig.geminiWebModel || 'gemini-3.6-flash'
-        : provider === 'custom'
-          ? finalConfig.customModel || 'default-model'
-          : finalConfig.model || 'local-model'
+        : provider === 'deepseek-web'
+          ? finalConfig.deepseekWebModel || 'deepseek-chat'
+          : provider === 'custom'
+            ? finalConfig.customModel || 'default-model'
+            : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
       type: 'fetch',
@@ -908,9 +910,11 @@ app.post('/api/ai/stream', async (req, res) => {
     const resolvedModel =
       provider === 'gemini-web'
         ? finalConfig.geminiWebModel || 'gemini-3.6-flash'
-        : provider === 'custom'
-          ? finalConfig.customModel || 'default-model'
-          : finalConfig.model || 'local-model'
+        : provider === 'deepseek-web'
+          ? finalConfig.deepseekWebModel || 'deepseek-chat'
+          : provider === 'custom'
+            ? finalConfig.customModel || 'default-model'
+            : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
       type: 'stream',
