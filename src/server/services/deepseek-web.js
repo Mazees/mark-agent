@@ -17,34 +17,6 @@ export const DEEPSEEK_WEB_MODELS = {
     search: false,
     name: 'deepseek-chat',
     desc: 'DeepSeek-V3/Chat model cepat & responsif'
-  },
-  'deepseek-v4': {
-    modelType: 'default',
-    thinking: false,
-    search: false,
-    name: 'deepseek-v4',
-    desc: 'DeepSeek-V4 (Next-Gen Web Model)'
-  },
-  'deepseek-reasoner': {
-    modelType: 'expert',
-    thinking: true,
-    search: false,
-    name: 'deepseek-reasoner',
-    desc: 'DeepSeek-R1 mode penalaran mendalam (DeepThink)'
-  },
-  'deepseek-search': {
-    modelType: 'default',
-    thinking: false,
-    search: true,
-    name: 'deepseek-search',
-    desc: 'DeepSeek-V3 dengan pencarian web real-time'
-  },
-  'deepseek-reasoner-search': {
-    modelType: 'expert',
-    thinking: true,
-    search: true,
-    name: 'deepseek-reasoner-search',
-    desc: 'DeepSeek-R1 penalaran mendalam + pencarian web'
   }
 }
 
@@ -255,14 +227,7 @@ export async function generateDeepSeekResponse(
   } = options
 
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
-  let selected = DEEPSEEK_WEB_MODELS[reqModel]
-  if (!selected) {
-    if (reqModel.includes('reason') || reqModel.includes('r1')) {
-      selected = DEEPSEEK_WEB_MODELS['deepseek-reasoner']
-    } else {
-      selected = DEEPSEEK_WEB_MODELS['deepseek-chat']
-    }
-  }
+  let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
 
   const sessionId = inputSessionId || (await createChatSession(token))
   const powHeader = await generatePowHeader(token, '/api/v0/chat/completion', wasmBuffer)

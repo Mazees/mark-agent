@@ -367,7 +367,12 @@ export async function setSessionWorkspace(sessionId, workspace) {
   try {
     const existing = await db.sessions.get(sessionId)
     if (existing) {
-      await db.sessions.put({ ...existing, workspace, timestamp: Date.now() })
+      await db.sessions.put({
+        ...existing,
+        workspace,
+        workspaceRoot: workspace,
+        timestamp: Date.now()
+      })
     }
   } catch (error) {
     console.error(`Error setSessionWorkspace ${sessionId}:`, error)

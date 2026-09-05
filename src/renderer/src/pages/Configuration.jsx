@@ -474,8 +474,8 @@ const handleSaveConfiguration = async () => {
                 value={config.aiProvider || 'gemini-web'}
                 onChange={(e) => handleAiProviderChange(e.target.value)}
               >
-                <option value="gemini-web">Gemini Web (Gratis / RPC)</option>
-                <option value="deepseek-web">DeepSeek Web (V3, V4, R1 DeepThink)</option>
+                <option value="gemini-web">Gemini Web (Gratis)</option>
+                <option value="deepseek-web">DeepSeek Web (Gratis)</option>
                 <option value="lm-studio">LM Studio (Local Offline)</option>
                 <option value="custom">Custom API (OpenAI-Compatible)</option>
               </select>
@@ -483,23 +483,6 @@ const handleSaveConfiguration = async () => {
 
             {config.aiProvider === 'deepseek-web' ? (
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <p className="text-sm font-semibold">Model DeepSeek</p>
-                  <select
-                    className="select select-bordered w-full"
-                    value={config.deepseekWebModel || 'deepseek-chat'}
-                    onChange={(e) =>
-                      setConfig((prev) => ({ ...prev, deepseekWebModel: e.target.value }))
-                    }
-                  >
-                    <option value="deepseek-chat">deepseek-chat (DeepSeek-V3 Cepat & Responsif)</option>
-                    <option value="deepseek-v4">deepseek-v4 (DeepSeek-V4 Next-Gen Auto)</option>
-                    <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1 DeepThink)</option>
-                    <option value="deepseek-search">deepseek-search (DeepSeek-V3 + Web Search)</option>
-                    <option value="deepseek-reasoner-search">deepseek-reasoner-search (DeepSeek-R1 + Web Search)</option>
-                  </select>
-                </div>
-
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <p className="text-sm font-semibold">DeepSeek User Token (Bearer)</p>

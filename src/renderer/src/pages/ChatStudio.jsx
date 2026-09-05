@@ -243,7 +243,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       if (selected) {
         await setSessionWorkspace(activeSessionId, selected)
         setSessions((prev) =>
-          prev.map((s) => (s.id === activeSessionId ? { ...s, workspaceRoot: selected } : s))
+          prev.map((s) => (String(s.id) === String(activeSessionId) ? { ...s, workspaceRoot: selected, workspace: selected } : s))
         )
       }
     }
@@ -474,10 +474,20 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
           {/* Header */}
           <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
-            <div className="flex flex-col">
-              <h3 className="text-sm font-bold text-white max-w-md">
-                {activeSessionObj.title || 'Percakapan'}
-              </h3>
+            <div className="flex flex-col min-w-0 pr-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white truncate max-w-md">
+                  {activeSessionObj.title || 'Percakapan'}
+                </h3>
+                {activeSessionObj?.workspaceRoot && (
+                  <span
+                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate"
+                    title={`Workspace: ${activeSessionObj.workspaceRoot}`}
+                  >
+                    📁 {activeSessionObj.workspaceRoot.split(/[\\/]/).pop()}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] text-white/40">
                 {currentDisplayMessages.length} pesan terdaftar
               </span>
