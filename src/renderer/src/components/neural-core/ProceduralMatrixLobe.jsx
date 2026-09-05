@@ -30,10 +30,11 @@ export const ProceduralMatrixLobe = ({
         <div className="p-4 bg-base-200/60 border border-white/5 rounded-2xl flex flex-wrap items-center justify-between gap-4 backdrop-blur-md shadow-lg">
           <div>
             <h2 className="text-sm font-bold font-mono text-base-content flex items-center gap-2 uppercase tracking-wider">
-              <FaGraduationCap className="text-primary" /> Gudang Keahlian Mandiri (Learned Skills)
+              <FaGraduationCap className="text-primary" /> Learned Skill
             </h2>
             <p className="text-xs text-base-content/60 mt-0.5">
-              Panduan dan langkah kerja yang dipelajari dan dirumuskan sendiri oleh Mark saat menyelesaikan tugas sebelumnya.
+              Skill yang dipelajari dan dirumuskan sendiri oleh Mark saat menyelesaikan tugas
+              sebelumnya.
             </p>
           </div>
 
@@ -59,7 +60,8 @@ export const ProceduralMatrixLobe = ({
                 Belum Ada Keahlian Baru
               </h3>
               <p className="text-xs text-base-content/50 max-w-md mt-1 leading-relaxed">
-                Mark akan secara otomatis mencatat keahlian baru ke daftar ini ketika berhasil menyelesaikan tugas teknis yang berulang atau rumit.
+                Mark akan secara otomatis mencatat keahlian baru ke daftar ini ketika berhasil
+                menyelesaikan tugas teknis yang berulang atau rumit.
               </p>
             </div>
           ) : (
@@ -69,21 +71,20 @@ export const ProceduralMatrixLobe = ({
                   key={skill.id}
                   className="p-5 bg-base-200/50 hover:bg-base-200/80 border border-white/5 hover:border-primary/30 rounded-2xl backdrop-blur-md transition-all flex flex-col justify-between group shadow-md"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono font-bold text-sm text-base-content flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                        /{skill.name}
-                      </span>
-                      <span className="text-[10px] font-mono text-base-content/40">
-                        {new Date(skill.updatedAt || Date.now()).toLocaleDateString('id-ID', {
-                          dateStyle: 'medium'
-                        })}
+                  <div className="flex flex-col gap-3 pb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-sm text-base-content flex items-center gap-1.5 uppercase">
+                        {skill.name}
                       </span>
                     </div>
-                    <p className="text-xs text-base-content/70 leading-relaxed line-clamp-3 mb-4">
+                    <p className="text-xs text-base-content/70 leading-relaxed line-clamp-3">
                       {skill.description || 'Tidak ada deskripsi singkat.'}
                     </p>
+                    <span className="text-[10px] font-mono text-base-content/40">
+                      {new Date(skill.updatedAt || Date.now()).toLocaleDateString('id-ID', {
+                        dateStyle: 'medium'
+                      })}
+                    </span>
                   </div>
 
                   <div className="flex items-center justify-between pt-3 border-t border-white/5">
@@ -117,7 +118,7 @@ export const ProceduralMatrixLobe = ({
     <div className="lg:col-span-3 bg-base-200/50 backdrop-blur-md border border-white/5 rounded-2xl p-4 flex flex-col min-h-0 overflow-hidden shadow-xl">
       <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-3">
         <div className="flex items-center gap-2 text-sm font-bold font-mono text-base-content">
-          <FaGraduationCap className="text-primary" /> KEAHLIAN MANDIRI
+          <FaGraduationCap className="text-primary" /> Skill Yang Di Pelajari
         </div>
         {onNavigateToFull && (
           <button
@@ -156,8 +157,8 @@ export const ProceduralMatrixLobe = ({
               className="p-2.5 bg-base-300/40 hover:bg-base-300/70 border border-white/5 hover:border-primary/20 rounded-xl transition-all flex flex-col gap-1 group"
             >
               <div className="flex items-center justify-between">
-                <span className="font-mono font-bold text-xs text-base-content/90">
-                  /{skill.name}
+                <span className="font-mono font-bold uppercase text-xs text-base-content/90">
+                  {skill.name}
                 </span>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button

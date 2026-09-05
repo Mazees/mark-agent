@@ -57,7 +57,7 @@ Arsitektur memori Mark V5 dirancang untuk kontinuitas ingatan jangka panjang (*L
 2. **Semantic & Core Memory (`profile`, `preference`, `notes`)**:
    - Menyimpan fakta identitas pengguna, preferensi gaya bicara, dan catatan eksplisit di tabel `memories`.
    - Dikelola dan dirampingkan secara otomatis oleh *Hippocampus Memory Groomer*.
-3. **Procedural Memory (Learned Skills)**:
+3. **Self Improving Skill**:
    - Menyimpan alur kerja teknis dan trik solusi yang berhasil dipelajari Mark saat memecahkan masalah kompleks ke tabel `learned_skills`.
 4. **Universal Zero-Hallucination & Groundedness**:
    - Sistem prompt dan ReAct loop Mark dibentengi oleh aturan integritas fakta ketat. Mark dilarang mengarang fakta jika riwayat obrolan atau data file tidak ditemukan di memori, menjamin hasil penarikan informasi yang akurat dan dapat dipercaya.

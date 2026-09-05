@@ -94,14 +94,18 @@ export const EmotionalCortexLobe = ({
                         className="transition-all duration-1000 ease-out"
                       />
                     </svg>
-                    <div className={`absolute inset-0 flex flex-col items-center justify-center ${t.color}`}>
+                    <div
+                      className={`absolute inset-0 flex flex-col items-center justify-center ${t.color}`}
+                    >
                       <t.icon className="text-xl mb-0.5 opacity-90" />
                       <span className="text-xs font-bold font-mono text-base-content">{pct}%</span>
                     </div>
                   </div>
                   <div>
                     <p className={`text-xs font-bold font-mono ${t.color}`}>{t.label}</p>
-                    <p className="text-[10px] text-base-content/50 leading-tight mt-0.5">{t.desc}</p>
+                    <p className="text-[10px] text-base-content/50 leading-tight mt-0.5">
+                      {t.desc}
+                    </p>
                     <span className="inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-base-300 border border-white/5 text-base-content/70">
                       {describeLevel(val)}
                     </span>
@@ -175,9 +179,13 @@ export const EmotionalCortexLobe = ({
                 >
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <StatIcon className={`text-sm ${stat.color}`} />
-                    <span className="text-[11px] text-base-content/50 leading-none">{stat.label}</span>
+                    <span className="text-[11px] text-base-content/50 leading-none">
+                      {stat.label}
+                    </span>
                   </div>
-                  <p className={`text-lg font-bold font-mono leading-none ${stat.color}`}>{stat.value}</p>
+                  <p className={`text-lg font-bold font-mono leading-none ${stat.color}`}>
+                    {stat.value}
+                  </p>
                   <p className="text-[10px] text-base-content/40 mt-1.5 leading-none">{stat.sub}</p>
                 </div>
               )
@@ -192,7 +200,9 @@ export const EmotionalCortexLobe = ({
               <FaDatabase className="text-primary" /> Pencadangan & Migrasi Database
             </h4>
             <p className="text-xs text-base-content/60 mt-1 max-w-xl">
-              Simpan atau pulihkan seluruh memori kognitif, keahlian mandiri, arsip percakapan, dan dokumen Mark dalam format JSON untuk cadangan atau migrasi antar perangkat.
+              Simpan atau pulihkan seluruh memori kognitif, Skill Yang Di Pelajari, arsip
+              percakapan, dan dokumen Mark dalam format JSON untuk cadangan atau migrasi antar
+              perangkat.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">

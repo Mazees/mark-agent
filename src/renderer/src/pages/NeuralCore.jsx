@@ -13,6 +13,7 @@ import {
   exportDatabaseDump,
   restoreDatabaseDump
 } from '../api/db'
+import { webApi } from '../api/web-bridge'
 import { useConfirm } from '../hooks/useConfirm'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
 import ConfirmModal from '../components/core/ConfirmModal'
@@ -22,13 +23,7 @@ import { ProceduralMatrixLobe } from '../components/neural-core/ProceduralMatrix
 import { ProceduralSkillModal } from '../components/neural-core/ProceduralSkillModal'
 import { NodeDissectionModal } from '../components/neural-core/NodeDissectionModal'
 import { ResetAiModal } from '../components/neural-core/ResetAiModal'
-import {
-  FaBrain,
-  FaNetworkWired,
-  FaGraduationCap,
-  FaFire,
-  FaLayerGroup
-} from 'react-icons/fa'
+import { FaBrain, FaNetworkWired, FaGraduationCap, FaFire, FaLayerGroup } from 'react-icons/fa'
 
 const NeuralCore = () => {
   const navigate = useNavigate()
@@ -89,9 +84,18 @@ const NeuralCore = () => {
       const rel = await getRelationship('owner')
       setTraits(rel)
 
-      // 2. Keahlian Mandiri (Learned Skills)
+      // 2. Skill Yang Di Pelajari (Learned Skills) & Custom User Skills (Disk)
       const skills = await getAllLearnedSkills()
       setLearnedSkills(skills || [])
+
+      let customDiskSkills = []
+      try {
+        if (webApi && typeof webApi.getSkills === 'function') {
+          customDiskSkills = (await webApi.getSkills()) || []
+        }
+      } catch (err) {
+        console.warn('[NeuralCore] Gagal mengambil custom skills dari disk:', err)
+      }
 
       // 3. Peta Memori (Chat, RAG, Dokumen)
       const archives = await getAllChatArchives()
@@ -123,16 +127,28 @@ const NeuralCore = () => {
       nodes.push({ id: 'doc-root', name: 'Gudang Dokumen', group: 1, val: 15, color: '#ffaa00' })
       nodes.push({
         id: 'skills-root',
-        name: 'Keahlian Mandiri',
+        name: 'Skill Yang Dipelajari',
         group: 1,
         val: 15,
         color: '#a855f7'
+      })
+      nodes.push({
+        id: 'custom-skills-root',
+        name: 'Custom User Skills',
+        group: 1,
+        val: 15,
+        color: '#38bdf8'
       })
 
       links.push({ source: coreNodeId, target: 'archives-root', color: 'rgba(255,255,255,0.3)' })
       links.push({ source: coreNodeId, target: 'vector-root', color: 'rgba(255,255,255,0.3)' })
       links.push({ source: coreNodeId, target: 'doc-root', color: 'rgba(255,255,255,0.3)' })
       links.push({ source: coreNodeId, target: 'skills-root', color: 'rgba(255,255,255,0.3)' })
+      links.push({
+        source: coreNodeId,
+        target: 'custom-skills-root',
+        color: 'rgba(255,255,255,0.3)'
+      })
 
       // 2 & 3. Data Riwayat Obrolan
       const topics = [...new Set(archives.map((a) => a.topic || 'Umum'))]
@@ -228,7 +244,7 @@ const NeuralCore = () => {
         links.push({ source: docGroupId, target: `doc-${doc.id}`, color: 'rgba(255,255,255,0.1)' })
       })
 
-      // 2 & 3. Data Keahlian Mandiri
+      // 2 & 3. Data Skill Yang Di Pelajari (Learned Skills)
       skills.forEach((skill) => {
         nodes.push({
           id: `skill-${skill.id}`,
@@ -239,11 +255,32 @@ const NeuralCore = () => {
           group: 3,
           val: 5,
           color: '#c084fc',
-          typeLabel: 'Keahlian Mandiri'
+          typeLabel: 'Skill Yang Di Pelajari'
         })
         links.push({
           source: 'skills-root',
           target: `skill-${skill.id}`,
+          color: 'rgba(255,255,255,0.1)'
+        })
+      })
+
+      // 4. Data Custom User Skills (Disk Documents/Mark Skills)
+      customDiskSkills.forEach((cSkill) => {
+        const cSkillId = `custom-skill-${cSkill.name}`
+        nodes.push({
+          id: cSkillId,
+          name: `/${cSkill.name}`,
+          fullText: cSkill.description || `Custom skill: ${cSkill.name}`,
+          description: cSkill.description,
+          date: 'Custom Disk Skill',
+          group: 3,
+          val: 5,
+          color: '#38bdf8',
+          typeLabel: 'Custom Skill'
+        })
+        links.push({
+          source: 'custom-skills-root',
+          target: cSkillId,
           color: 'rgba(255,255,255,0.1)'
         })
       })
@@ -287,7 +324,9 @@ const NeuralCore = () => {
       setSelectedNode(null)
       setSelectedSkill(null)
       await loadBrainData()
-      showToast('Seluruh data memori, sesi percakapan, dan sifat Mark berhasil direset ke kondisi awal!')
+      showToast(
+        'Seluruh data memori, sesi percakapan, dan sifat Mark berhasil direset ke kondisi awal!'
+      )
       setTimeout(() => {
         window.location.reload()
       }, 1500)
@@ -377,7 +416,7 @@ const NeuralCore = () => {
   // Hapus Skill Action
   const handleDeleteSkill = async (skill) => {
     const result = await confirm({
-      title: 'Hapus Keahlian Mandiri?',
+      title: 'Hapus Skill Yang Di Pelajari?',
       message: `Apakah kamu yakin ingin menghapus keahlian "/${skill.name}" dari memori Mark?`,
       isError: true,
       confirmText: 'Hapus Keahlian'
@@ -403,7 +442,10 @@ const NeuralCore = () => {
       } else if (node.typeLabel === 'Arsip Obrolan' || node.typeLabel === 'Chat Archive') {
         const id = parseInt(String(node.id).split('-')[1])
         await deleteChatArchive(id)
-      } else if (node.typeLabel === 'Keahlian Mandiri' || node.typeLabel === 'Learned Skill') {
+      } else if (
+        node.typeLabel === 'Skill Yang Di Pelajari' ||
+        node.typeLabel === 'Learned Skill'
+      ) {
         const id = String(node.id).replace('skill-', '')
         await deleteLearnedSkill(id)
       }
@@ -448,20 +490,8 @@ const NeuralCore = () => {
               </h1>
             </div>
             <p className="text-[10px] font-mono text-base-content/50 tracking-tight">
-              STATUS SIFAT, JARINGAN MEMORI, DAN KEAHLIAN MANDIRI
+              STATUS SIFAT, JARINGAN MEMORI, DAN Skill Yang Di Pelajari
             </p>
-          </div>
-        </div>
-
-        {/* Ringkasan Sensor */}
-        <div className="hidden lg:flex items-center gap-3 text-xs font-mono">
-          <div className="px-3 py-1 bg-base-300/60 border border-white/5 rounded-xl flex items-center gap-2 text-base-content/70">
-            <span className="text-[10px] text-base-content/40">TITIK MEMORI:</span>
-            <span className="font-semibold text-primary">{graphData.nodes.length}</span>
-          </div>
-          <div className="px-3 py-1 bg-base-300/60 border border-white/5 rounded-xl flex items-center gap-2 text-base-content/70">
-            <span className="text-[10px] text-base-content/40">KEAHLIAN:</span>
-            <span className="font-semibold text-primary">{learnedSkills.length}</span>
           </div>
         </div>
 
@@ -509,7 +539,7 @@ const NeuralCore = () => {
                 : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
             }`}
           >
-            <FaGraduationCap size={11} /> Keahlian Mandiri
+            <FaGraduationCap size={11} /> Skill Yang Di Pelajari
           </button>
         </div>
       </header>

@@ -2,6 +2,8 @@ import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { FaGraduationCap, FaTimes } from 'react-icons/fa'
+import rehypeExternalLinks from 'rehype-external-links'
+import { CodeBlock } from '../Chat/CodeBlock'
 
 export const ProceduralSkillModal = ({ skill, onClose }) => {
   if (!skill) return null
@@ -16,8 +18,9 @@ export const ProceduralSkillModal = ({ skill, onClose }) => {
               <FaGraduationCap size={15} />
             </div>
             <div>
-              <h3 className="font-mono font-bold text-sm text-base-content">/{skill.name}</h3>
-              <p className="text-[11px] text-base-content/50">{skill.description}</p>
+              <h3 className="font-mono font-bold text-sm text-base-content uppercase">
+                {skill.name}
+              </h3>
             </div>
           </div>
           <button
@@ -29,23 +32,18 @@ export const ProceduralSkillModal = ({ skill, onClose }) => {
           </button>
         </div>
 
-        {/* Markdown Body */}
-        <div className="flex-1 overflow-y-auto p-6 font-sans text-sm text-base-content/90 custom-scrollbar leading-relaxed prose prose-invert max-w-none prose-pre:bg-base-300 prose-pre:border prose-pre:border-white/10 prose-headings:font-mono prose-headings:text-base-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <div className="flex-1 overflow-y-auto p-6 font-sans text-sm text-base-content/90 custom-scrollbar leading-relaxed custom-markdown">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[
+              [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
+            ]}
+            components={{
+              code: CodeBlock
+            }}
+          >
             {skill.content || '*Tidak ada konten instruksi Markdown.*'}
           </ReactMarkdown>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-white/10 bg-base-300/60 flex items-center justify-between text-xs font-mono text-base-content/50">
-          <span>Status: Keahlian aktif dan siap digunakan oleh Mark</span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-sm btn-ghost bg-base-100/50 hover:bg-base-100 rounded-xl font-mono"
-          >
-            Tutup
-          </button>
         </div>
       </div>
     </div>

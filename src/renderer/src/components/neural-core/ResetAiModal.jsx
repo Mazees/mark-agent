@@ -55,9 +55,7 @@ export const ResetAiModal = ({ isOpen, onClose, onConfirm, isResetting = false }
               <FaCheckCircle className="text-2xl" />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-success">
-                Reset AI Berhasil
-              </h3>
+              <h3 className="font-bold text-lg text-success">Reset AI Berhasil</h3>
               <p className="py-2 text-sm opacity-80">
                 Seluruh memori, riwayat chat, dan sifat Mark telah dikembalikan ke kondisi awal.
               </p>
@@ -66,9 +64,7 @@ export const ResetAiModal = ({ isOpen, onClose, onConfirm, isResetting = false }
         ) : (
           <>
             {/* Header Title */}
-            <h3 className="font-bold text-lg text-error">
-              Reset Total AI (Tahap {step}/2)
-            </h3>
+            <h3 className="font-bold text-lg text-error">Reset Total AI (Tahap {step}/2)</h3>
 
             {/* Step 1: Warning Details */}
             {step === 1 && (
@@ -84,7 +80,7 @@ export const ResetAiModal = ({ isOpen, onClose, onConfirm, isResetting = false }
                     <li>Seluruh riwayat obrolan & sesi percakapan</li>
                     <li>Seluruh memori eksplisit (Vector RAG)</li>
                     <li>Seluruh potongan dokumen tersimpan</li>
-                    <li>Seluruh keahlian mandiri (Learned Skills)</li>
+                    <li>Seluruh skill yang dipelajari (Learned Skills)</li>
                     <li>Status sifat & karakter (kembali ke default netral)</li>
                     <li>Riwayat tugas mandiri & sub-agen</li>
                   </ul>
@@ -92,7 +88,8 @@ export const ResetAiModal = ({ isOpen, onClose, onConfirm, isResetting = false }
                     <FaShieldAlt size={10} /> Data yang dipertahankan:
                   </div>
                   <p className="opacity-70 pl-1">
-                    Pengaturan API Key, model provider, prompt, dan konfigurasi umum sistem tetap aman.
+                    Pengaturan API Key, model provider, prompt, dan konfigurasi umum sistem tetap
+                    aman.
                   </p>
                 </div>
 
@@ -127,7 +124,8 @@ export const ResetAiModal = ({ isOpen, onClose, onConfirm, isResetting = false }
             {step === 2 && (
               <div className="py-3 space-y-3">
                 <p className="text-sm opacity-90">
-                  Tindakan ini <strong className="text-error">tidak dapat dibatalkan</strong>. Untuk mengonfirmasi penghapusan seluruh memori Mark, ketik teks di bawah:
+                  Tindakan ini <strong className="text-error">tidak dapat dibatalkan</strong>. Untuk
+                  mengonfirmasi penghapusan seluruh memori Mark, ketik teks di bawah:
                 </p>
 
                 <div className="p-3 bg-base-200 rounded-xl border border-error/20 text-center font-mono font-bold text-sm tracking-widest text-error select-all">
@@ -198,4 +196,3 @@ export const ResetAiModal = ({ isOpen, onClose, onConfirm, isResetting = false }
 }
 
 export default ResetAiModal
-
