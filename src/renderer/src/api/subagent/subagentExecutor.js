@@ -322,9 +322,32 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
       })
 
       await subagentStore.updateSubagent(subagentId, {
-        status: 'idle',
+        status: 'completed',
         finalAnswer: latestSubagentReply
       })
+
+      // Otomatis laporkan hasil akhir ke Lead Agent (Mark) jika subagent menjawab teks
+      try {
+        const parentSessionId = String(subagent.parentSessionId || '1')
+        const parentSessionTitle =
+          subagent.parentSessionTitle ||
+          (parentSessionId === '1' ? 'Main Thread' : `Sesi #${parentSessionId}`)
+
+        if (window.api && window.api.broadcastWsEvent) {
+          window.api.broadcastWsEvent('subagent:report', {
+            subagentId,
+            subagentName: subagent.name,
+            role: subagent.role,
+            summary: latestSubagentReply,
+            artifact: null,
+            parentSessionId,
+            parentSessionTitle,
+            timestamp: Date.now()
+          })
+        }
+      } catch (reportErr) {
+        console.warn('[subagentExecutor] Gagal auto-report ke Lead Agent:', reportErr)
+      }
 
       return {
         success: true,
@@ -335,11 +358,33 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
       }
     }
 
-    // Jika turn berakhir secara alami tanpa pemanggilan tool di turn terakhir (status idle/selesai)
+    // Jika turn berakhir secara alami tanpa pemanggilan tool di turn terakhir (status completed/selesai)
     await subagentStore.updateSubagent(subagentId, {
-      status: 'idle',
+      status: 'completed',
       finalAnswer: latestSubagentReply || 'Misi sub-agent selesai.'
     })
+
+    if (latestSubagentReply) {
+      try {
+        const parentSessionId = String(subagent.parentSessionId || '1')
+        const parentSessionTitle =
+          subagent.parentSessionTitle ||
+          (parentSessionId === '1' ? 'Main Thread' : `Sesi #${parentSessionId}`)
+
+        if (window.api && window.api.broadcastWsEvent) {
+          window.api.broadcastWsEvent('subagent:report', {
+            subagentId,
+            subagentName: subagent.name,
+            role: subagent.role,
+            summary: latestSubagentReply,
+            artifact: null,
+            parentSessionId,
+            parentSessionTitle,
+            timestamp: Date.now()
+          })
+        }
+      } catch (_) {}
+    }
 
     return {
       success: true,

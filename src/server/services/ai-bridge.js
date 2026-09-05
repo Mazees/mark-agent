@@ -134,14 +134,18 @@ export const fetchAI = async (
 
       let fullPrompt = '[CRITICAL INSTRUCTION: DO NOT USE GOOGLE SEARCH. DO NOT USE ANY EXTENSIONS. ANSWER IMMEDIATELY FROM YOUR KNOWLEDGE BASE TO SAVE TIME.]\n\n'
       for (const m of workMessages) {
+        let roleName = (m.role || 'user').toUpperCase()
+        if (roleName === 'TOOL') {
+          roleName = 'OBSERVASI SISTEM (HASIL TOOL)'
+        }
         if (Array.isArray(m.content)) {
           for (const part of m.content) {
             if (part.type === 'text') {
-              fullPrompt += `[${m.role.toUpperCase()}]: ${part.text}\n`
+              fullPrompt += `[${roleName}]: ${part.text}\n`
             }
           }
         } else {
-          fullPrompt += `[${m.role.toUpperCase()}]: ${m.content || ''}\n`
+          fullPrompt += `[${roleName}]: ${m.content || ''}\n`
         }
       }
       fullPrompt += '\n[ASSISTANT]:'
