@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useChat } from '../contexts/ChatContext'
 import {
   MessageSquare,
   Plus,
@@ -32,7 +34,10 @@ import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import { useConfirm } from '../hooks/useConfirm'
 
-export const ChatStudio = ({ isOpen, onClose, chatContext }) => {
+export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) => {
+  const navigate = useNavigate()
+  const contextChat = useChat()
+  const chatContext = propChatContext || contextChat
   const {
     chatData: mainChatData,
     setChatData: setMainChatData,
@@ -266,7 +271,16 @@ export const ChatStudio = ({ isOpen, onClose, chatContext }) => {
     setIsLocalLoading(false)
   }
 
-  if (!isOpen) return null
+  const handleClose = () => {
+    if (typeof onClose === 'function') {
+      onClose()
+    } else {
+      navigate('/')
+    }
+  }
+
+  // Jika dipanggil via route (tanpa prop isOpen), default ke true
+  if (isOpen === false) return null
 
   const filteredSessions = sessions.filter((s) =>
     (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -292,7 +306,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext }) => {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    onClose()
+                    handleClose()
                   }}
                   className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
                   style={{ WebkitAppRegion: 'no-drag' }}

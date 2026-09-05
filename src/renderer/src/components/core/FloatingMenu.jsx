@@ -38,8 +38,7 @@ const FloatingMenu = () => {
   }
 
   const handleOpenStudio = () => {
-    navigate('/')
-    window.dispatchEvent(new CustomEvent('open-chat-studio'))
+    navigate('/chat')
     setIsOpen(false)
   }
 

@@ -996,6 +996,18 @@ app.post('/api/tools/needs-approval', async (req, res) => {
   }
 })
 
+// 8b. Desktop Native Notifications API
+app.post('/api/system/notify', async (req, res) => {
+  const { title = 'Mark', body = '' } = req.body || {}
+  try {
+    const { showNativeNotification } = await import('./services/notification-service.js')
+    showNativeNotification(title, body)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 // 9. Edge-TTS Speech Synthesis API
 app.get('/api/tts/stream', async (req, res) => {
   const { text, voice, rate = 0, pitch = 0 } = req.query || {}

@@ -8,7 +8,6 @@ import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
 import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
 import BrowserPreviewWidget from '../components/core/BrowserPreviewWidget'
-import { ChatStudioModal } from '../components/core/ChatStudioModal'
 import {
   MessageSquare,
   Sparkles,
@@ -52,7 +51,6 @@ const MarkHome = () => {
   const { isPlaying, currentTrack } = useYoutubeMusic()
   useMemoryGroomer(true)
 
-  const [isChatStudioOpen, setIsChatStudioOpen] = useState(false)
   const [currentResponse, setCurrentResponse] = useState(null)
   const [showMusicWidget, setShowMusicWidget] = useState(false)
   const [isMusicAnimatingOut, setIsMusicAnimatingOut] = useState(false)
@@ -108,19 +106,6 @@ const MarkHome = () => {
     window.addEventListener('mark-intensity', handleTtsIntensity)
     return () => window.removeEventListener('mark-intensity', handleTtsIntensity)
   }, [setOrbStatus])
-
-  useEffect(() => {
-    const handleOpenMap = () => navigate('/neural-core?tab=synaptic')
-    const handleOpenChat = () => setIsChatStudioOpen(true)
-
-    window.addEventListener('open-memory-map', handleOpenMap)
-    window.addEventListener('open-chat-studio', handleOpenChat)
-
-    return () => {
-      window.removeEventListener('open-memory-map', handleOpenMap)
-      window.removeEventListener('open-chat-studio', handleOpenChat)
-    }
-  }, [navigate])
 
   // Handle music widget exit animation
   useEffect(() => {
@@ -258,7 +243,7 @@ const MarkHome = () => {
         <div className="flex items-center gap-2.5">
           <FloatingMenu />
           <button
-            onClick={() => setIsChatStudioOpen(true)}
+            onClick={() => navigate('/chat')}
             className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-2 transition-all text-white/80 hover:text-white rounded-xl cursor-pointer text-xs font-mono font-semibold"
             title="Buka Chat Studio"
           >
@@ -434,13 +419,6 @@ const MarkHome = () => {
           onSelectWorkspace={handleSelectWorkspace}
         />
       </footer>
-
-      {/* Modals */}
-      <ChatStudioModal
-        isOpen={isChatStudioOpen}
-        onClose={() => setIsChatStudioOpen(false)}
-        chatContext={chatContext}
-      />
     </div>
   )
 }

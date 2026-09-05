@@ -243,15 +243,17 @@ export const webApi = {
 
   // 5. System Notifications & Windows
   showNotification: (title, body) => {
-    if (typeof Notification !== 'undefined') {
-      if (Notification.permission === 'granted') {
+    // Kirim ke backend Node.js untuk Native Windows Toast Notification (tanpa web permission prompt)
+    fetch(`${API_BASE}/api/system/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body })
+    }).catch(() => {
+      // Fallback lokal ke browser Notification jika server belum siap
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         new Notification(title, { body })
-      } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission().then((perm) => {
-          if (perm === 'granted') new Notification(title, { body })
-        })
       }
-    }
+    })
   },
 
   openExternal: (url) => {
