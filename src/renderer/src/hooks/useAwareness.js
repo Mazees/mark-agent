@@ -143,6 +143,8 @@ export const useAwareness = ({
           return
         }
 
+        const cleanMessage = (result.message || '').replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+
         if (result.should_act || result.autonomous_prompt) {
           if (isLoadingRef.current) {
             console.log(
@@ -152,12 +154,12 @@ export const useAwareness = ({
           }
           console.log('[useAwareness] Triggering autonomous action!')
           // Push notification
-          if (window.api.showNotification && !document.hasFocus() && result.message) {
-            window.api.showNotification('Mark', result.message)
+          if (window.api.showNotification && !document.hasFocus() && cleanMessage) {
+            window.api.showNotification('Mark', cleanMessage)
           }
 
-          if (result.message && window.api?.tgBroadcastToAdmins) {
-            window.api.tgBroadcastToAdmins(`[AWARENESS] *Mark (PC)*:\n${result.message}`)
+          if (cleanMessage && window.api?.tgBroadcastToAdmins) {
+            window.api.tgBroadcastToAdmins(`[AWARENESS] *Mark (PC)*:\n${cleanMessage}`)
           }
 
           // Jika ada perintah autonomus, bypass chat bubble biasa dan langsung eksekusi plan siluman
@@ -166,17 +168,17 @@ export const useAwareness = ({
               result.autonomous_prompt,
               null,
               true,
-              result.message || "Melakukan pengecekan background...",
+              cleanMessage || "Melakukan pengecekan background...",
               { disableTools: false },
               true
             )
-          } else if (result.message) {
+          } else if (cleanMessage) {
             // Kalau cuma mau ngomong biasa tanpa ngejalanin plan
             setChatData((prev) => [
               ...prev,
               {
                 role: 'ai',
-                content: result.message,
+                content: cleanMessage,
                 isProactive: true,
                 mood: result.mood
               }

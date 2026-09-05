@@ -1,12 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  FaGoogle,
-  FaKey,
-  FaSave,
-  FaCheckCircle,
-  FaExclamationTriangle
-} from 'react-icons/fa'
+import { FaGoogle, FaKey, FaSave, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa'
 import { getAllConfig, saveConfiguration } from '../api/db'
 import { webApi } from '../api/web-bridge'
 
@@ -146,8 +140,8 @@ const GoogleWorkspace = () => {
                 <FaExclamationTriangle /> Panduan Singkat
               </h2>
               <p className="text-sm opacity-80 mb-4">
-                Untuk menghubungkan Mark dengan Google Workspace milikmu, kamu harus membuat **OAuth
-                Client ID** bertipe Desktop App di Google Cloud Console.
+                Untuk menghubungkan Mark dengan Google Workspace milikmu, kamu harus membuat{' '}
+                <strong>OAuth Client ID</strong> bertipe Desktop App di Google Cloud Console.
               </p>
               <ol className="list-decimal list-inside text-sm space-y-2 opacity-80 bg-base-200 p-4 rounded-xl font-mono">
                 <li>

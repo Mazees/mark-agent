@@ -190,12 +190,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     if (isAutoScrollEnabledRef.current && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
-  }, [
-    currentDisplayMessages.length,
-    lastMessageContent,
-    lastMessageIsThinking,
-    isCurrentLoading
-  ])
+  }, [currentDisplayMessages.length, lastMessageContent, lastMessageIsThinking, isCurrentLoading])
 
   const handleCreateNewChat = async () => {
     try {
@@ -291,10 +286,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
         <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
           {/* Sidebar Header */}
-          <div
-            className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none"
-            style={{ WebkitAppRegion: 'no-drag' }}
-          >
+          <div className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none">
             <div className="flex items-center justify-between pointer-events-auto">
               <div className="flex items-center gap-2 font-bold text-sm tracking-wide text-white">
                 <button
@@ -304,7 +296,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                     handleClose()
                   }}
                   className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
-                  style={{ WebkitAppRegion: 'no-drag' }}
                   title="Tutup Studio (Esc)"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -316,7 +307,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                   type="button"
                   onClick={handleCreateNewChat}
                   className="btn btn-xs btn-primary rounded-lg gap-1 font-medium shadow-md shadow-primary/20 cursor-pointer pointer-events-auto"
-                  style={{ WebkitAppRegion: 'no-drag' }}
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Sesi Baru
@@ -325,7 +315,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             </div>
 
             {/* Search Input */}
-            <div className="relative pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="relative pointer-events-auto">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
               <input
                 type="text"
@@ -483,26 +473,17 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
         <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
           {/* Header */}
-          <div
-            className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none"
-            style={{ WebkitAppRegion: 'drag' }}
-          >
-            <div className="flex items-center gap-3 min-w-0" style={{ WebkitAppRegion: 'drag' }}>
-              <div className="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_10px_var(--color-primary)]" />
-              <div>
-                <h3 className="text-sm font-bold text-white truncate max-w-md">
-                  {activeSessionObj.title || 'Percakapan'}
-                </h3>
-                <span className="text-[10px] text-white/40">
-                  {currentDisplayMessages.length} pesan terdaftar
-                </span>
-              </div>
+          <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
+            <div className="flex flex-col">
+              <h3 className="text-sm font-bold text-white max-w-md">
+                {activeSessionObj.title || 'Percakapan'}
+              </h3>
+              <span className="text-[10px] text-white/40">
+                {currentDisplayMessages.length} pesan terdaftar
+              </span>
             </div>
 
-            <div
-              className="flex items-center gap-2 pointer-events-auto mr-28"
-              style={{ WebkitAppRegion: 'no-drag' }}
-            ></div>
+            <div className="flex items-center gap-2 pointer-events-auto mr-28"></div>
           </div>
 
           {/* Messages Stream Container */}
@@ -526,7 +507,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
             {currentDisplayMessages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4">
-                <img src="/icon-256.png" alt="icon" className='size-30' />
+                <img src="/icon-256.png" alt="icon" className="size-30" />
                 <div className="max-w-lg space-y-1">
                   <h4 className="text-xl font-bold text-white">Selamat Datang di Mark Agent</h4>
                   <p className="text-lg text-white/50">

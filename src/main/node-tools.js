@@ -305,25 +305,6 @@ export const NATIVE_TOOLS = {
           }
         }
 
-        // 3. Fallback Engine: duck-duck-scrape
-        if (results.length === 0) {
-          try {
-            const { search: ddgSearch, SafeSearchType } = await import('duck-duck-scrape')
-            const searchRes = await ddgSearch(searchQuery, {
-              safeSearch: SafeSearchType.OFF
-            })
-            if (searchRes && searchRes.results && searchRes.results.length > 0) {
-              results = searchRes.results.slice(0, 5).map((r) => ({
-                title: r.title,
-                url: r.url,
-                snippet: r.description || r.snippet || ''
-              }))
-            }
-          } catch (ddgErr) {
-            console.warn('[browser-search] duck-duck-scrape fallback error:', ddgErr.message)
-          }
-        }
-
         if (results.length === 0) {
           return {
             success: true,
@@ -1173,9 +1154,17 @@ export const NATIVE_TOOLS = {
       if (!command) return { success: false, message: 'Tidak ada perintah yang diberikan.' }
       try {
         const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-        const { stdout, stderr } = await execPromise(`powershell.exe -Command "${command}"`, {
-          cwd: activeRoot
-        })
+
+        // Gunakan Base64 EncodedCommand (UTF-16LE) agar karakter khusus ($_, quotes, pipe, regex) 100% aman
+        const encodedCmd = Buffer.from(command, 'utf16le').toString('base64')
+        const { stdout, stderr } = await execPromise(
+          `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`,
+          {
+            cwd: activeRoot,
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer agar output besar tidak melempar MaxBuffer exceeded
+            timeout: 60000 // 60 detik timeout
+          }
+        )
         const outputText = stdout.trim() || (stderr.trim() ? `[STDERR]: ${stderr.trim()}` : 'Perintah berhasil dieksekusi tanpa output teks.')
         return {
           success: true,
@@ -1184,10 +1173,14 @@ export const NATIVE_TOOLS = {
           error: stderr.trim() || null
         }
       } catch (error) {
+        // Tangani jika error membawa stdout parsial
+        const partialOutput = error.stdout ? error.stdout.trim() : ''
+        const errorMsg = error.stderr ? error.stderr.trim() : error.message
         return {
           success: false,
           message: 'Gagal mengeksekusi perintah.',
-          error: error.message
+          output: partialOutput || null,
+          error: errorMsg
         }
       }
     }
