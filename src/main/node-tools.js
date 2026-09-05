@@ -1354,10 +1354,24 @@ export const NATIVE_TOOLS = {
     handler: async (args) => {
       try {
         const descText = typeof args === 'object' && args !== null ? (args.description || 'Pilih Folder Workspace Proyek') : String(args || 'Pilih Folder Workspace Proyek')
-        const desc = descText.replace(/'/g, "''").replace(/"/g, '`"')
-        const script = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::EnableVisualStyles(); $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${desc}'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }`
-        const { stdout } = await execPromise(`powershell.exe -NoProfile -STA -Command "${script}"`)
-        const selectedPath = stdout.trim()
+        const safeDesc = descText.replace(/['`"\\]/g, ' ')
+
+        const scriptPath = path.resolve(__dirname, 'pc-agent-scripts/pick-folder.ps1')
+        let selectedPath = ''
+
+        if (fs.existsSync(scriptPath)) {
+          const { stdout } = await execPromise(
+            `powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "${scriptPath}" -Title "${safeDesc}"`
+          )
+          selectedPath = stdout.trim()
+        } else {
+          // Fallback via inline script jika file tidak ditemukan
+          const inlinePs = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${safeDesc}'; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($f.SelectedPath) }`
+          const enc = Buffer.from(inlinePs, 'utf16le').toString('base64')
+          const { stdout } = await execPromise(`powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -EncodedCommand ${enc}`)
+          selectedPath = stdout.trim()
+        }
+
         return {
           success: true,
           path: selectedPath || null,

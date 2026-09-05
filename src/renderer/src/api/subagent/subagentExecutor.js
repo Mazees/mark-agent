@@ -289,12 +289,6 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
             resultString = `[ERROR] Tool ${toolName} crash: ${err.message}`
           }
 
-          if (resultString.length > 4000) {
-            resultString =
-              resultString.slice(0, 4000) +
-              `\n\n[...SISA DATA DIPOTONG (Total: ${resultString.length} karakter)...]`
-          }
-
           // Catat pesan role 'tool'
           await subagentStore.addMessage(subagentId, {
             sender: 'tool',
