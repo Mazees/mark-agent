@@ -179,21 +179,18 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }
 
-  // Auto scroll to bottom on session change or modal open
+  // Auto scroll to bottom on session change
   useEffect(() => {
-    if (isOpen) {
-      isAutoScrollEnabledRef.current = true
-      scrollToBottom('auto')
-    }
-  }, [isOpen, activeSessionId])
+    isAutoScrollEnabledRef.current = true
+    scrollToBottom('auto')
+  }, [activeSessionId])
 
   // Direct stick-to-bottom without conflicting timers or layout thrashing
   useEffect(() => {
-    if (isOpen && isAutoScrollEnabledRef.current && messagesContainerRef.current) {
+    if (isAutoScrollEnabledRef.current && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
   }, [
-    isOpen,
     currentDisplayMessages.length,
     lastMessageContent,
     lastMessageIsThinking,
