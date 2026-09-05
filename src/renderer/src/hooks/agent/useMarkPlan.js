@@ -1271,7 +1271,6 @@ export const useMarkPlan = ({
 
       let isDone = false
       let stepCount = 0
-      const MAX_STEPS = 20
       let executedToolsList = []
       let lastToolExecution = null
       accumulatedThoughts = []
@@ -1280,7 +1279,7 @@ export const useMarkPlan = ({
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
 
-      while (!isDone && stepCount < MAX_STEPS) {
+      while (!isDone && !sessionAbortController.signal.aborted) {
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
           if (durableTask && durableTask.status === 'running') {
@@ -1642,6 +1641,27 @@ export const useMarkPlan = ({
 
         break
       }
+
+      // Pastikan sisa thinking indicator selalu dibersihkan jika loop selesai
+      targetSetChatData((prev) => {
+        const hasThinking = prev.some((item) => item.isThinking)
+        if (!hasThinking) return prev
+        const filtered = prev.filter((item) => !item.isThinking)
+        if (finalContentAccumulator) return filtered
+        return [
+          ...filtered,
+          {
+            role: 'ai',
+            content: 'Tugas telah selesai diproses.',
+            executedTools: executedToolsList.length > 0 ? executedToolsList : null,
+            isTaskDone: true,
+            reasoning: accumulatedThoughts.join('\n\n') || null,
+            mood: currentActiveMood || 'neutral',
+            timestamp: getCurrentTimeInfo(),
+            created_at: Date.now()
+          }
+        ]
+      })
 
       // ------------------------------------------------------------------------
       // FASE 5: CLEANUP & CLOSING
