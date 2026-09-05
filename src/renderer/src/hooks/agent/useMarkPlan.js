@@ -1414,18 +1414,48 @@ export const useMarkPlan = ({
           accumulatedThoughts.push(currentTurnReasoning)
         }
 
+        // Fallback Interceptor: Jika model (misal Gemini Web) mengembalikan teks JSON tool_calls mentah alih-alih native toolCalls
+        let effectiveToolCalls = streamResult.toolCalls
+        if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && currentTurnContent) {
+          const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, currentTurnContent]
+          const cand = (rawMatch[1] || currentTurnContent).trim()
+          if (cand.includes('"tool_calls"') || (cand.includes('"action"') && cand.includes('"tool"'))) {
+            try {
+              const { jsonrepair } = await import('jsonrepair')
+              let pObj = null
+              try {
+                pObj = JSON.parse(cand)
+              } catch (_) {
+                pObj = JSON.parse(jsonrepair(cand))
+              }
+              if (pObj && Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
+                effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
+                  id: tc.id || `call_fallback_${Date.now()}_${idx}`,
+                  type: 'function',
+                  function: {
+                    name: tc.name || tc.function?.name,
+                    arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
+                  }
+                }))
+                currentTurnContent = ''
+                finalContentAccumulator = ''
+              }
+            } catch (_) {}
+          }
+        }
+
         // ======================================================================
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
-        if (streamResult.toolCalls && streamResult.toolCalls.length > 0) {
+        if (effectiveToolCalls && effectiveToolCalls.length > 0) {
           const assistantMsg = {
             role: 'assistant',
             content: streamResult.content || null,
-            tool_calls: streamResult.toolCalls
+            tool_calls: effectiveToolCalls
           }
           loopMessages.push(assistantMsg)
 
-          for (const tc of streamResult.toolCalls) {
+          for (const tc of effectiveToolCalls) {
             const toolName = tc.function?.name
             let parsedArgs = {}
             try {
