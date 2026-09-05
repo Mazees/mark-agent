@@ -476,8 +476,8 @@ const handleSaveConfiguration = async () => {
               >
                 <option value="gemini-web">Gemini Web (Gratis)</option>
                 <option value="deepseek-web">DeepSeek Web (Gratis)</option>
-                <option value="lm-studio">LM Studio (Local Offline)</option>
                 <option value="custom">Custom API (OpenAI-Compatible)</option>
+                <option value="lm-studio">LM Studio (Local Offline)</option>
               </select>
             </div>
 
