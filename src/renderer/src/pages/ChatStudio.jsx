@@ -104,18 +104,52 @@ const ChatStudio = () => {
     }
   }, [activeSessionId])
 
-  // Real-time live background sync across sessions
+  const handleSendMessage = async (prompt, sendOptions = {}) => {
+    if (!prompt.trim()) return
+
+    const rawDisplay = sendOptions?.displayPrompt || prompt
+    // Auto-update session title if it's default
+    const currentSession = sessions.find((s) => String(s.id) === String(activeSessionId))
+    let newTitle = currentSession?.title
+    if (newTitle === 'Percakapan Baru' && rawDisplay.length > 0) {
+      newTitle = rawDisplay.slice(0, 30) + (rawDisplay.length > 30 ? '...' : '')
+      await renameSession(activeSessionId, newTitle)
+      await loadAllSessions()
+    }
+
+    const commandOpts = {
+      workspaceRoot: currentSession?.workspaceRoot,
+      displayPrompt: rawDisplay,
+      ...(activeSessionId !== 1
+        ? { sessionId: activeSessionId, customChatData: activeSessionData }
+        : {})
+    }
+
+    handlePlanningCommand(prompt, false, false, commandOpts)
+  }
+
+  // Real-time live background sync across sessions & trigger quick prompt
   useEffect(() => {
     const handleSessionUpdate = (e) => {
       if (e.detail && e.detail.sessionId === activeSessionId) {
         setActiveSessionData(e.detail.data || [])
       }
     }
+
+    const handleQuickPrompt = (e) => {
+      if (e.detail?.prompt) {
+        handleSendMessage(e.detail.prompt)
+      }
+    }
+
     window.addEventListener('session-updated', handleSessionUpdate)
+    window.addEventListener('trigger-quick-prompt', handleQuickPrompt)
+
     return () => {
       window.removeEventListener('session-updated', handleSessionUpdate)
+      window.removeEventListener('trigger-quick-prompt', handleQuickPrompt)
     }
-  }, [activeSessionId])
+  }, [activeSessionId, handleSendMessage])
 
   const lastMessage = currentDisplayMessages[currentDisplayMessages.length - 1]
   const lastMessageContent = lastMessage?.content || ''
@@ -212,30 +246,6 @@ const ChatStudio = () => {
         )
       }
     }
-  }
-
-  const handleSendMessage = async (prompt, sendOptions = {}) => {
-    if (!prompt.trim()) return
-
-    const rawDisplay = sendOptions?.displayPrompt || prompt
-    // Auto-update session title if it's default
-    const currentSession = sessions.find((s) => String(s.id) === String(activeSessionId))
-    let newTitle = currentSession?.title
-    if (newTitle === 'Percakapan Baru' && rawDisplay.length > 0) {
-      newTitle = rawDisplay.slice(0, 30) + (rawDisplay.length > 30 ? '...' : '')
-      await renameSession(activeSessionId, newTitle)
-      await loadAllSessions()
-    }
-
-    const commandOpts = {
-      workspaceRoot: currentSession?.workspaceRoot,
-      displayPrompt: rawDisplay,
-      ...(activeSessionId !== 1
-        ? { sessionId: activeSessionId, customChatData: activeSessionData }
-        : {})
-    }
-
-    handlePlanningCommand(prompt, false, false, commandOpts)
   }
 
   const handleStopSession = () => {

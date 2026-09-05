@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react'
-import { Copy, Check, Bot, User, Sparkles, ChevronRight } from 'lucide-react'
+import { Copy, Check, Bot, User, ChevronRight } from 'lucide-react'
 import { FaTelegramPlane } from 'react-icons/fa'
 import {
   MessageBubble,
@@ -8,7 +8,10 @@ import {
   MemoryFooterBubble,
   PluginExecutionBubble,
   YoutubeSummaryBubble,
-  YoutubeSearchBubble
+  YoutubeSearchBubble,
+  FollowUp,
+  Elicitation,
+  ElicitationsGroup
 } from './Chat'
 
 const ChatList = ({
@@ -67,6 +70,93 @@ const ChatList = ({
 
       displayUserContent = promptPart || (extractedSkillTag ? `/${extractedSkillTag}` : 'Jalankan Skill')
     }
+  }
+
+  // Ekstraksi tag-tag aksi Gemini Web bawaan (<FollowUp>, <ElicitationsGroup>, <Elicitation>, <Suggestion>, dll)
+  let cleanAiContent = content
+  const followUpChips = []
+  let elicitationGroup = null
+
+  if (!isUser && typeof content === 'string') {
+    // 1. Code Block Shielding: Pisahkan blok kode agar tag XML di dalam contoh kode tidak ikut terhapus
+    const codeBlocks = []
+    let maskedContent = content.replace(/(```[\s\S]*?```|`[^`\n]+`)/g, (match) => {
+      codeBlocks.push(match)
+      return `__CODE_BLOCK_${codeBlocks.length - 1}__`
+    })
+
+    // 2. Ekstraksi <ElicitationsGroup message="..."> ... </ElicitationsGroup>
+    const groupRegex = /<ElicitationsGroup\b([^>]*?)>([\s\S]*?)<\/ElicitationsGroup>/i
+    const groupMatch = groupRegex.exec(maskedContent)
+    if (groupMatch) {
+      const groupAttrs = groupMatch[1] || ''
+      const groupBody = groupMatch[2] || ''
+
+      const msgMatch = groupAttrs.match(/message=(?:"([^"]*)"|'([^']*)')/i)
+      const groupMessage = msgMatch ? (msgMatch[1] || msgMatch[2] || '').trim() : null
+
+      const options = []
+      const optRegex = /<([A-Za-z0-9_-]+)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g
+      let optMatch
+      while ((optMatch = optRegex.exec(groupBody)) !== null) {
+        const attrsStr = optMatch[2] || ''
+        const bodyStr = (optMatch[3] || '').trim()
+        const labelMatch = attrsStr.match(/label=(?:"([^"]*)"|'([^']*)')/i)
+        const queryMatch = attrsStr.match(/query=(?:"([^"]*)"|'([^']*)')/i)
+        const label = labelMatch ? (labelMatch[1] || labelMatch[2]) : bodyStr
+        const query = queryMatch ? (queryMatch[1] || queryMatch[2]) : null
+
+        if (label && query) {
+          options.push({ label: label.trim(), query: query.trim() })
+        }
+      }
+
+      if (options.length > 0) {
+        elicitationGroup = {
+          message: groupMessage,
+          options
+        }
+      }
+      maskedContent = maskedContent.replace(groupMatch[0], '')
+    }
+
+    // 3. Ekstraksi tag-tag saran mandiri / bebas: <FollowUp>, <Suggestion>, <SuggestedAction>, <Elicitation>
+    const chipTagRegex = /<(?:FollowUp|Suggestion|SuggestedAction|Elicitation)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:FollowUp|Suggestion|SuggestedAction|Elicitation)>)/gi
+    let chipMatch
+    while ((chipMatch = chipTagRegex.exec(maskedContent)) !== null) {
+      const fullTag = chipMatch[0]
+      const attrsStr = chipMatch[1] || ''
+      const bodyStr = (chipMatch[2] || '').trim()
+
+      const labelMatch = attrsStr.match(/label=(?:"([^"]*)"|'([^']*)')/i)
+      const queryMatch = attrsStr.match(/query=(?:"([^"]*)"|'([^']*)')/i)
+
+      const label = labelMatch ? (labelMatch[1] || labelMatch[2]) : bodyStr
+      const query = queryMatch ? (queryMatch[1] || queryMatch[2]) : null
+
+      if (label && query) {
+        followUpChips.push({ label: label.trim(), query: query.trim() })
+        maskedContent = maskedContent.replace(fullTag, '')
+      }
+    }
+
+    // 4. Bersihkan sisa tag XML internal non-teks lainnya (seperti <cite>, <source>, <grounding_metadata>)
+    maskedContent = maskedContent
+      .replace(/<(?:cite|source|grounding_metadata|image_query|table_action|chart_spec|widget)\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:cite|source|grounding_metadata|image_query|table_action|chart_spec|widget)>)/gi, '')
+      .replace(/<[A-Za-z0-9_-]+(?:\s+[^>]*?)?>/g, (m) => m.startsWith('<think') ? m : '')
+      .replace(/<\/[A-Za-z0-9_-]+>/g, (m) => m.startsWith('</think') ? m : '')
+
+    // 5. Kembalikan blok kode yang dilindungi
+    codeBlocks.forEach((block, idx) => {
+      maskedContent = maskedContent.replace(`__CODE_BLOCK_${idx}__`, () => block)
+    })
+
+    cleanAiContent = maskedContent.replace(/\n{3,}/g, '\n\n').trim()
+  }
+
+  const handleChipClick = (queryText) => {
+    if (!queryText) return
+    window.dispatchEvent(new CustomEvent('trigger-quick-prompt', { detail: { prompt: queryText } }))
   }
 
   if (isPlanSteps && plan && plan.length > 0) {
@@ -181,7 +271,7 @@ const ChatList = ({
           </span>
         )}
         {extractedSkillTag && (
-          <span className="badge badge-xs bg-black/40 text-emerald-300 border border-emerald-400/40 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
+          <span className="badge badge-xs bg-black/40 text-primary border border-primary/40 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
             Skill: /{extractedSkillTag}
           </span>
         )}
@@ -219,12 +309,43 @@ const ChatList = ({
             {pluginExecution && <PluginExecutionBubble pluginExecution={pluginExecution} />}
             <MessageBubble
               isUser={isUser}
-              content={isUser ? displayUserContent : content}
+              content={isUser ? displayUserContent : cleanAiContent}
               reasoning={reasoning}
               sources={sources}
               executedTools={executedTools}
               isPlanConclusion={isPlanConclusion}
             />
+
+            {/* Opsi Klarifikasi (ElicitationsGroup dari Gemini) */}
+            {!isUser && elicitationGroup && elicitationGroup.options?.length > 0 && (
+              <ElicitationsGroup message={elicitationGroup.message}>
+                {elicitationGroup.options.map((opt, idx) => (
+                  <Elicitation
+                    key={idx}
+                    label={opt.label}
+                    query={opt.query}
+                    onClick={handleChipClick}
+                  />
+                ))}
+              </ElicitationsGroup>
+            )}
+
+            {/* Rekomendasi Pertanyaan / Aksi Lanjutan (FollowUp / Suggestion dari Gemini) */}
+            {!isUser && followUpChips && followUpChips.length > 0 && (
+              <div className="mt-2 pt-2.5 border-t border-white/10 flex flex-col gap-1.5 animate-fade-in">
+                <span className="text-[10px] font-medium text-slate-400">Rekomendasi Pertanyaan:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {followUpChips.map((chip, idx) => (
+                    <FollowUp
+                      key={idx}
+                      label={chip.label}
+                      query={chip.query}
+                      onClick={handleChipClick}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
