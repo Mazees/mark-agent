@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
   Plus,
@@ -7,16 +6,21 @@ import {
   Edit2,
   Search,
   Pin,
-  ArrowLeft,
+  X,
+  Maximize2,
+  Minimize2,
   Sparkles,
   Check,
   RotateCcw,
+  Send,
+  Loader2,
+  ArrowLeft,
   Bot,
   Folder
 } from 'lucide-react'
-import { useChat } from '../contexts/ChatContext'
 import {
   getAllSessions,
+  getSession,
   createSession,
   saveSession,
   deleteSession,
@@ -28,9 +32,7 @@ import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import { useConfirm } from '../hooks/useConfirm'
 
-const ChatStudio = () => {
-  const navigate = useNavigate()
-  const chatContext = useChat()
+export const ChatStudio = ({ isOpen, onClose, chatContext }) => {
   const {
     chatData: mainChatData,
     setChatData: setMainChatData,
@@ -53,20 +55,18 @@ const ChatStudio = () => {
   const [activeSessionId, setActiveSessionId] = useState('1')
 
   useEffect(() => {
-    if (typeof setCurrentActiveSessionId === 'function') {
+    if (isOpen && typeof setCurrentActiveSessionId === 'function') {
       setCurrentActiveSessionId(String(activeSessionId))
     }
-  }, [activeSessionId, setCurrentActiveSessionId])
+  }, [isOpen, activeSessionId, setCurrentActiveSessionId])
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')
   const [editingSessionId, setEditingSessionId] = useState(null)
   const [editingTitle, setEditingTitle] = useState('')
-  const [isLocalLoading, setIsLocalLoading] = useState(false)
 
   const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
-  const localAbortControllerRef = useRef(null)
   const { confirm, ModalComponent } = useConfirm()
 
   const loadAllSessions = async () => {
@@ -79,11 +79,14 @@ const ChatStudio = () => {
   }
 
   useEffect(() => {
-    loadAllSessions()
-  }, [])
+    if (isOpen) {
+      loadAllSessions()
+    }
+  }, [isOpen])
 
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
-  const currentDisplayMessages = String(activeSessionId) === '1' ? mainChatData || [] : activeSessionData
+  const currentDisplayMessages =
+    String(activeSessionId) === '1' ? mainChatData || [] : activeSessionData
 
   const isCurrentLoading =
     runningSessionIds.map(String).includes(String(activeSessionId)) ||
@@ -92,7 +95,7 @@ const ChatStudio = () => {
   // Sync active session data for custom sessions (id > 1)
   useEffect(() => {
     setVisibleMessageCount(30)
-    if (String(activeSessionId) === '1') return
+    if (!isOpen || String(activeSessionId) === '1') return
     let isCancelled = false
     getChatData(activeSessionId).then((data) => {
       if (!isCancelled) {
@@ -102,7 +105,7 @@ const ChatStudio = () => {
     return () => {
       isCancelled = true
     }
-  }, [activeSessionId])
+  }, [activeSessionId, isOpen])
 
   const handleSendMessage = async (prompt, sendOptions = {}) => {
     if (!prompt.trim()) return
@@ -131,7 +134,7 @@ const ChatStudio = () => {
   // Real-time live background sync across sessions & trigger quick prompt
   useEffect(() => {
     const handleSessionUpdate = (e) => {
-      if (e.detail && e.detail.sessionId === activeSessionId) {
+      if (e.detail && String(e.detail.sessionId) === String(activeSessionId)) {
         setActiveSessionData(e.detail.data || [])
       }
     }
@@ -173,18 +176,21 @@ const ChatStudio = () => {
     }
   }
 
-  // Auto scroll to bottom on session change
+  // Auto scroll to bottom on session change or modal open
   useEffect(() => {
-    isAutoScrollEnabledRef.current = true
-    scrollToBottom('auto')
-  }, [activeSessionId])
+    if (isOpen) {
+      isAutoScrollEnabledRef.current = true
+      scrollToBottom('auto')
+    }
+  }, [isOpen, activeSessionId])
 
   // Direct stick-to-bottom without conflicting timers or layout thrashing
   useEffect(() => {
-    if (isAutoScrollEnabledRef.current && messagesContainerRef.current) {
+    if (isOpen && isAutoScrollEnabledRef.current && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
   }, [
+    isOpen,
     currentDisplayMessages.length,
     lastMessageContent,
     lastMessageIsThinking,
@@ -251,10 +257,16 @@ const ChatStudio = () => {
   const handleStopSession = () => {
     if (handleStop) handleStop(activeSessionId)
     if (window.api && window.api.browserClose) {
-      window.api.browserClose({ sessionId: String(activeSessionId) === '1' ? 'main' : `workspace-${activeSessionId}` }).catch(() => {})
+      window.api
+        .browserClose({
+          sessionId: String(activeSessionId) === '1' ? 'main' : `workspace-${activeSessionId}`
+        })
+        .catch(() => {})
     }
     setIsLocalLoading(false)
   }
+
+  if (!isOpen) return null
 
   const filteredSessions = sessions.filter((s) =>
     (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -266,55 +278,46 @@ const ChatStudio = () => {
   }
 
   return (
-    <div className="h-screen w-screen bg-base-300 flex flex-col overflow-hidden text-base-content select-none">
-      {/* Top Navigation Bar */}
-      <div
-        className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-200/80 backdrop-blur-xl shrink-0 z-30 relative select-none"
-        style={{ WebkitAppRegion: 'drag' }}
-      >
-        <div
-          className="flex items-center gap-4 pointer-events-auto"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white cursor-pointer"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            title="Kembali ke Dashboard Utama"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Bot className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-bold text-white tracking-wide">Studio Percakapan</h2>
-          </div>
-        </div>
-
-        {/* Right Action Buttons */}
-        <div
-          className="flex items-center gap-2 pointer-events-auto mr-32"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <button
-            type="button"
-            onClick={handleCreateNewChat}
-            className="btn btn-sm btn-primary rounded-xl gap-2 font-medium shadow-lg shadow-primary/20 cursor-pointer"
-            style={{ WebkitAppRegion: 'no-drag' }}
-          >
-            <Plus className="w-4 h-4" />
-            Sesi Baru
-          </button>
-        </div>
-      </div>
-
-      {/* Workspace Area: Left List + Right Chat */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* === LEFT SIDEBAR: SESSIONS LIST === */}
+    <>
+      <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
         <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
-          {/* Search bar */}
-          <div className="p-4 border-b border-white/10">
-            <div className="relative">
+          {/* Sidebar Header */}
+          <div
+            className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none"
+            style={{ WebkitAppRegion: 'no-drag' }}
+          >
+            <div className="flex items-center justify-between pointer-events-auto">
+              <div className="flex items-center gap-2 font-bold text-sm tracking-wide text-white">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onClose()
+                  }}
+                  className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
+                  style={{ WebkitAppRegion: 'no-drag' }}
+                  title="Tutup Studio (Esc)"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <Bot className="w-5 h-5 text-primary shrink-0" />
+                <span className="truncate">Chat Studio</span>
+              </div>
+              <div className="flex items-center gap-1 pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={handleCreateNewChat}
+                  className="btn btn-xs btn-primary rounded-lg gap-1 font-medium shadow-md shadow-primary/20 cursor-pointer pointer-events-auto"
+                  style={{ WebkitAppRegion: 'no-drag' }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Sesi Baru
+                </button>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' }}>
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
               <input
                 type="text"
@@ -326,9 +329,14 @@ const ChatStudio = () => {
             </div>
           </div>
 
-          {/* Sessions List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-            {/* MAIN THREAD (STATIC) */}
+          {/* Sessions Scroll List */}
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-1 custom-scrollbar">
+            {/* PINNED MAIN THREAD */}
+            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
+              <Pin className="w-3 h-3 text-primary" />
+              <span>Sesi Utama</span>
+            </div>
+
             <div
               role="button"
               tabIndex={0}
@@ -359,6 +367,7 @@ const ChatStudio = () => {
 
             <div className="my-2 border-t border-white/5" />
 
+            {/* WORKSPACE SESSIONS */}
             <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
               Workspace Threads
             </div>
@@ -386,8 +395,8 @@ const ChatStudio = () => {
                           isThisSessionRunning
                             ? 'bg-warning animate-ping'
                             : isActive
-                            ? 'bg-primary shadow-[0_0_6px_var(--color-primary)]'
-                            : 'bg-white/20'
+                              ? 'bg-primary shadow-[0_0_6px_var(--color-primary)]'
+                              : 'bg-white/20'
                         }`}
                       />
                       <MessageSquare className="w-3.5 h-3.5 opacity-50 shrink-0" />
@@ -421,6 +430,7 @@ const ChatStudio = () => {
                       )}
                     </div>
 
+                    {/* Action buttons on hover */}
                     <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
                       {isEditing ? (
                         <button
@@ -464,19 +474,31 @@ const ChatStudio = () => {
         </div>
 
         {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
-        <div className="flex-1 flex flex-col h-full bg-base-300 relative min-w-0 overflow-hidden">
-          <div className="h-12 px-6 border-b border-white/10 flex items-center justify-between bg-base-200/30 backdrop-blur-md shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
+        <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
+          {/* Header */}
+          <div
+            className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none"
+            style={{ WebkitAppRegion: 'drag' }}
+          >
+            <div className="flex items-center gap-3 min-w-0" style={{ WebkitAppRegion: 'drag' }}>
               <div className="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_10px_var(--color-primary)]" />
               <div>
                 <h3 className="text-sm font-bold text-white truncate max-w-md">
                   {activeSessionObj.title || 'Percakapan'}
                 </h3>
+                <span className="text-[10px] text-white/40">
+                  {currentDisplayMessages.length} pesan terdaftar
+                </span>
               </div>
             </div>
-            <span className="text-[11px] text-white/40">{currentDisplayMessages.length} pesan</span>
+
+            <div
+              className="flex items-center gap-2 pointer-events-auto mr-28"
+              style={{ WebkitAppRegion: 'no-drag' }}
+            ></div>
           </div>
 
+          {/* Messages Stream Container */}
           <div
             ref={messagesContainerRef}
             onScroll={handleScroll}
@@ -501,9 +523,9 @@ const ChatStudio = () => {
                   <Sparkles className="w-7 h-7 animate-pulse" />
                 </div>
                 <div className="max-w-sm space-y-1">
-                  <h4 className="text-sm font-bold text-white">Sesi Percakapan Baru</h4>
+                  <h4 className="text-sm font-bold text-white">Sesi Obrolan Bersih</h4>
                   <p className="text-xs text-white/50">
-                    Tulis instruksi atau diskusikan kebutuhanmu dengan Mark.
+                    Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
                   </p>
                 </div>
               </div>
@@ -535,6 +557,7 @@ const ChatStudio = () => {
             <div ref={messagesEndRef} className="h-2" />
           </div>
 
+          {/* Bottom Input Area */}
           <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
             <InputBar
               inline={true}
@@ -555,8 +578,7 @@ const ChatStudio = () => {
       </div>
 
       <ModalComponent />
-    </div>
+    </>
   )
 }
-
 export default ChatStudio
