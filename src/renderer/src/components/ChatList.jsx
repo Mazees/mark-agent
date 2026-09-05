@@ -51,6 +51,24 @@ const ChatList = ({
   const isTelegram = source === 'telegram'
   const isSubagent = source === 'subagent'
 
+  // Bersihkan teks instruksi sistem skill jika pesan berasal dari user
+  let displayUserContent = content
+  let extractedSkillTag = null
+
+  if (isUser && typeof content === 'string') {
+    if (content.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')) {
+      const parts = content.split('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')
+      const promptPart = (parts[0] || '').trim()
+
+      const skillTagMatch = content.match(/---\s*SKILL\s+(?:BAWAAN|EXTERNAL):\s*([a-zA-Z0-9_-]+)\s*---/i)
+      if (skillTagMatch) {
+        extractedSkillTag = skillTagMatch[1].toLowerCase()
+      }
+
+      displayUserContent = promptPart || (extractedSkillTag ? `/${extractedSkillTag}` : 'Jalankan Skill')
+    }
+  }
+
   if (isPlanSteps && plan && plan.length > 0) {
     return (
       <PlanningBubble plan={plan} resolvedCurrentStep={resolvedCurrentStep} reasoning={reasoning} />
@@ -162,6 +180,11 @@ const ChatList = ({
             <FaTelegramPlane className="w-2.5 h-2.5" /> {isUser ? 'Telegram' : 'Telegram Reply'}
           </span>
         )}
+        {extractedSkillTag && (
+          <span className="badge badge-xs bg-black/40 text-emerald-300 border border-emerald-400/40 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
+            Skill: /{extractedSkillTag}
+          </span>
+        )}
         {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
       </div>
 
@@ -196,7 +219,7 @@ const ChatList = ({
             {pluginExecution && <PluginExecutionBubble pluginExecution={pluginExecution} />}
             <MessageBubble
               isUser={isUser}
-              content={content}
+              content={isUser ? displayUserContent : content}
               reasoning={reasoning}
               sources={sources}
               executedTools={executedTools}

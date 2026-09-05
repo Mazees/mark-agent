@@ -123,7 +123,7 @@ mark/
 | **Desktop Launcher** | Node.js CLI Live Monitor (`mark`), Microsoft Edge App Mode |
 | **Database & Storage** | Centralized SQLite (`better-sqlite3` WAL Mode), REST Proxy Layer |
 | **Pencarian & Vektor** | `@orama/orama` WASM, Transformers.js (`@huggingface/transformers`, 384d) |
-| **Mesin AI** | Google Gemini (Bawaan Gratis) / LM Studio (Offline) / Groq / Cerebras / Custom Endpoint |
+| **Mesin AI** | Google Gemini (Bawaan Gratis) / Custom Open AI API Format / LM Studio (Offline) |
 | **Browser Automation** | `puppeteer-core` (Multi-Session Chromium Isolation) |
 | **Desktop Automation** | Win32 UIAutomation, persistent PowerShell C# Daemon, WinRT OCR |
 | **Suara & Audio** | Groq Whisper-Large-v3 / Local Whisper, Edge-TTS (`id-ID-ArdiNeural`), Web Audio API VAD |

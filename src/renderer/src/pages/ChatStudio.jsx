@@ -214,29 +214,28 @@ const ChatStudio = () => {
     }
   }
 
-  const handleSendMessage = async (prompt) => {
+  const handleSendMessage = async (prompt, sendOptions = {}) => {
     if (!prompt.trim()) return
 
+    const rawDisplay = sendOptions?.displayPrompt || prompt
     // Auto-update session title if it's default
-    const currentSession = sessions.find((s) => s.id === activeSessionId)
+    const currentSession = sessions.find((s) => String(s.id) === String(activeSessionId))
     let newTitle = currentSession?.title
-    if (newTitle === 'Percakapan Baru' && prompt.length > 0) {
-      newTitle = prompt.slice(0, 30) + (prompt.length > 30 ? '...' : '')
+    if (newTitle === 'Percakapan Baru' && rawDisplay.length > 0) {
+      newTitle = rawDisplay.slice(0, 30) + (rawDisplay.length > 30 ? '...' : '')
       await renameSession(activeSessionId, newTitle)
       await loadAllSessions()
     }
 
-    if (activeSessionId === 1) {
-      handlePlanningCommand(prompt, false, false, {
-        workspaceRoot: currentSession?.workspaceRoot
-      })
-    } else {
-      handlePlanningCommand(prompt, false, false, {
-        sessionId: activeSessionId,
-        customChatData: activeSessionData,
-        workspaceRoot: currentSession?.workspaceRoot
-      })
+    const commandOpts = {
+      workspaceRoot: currentSession?.workspaceRoot,
+      displayPrompt: rawDisplay,
+      ...(activeSessionId !== 1
+        ? { sessionId: activeSessionId, customChatData: activeSessionData }
+        : {})
     }
+
+    handlePlanningCommand(prompt, false, false, commandOpts)
   }
 
   const handleStopSession = () => {

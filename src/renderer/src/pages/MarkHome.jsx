@@ -209,13 +209,13 @@ const MarkHome = () => {
     }
   }, [chatData, isLoading, isSpeak, setOrbStatus])
 
-  const handleSubmit = (e, text) => {
+  const handleSubmit = (e, text, opts = {}) => {
     if (chatContext.handleSubmit) {
-      chatContext.handleSubmit(e, text)
+      chatContext.handleSubmit(e, text, opts)
     } else {
       const sendText = typeof text === 'string' && text.trim() ? text.trim() : message.trim()
       if (sendText) {
-        handlePlanningCommand(sendText)
+        handlePlanningCommand(sendText, null, false, opts)
       }
     }
   }
@@ -418,9 +418,9 @@ const MarkHome = () => {
       {/* ── 7. BOTTOM DOCKED INPUT BAR ── */}
       <footer className="absolute inset-x-0 bottom-0 z-40 pointer-events-auto">
         <InputBar
-          onSubmit={(prompt) => {
+          onSubmit={(prompt, sendOptions = {}) => {
             setIsSpeak(false)
-            handleSubmit(prompt)
+            handleSubmit(null, prompt, sendOptions)
           }}
           isLoading={isLoading || isAgentBusy}
           isRecording={isRecording}

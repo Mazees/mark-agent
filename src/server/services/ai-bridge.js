@@ -621,7 +621,50 @@ export const fetchAIStream = async ({
 
   // JIKA PROVIDER: GEMINI-WEB RPC
   if (conf.aiProvider === 'gemini-web') {
-    const res = await fetchAI(messages, conf, isSmallTask, null, onStatus)
+    let effectiveMessages = messages || []
+
+    // Jika tools diberikan, injeksikan instruksi pemanggilan tool dan skema OpenAPI ke system prompt
+    if (Array.isArray(tools) && tools.length > 0) {
+      const toolDescriptions = tools
+        .map((t) => {
+          const fn = t.function || t
+          return `- ${fn.name}: ${fn.description || ''}\n  Parameters: ${JSON.stringify(fn.parameters || {})}`
+        })
+        .join('\n')
+
+      const toolInstruction = `\n\n# TOOLS & CAPABILITY REGISTRY:
+Kamu memiliki akses ke fungsi-fungsi sistem berikut:
+${toolDescriptions}
+
+# ATURAN EKSEKUSI TOOL (PENTING MUTLAK):
+Jika kamu ingin melakukan tindakan nyata (seperti memutar musik, navigasi web, mengecek berkas, membaca layar, dll), JANGAN hanya menjawab dengan janji verbal!
+Kamu HARUS SELALU memanggil tool dengan format blok JSON murni berikut:
+\`\`\`json
+{
+  "tool_calls": [
+    {
+      "name": "nama_tool",
+      "arguments": { "parameter_key": "parameter_value" }
+    }
+  ]
+}
+\`\`\`
+Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud!
+Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada pengguna.`
+
+      effectiveMessages = (messages || []).map((m) => ({ ...m }))
+      const sysIdx = effectiveMessages.findIndex((m) => m.role === 'system')
+      if (sysIdx >= 0) {
+        effectiveMessages[sysIdx] = {
+          ...effectiveMessages[sysIdx],
+          content: effectiveMessages[sysIdx].content + toolInstruction
+        }
+      } else {
+        effectiveMessages.unshift({ role: 'system', content: toolInstruction })
+      }
+    }
+
+    const res = await fetchAI(effectiveMessages, conf, isSmallTask, null, onStatus)
     let cleanContent = res.content || ''
     let cleanReasoning = res.reasoning || ''
 
@@ -630,6 +673,62 @@ export const fetchAIStream = async ({
       cleanReasoning = cleanReasoning.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
       onReasoning?.(cleanReasoning)
     }
+
+    // Deteksi apakah Gemini Web membalas dengan pemanggilan Tool (tool_calls JSON)
+    let extractedToolCalls = null
+    const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
+    const candidateStr = (jsonMatch[1] || cleanContent).trim()
+
+    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"')) {
+      try {
+        const parsed = cleanAndParse(candidateStr)
+        if (parsed) {
+          if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
+            extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
+              id: tc.id || `call_gw_${Date.now()}_${idx}`,
+              type: 'function',
+              function: {
+                name: tc.name || tc.function?.name,
+                arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
+              }
+            }))
+          } else if (parsed.action && parsed.action.tool) {
+            extractedToolCalls = [
+              {
+                id: `call_gw_${Date.now()}_0`,
+                type: 'function',
+                function: {
+                  name: parsed.action.tool,
+                  arguments: typeof parsed.action.query === 'object' ? JSON.stringify(parsed.action.query) : JSON.stringify(parsed.action.query ? { query: parsed.action.query } : {})
+                }
+              }
+            ]
+          } else if (parsed.tool) {
+            extractedToolCalls = [
+              {
+                id: `call_gw_${Date.now()}_0`,
+                type: 'function',
+                function: {
+                  name: parsed.tool,
+                  arguments: typeof parsed.query === 'object' ? JSON.stringify(parsed.query) : JSON.stringify(parsed.query ? { query: parsed.query } : parsed.arguments || {})
+                }
+              }
+            ]
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (extractedToolCalls && extractedToolCalls.length > 0) {
+      onToolCall?.(extractedToolCalls)
+      return {
+        content: null,
+        reasoning: cleanReasoning,
+        toolCalls: extractedToolCalls,
+        finishReason: 'tool_calls'
+      }
+    }
+
     if (cleanContent) {
       extractMood(cleanContent)
       cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()

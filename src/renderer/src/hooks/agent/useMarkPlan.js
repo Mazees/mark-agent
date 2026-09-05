@@ -516,6 +516,74 @@ export const useMarkPlan = ({
               data: `[SUB-AGENT BERHASIL DILUNCURKAN SECARA ASINKRON (NON-BLOCKING)]\n- Nama: ${sub.name}\n- ID: ${sub.id}\n- Role: ${sub.role}\n- Goal: ${sub.goal}\nSub-agent telah mulai bekerja secara mandiri di background. Kamu TIDAK PERLU menunggu (dilarang mem-blocking). Langsung beritahu user bahwa tugas telah didelegasikan ke @${sub.name} dan dia akan melapor secara otomatis via push notification ketika selesai.`
             }
           }
+        } else if (tool === 'create_agent_task') {
+          const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+          const title = a.title || 'Durable Task'
+          const objective = a.objective || userInput
+          const stepsInput = Array.isArray(a.steps) && a.steps.length > 0 ? a.steps : [
+            { id: 'step-1', title: 'Analisis & Pengumpulan Data', objective, deliverable: 'Data awal' },
+            { id: 'step-2', title: 'Eksekusi Teknis', objective, deliverable: 'Hasil eksekusi' },
+            { id: 'step-3', title: 'Penyusunan Output Final', objective, deliverable: 'Hasil final' }
+          ]
+
+          const documentsPath = await window.api.getDocumentsPath?.()
+          const artifactRoot = documentsPath
+            ? `${documentsPath.replace(/[\\/]$/, '')}/Mark Tasks/${Date.now()}`
+            : null
+
+          durableTask = await createAgentTask({
+            title,
+            objective,
+            mode: 'durable',
+            artifactRoot,
+            steps: stepsInput.map((step, idx) => ({
+              id: step.id || `step-${idx + 1}`,
+              title: step.title || `Langkah ${idx + 1}`,
+              objective: step.objective || objective,
+              deliverable: step.deliverable || 'Output kerja',
+              acceptanceCriteria: Array.isArray(step.acceptanceCriteria) ? step.acceptanceCriteria : ['Selesai sesuai instruksi'],
+              artifactPath: artifactRoot ? `${artifactRoot}/${step.id || `step-${idx + 1}`}.md` : null
+            }))
+          })
+
+          durableTaskForRecovery = durableTask
+          durableActiveStep = await startAgentTaskStep(durableTask.id, durableTask.activeStepId)
+          activeTaskObjectiveRef.current = durableActiveStep?.objective || durableTask.objective
+
+          targetPushProcess({
+            id: agenticProcessId,
+            type: 'planning',
+            status: 'active',
+            data: {
+              steps: stepsInput.map((step) => ({ task: step.title })),
+              currentStep: 0,
+              reasoning: `Durable task dibuat: ${title}`
+            }
+          })
+
+          targetSetChatData((prev) => [
+            ...prev.filter((item) => !item.isThinking),
+            {
+              role: 'ai',
+              isPlanSteps: true,
+              plan: stepsInput.map((step) => ({
+                id: step.id,
+                title: step.title,
+                task: step.title,
+                objective: step.objective,
+                deliverable: step.deliverable
+              })),
+              currentStep: 0,
+              reasoning: `Mission Control diaktifkan: ${title}`,
+              timestamp: getCurrentTimeInfo(),
+              created_at: Date.now()
+            }
+          ])
+
+          res = {
+            success: true,
+            data: `[MISSION CONTROL DIAKTIFKAN - TASK BERHASIL DIBUAT]:\n- Task ID: ${durableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\nLangkah aktif saat ini: "${durableActiveStep?.title}". Sekarang fokus eksekusi langkah ini menggunakan tools yang sesuai!`
+          }
         } else if (tool === 'message_agent') {
           const { subagentStore } = await import('../../api/subagent/subagentStore.js')
           const { runSubagentTurn } = await import('../../api/subagent/subagentExecutor.js')
@@ -1026,6 +1094,12 @@ export const useMarkPlan = ({
       payloadContent = [{ type: 'text', text: finalContent }, ...imageVisionPayloads]
     }
 
+    let uiDisplayContent = opts.displayPrompt || userInput
+    if (typeof uiDisplayContent === 'string' && uiDisplayContent.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')) {
+      const cleanBeforeSkill = uiDisplayContent.split('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')[0].trim()
+      uiDisplayContent = cleanBeforeSkill || 'Jalankan Skill'
+    }
+
     const userMessage = opts.customUserMessage
       ? {
           ...opts.customUserMessage,
@@ -1034,7 +1108,7 @@ export const useMarkPlan = ({
         }
       : {
           role: 'user',
-          content: payloadContent,
+          content: uiDisplayContent,
           timestamp: timestampStr,
           created_at: Date.now(),
           source: tgContext ? 'telegram' : 'pc',

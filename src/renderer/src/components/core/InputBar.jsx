@@ -303,9 +303,10 @@ const InputBar = ({
       if (!isLoading) {
         lastPromptRef.current = inputText
       }
+      const rawUserText = inputText.trim()
       setInputText('')
       if (typeof onSubmit === 'function') {
-        onSubmit(finalPrompt)
+        onSubmit(finalPrompt, { displayPrompt: rawUserText })
       }
     }
   }

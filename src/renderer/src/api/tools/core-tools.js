@@ -476,6 +476,41 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
+      name: 'create_agent_task',
+      description: 'Membuat dan mengaktifkan rencana tugas multi-langkah (Durable Agent Tasks) di sistem Mission Control.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Judul tugas utama' },
+          objective: { type: 'string', description: 'Tujuan akhir penyelesaian tugas' },
+          steps: {
+            type: 'array',
+            description: 'Daftar langkah/tahapan pengerjaan',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'ID unik tahap (misal: "step-1")' },
+                title: { type: 'string', description: 'Nama tahapan' },
+                objective: { type: 'string', description: 'Sasaran langkah ini' },
+                deliverable: { type: 'string', description: 'Keluaran konkret hasil pengerjaan' },
+                acceptanceCriteria: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Kriteria kelayakan selesainya tahap ini'
+                }
+              },
+              required: ['id', 'title', 'objective', 'deliverable']
+            }
+          }
+        },
+        required: ['title', 'objective', 'steps'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'kill_subagent',
       description: 'Menghentikan paksa eksekusi sub-agent yang sedang berjalan.',
       parameters: {
