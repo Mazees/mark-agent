@@ -7,7 +7,6 @@ import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
 import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
-import BrowserPreviewWidget from '../components/core/BrowserPreviewWidget'
 import {
   MessageSquare,
   Sparkles,
@@ -255,7 +254,6 @@ const MarkHome = () => {
 
       {/* Global Notifications & Telemetry Popups */}
       <StatusIndicator notifications={notifications} />
-      <BrowserPreviewWidget />
 
       {toastMessage && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-error/90 text-white px-4 py-2 rounded-xl z-50 backdrop-blur shadow-lg text-xs font-mono">

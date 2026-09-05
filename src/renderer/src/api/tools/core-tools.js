@@ -7,16 +7,38 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'browser-search',
-      description: 'Mencari informasi di web secara instan menggunakan query pencarian. Mengembalikan 5 hasil teratas (judul, URL, cuplikan teks) tanpa perlu membuka browser fisik secara lambat.',
+      description: 'HANYA untuk mencari dan menemukan URL / link website yang relevan dengan kata kunci (bukan untuk membaca isi artikel lengkap). Mengembalikan daftar judul & URL. Untuk membaca isi konten lengkap dari URL yang ditemukan, gunakan tool "browser-fetch".',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Kata kunci atau pertanyaan pencarian web'
+            description: 'Kata kunci pencarian web (misal: "gpt 6 astra", "kebakaran kalimantan 2026")'
           }
         },
         required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser-fetch',
+      description: 'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka jendela browser fisik. Sangat cepat untuk membaca isi berita, dokumentasi, atau artikel web.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'URL web yang ingin dibaca isinya (misal: "https://example.com/artikel")'
+          },
+          max_chars: {
+            type: 'number',
+            description: 'Batas maksimal karakter teks yang diekstrak (default 4000, maksimal 12000)'
+          }
+        },
+        required: ['url'],
         additionalProperties: false
       }
     }

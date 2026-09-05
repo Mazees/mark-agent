@@ -12,15 +12,35 @@ export const _getBrowserSign = () =>
 const sessions = new Map()
 
 function getEdgePath() {
+  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+  const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
+  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
+
   const possiblePaths = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+    // 1. Microsoft Edge (System-wide & Local)
+    path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+
+    // 2. Google Chrome (System-wide & User Local AppData)
+    path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+
+    // 3. Brave Browser
+    path.join(programFiles, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+    path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+
+    // 4. Vivaldi Browser
+    path.join(localAppData, 'Vivaldi', 'Application', 'vivaldi.exe'),
+    path.join(programFiles, 'Vivaldi', 'Application', 'vivaldi.exe')
   ]
+
   for (const p of possiblePaths) {
     if (fs.existsSync(p)) return p
   }
+
+  // Fallback nama executable di PATH
   return 'msedge.exe'
 }
 
@@ -62,7 +82,7 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
-      '--window-position=-32000,-32000',
+      '--window-position=80,60',
       '--window-size=1280,800',
       '--lang=id-ID,id,en-US,en'
     ]
