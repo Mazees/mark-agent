@@ -60,10 +60,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const [activeSessionId, setActiveSessionId] = useState('1')
 
   useEffect(() => {
-    if (isOpen && typeof setCurrentActiveSessionId === 'function') {
+    if (typeof setCurrentActiveSessionId === 'function') {
       setCurrentActiveSessionId(String(activeSessionId))
     }
-  }, [isOpen, activeSessionId, setCurrentActiveSessionId])
+  }, [activeSessionId, setCurrentActiveSessionId])
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')
@@ -84,10 +84,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }
 
   useEffect(() => {
-    if (isOpen) {
-      loadAllSessions()
-    }
-  }, [isOpen])
+    loadAllSessions()
+  }, [])
 
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
   const currentDisplayMessages =
@@ -100,7 +98,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   // Sync active session data for custom sessions (id > 1)
   useEffect(() => {
     setVisibleMessageCount(30)
-    if (!isOpen || String(activeSessionId) === '1') return
+    if (String(activeSessionId) === '1') return
     let isCancelled = false
     getChatData(activeSessionId).then((data) => {
       if (!isCancelled) {
@@ -110,7 +108,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     return () => {
       isCancelled = true
     }
-  }, [activeSessionId, isOpen])
+  }, [activeSessionId])
 
   const handleSendMessage = async (prompt, sendOptions = {}) => {
     if (!prompt.trim()) return
