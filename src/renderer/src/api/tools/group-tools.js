@@ -11,7 +11,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-search',
-          description: 'Mencari informasi di web secara instan menggunakan query pencarian. Mengembalikan 5 hasil teratas (judul, URL, cuplikan teks).',
+          description:
+            'HANYA untuk mencari dan menemukan URL / link website yang relevan dengan kata kunci (bukan untuk membaca isi artikel lengkap). Mengembalikan daftar judul & URL. Untuk membaca isi konten lengkap dari URL yang ditemukan, gunakan tool lainnya seperti "browser-fetch".',
           parameters: {
             type: 'object',
             properties: {
@@ -25,8 +26,26 @@ export const GROUP_TOOLS_SCHEMA = {
       {
         type: 'function',
         function: {
+          name: 'browser-fetch',
+          description:
+            'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka jendela browser fisik.',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', description: 'URL lengkap website tujuan' },
+              max_chars: { type: 'number', description: 'Batas karakter teks (default 4000)' }
+            },
+            required: ['url'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'browser-navigate',
-          description: 'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
+          description:
+            'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
           parameters: {
             type: 'object',
             properties: {
@@ -160,13 +179,15 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-ask-user',
-          description: 'Minta bantuan user untuk menyelesaikan CAPTCHA, 2FA, verifikasi Cloudflare, atau login manual pada halaman browser. Jendela browser akan otomatis ditampilkan dan interaksi user di-unblock sementara hingga user menekan tombol Resume.',
+          description:
+            'Minta bantuan user untuk menyelesaikan CAPTCHA, 2FA, verifikasi Cloudflare, atau login manual pada halaman browser. Jendela browser akan otomatis ditampilkan dan interaksi user di-unblock sementara hingga user menekan tombol Resume.',
           parameters: {
             type: 'object',
             properties: {
               prompt: {
                 type: 'string',
-                description: 'Pesan arahan untuk user (misal: "Silakan selesaikan Cloudflare Turnstile / Login Google terlebih dahulu")'
+                description:
+                  'Pesan arahan untuk user (misal: "Silakan selesaikan Cloudflare Turnstile / Login Google terlebih dahulu")'
               }
             },
             required: ['prompt'],
@@ -189,13 +210,15 @@ export const GROUP_TOOLS_SCHEMA = {
     ]
   },
   pc_automation: {
-    description: 'Tool untuk interaksi fisik dengan desktop OS Windows, mouse click, keyboard typing, dan window management.',
+    description:
+      'Tool untuk interaksi fisik dengan desktop OS Windows, mouse click, keyboard typing, dan window management.',
     tools: [
       {
         type: 'function',
         function: {
           name: 'os-control-open',
-          description: 'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC.',
+          description:
+            'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC.',
           parameters: {
             type: 'object',
             properties: {},
@@ -223,7 +246,12 @@ export const GROUP_TOOLS_SCHEMA = {
           parameters: {
             type: 'object',
             properties: {
-              mode: { type: 'string', enum: ['all', 'focus'], description: '"all" untuk scan seluruh layar atau "focus" untuk membaca 1 elemen aktif' }
+              mode: {
+                type: 'string',
+                enum: ['all', 'focus'],
+                description:
+                  '"all" untuk scan seluruh layar atau "focus" untuk membaca 1 elemen aktif'
+              }
             },
             additionalProperties: false
           }
@@ -233,11 +261,15 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'os-click',
-          description: 'Klik mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
+          description:
+            'Klik mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
           parameters: {
             type: 'object',
             properties: {
-              target: { type: 'string', description: 'ID elemen dari os-read atau koordinat "x||y"' }
+              target: {
+                type: 'string',
+                description: 'ID elemen dari os-read atau koordinat "x||y"'
+              }
             },
             required: ['target'],
             additionalProperties: false
@@ -248,11 +280,15 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'os-double-click',
-          description: 'Double click mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
+          description:
+            'Double click mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
           parameters: {
             type: 'object',
             properties: {
-              target: { type: 'string', description: 'ID elemen dari os-read atau koordinat "x||y"' }
+              target: {
+                type: 'string',
+                description: 'ID elemen dari os-read atau koordinat "x||y"'
+              }
             },
             required: ['target'],
             additionalProperties: false
@@ -351,7 +387,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'os-focus-window',
-          description: 'Fokus sebuah window aplikasi berdasarkan judul yang ada di os-list-windows.',
+          description:
+            'Fokus sebuah window aplikasi berdasarkan judul yang ada di os-list-windows.',
           parameters: {
             type: 'object',
             properties: {
@@ -401,11 +438,16 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'music-play',
-          description: 'Memutar lagu di YouTube Music. Masukkan judul atau genre/mood lagu pada parameter title.',
+          description:
+            'Memutar lagu di YouTube Music. Masukkan judul atau genre/mood lagu pada parameter title.',
           parameters: {
             type: 'object',
             properties: {
-              title: { type: 'string', description: 'Judul lagu, nama artis, atau kata kunci pencarian lagu yang ingin diputar (contoh: "Bohemian Rhapsody", "Lagu Pop Santai")' }
+              title: {
+                type: 'string',
+                description:
+                  'Judul lagu, nama artis, atau kata kunci pencarian lagu yang ingin diputar (contoh: "Bohemian Rhapsody", "Lagu Pop Santai")'
+              }
             },
             required: ['title'],
             additionalProperties: false
@@ -451,7 +493,8 @@ export const GROUP_TOOLS_SCHEMA = {
     ]
   },
   google_drive: {
-    description: 'Manajemen penyimpanan dan berkas Google Drive (Docs, Sheets, TXT, Upload, Search).',
+    description:
+      'Manajemen penyimpanan dan berkas Google Drive (Docs, Sheets, TXT, Upload, Search).',
     tools: [
       {
         type: 'function',
@@ -474,7 +517,10 @@ export const GROUP_TOOLS_SCHEMA = {
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Kata kunci pencarian berkas' },
-              pagination: { type: 'string', description: 'Rentang hasil pagination (contoh: "0-10")' }
+              pagination: {
+                type: 'string',
+                description: 'Rentang hasil pagination (contoh: "0-10")'
+              }
             },
             required: ['query'],
             additionalProperties: false
@@ -489,8 +535,14 @@ export const GROUP_TOOLS_SCHEMA = {
           parameters: {
             type: 'object',
             properties: {
-              folder_id: { type: 'string', description: 'ID folder target (opsional, kosongkan untuk root)' },
-              pagination: { type: 'string', description: 'Rentang hasil pagination (contoh: "0-10")' }
+              folder_id: {
+                type: 'string',
+                description: 'ID folder target (opsional, kosongkan untuk root)'
+              },
+              pagination: {
+                type: 'string',
+                description: 'Rentang hasil pagination (contoh: "0-10")'
+              }
             },
             additionalProperties: false
           }
@@ -500,7 +552,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'gdrive-read',
-          description: 'Membaca dan mengekstrak teks dari Google Docs, Sheets, atau TXT berdasarkan file ID.',
+          description:
+            'Membaca dan mengekstrak teks dari Google Docs, Sheets, atau TXT berdasarkan file ID.',
           parameters: {
             type: 'object',
             properties: {
@@ -536,7 +589,11 @@ export const GROUP_TOOLS_SCHEMA = {
             type: 'object',
             properties: {
               name: { type: 'string', description: 'Nama dokumen atau folder baru' },
-              type: { type: 'string', enum: ['doc', 'sheet', 'folder'], description: 'Tipe yang dibuat' }
+              type: {
+                type: 'string',
+                enum: ['doc', 'sheet', 'folder'],
+                description: 'Tipe yang dibuat'
+              }
             },
             required: ['name'],
             additionalProperties: false
@@ -589,7 +646,10 @@ export const GROUP_TOOLS_SCHEMA = {
             type: 'object',
             properties: {
               pagination: { type: 'string', description: 'Rentang data (contoh: "0-10")' },
-              time_min: { type: 'string', description: 'Waktu mulai filter dalam ISO string (contoh: "2026-08-28T00:00:00Z")' }
+              time_min: {
+                type: 'string',
+                description: 'Waktu mulai filter dalam ISO string (contoh: "2026-08-28T00:00:00Z")'
+              }
             },
             additionalProperties: false
           }
@@ -605,8 +665,16 @@ export const GROUP_TOOLS_SCHEMA = {
             properties: {
               summary: { type: 'string', description: 'Judul kegiatan atau event' },
               description: { type: 'string', description: 'Deskripsi lengkap kegiatan' },
-              start_time: { type: 'string', description: 'Waktu mulai dalam format ISO 8601 (contoh: "2026-08-28T14:00:00+07:00")' },
-              end_time: { type: 'string', description: 'Waktu selesai dalam format ISO 8601 (contoh: "2026-08-28T15:00:00+07:00")' }
+              start_time: {
+                type: 'string',
+                description:
+                  'Waktu mulai dalam format ISO 8601 (contoh: "2026-08-28T14:00:00+07:00")'
+              },
+              end_time: {
+                type: 'string',
+                description:
+                  'Waktu selesai dalam format ISO 8601 (contoh: "2026-08-28T15:00:00+07:00")'
+              }
             },
             required: ['summary', 'start_time', 'end_time'],
             additionalProperties: false
@@ -637,7 +705,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'gmail-search',
-          description: 'Mencari email di Gmail berdasarkan kata kunci atau filter query Gmail (misal: "is:unread", "from:someone@gmail.com").',
+          description:
+            'Mencari email di Gmail berdasarkan kata kunci atau filter query Gmail (misal: "is:unread", "from:someone@gmail.com").',
           parameters: {
             type: 'object',
             properties: {
@@ -713,19 +782,22 @@ export const GROUP_TOOLS_SCHEMA = {
     ]
   },
   system_vision_tg: {
-    description: 'Integrasi sistem vision layar desktop, webcam, output suara lisan (TTS), dan integrasi perpesanan Telegram Bot.',
+    description:
+      'Integrasi sistem vision layar desktop, webcam, output suara lisan (TTS), dan integrasi perpesanan Telegram Bot.',
     tools: [
       {
         type: 'function',
         function: {
           name: 'analyze-screen',
-          description: 'Mengambil screenshot seluruh monitor/layar Windows saat ini dan menganalisis tampilan visual antarmuka/aplikasi menggunakan AI Vision.',
+          description:
+            'Mengambil screenshot seluruh monitor/layar Windows saat ini dan menganalisis tampilan visual antarmuka/aplikasi menggunakan AI Vision.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat atau analisis dari layar pengguna'
+                description:
+                  'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat atau analisis dari layar pengguna'
               }
             },
             required: ['query'],
@@ -737,13 +809,15 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'camera-look',
-          description: 'Mengambil frame gambar dari webcam/kamera laptop/PC pengguna dan menganalisis apa yang terlihat di depan kamera secara real-time menggunakan AI Vision.',
+          description:
+            'Mengambil frame gambar dari webcam/kamera laptop/PC pengguna dan menganalisis apa yang terlihat di depan kamera secara real-time menggunakan AI Vision.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat dari kamera'
+                description:
+                  'Instruksi atau pertanyaan tentang apa yang ingin kamu lihat dari kamera'
               }
             },
             required: ['query'],
@@ -755,7 +829,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'screenshot-to-tg',
-          description: 'Mengambil screenshot layar PC dan langsung mengirimkannya ke Telegram admin.',
+          description:
+            'Mengambil screenshot layar PC dan langsung mengirimkannya ke Telegram admin.',
           parameters: {
             type: 'object',
             properties: {},
@@ -773,7 +848,10 @@ export const GROUP_TOOLS_SCHEMA = {
             properties: {
               chat_id: { type: 'string', description: 'ID Chat Telegram tujuan' },
               type: { type: 'string', enum: ['text', 'file'], description: 'Tipe kiriman' },
-              content: { type: 'string', description: 'Isi teks pesan atau path berkas yang dikirim' }
+              content: {
+                type: 'string',
+                description: 'Isi teks pesan atau path berkas yang dikirim'
+              }
             },
             required: ['chat_id', 'type', 'content'],
             additionalProperties: false
@@ -784,7 +862,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'speak',
-          description: 'Mengeluarkan suara lisan (Text-to-Speech) lewat speaker komputer secara langsung.',
+          description:
+            'Mengeluarkan suara lisan (Text-to-Speech) lewat speaker komputer secara langsung.',
           parameters: {
             type: 'object',
             properties: {
@@ -860,7 +939,8 @@ export const GROUP_TOOLS_SCHEMA = {
     ]
   },
   task_terminal: {
-    description: 'Terminal runner latar belakang (non-blocking) untuk menjalankan server dev, unit test, dan proses jangka panjang.',
+    description:
+      'Terminal runner latar belakang (non-blocking) untuk menjalankan server dev, unit test, dan proses jangka panjang.',
     tools: [
       {
         type: 'function',
@@ -924,13 +1004,15 @@ export const GROUP_TOOLS_SCHEMA = {
     ]
   },
   custom_plugins: {
-    description: 'Custom plugin dan modul ekstensi JavaScript lokal buatan pengguna (Documents/Mark Plugins).',
+    description:
+      'Custom plugin dan modul ekstensi JavaScript lokal buatan pengguna (Documents/Mark Plugins).',
     tools: [
       {
         type: 'function',
         function: {
           name: 'list-plugins',
-          description: 'Melihat daftar seluruh custom plugin lokal yang terinstall beserta action/sub-tool di dalamnya dan status aktifnya.',
+          description:
+            'Melihat daftar seluruh custom plugin lokal yang terinstall beserta action/sub-tool di dalamnya dan status aktifnya.',
           parameters: {
             type: 'object',
             properties: {},
@@ -943,16 +1025,19 @@ export const GROUP_TOOLS_SCHEMA = {
 }
 
 // Legacy dictionary representation for backwards-compatibility
-export const GROUP_TOOLS_DEFINITION = Object.entries(GROUP_TOOLS_SCHEMA).reduce((acc, [groupKey, group]) => {
-  acc[groupKey] = {
-    description: group.description,
-    tools: group.tools.reduce((tAcc, t) => {
-      tAcc[t.function.name] = t.function.description
-      return tAcc
-    }, {})
-  }
-  return acc
-}, {})
+export const GROUP_TOOLS_DEFINITION = Object.entries(GROUP_TOOLS_SCHEMA).reduce(
+  (acc, [groupKey, group]) => {
+    acc[groupKey] = {
+      description: group.description,
+      tools: group.tools.reduce((tAcc, t) => {
+        tAcc[t.function.name] = t.function.description
+        return tAcc
+      }, {})
+    }
+    return acc
+  },
+  {}
+)
 
 export const group_tools = async () => {
   return GROUP_TOOLS_DEFINITION

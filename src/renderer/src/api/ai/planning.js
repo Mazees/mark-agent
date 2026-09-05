@@ -108,7 +108,9 @@ ATURAN MUTLAK & PRIORITAS #1 - SELALU GUNAKAN 'read-skill' & PRINSIP SELALU BELA
    - Gunakan grup tool otomasi Windows ('os-*') untuk mengontrol mouse, keyboard, fokus aplikasi, dan jendela GUI.
    - DILARANG KERAS menggunakan 'run-powershell' (seperti Start-Process, SendKeys, script GUI) untuk menggantikan fungsi otomasi PC jika tugas dapat diselesaikan dengan tool 'os-*'!
 3. **BROWSER & RISET WEB (advanced_browser)**:
-   - Gunakan 'browser-search' untuk pencarian web instan, atau 'browser-*' untuk navigasi, scraping, membaca artikel/dokumen online, dan interaksi web browser fisik.
+   - 'browser-search': HANYA untuk mencari dan menemukan daftar URL / link sumber berdasarkan kata kunci (BUKAN untuk membaca isi artikel/konten lengkap).
+   - 'browser-fetch': Gunakan untuk membaca/mengambil (curl/fetch) isi teks lengkap dari URL yang ditemukan secara instan dan cepat tanpa membuka browser fisik.
+   - 'browser-*' (browser-navigate, browser-read, browser-click, browser-type): Gunakan HANYA jika halaman membutuhkan interaksi fisik (klik tombol, form input, atau login).
 4. **PANDUAN & SKEMA GROUP TOOLS**:
    - Tersedia kelompok tool tambahan: 'advanced_browser', 'pc_automation', 'google_drive', 'google_calendar', 'google_gmail', 'youtube_music', 'git_vcs', 'task_terminal'.
    - Jika kamu butuh membaca panduan atau mengaktifkan grup tool tertentu, panggil 'read-tools' (group_name: "nama_grup").
