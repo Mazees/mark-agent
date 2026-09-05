@@ -526,12 +526,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
             {currentDisplayMessages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-base-200/80 border border-white/10 flex items-center justify-center text-primary shadow-xl">
-                  <Sparkles className="w-7 h-7 animate-pulse" />
-                </div>
-                <div className="max-w-sm space-y-1">
-                  <h4 className="text-sm font-bold text-white">Sesi Obrolan Bersih</h4>
-                  <p className="text-xs text-white/50">
+                <img src="/icon-256.png" alt="icon" className='size-30' />
+                <div className="max-w-lg space-y-1">
+                  <h4 className="text-xl font-bold text-white">Selamat Datang di Mark Agent</h4>
+                  <p className="text-lg text-white/50">
                     Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
                   </p>
                 </div>
