@@ -7,7 +7,6 @@ const GREETINGS = '(?:hey|hei|halo|hello|helo|hai|hi|woi|oi|bro)'
 
 /**
  * Membuat Regex matcher dinamis dari kata pemicu default + custom wake words
- * @param {string|Array<string>} customWakeWords - Kata atau frasa pemicu tambahan (misal: "Jarvis, Komputer")
  */
 export function getWakeWordRegex(customWakeWords = '') {
   const parts = [DEFAULT_MARK_NAMES]
@@ -32,8 +31,6 @@ export function getWakeWordRegex(customWakeWords = '') {
 
 /**
  * Mendeteksi keberadaan wake word dalam teks transkrip dan memisahkan perintah
- * @param {string} transcript - Teks hasil rekognisi suara
- * @param {string|Array<string>} customWakeWords - Kata pemicu tambahan kustom
  */
 export function detectWakeWord(transcript, customWakeWords = '') {
   if (!transcript || typeof transcript !== 'string') {
@@ -66,8 +63,6 @@ export function detectWakeWord(transcript, customWakeWords = '') {
 
 /**
  * Membersihkan awalan sapaan / nama pemicu dari perintah yang diucapkan
- * @param {string} text - Teks kalimat perintah
- * @param {string|Array<string>} customWakeWords - Kata pemicu tambahan kustom
  */
 export function cleanSpokenCommand(text, customWakeWords = '') {
   if (!text || typeof text !== 'string') return ''

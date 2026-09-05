@@ -27,9 +27,6 @@ function getNotificationIconPath() {
  * Menampilkan notifikasi desktop native Windows (Toast Notification) tanpa izin WebUI.
  * Menggunakan Windows Runtime (WinRT) PowerShell yang terintegrasi langsung dengan Action Center Windows 10/11
  * dan menampilkan logo MARK secara native di samping teks.
- *
- * @param {string} title Judul notifikasi
- * @param {string} body Isi pesan notifikasi
  */
 export function showNativeNotification(title = 'Mark', body = '') {
   const isWindows = os.platform() === 'win32'

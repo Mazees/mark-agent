@@ -9,9 +9,6 @@ const subagentAbortControllers = new Map()
 
 /**
  * Menjalankan satu putaran eksekusi ReAct untuk sub-agent menggunakan Native Function Calling & SSE Streaming.
- * @param {string} subagentId ID sub-agent
- * @param {string|null} incomingMessage Pesan baru dari Lead Agent (Mark) atau User
- * @param {string} senderType 'mark' | 'user'
  */
 export async function runSubagentTurn(subagentId, incomingMessage = null, senderType = 'mark') {
   const subagent = await subagentStore.getSubagent(subagentId)
