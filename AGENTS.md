@@ -112,3 +112,14 @@
 - **Decoupled Architecture:** Frontend in `src/renderer/` communicates with the backend in `src/server/` and `src/main/` via REST API (`API_BASE`) and WebSocket (`WS_BASE`). Never import Node.js native modules (`fs`, `path`, `child_process`) directly inside `src/renderer/`.
 - **UI Design System:** The UI uses Tailwind CSS 4 + DaisyUI 5 (`forest` theme) with custom holographic/glassmorphic design tokens in `main.css`.
 - **Strict Emoji Rule:** Dilarang keras menggunakan emoji apapun di dalam respon output, dialog, maupun UI.
+
+<!-- antislop:start -->
+## antislop
+For UI, copy, people, mobile layout, or code comments work, read `antislop.md` (core) and then the skill for the task:
+- UI / visual: `skills/antislop-ui/SKILL.md`
+- Copy & text: `skills/antislop-copywriting/SKILL.md`
+- People: `skills/antislop-human/SKILL.md`
+- Mobile / responsive: `skills/antislop-layoutmobile/SKILL.md`
+- Code comments: `skills/antislop-code/SKILL.md`
+Before starting, ask the user when antislop applies: during the work, or after it is done.
+<!-- antislop:end -->
