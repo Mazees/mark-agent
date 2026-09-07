@@ -97,10 +97,11 @@ export const YoutubeMusicPlayer = () => {
           transition-all duration-300 ease-out origin-bottom-right
           ${
             isPlayerOpen
-              ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
-              : 'opacity-0 scale-95 translate-y-3 pointer-events-none'
+              ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto visible'
+              : 'opacity-0 scale-95 translate-y-3 pointer-events-none invisible'
           }
         `}
+        style={{ pointerEvents: isPlayerOpen ? 'auto' : 'none' }}
       >
         <div className="relative w-80 sm:w-84 rounded-3xl overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] border border-white/10 bg-[#0d0d0e]/95 backdrop-blur-2xl text-white flex flex-col p-4">
           {/* Subtle Ambient Red Glow Background */}
@@ -166,12 +167,16 @@ export const YoutubeMusicPlayer = () => {
             {/* SATU-SATUNYA IFRAME PLAYER ASLI (Selalu ter-mount, hanya opacity/z-index yang berganti) */}
             <div
               className={`absolute inset-0 w-full h-full transition-opacity duration-200 ${
-                viewMode === 'video'
+                isPlayerOpen && viewMode === 'video'
                   ? 'opacity-100 pointer-events-auto z-20'
                   : 'opacity-0 pointer-events-none z-0'
               }`}
             >
-              <div id={containerId} className="w-full h-full pointer-events-auto" />
+              <div
+                id={containerId}
+                className="w-full h-full"
+                style={{ pointerEvents: isPlayerOpen && viewMode === 'video' ? 'auto' : 'none' }}
+              />
             </div>
 
             {/* Cover / Artwork View (Tampil saat viewMode === 'thumbnail') */}
