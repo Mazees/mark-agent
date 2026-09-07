@@ -651,11 +651,22 @@ export const fetchAIStream = async ({
   isSmallTask = false,
   onToken = null,
   onReasoning = null,
+  onMood = null,
   onToolCall = null,
   onStatus = null,
   signal = null
 }) => {
   const conf = config || globalConfig
+
+  let moodExtracted = false
+  const extractMood = (text) => {
+    if (moodExtracted || !text) return
+    const match = text.match(/\[mood:([a-zA-Z_]+)\]/)
+    if (match) {
+      onMood?.(match[1].toLowerCase())
+      moodExtracted = true
+    }
+  }
 
   // JIKA PROVIDER: GEMINI-WEB RPC
   if (conf.aiProvider === 'gemini-web') {
@@ -707,6 +718,8 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     let cleanReasoning = res.reasoning || ''
 
     if (cleanReasoning) {
+      extractMood(cleanReasoning)
+      cleanReasoning = cleanReasoning.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
       onReasoning?.(cleanReasoning)
     }
 
@@ -715,19 +728,10 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
     const candidateStr = (jsonMatch[1] || cleanContent).trim()
 
-    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"') || candidateStr.includes('"mood"') || candidateStr.includes('"answer"')) {
+    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"')) {
       try {
         const parsed = cleanAndParse(candidateStr)
         if (parsed) {
-          if (parsed.mood) {
-            onMood?.(String(parsed.mood).toLowerCase().trim())
-          }
-          if (parsed.thought || parsed.reasoning) {
-            cleanReasoning = parsed.thought || parsed.reasoning
-          }
-          if (parsed.answer !== undefined || parsed.content !== undefined) {
-            cleanContent = parsed.answer !== undefined ? parsed.answer : parsed.content
-          }
           if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
             extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
               id: tc.id || `call_gw_${Date.now()}_${idx}`,
@@ -775,6 +779,8 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     }
 
     if (cleanContent) {
+      extractMood(cleanContent)
+      cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
       onToken?.(cleanContent)
     }
     return {
@@ -870,24 +876,20 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     let cleanContent = dsRes.text || fullText || ''
     let cleanReasoning = dsRes.thinking || fullReasoning || ''
 
+    if (cleanReasoning) {
+      extractMood(cleanReasoning)
+      cleanReasoning = cleanReasoning.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+    }
+
     // Deteksi tool_calls JSON dari DeepSeek
     let extractedToolCalls = null
     const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
     const candidateStr = (jsonMatch[1] || cleanContent).trim()
 
-    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"') || candidateStr.includes('"mood"') || candidateStr.includes('"answer"')) {
+    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"')) {
       try {
         const parsed = cleanAndParse(candidateStr)
         if (parsed) {
-          if (parsed.mood) {
-            onMood?.(String(parsed.mood).toLowerCase().trim())
-          }
-          if (parsed.thought || parsed.reasoning) {
-            cleanReasoning = parsed.thought || parsed.reasoning
-          }
-          if (parsed.answer !== undefined || parsed.content !== undefined) {
-            cleanContent = parsed.answer !== undefined ? parsed.answer : parsed.content
-          }
           if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
             extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
               id: tc.id || `call_ds_${Date.now()}_${idx}`,
@@ -932,6 +934,11 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
         toolCalls: extractedToolCalls,
         finishReason: 'tool_calls'
       }
+    }
+
+    if (cleanContent) {
+      extractMood(cleanContent)
+      cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
     }
 
     return {
@@ -1039,8 +1046,60 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
       throw new Error(`API Error (${response.status}): ${errorMsg}`)
     }
 
+    let moodExtracted = false
+    let isBufferingInitialMood = true
+    let initialChunkBuffer = ''
+
     const processContentToken = (token) => {
       accumulatedContent += token
+
+      if (isBufferingInitialMood) {
+        initialChunkBuffer += token
+        // Periksa apakah ada tag [mood:xxx] di awal
+        if (initialChunkBuffer.startsWith('[')) {
+          const closeBracketIdx = initialChunkBuffer.indexOf(']')
+          if (closeBracketIdx !== -1) {
+            const tag = initialChunkBuffer.substring(0, closeBracketIdx + 1)
+            const moodMatch = tag.match(/^\[mood:([a-zA-Z_]+)\]$/i)
+            if (moodMatch) {
+              if (!moodExtracted) {
+                onMood?.(moodMatch[1].toLowerCase())
+                moodExtracted = true
+              }
+              // Buang tag [mood:...], alirkan sisa teks di belakang tag jika ada
+              const remainder = initialChunkBuffer.substring(closeBracketIdx + 1).replace(/^[\r\n\s]+/, '')
+              isBufferingInitialMood = false
+              initialChunkBuffer = ''
+              if (remainder) {
+                onToken?.(remainder)
+              }
+              return
+            } else {
+              // Bukan tag mood yang valid, lepas buffer
+              isBufferingInitialMood = false
+              onToken?.(initialChunkBuffer)
+              initialChunkBuffer = ''
+              return
+            }
+          } else if (initialChunkBuffer.length > 30) {
+            // Buffer terlalu panjang tanpa closing bracket ']', bukan tag mood
+            isBufferingInitialMood = false
+            onToken?.(initialChunkBuffer)
+            initialChunkBuffer = ''
+            return
+          }
+          // Masih menunggu kelengkapan tag bracket
+          return
+        } else {
+          // Tidak diawali '['
+          isBufferingInitialMood = false
+          onToken?.(initialChunkBuffer)
+          initialChunkBuffer = ''
+          return
+        }
+      }
+
+      // Stream token normal
       onToken?.(token)
     }
 

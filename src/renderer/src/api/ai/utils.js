@@ -20,10 +20,11 @@ export const getCurrentTimeInfo = (dateObj = new Date()) => {
 let ttsAudioContext = null
 let currentAudioElement = null
 
-// Bersihkan format markdown berlebih dan tag teknis agar tidak terbaca oleh TTS
+// Bersihkan tag [mood:xxx], format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
 export const cleanTextForTTS = (text) => {
   if (!text || typeof text !== 'string') return ''
   return text
+    .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
     .replace(/```[\s\S]*?```/g, '') // Hapus blok kode
     .replace(/`([^`]+)`/g, '$1') // Bersihkan inline code
     .replace(/\*\*([^*]+)\*\*/g, '$1') // Bersihkan bold

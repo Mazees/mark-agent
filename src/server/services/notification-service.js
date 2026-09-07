@@ -31,9 +31,11 @@ function getNotificationIconPath() {
 export function showNativeNotification(title = 'Mark', body = '') {
   const isWindows = os.platform() === 'win32'
   const safeTitle = (title || 'Mark')
+    .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
     .replace(/["`$\\]/g, ' ')
     .trim()
   const safeBody = (body || '')
+    .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
     .replace(/["`$\\]/g, ' ')
     .trim()
   const iconPath = getNotificationIconPath()
