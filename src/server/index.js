@@ -148,7 +148,7 @@ server.on('listening', async () => {
   activePort = typeof address === 'object' && address ? address.port : activePort
   app.set('port', activePort)
   console.log(`\n======================================================`)
-  console.log(`  MARK Core Server V5.0.0 siap di http://localhost:${activePort}`)
+  console.log(`  Menyalakan Server MARK di http://localhost:${activePort}`)
   console.log(`======================================================\n`)
 
   if (!process.argv.includes('--no-launch') && !process.argv.includes('--headless')) {
