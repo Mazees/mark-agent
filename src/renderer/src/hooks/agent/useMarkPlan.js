@@ -1037,12 +1037,16 @@ export const useMarkPlan = ({
           accumulatedThoughts.push(currentTurnReasoning)
         }
 
-        // Fallback Interceptor: Jika model (misal Gemini Web) mengembalikan teks JSON tool_calls mentah alih-alih native toolCalls
+        if (streamResult?.mood && streamResult.mood !== 'neutral') {
+          currentActiveMood = streamResult.mood
+        }
+
+        // Fallback Interceptor: Jika model mengembalikan teks JSON (tool_calls, mood, atau structured answer)
         let effectiveToolCalls = streamResult.toolCalls
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && currentTurnContent) {
           const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, currentTurnContent]
           const cand = (rawMatch[1] || currentTurnContent).trim()
-          if (cand.includes('"tool_calls"') || (cand.includes('"action"') && cand.includes('"tool"'))) {
+          if (cand.includes('"tool_calls"') || (cand.includes('"action"') && cand.includes('"tool"')) || cand.includes('"mood"') || cand.includes('"answer"')) {
             try {
               const { jsonrepair } = await import('jsonrepair')
               let pObj = null
@@ -1051,17 +1055,26 @@ export const useMarkPlan = ({
               } catch (_) {
                 pObj = JSON.parse(jsonrepair(cand))
               }
-              if (pObj && Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
-                effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
-                  id: tc.id || `call_fallback_${Date.now()}_${idx}`,
-                  type: 'function',
-                  function: {
-                    name: tc.name || tc.function?.name,
-                    arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
-                  }
-                }))
-                currentTurnContent = ''
-                finalContentAccumulator = ''
+              if (pObj) {
+                if (pObj.mood) {
+                  currentActiveMood = String(pObj.mood).toLowerCase().trim()
+                }
+                if (pObj.answer !== undefined || pObj.content !== undefined) {
+                  currentTurnContent = pObj.answer !== undefined ? pObj.answer : pObj.content
+                  finalContentAccumulator = currentTurnContent
+                }
+                if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
+                  effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
+                    id: tc.id || `call_fallback_${Date.now()}_${idx}`,
+                    type: 'function',
+                    function: {
+                      name: tc.name || tc.function?.name,
+                      arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
+                    }
+                  }))
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
+                }
               }
             } catch (_) {}
           }
@@ -1223,7 +1236,7 @@ export const useMarkPlan = ({
             return true
           })
 
-          let finalOutput = (finalContentAccumulator || '').replace(/^\[mood:[a-zA-Z_]+\]\s*/i, '').trim()
+          let finalOutput = (finalContentAccumulator || '').trim()
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
           }

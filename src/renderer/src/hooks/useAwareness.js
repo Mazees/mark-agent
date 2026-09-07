@@ -143,7 +143,7 @@ export const useAwareness = ({
           return
         }
 
-        const cleanMessage = (result.message || '').replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+        const cleanMessage = (result.message || '').trim()
 
         if (result.should_act || result.autonomous_prompt) {
           if (isLoadingRef.current) {
