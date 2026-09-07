@@ -6,7 +6,6 @@ import express from 'express'
 import cors from 'cors'
 import { wsHub } from './ws-hub.js'
 import { launchUI } from './launcher.js'
-import { runPlanning } from './agent/planner.js'
 import { initOramaIndices } from './memory/orama-store.js'
 import { dbStore } from './memory/db-store.js'
 import { loadAllPlugins } from '../main/plugins/plugin-loader.js'
@@ -52,13 +51,7 @@ initOramaIndices().catch(() => {})
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
 startOsActivityTracking(10000)
 
-// Daftarkan listener event chat dan abort dari WebSocket
-wsHub.on('chat:send', async (payload) => {
-  const { message, sessionId = '1', config = {} } = payload || {}
-  if (!message) throw new Error('Pesan kosong')
-  return await runPlanning(message, { sessionId, config })
-})
-
+// Daftarkan listener event abort dari WebSocket
 wsHub.on('ai:abort', async () => {
   try {
     const { abortAllFetches } = await import('./services/ai-bridge.js')
