@@ -1236,7 +1236,7 @@ export const useMarkPlan = ({
             return true
           })
 
-          let finalOutput = (finalContentAccumulator || '').trim()
+          let finalOutput = (finalContentAccumulator || '').replace(/^\[mood:[a-zA-Z_]+\]\s*/i, '').trim()
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
           }

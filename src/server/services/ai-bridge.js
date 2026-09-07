@@ -644,6 +644,72 @@ export const fetchAI = async (
   }
 }
 
+function createMoodStreamFilter(onToken, onMood) {
+  let isBuffering = true
+  let buffer = ''
+  let moodEmitted = false
+
+  const filter = (chunk) => {
+    if (!chunk) return
+
+    if (!isBuffering) {
+      onToken?.(chunk)
+      return
+    }
+
+    buffer += chunk
+
+    const trimmed = buffer.trimStart()
+    if (!trimmed.startsWith('[')) {
+      isBuffering = false
+      if (buffer) onToken?.(buffer)
+      buffer = ''
+      return
+    }
+
+    const closeIdx = buffer.indexOf(']')
+    if (closeIdx !== -1) {
+      const tag = buffer.substring(0, closeIdx + 1).trim()
+      const match = tag.match(/^\[mood:([a-zA-Z_]+)\]$/i)
+      if (match) {
+        if (!moodEmitted) {
+          onMood?.(match[1].toLowerCase())
+          moodEmitted = true
+        }
+        const remainder = buffer.substring(closeIdx + 1).replace(/^[\r\n\s]+/, '')
+        isBuffering = false
+        buffer = ''
+        if (remainder) {
+          onToken?.(remainder)
+        }
+        return
+      } else {
+        isBuffering = false
+        if (buffer) onToken?.(buffer)
+        buffer = ''
+        return
+      }
+    }
+
+    if (buffer.length > 30) {
+      isBuffering = false
+      if (buffer) onToken?.(buffer)
+      buffer = ''
+      return
+    }
+  }
+
+  filter.flush = () => {
+    if (isBuffering && buffer) {
+      isBuffering = false
+      onToken?.(buffer)
+      buffer = ''
+    }
+  }
+
+  return filter
+}
+
 export const fetchAIStream = async ({
   messages,
   tools = null,
@@ -861,6 +927,11 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     let fullReasoning = ''
     let fullText = ''
 
+    const dsMoodFilter = createMoodStreamFilter(onToken, (mood) => {
+      onMood?.(mood)
+      moodExtracted = true
+    })
+
     const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken, {
       onDelta: (delta) => {
         if (delta.type === 'thinking') {
@@ -868,10 +939,11 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
           onReasoning?.(delta.delta)
         } else if (delta.type === 'content') {
           fullText = delta.full
-          onToken?.(delta.delta)
+          dsMoodFilter(delta.delta)
         }
       }
     })
+    dsMoodFilter.flush()
 
     let cleanContent = dsRes.text || fullText || ''
     let cleanReasoning = dsRes.thinking || fullReasoning || ''
@@ -1046,61 +1118,14 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
       throw new Error(`API Error (${response.status}): ${errorMsg}`)
     }
 
-    let moodExtracted = false
-    let isBufferingInitialMood = true
-    let initialChunkBuffer = ''
+    const sseMoodFilter = createMoodStreamFilter(onToken, (mood) => {
+      onMood?.(mood)
+      moodExtracted = true
+    })
 
     const processContentToken = (token) => {
       accumulatedContent += token
-
-      if (isBufferingInitialMood) {
-        initialChunkBuffer += token
-        // Periksa apakah ada tag [mood:xxx] di awal
-        if (initialChunkBuffer.startsWith('[')) {
-          const closeBracketIdx = initialChunkBuffer.indexOf(']')
-          if (closeBracketIdx !== -1) {
-            const tag = initialChunkBuffer.substring(0, closeBracketIdx + 1)
-            const moodMatch = tag.match(/^\[mood:([a-zA-Z_]+)\]$/i)
-            if (moodMatch) {
-              if (!moodExtracted) {
-                onMood?.(moodMatch[1].toLowerCase())
-                moodExtracted = true
-              }
-              // Buang tag [mood:...], alirkan sisa teks di belakang tag jika ada
-              const remainder = initialChunkBuffer.substring(closeBracketIdx + 1).replace(/^[\r\n\s]+/, '')
-              isBufferingInitialMood = false
-              initialChunkBuffer = ''
-              if (remainder) {
-                onToken?.(remainder)
-              }
-              return
-            } else {
-              // Bukan tag mood yang valid, lepas buffer
-              isBufferingInitialMood = false
-              onToken?.(initialChunkBuffer)
-              initialChunkBuffer = ''
-              return
-            }
-          } else if (initialChunkBuffer.length > 30) {
-            // Buffer terlalu panjang tanpa closing bracket ']', bukan tag mood
-            isBufferingInitialMood = false
-            onToken?.(initialChunkBuffer)
-            initialChunkBuffer = ''
-            return
-          }
-          // Masih menunggu kelengkapan tag bracket
-          return
-        } else {
-          // Tidak diawali '['
-          isBufferingInitialMood = false
-          onToken?.(initialChunkBuffer)
-          initialChunkBuffer = ''
-          return
-        }
-      }
-
-      // Stream token normal
-      onToken?.(token)
+      sseMoodFilter(token)
     }
 
     const handleChunkText = (jsonStr) => {
@@ -1193,6 +1218,7 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
         if (lineBuffer.trim().startsWith('data:')) {
           handleChunkText(lineBuffer.trim().slice(5).trim())
         }
+        sseMoodFilter.flush()
       }
     } else {
       // Non-streaming fallback
