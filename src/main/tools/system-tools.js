@@ -184,8 +184,8 @@ export const systemTools = {
     handler: async (args) => {
       try {
         const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
-        const result = await openApp(target)
-        return { success: true, data: result }
+        await execPromise(`start "" "${target}"`)
+        return { success: true, data: `Opened: ${target}` }
       } catch (e) {
         return { success: false, error: e.message }
       }
@@ -197,13 +197,8 @@ export const systemTools = {
     handler: async (args) => {
       try {
         const target = (typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')).trim()
-        if (target.startsWith('ms-settings:') || target.startsWith('http://') || target.startsWith('https://')) {
-          const { exec } = await import('child_process')
-          exec(`start ${target}`)
-          return { success: true, data: `Opened URI: ${target}` }
-        }
-        const result = await openApp(target)
-        return { success: true, data: result }
+        await execPromise(`start "" "${target}"`)
+        return { success: true, data: `Opened: ${target}` }
       } catch (e) {
         return { success: false, error: e.message }
       }

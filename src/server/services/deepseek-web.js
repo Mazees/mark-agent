@@ -25,6 +25,17 @@ const BASE_HOST = 'chat.deepseek.com'
 
 let wasmInstanceCache = null
 const activeSessionCache = new Map()
+let lastUsedToken = null
+
+function ensureTokenSession(token) {
+  // Jika token berubah, clear session cache lama
+  if (lastUsedToken !== token) {
+    if (lastUsedToken) {
+      activeSessionCache.delete(lastUsedToken)
+    }
+    lastUsedToken = token
+  }
+}
 
 export function clearDeepSeekSession(token = null) {
   if (token) {
@@ -226,21 +237,24 @@ export async function generateDeepSeekResponse(
     throw new Error('DeepSeek User Token (Bearer) dibutuhkan. Silakan ambil dari localStorage.userToken.')
   }
 
+  // Auto-clear session cache jika token berubah
+  ensureTokenSession(token)
+
   const {
-    sessionId: inputSessionId = null,
     parentMessageId = null,
     onDelta = null,
     wasmBuffer = null
   } = options
 
-  const reqModel = (modelName || 'deepseek-chat').toLowerCase()
-  let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
-
-  let sessionId = inputSessionId || activeSessionCache.get(token)
+  // Buat session baru jika tidak ada
+  let sessionId = options.sessionId || activeSessionCache.get(token)
   if (!sessionId) {
     sessionId = await createChatSession(token)
     activeSessionCache.set(token, sessionId)
   }
+
+  const reqModel = (modelName || 'deepseek-chat').toLowerCase()
+  let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
   const powHeader = await generatePowHeader(token, '/api/v0/chat/completion', wasmBuffer)
 
   const bodyData = {
@@ -309,6 +323,9 @@ export async function generateDeepSeekResponse(
         const trimmed = line.trim()
         if (!trimmed) return
 
+        // Skip SSE event lines that are not "data"
+        if (trimmed.startsWith('event:')) return
+
         let payload = trimmed
         if (trimmed.startsWith('data:')) {
           payload = trimmed.slice(5).trim()
@@ -320,6 +337,14 @@ export async function generateDeepSeekResponse(
           const obj = JSON.parse(payload)
 
           // 0. Deteksi error resmi dari server DeepSeek
+          if (obj.click_behavior !== undefined || obj.auto_resume !== undefined) {
+            // Jika sudah ada content, ini bukan error - akhir stream normal
+            if (fullContent) return
+            // Content kosong + click_behavior = session expired
+            activeSessionCache.delete(token)
+            reject(new Error('DeepSeek Web session expired atau tidak valid. Session di-clear, silakan coba lagi.'))
+            return
+          }
           if (obj.code !== undefined && obj.code !== 0) {
             activeSessionCache.delete(token)
             const errMsg = obj.msg || obj.message || JSON.stringify(obj)
@@ -352,7 +377,12 @@ export async function generateDeepSeekResponse(
                     onDelta?.({ type: 'thinking', delta: frag.content, full: reasoningContent })
                   } else {
                     activePath = 'response/fragments/-1/content'
-                    fullContent = frag.content
+                    // FIX: Gabungkan fragment, jangan overwrite
+                    if (fullContent && fullContent !== frag.content) {
+                      fullContent += frag.content
+                    } else {
+                      fullContent = frag.content
+                    }
                     onDelta?.({ type: 'content', delta: frag.content, full: fullContent })
                   }
                 }

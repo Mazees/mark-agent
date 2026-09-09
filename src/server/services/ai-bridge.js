@@ -260,8 +260,11 @@ export const fetchAI = async (
 
       const modelName = conf.deepseekWebModel || 'deepseek-chat'
       const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken)
+      let content = dsRes.text || ''
+      // Strip FINISHED / FINISH / Task Finished patterns
+      content = content.replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '').trim()
       return {
-        content: dsRes.text || '',
+        content,
         reasoning: dsRes.thinking || null
       }
     }
@@ -948,7 +951,8 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     }
 
     if (cleanContent) {
-      cleanContent = cleanContent.replace(/\s*(?:\[?FINISHED\]?|Task Finished\.?)\s*$/i, '').trim()
+      // Strip FINISHED / FINISH / Task Finished patterns
+      cleanContent = cleanContent.replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '').trim()
       extractMood(cleanContent)
       cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
       onToken?.(cleanContent)
@@ -972,7 +976,29 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
 
     let effectiveMessages = messages || []
 
+    // JSON Protocol Instruction - selalu ditambahkan untuk semua request DeepSeek
+    const jsonProtocolInstruction = `\n\n# ATURAN PROTOKOL JSON (WAJIB DIPATUHI):
+1. RESPONSE WAJIB berupa JSON OBJECT dengan field "type".
+2. SELALU gunakan format ini:
+   - Untuk tool call: {"type":"tool_calls","tool_calls":[...]}
+   - Untuk jawaban biasa: {"type":"final","content":"..."}
+3. JANGAN gunakan Markdown code fence, teks pembuka/penutup, atau JSON tambahan.
+4. WAJIB gunakan field "content", bukan "text" atau "response".
+5. Setelah "type":"final", TIDAK BOLEH ada teks tambahan.`
+
+    effectiveMessages = (messages || []).map((m) => ({ ...m }))
+    const sysIdx = effectiveMessages.findIndex((m) => m.role === 'system')
+    if (sysIdx >= 0) {
+      effectiveMessages[sysIdx] = {
+        ...effectiveMessages[sysIdx],
+        content: effectiveMessages[sysIdx].content + jsonProtocolInstruction
+      }
+    } else {
+      effectiveMessages.unshift({ role: 'system', content: jsonProtocolInstruction })
+    }
+
     if (Array.isArray(tools) && tools.length > 0) {
+      // Tambah tool registry saat ada tools
       const toolDescriptions = tools
         .map((t) => {
           const fn = t.function || t
@@ -980,33 +1006,21 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
         })
         .join('\n')
 
-      const toolInstruction = `\n\n# TOOLS & CAPABILITY REGISTRY:
+      const toolRegistryInstruction = `\n\n# TOOLS & CAPABILITY REGISTRY:
 Kamu memiliki akses ke fungsi-fungsi sistem berikut:
 ${toolDescriptions}
 
-# ATURAN PROTOKOL JSON (WAJIB):
-    1. CRITICAL: RESPONSE WAJIB DIAWALI KARAKTER { DAN DIAKHIRI KARAKTER }.
-    2. CRITICAL: RESPONSE HARUS TEPAT SATU JSON OBJECT VALID, BUKAN TEKS BIASA.
-    3. Jika permintaan membutuhkan aksi nyata atau observasi sistem, kembalikan satu JSON object bertipe "tool_calls".
-    4. Jika tugas tidak membutuhkan tool atau semua tool sudah selesai, kembalikan satu JSON object bertipe "final".
-    5. Jangan gunakan Markdown code fence, teks pembuka, teks penutup, komentar, atau JSON tambahan.
-    6. Jangan pernah mengklaim tool berhasil jika belum menerima tool_result dengan success=true.
+Contoh tool call:
+{"type":"tool_calls","tool_calls":[{"id":"call_001","type":"function","function":{"name":"write-file","arguments":"{\\"path\\":\\"index.html\\",\\"content\\":\\"<!DOCTYPE html>\\"}"}}]}`
 
-Format tool call:
-{"type":"tool_calls","tool_calls":[{"id":"call_001","type":"function","function":{"name":"nama_tool","arguments":"{\\"parameter_key\\":\\"parameter_value\\"}"}}]}
-
-Format jawaban biasa:
-{"type":"final","content":"Jawaban untuk user"}`
-
-      effectiveMessages = (messages || []).map((m) => ({ ...m }))
-      const sysIdx = effectiveMessages.findIndex((m) => m.role === 'system')
-      if (sysIdx >= 0) {
-        effectiveMessages[sysIdx] = {
-          ...effectiveMessages[sysIdx],
-          content: effectiveMessages[sysIdx].content + toolInstruction
+      const sysIdxTools = effectiveMessages.findIndex((m) => m.role === 'system')
+      if (sysIdxTools >= 0) {
+        effectiveMessages[sysIdxTools] = {
+          ...effectiveMessages[sysIdxTools],
+          content: effectiveMessages[sysIdxTools].content + toolRegistryInstruction
         }
       } else {
-        effectiveMessages.unshift({ role: 'system', content: toolInstruction })
+        effectiveMessages.unshift({ role: 'system', content: toolRegistryInstruction })
       }
     }
 

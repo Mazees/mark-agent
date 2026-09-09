@@ -194,9 +194,42 @@ export const parseDeepSeekProtocolResponse = (rawText, activeTools = [], toolGro
   }
 
   const source = rawText.trim().replace(/^\uFEFF/, '')
-  const parsed = parseEnvelope(source)
+  let parsed = parseEnvelope(source)
+
+  // Fallback: Jika parseEnvelope gagal, coba cari JSON object secara manual
+  // untuk kasus JSON ter-escape atau terpotong whitespace/newline
   if (!parsed) {
-    return protocolError('INVALID_PROTOCOL', 'Response DeepSeek bukan satu JSON object valid.')
+    // Coba cari pattern {"type":"tool_calls",...,"tool_calls":[...]}
+    // Regex lebih flexible: handle field tambahan seperti "mood" di antara type dan tool_calls
+    const toolCallsMatch = source.match(/\{\s*"type"\s*:\s*"tool_calls"\s*,\s*[\s\S]*?"tool_calls"\s*:\s*\[[\s\S]*?\]\s*\}\s*\}/)
+    if (toolCallsMatch) {
+      try {
+        parsed = JSON.parse(toolCallsMatch[0])
+      } catch (_) {
+        // Coba repair: replace escaped newlines dan quotes yang bermasalah
+        try {
+          const repaired = toolCallsMatch[0]
+            .replace(/\\n/g, ' ')
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, '\\')
+          parsed = JSON.parse(repaired)
+        } catch (_) {}
+      }
+    }
+    if (!parsed) {
+      // Coba cari pattern {"type":"final",...,"content":"..."}
+      const finalMatch = source.match(/\{\s*"type"\s*:\s*"final"\s*,\s*[\s\S]*?"content"\s*:\s*"[\s\S]*?"\s*\}/)
+      if (finalMatch) {
+        try {
+          parsed = JSON.parse(finalMatch[0])
+        } catch (_) {}
+      }
+    }
+  }
+
+  // Fallback: Jika tetap tidak ada JSON valid, anggap plain text sebagai final content
+  if (!parsed) {
+    return { ok: true, type: 'final', content: source }
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -204,6 +237,12 @@ export const parseDeepSeekProtocolResponse = (rawText, activeTools = [], toolGro
   }
 
   if (!PROTOCOL_TYPES.has(parsed.type)) {
+    // Fallback: JSON tanpa type dikenali → coba ekstrak content dari field umum
+    const fallbackContent =
+      parsed.content || parsed.response || parsed.answer || parsed.text || parsed.message
+    if (typeof fallbackContent === 'string' && fallbackContent.trim()) {
+      return { ok: true, type: 'final', content: fallbackContent }
+    }
     return protocolError(
       'INVALID_PROTOCOL',
       `Tipe response DeepSeek tidak dikenal: ${String(parsed.type || '')}.`
@@ -211,7 +250,8 @@ export const parseDeepSeekProtocolResponse = (rawText, activeTools = [], toolGro
   }
 
   if (parsed.type === 'final') {
-    if (typeof parsed.content !== 'string' || !parsed.content.trim()) {
+    const finalContent = parsed.content || parsed.text || parsed.response || parsed.answer
+    if (typeof finalContent !== 'string' || !finalContent.trim()) {
       return protocolError(
         'INVALID_PROTOCOL',
         'Envelope final wajib memiliki content string yang tidak kosong.'
@@ -220,7 +260,7 @@ export const parseDeepSeekProtocolResponse = (rawText, activeTools = [], toolGro
     if ('tool_calls' in parsed) {
       return protocolError('INVALID_PROTOCOL', 'Envelope final tidak boleh memiliki tool_calls.')
     }
-    return { ok: true, type: 'final', content: parsed.content }
+    return { ok: true, type: 'final', content: finalContent }
   }
 
   if (parsed.type === 'error') {
@@ -242,10 +282,6 @@ export const parseDeepSeekProtocolResponse = (rawText, activeTools = [], toolGro
       'Envelope tool_calls wajib memiliki minimal satu tool call.'
     )
   }
-  if (parsed.tool_calls.length > 1) {
-    return protocolError('INVALID_PROTOCOL', 'Fase awal hanya menerima satu tool call per turn.')
-  }
-
   const activeToolMap = getSchemaToolMap(activeTools)
   const knownToolGroups = new Set(Array.isArray(toolGroups) ? toolGroups : [])
   const normalizedCalls = []
