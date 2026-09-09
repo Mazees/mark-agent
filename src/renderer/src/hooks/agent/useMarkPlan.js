@@ -22,11 +22,7 @@ import {
   checkpointAgentTaskStep,
   transitionAgentTask
 } from '../../api/taskStore'
-import {
-  getUnifiedContext,
-  generateVector,
-  executeMemorySearch
-} from '../../api/vectorMemory'
+import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import { buildOptimizedChatSession } from '../../api/ai/contextCompactor'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
@@ -211,7 +207,11 @@ export const useMarkPlan = ({
       typeof rawArgs === 'string'
         ? rawArgs
         : typeof rawArgs === 'object' && rawArgs !== null
-          ? rawArgs.query || rawArgs.prompt || rawArgs.text || rawArgs.path || JSON.stringify(rawArgs)
+          ? rawArgs.query ||
+            rawArgs.prompt ||
+            rawArgs.text ||
+            rawArgs.path ||
+            JSON.stringify(rawArgs)
           : ''
 
     try {
@@ -239,7 +239,8 @@ export const useMarkPlan = ({
       }
       // 3. Music Control
       else if (tool.startsWith('music')) {
-        const musicQuery = typeof rawArgs === 'object' && rawArgs?.query ? rawArgs.query : stringQuery
+        const musicQuery =
+          typeof rawArgs === 'object' && rawArgs?.query ? rawArgs.query : stringQuery
         resultString = await handleMusic(tool, musicQuery, targetSetChatData)
       }
       // 4. Memory Vector Search
@@ -311,7 +312,8 @@ export const useMarkPlan = ({
       }
       // 7. Speak (TTS)
       else if (tool === 'speak') {
-        const textToSpeak = typeof rawArgs === 'object' && rawArgs?.text ? rawArgs.text : stringQuery
+        const textToSpeak =
+          typeof rawArgs === 'object' && rawArgs?.text ? rawArgs.text : stringQuery
         if (textToSpeak && textToSpeak.trim() !== '') {
           targetSetChatData((prev) => {
             const filtered = prev.filter((item) => !item.isThinking)
@@ -719,8 +721,13 @@ export const useMarkPlan = ({
     }
 
     let uiDisplayContent = opts.displayPrompt || userInput
-    if (typeof uiDisplayContent === 'string' && uiDisplayContent.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')) {
-      const cleanBeforeSkill = uiDisplayContent.split('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')[0].trim()
+    if (
+      typeof uiDisplayContent === 'string' &&
+      uiDisplayContent.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')
+    ) {
+      const cleanBeforeSkill = uiDisplayContent
+        .split('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')[0]
+        .trim()
       uiDisplayContent = cleanBeforeSkill || 'Jalankan Skill'
     }
 
@@ -902,8 +909,17 @@ export const useMarkPlan = ({
       let finalContentAccumulator = ''
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
+      const maxAgentIterations = 50
+      let protocolRetryCount = 0
+      const toolCallCounts = new Map()
 
       while (!isDone && !sessionAbortController.signal.aborted) {
+        if (stepCount >= maxAgentIterations) {
+          const error = new Error(`Batas iterasi agent tercapai (${maxAgentIterations}).`)
+          error.code = 'LOOP_GUARD'
+          throw error
+        }
+
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
           if (durableTask && durableTask.status === 'running') {
@@ -950,9 +966,7 @@ export const useMarkPlan = ({
         targetSetChatData((prev) => {
           const filtered = prev.filter((item) => !item.isThinking)
           const loadingText =
-            isAutonomous && autonomousInitialMessage
-              ? autonomousInitialMessage
-              : ''
+            isAutonomous && autonomousInitialMessage ? autonomousInitialMessage : ''
           return [
             ...filtered,
             {
@@ -1041,12 +1055,37 @@ export const useMarkPlan = ({
           currentActiveMood = streamResult.mood
         }
 
+        if (streamResult?.finishReason === 'error') {
+          const protocolError = streamResult.protocolError || {}
+          if (protocolRetryCount < 2) {
+            protocolRetryCount += 1
+            loopMessages.push({
+              role: 'user',
+              content: `[SYSTEM RETRY ${protocolRetryCount}/2] Respons sebelumnya melanggar protokol JSON (${protocolError.code || 'INVALID_PROTOCOL'}). Keluarkan tepat satu JSON object bertipe "final" atau "tool_calls", tanpa Markdown atau teks tambahan.`
+            })
+            continue
+          }
+          const error = new Error(
+            protocolError.message || 'Respons DeepSeek tidak memenuhi protokol.'
+          )
+          error.code = protocolError.code || 'AI_PROTOCOL_ERROR'
+          throw error
+        }
+
         // Fallback Interceptor: Jika model mengembalikan teks JSON (tool_calls, mood, atau structured answer)
         let effectiveToolCalls = streamResult.toolCalls
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && currentTurnContent) {
-          const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, currentTurnContent]
+          const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [
+            null,
+            currentTurnContent
+          ]
           const cand = (rawMatch[1] || currentTurnContent).trim()
-          if (cand.includes('"tool_calls"') || (cand.includes('"action"') && cand.includes('"tool"')) || cand.includes('"mood"') || cand.includes('"answer"')) {
+          if (
+            cand.includes('"tool_calls"') ||
+            (cand.includes('"action"') && cand.includes('"tool"')) ||
+            cand.includes('"mood"') ||
+            cand.includes('"answer"')
+          ) {
             try {
               const { jsonrepair } = await import('jsonrepair')
               let pObj = null
@@ -1069,7 +1108,10 @@ export const useMarkPlan = ({
                     type: 'function',
                     function: {
                       name: tc.name || tc.function?.name,
-                      arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
+                      arguments:
+                        typeof tc.arguments === 'object'
+                          ? JSON.stringify(tc.arguments)
+                          : String(tc.arguments || '{}')
                     }
                   }))
                   currentTurnContent = ''
@@ -1102,6 +1144,17 @@ export const useMarkPlan = ({
 
             if (!toolName) continue
             if (sessionAbortController.signal.aborted) break
+
+            const toolSignature = `${toolName}:${JSON.stringify(parsedArgs)}`
+            const toolCallCount = (toolCallCounts.get(toolSignature) || 0) + 1
+            toolCallCounts.set(toolSignature, toolCallCount)
+            if (toolCallCount > 2) {
+              const error = new Error(
+                `Tool yang sama dipanggil berulang kali tanpa perubahan: ${toolName}.`
+              )
+              error.code = 'LOOP_GUARD'
+              throw error
+            }
 
             execSteps.push({ task: `Eksekusi ${toolName}`, query: JSON.stringify(parsedArgs) })
             targetPushProcess({
@@ -1171,10 +1224,11 @@ export const useMarkPlan = ({
             if (execResult.loadedGroup) {
               dynamicallyLoadedToolGroups.add(execResult.loadedGroup)
             }
+            const executionSucceeded = execResult.res?.success === true
             executedToolsList.push({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
-              status: 'done',
+              status: executionSucceeded ? 'done' : 'failed',
               fullResult:
                 typeof execResult.resultString === 'string'
                   ? execResult.resultString.slice(0, 4000)
@@ -1193,12 +1247,21 @@ export const useMarkPlan = ({
               obsStr = `${execResult.resultString.slice(0, 3000)}\n\n[SISA OUTPUT DIPOTONG (Total: ${execResult.resultString.length} karakter). Gunakan start_line/end_line atau grep-search untuk mencari bagian spesifik.]`
             }
 
+            const toolObservation = {
+              type: 'tool_result',
+              tool_call_id: tc.id,
+              tool: toolName,
+              success: executionSucceeded,
+              data: executionSucceeded ? obsStr : null,
+              error: executionSucceeded ? null : obsStr
+            }
+
             // Push role: 'tool' observation ke ephemeral context
             loopMessages.push({
               role: 'tool',
               tool_call_id: tc.id,
               name: toolName,
-              content: obsStr
+              content: JSON.stringify(toolObservation)
             })
           }
 
@@ -1229,7 +1292,11 @@ export const useMarkPlan = ({
           if (sentenceBuffer && sentenceBuffer.trim()) {
             speechQueue.enqueue(sentenceBuffer.trim())
             sentenceBuffer = ''
-          } else if (!speechQueue.isPlaying && speechQueue.queue.length === 0 && finalContentAccumulator) {
+          } else if (
+            !speechQueue.isPlaying &&
+            speechQueue.queue.length === 0 &&
+            finalContentAccumulator
+          ) {
             // Fallback jika tidak ada tanda baca di output model sama sekali
             playVoice(finalContentAccumulator).catch(() => {})
           }
@@ -1249,7 +1316,9 @@ export const useMarkPlan = ({
             return true
           })
 
-          let finalOutput = (finalContentAccumulator || '').replace(/^\[mood:[a-zA-Z_]+\]\s*/i, '').trim()
+          let finalOutput = (finalContentAccumulator || '')
+            .replace(/^\[mood:[a-zA-Z_]+\]\s*/i, '')
+            .trim()
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
           }

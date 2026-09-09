@@ -2,7 +2,7 @@ import { fetchAIStream } from '../ai/core'
 import { subagentStore } from './subagentStore'
 import { buildSubagentSystemPrompt } from './subagentPrompt'
 import { core_tools_schema } from '../tools/core-tools'
-import { GROUP_TOOLS_SCHEMA } from '../tools/group-tools'
+import { GROUP_TOOLS_SCHEMA } from '../../../../server/tools/group-tools.js'
 
 // Registry AbortController aktif per sub-agent
 const subagentAbortControllers = new Map()
@@ -245,7 +245,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                 data: `[LAPORAN TERKIRIM KE LEAD AGENT (MARK)]\nLaporan berhasil disampaikan ke sesi "${parentSessionTitle}". Mark telah menerima push notification.`
               }
             } else if (toolName === 'read-tools') {
-              const { group_tools } = await import('../tools/group-tools.js')
+              const { group_tools } = await import('../../../../server/tools/group-tools.js')
               const groups = await group_tools()
               const groupName = (parsedArgs.group_name || '').trim()
               if (!groupName) {

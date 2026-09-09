@@ -351,7 +351,7 @@ export async function executeAgentTool({
       res = { success: false, error: `Gagal memuat plugin: ${pErr.message}` }
     }
   } else if (tool === 'read-tools') {
-    const { group_tools } = await import('../../api/tools/group-tools.js')
+    const { group_tools } = await import('../../../../server/tools/group-tools.js')
     const groups = await group_tools()
     const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
     const groupName = (a.group_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react'
-import { GROUP_TOOLS_SCHEMA } from '../../api/tools/group-tools'
+import { GROUP_TOOLS_SCHEMA } from '../../../../server/tools/group-tools.js'
 import { core_tools_schema } from '../../api/tools/core-tools'
 
 /**

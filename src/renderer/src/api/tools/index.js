@@ -1,5 +1,9 @@
 import { core_tools, core_tools_schema } from './core-tools'
-import { group_tools, group_tools_flat, GROUP_TOOLS_SCHEMA } from './group-tools'
+import {
+  group_tools,
+  group_tools_flat,
+  GROUP_TOOLS_SCHEMA
+} from '../../../../server/tools/group-tools.js'
 
 export const checkTools = (toolName) => {
   return !!core_tools[toolName] || !!group_tools_flat[toolName] || toolName === 'read-tools'

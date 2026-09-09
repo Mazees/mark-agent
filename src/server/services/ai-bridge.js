@@ -1,6 +1,8 @@
 import { jsonrepair } from 'jsonrepair'
 import { generateGeminiResponse } from './gemini-web.js'
 import { generateDeepSeekResponse } from './deepseek-web.js'
+import { parseDeepSeekProtocolResponse } from './deepseek-protocol.js'
+import { GROUP_TOOL_GROUP_NAMES } from '../tools/group-tools.js'
 
 const _getOSMeta = () =>
   'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
@@ -63,38 +65,39 @@ export const fetchAI = async (
     const secretKey = _getOSMeta() + _getBrowserSign() + _getWinTracker()
     const pld = Buffer.from(secretKey, 'base64').toString('utf-8')
 
-  let messages = (inputMessages || []).map((m) => {
-    // Jika ada turn assistant/model kosong atau tanpa konten/tool_calls, ubah menjadi user turn ber-prefix
-    if (
-      (m.role === 'assistant' || m.role === 'model') &&
-      !m.content &&
-      (!m.tool_calls || m.tool_calls.length === 0)
-    ) {
-      return {
-        ...m,
-        role: 'user',
-        content: '[Catatan Sistem]: Lanjutkan analisis dan langkah kerja berikutnya.'
+    let messages = (inputMessages || []).map((m) => {
+      // Jika ada turn assistant/model kosong atau tanpa konten/tool_calls, ubah menjadi user turn ber-prefix
+      if (
+        (m.role === 'assistant' || m.role === 'model') &&
+        !m.content &&
+        (!m.tool_calls || m.tool_calls.length === 0)
+      ) {
+        return {
+          ...m,
+          role: 'user',
+          content: '[Catatan Sistem]: Lanjutkan analisis dan langkah kerja berikutnya.'
+        }
       }
-    }
-    return { ...m }
-  })
-
-  // Jika pesan terakhir tetap bertipe assistant/model, tambahkan turn user continuation dengan prefix jelas
-  if (
-    messages.length > 0 &&
-    (messages[messages.length - 1].role === 'assistant' || messages[messages.length - 1].role === 'model')
-  ) {
-    messages.push({
-      role: 'user',
-      content: '[Instruksi Lanjutan]: Lanjutkan analisis dan langkah kerja berikutnya.'
+      return { ...m }
     })
-  }
 
-  if (!isSmallTask) {
-    const _idx = messages.findIndex((m) => m.role === 'system')
-    if (_idx >= 0) messages[_idx].content += `\n\n${pld}`
-    else messages.unshift({ role: 'system', content: pld })
-  }
+    // Jika pesan terakhir tetap bertipe assistant/model, tambahkan turn user continuation dengan prefix jelas
+    if (
+      messages.length > 0 &&
+      (messages[messages.length - 1].role === 'assistant' ||
+        messages[messages.length - 1].role === 'model')
+    ) {
+      messages.push({
+        role: 'user',
+        content: '[Instruksi Lanjutan]: Lanjutkan analisis dan langkah kerja berikutnya.'
+      })
+    }
+
+    if (!isSmallTask) {
+      const _idx = messages.findIndex((m) => m.role === 'system')
+      if (_idx >= 0) messages[_idx].content += `\n\n${pld}`
+      else messages.unshift({ role: 'system', content: pld })
+    }
 
     if (conf.aiProvider === 'gemini-web') {
       const shouldThrottleCloud = !isSmallTask
@@ -133,7 +136,8 @@ export const fetchAI = async (
         }
       }
 
-      let fullPrompt = '[CRITICAL INSTRUCTION: DO NOT USE GOOGLE SEARCH. DO NOT USE ANY EXTENSIONS. ANSWER IMMEDIATELY FROM YOUR KNOWLEDGE BASE TO SAVE TIME.]\n\n'
+      let fullPrompt =
+        '[CRITICAL INSTRUCTION: DO NOT USE GOOGLE SEARCH. DO NOT USE ANY EXTENSIONS. ANSWER IMMEDIATELY FROM YOUR KNOWLEDGE BASE TO SAVE TIME.]\n\n'
       for (const m of workMessages) {
         let roleName = (m.role || 'user').toUpperCase()
         if (roleName === 'TOOL') {
@@ -141,19 +145,31 @@ export const fetchAI = async (
         }
         let textBody = ''
         if (Array.isArray(m.content)) {
-          textBody = m.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+          textBody = m.content
+            .map((p) => (p.type === 'text' ? p.text : ''))
+            .filter(Boolean)
+            .join('\n')
         } else {
           textBody = m.content || ''
         }
 
         if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-          const callsStr = JSON.stringify({
-            tool_calls: m.tool_calls.map((tc) => ({
-              name: tc.name || tc.function?.name,
-              arguments: typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments || '{}') : (tc.function?.arguments || tc.arguments || {})
-            }))
-          }, null, 2)
-          textBody = textBody ? `${textBody}\n\`\`\`json\n${callsStr}\n\`\`\`` : `\`\`\`json\n${callsStr}\n\`\`\``
+          const callsStr = JSON.stringify(
+            {
+              tool_calls: m.tool_calls.map((tc) => ({
+                name: tc.name || tc.function?.name,
+                arguments:
+                  typeof tc.function?.arguments === 'string'
+                    ? JSON.parse(tc.function.arguments || '{}')
+                    : tc.function?.arguments || tc.arguments || {}
+              }))
+            },
+            null,
+            2
+          )
+          textBody = textBody
+            ? `${textBody}\n\`\`\`json\n${callsStr}\n\`\`\``
+            : `\`\`\`json\n${callsStr}\n\`\`\``
         }
 
         fullPrompt += `[${roleName}]: ${textBody}\n`
@@ -185,7 +201,9 @@ export const fetchAI = async (
           const lastBrace = reasoning.lastIndexOf('}')
           if (firstBrace !== -1 && lastBrace > firstBrace) {
             answer = reasoning.substring(firstBrace, lastBrace + 1)
-            reasoning = (reasoning.substring(0, firstBrace) + reasoning.substring(lastBrace + 1)).trim() || null
+            reasoning =
+              (reasoning.substring(0, firstBrace) + reasoning.substring(lastBrace + 1)).trim() ||
+              null
           }
         }
 
@@ -205,7 +223,9 @@ export const fetchAI = async (
     if (conf.aiProvider === 'deepseek-web') {
       const userToken = conf.deepseekUserToken?.trim() || ''
       if (!userToken) {
-        throw new Error('DeepSeek User Token belum diisi di Pengaturan. Buka chat.deepseek.com, buka Console F12, lalu copy nilai dari: JSON.parse(localStorage.getItem("userToken")).value')
+        throw new Error(
+          'DeepSeek User Token belum diisi di Pengaturan. Buka chat.deepseek.com, buka Console F12, lalu copy nilai dari: JSON.parse(localStorage.getItem("userToken")).value'
+        )
       }
 
       let workMessages = messages.map((m) => ({ ...m }))
@@ -266,16 +286,19 @@ export const fetchAI = async (
     // Sanitasi trailing assistant/model message untuk mencegah error 400 di Gemini & OpenAI compat endpoints
     while (
       formattedMessages.length > 0 &&
-      (formattedMessages[formattedMessages.length - 1].role === 'assistant' || formattedMessages[formattedMessages.length - 1].role === 'model') &&
+      (formattedMessages[formattedMessages.length - 1].role === 'assistant' ||
+        formattedMessages[formattedMessages.length - 1].role === 'model') &&
       !formattedMessages[formattedMessages.length - 1].content &&
-      (!formattedMessages[formattedMessages.length - 1].tool_calls || formattedMessages[formattedMessages.length - 1].tool_calls.length === 0)
+      (!formattedMessages[formattedMessages.length - 1].tool_calls ||
+        formattedMessages[formattedMessages.length - 1].tool_calls.length === 0)
     ) {
       formattedMessages.pop()
     }
 
     if (
       formattedMessages.length > 0 &&
-      (formattedMessages[formattedMessages.length - 1].role === 'assistant' || formattedMessages[formattedMessages.length - 1].role === 'model')
+      (formattedMessages[formattedMessages.length - 1].role === 'assistant' ||
+        formattedMessages[formattedMessages.length - 1].role === 'model')
     ) {
       formattedMessages.push({
         role: 'user',
@@ -342,7 +365,9 @@ export const fetchAI = async (
           )
         }
         const causeStr = err.cause ? ` (${err.cause.message || err.cause.code || err.cause})` : ''
-        const enrichedError = new Error(`Gagal menghubungi server AI di ${endpoint}: ${err.message}${causeStr}`)
+        const enrichedError = new Error(
+          `Gagal menghubungi server AI di ${endpoint}: ${err.message}${causeStr}`
+        )
         enrichedError.code = err.code || err.cause?.code || 'FETCH_FAILED'
         enrichedError.cause = err
         throw enrichedError
@@ -493,7 +518,10 @@ export const fetchAI = async (
 
       // 2. Tangani jika response berupa NDJSON (JSON Lines)
       if (cleanText.includes('\n{')) {
-        const lines = cleanText.split('\n').map((l) => l.trim()).filter(Boolean)
+        const lines = cleanText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
         let combinedContent = ''
         let isValidNdjson = false
         for (const line of lines) {
@@ -599,25 +627,52 @@ export const fetchAI = async (
       }
     }
 
-    const choice = Array.isArray(processedData.choices) && processedData.choices.length > 0 ? processedData.choices[0] : null
-    const message = choice?.message || choice?.delta || (processedData.message ? processedData.message : (processedData.response ? { content: processedData.response } : (processedData.result ? { content: processedData.result } : null)))
+    const choice =
+      Array.isArray(processedData.choices) && processedData.choices.length > 0
+        ? processedData.choices[0]
+        : null
+    const message =
+      choice?.message ||
+      choice?.delta ||
+      (processedData.message
+        ? processedData.message
+        : processedData.response
+          ? { content: processedData.response }
+          : processedData.result
+            ? { content: processedData.result }
+            : null)
 
     let content = ''
     let reasoning = null
 
     if (message) {
-      content = typeof message === 'string' ? message : (message.content || message.text || '')
+      content = typeof message === 'string' ? message : message.content || message.text || ''
       reasoning = message.reasoning || message.reasoning_content || null
     } else if (typeof processedData === 'string') {
       content = processedData
-    } else if (processedData.content || processedData.text || processedData.response || processedData.result) {
-      content = processedData.content || processedData.text || processedData.response || processedData.result || ''
+    } else if (
+      processedData.content ||
+      processedData.text ||
+      processedData.response ||
+      processedData.result
+    ) {
+      content =
+        processedData.content ||
+        processedData.text ||
+        processedData.response ||
+        processedData.result ||
+        ''
       reasoning = processedData.reasoning || processedData.reasoning_content || null
     } else if (processedData.error) {
-      const errMsg = typeof processedData.error === 'object' ? (processedData.error.message || JSON.stringify(processedData.error)) : processedData.error
+      const errMsg =
+        typeof processedData.error === 'object'
+          ? processedData.error.message || JSON.stringify(processedData.error)
+          : processedData.error
       throw new Error(`API mengembalikan error: ${errMsg}`)
     } else {
-      throw new Error(`Format data API tidak dikenali atau kosong. Balasan mentah: ${JSON.stringify(processedData).slice(0, 150)}`)
+      throw new Error(
+        `Format data API tidak dikenali atau kosong. Balasan mentah: ${JSON.stringify(processedData).slice(0, 150)}`
+      )
     }
 
     if (!reasoning && content.includes('<think>')) {
@@ -639,7 +694,8 @@ export const fetchAI = async (
       const lastBrace = reasoning.lastIndexOf('}')
       if (firstBrace !== -1 && lastBrace > firstBrace) {
         content = reasoning.substring(firstBrace, lastBrace + 1)
-        reasoning = (reasoning.substring(0, firstBrace) + reasoning.substring(lastBrace + 1)).trim() || null
+        reasoning =
+          (reasoning.substring(0, firstBrace) + reasoning.substring(lastBrace + 1)).trim() || null
       }
     }
 
@@ -807,7 +863,10 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
       candidateStr.includes('"tool_calls"') ||
       candidateStr.includes('"action"') ||
       candidateStr.includes('"tool"') ||
-      (candidateStr.includes('"name"') && (candidateStr.includes('"arguments"') || candidateStr.includes('"query"') || candidateStr.includes('"parameters"')))
+      (candidateStr.includes('"name"') &&
+        (candidateStr.includes('"arguments"') ||
+          candidateStr.includes('"query"') ||
+          candidateStr.includes('"parameters"')))
     ) {
       try {
         const parsed = cleanAndParse(candidateStr)
@@ -818,7 +877,10 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
               type: 'function',
               function: {
                 name: tc.name || tc.function?.name,
-                arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
+                arguments:
+                  typeof tc.arguments === 'object'
+                    ? JSON.stringify(tc.arguments)
+                    : String(tc.arguments || '{}')
               }
             }))
           } else if (parsed.action && parsed.action.tool) {
@@ -828,7 +890,10 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
                 type: 'function',
                 function: {
                   name: parsed.action.tool,
-                  arguments: typeof parsed.action.query === 'object' ? JSON.stringify(parsed.action.query) : JSON.stringify(parsed.action.query ? { query: parsed.action.query } : {})
+                  arguments:
+                    typeof parsed.action.query === 'object'
+                      ? JSON.stringify(parsed.action.query)
+                      : JSON.stringify(parsed.action.query ? { query: parsed.action.query } : {})
                 }
               }
             ]
@@ -839,7 +904,12 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
                 type: 'function',
                 function: {
                   name: parsed.tool,
-                  arguments: typeof parsed.query === 'object' ? JSON.stringify(parsed.query) : JSON.stringify(parsed.query ? { query: parsed.query } : parsed.arguments || {})
+                  arguments:
+                    typeof parsed.query === 'object'
+                      ? JSON.stringify(parsed.query)
+                      : JSON.stringify(
+                          parsed.query ? { query: parsed.query } : parsed.arguments || {}
+                        )
                 }
               }
             ]
@@ -850,7 +920,15 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
                 type: 'function',
                 function: {
                   name: parsed.name,
-                  arguments: typeof parsed.arguments === 'object' ? JSON.stringify(parsed.arguments) : String(parsed.arguments || JSON.stringify(parsed.query ? { query: parsed.query } : parsed.parameters || {}))
+                  arguments:
+                    typeof parsed.arguments === 'object'
+                      ? JSON.stringify(parsed.arguments)
+                      : String(
+                          parsed.arguments ||
+                            JSON.stringify(
+                              parsed.query ? { query: parsed.query } : parsed.parameters || {}
+                            )
+                        )
                 }
               }
             ]
@@ -887,7 +965,9 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
   if (conf.aiProvider === 'deepseek-web') {
     const userToken = conf.deepseekUserToken?.trim() || ''
     if (!userToken) {
-      throw new Error('DeepSeek User Token belum diisi di Pengaturan. Buka chat.deepseek.com, buka Console F12, lalu copy nilai dari: JSON.parse(localStorage.getItem("userToken")).value')
+      throw new Error(
+        'DeepSeek User Token belum diisi di Pengaturan. Buka chat.deepseek.com, buka Console F12, lalu copy nilai dari: JSON.parse(localStorage.getItem("userToken")).value'
+      )
     }
 
     let effectiveMessages = messages || []
@@ -904,20 +984,19 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
 Kamu memiliki akses ke fungsi-fungsi sistem berikut:
 ${toolDescriptions}
 
-# ATURAN EKSEKUSI TOOL (PRIORITAS MUTLAK - TOOLS FIRST):
-1. Jika permintaan user membutuhkan riset web, informasi terkini, pembuatan/pembacaan berkas, atau tindakan teknis: KAMU WAJIB MEMANGGIL TOOL TERLEBIH DAHULU! DILARANG KERAS hanya menjawab dengan teks verbal tanpa observasi tool.
-2. Kamu HARUS memanggil tool dengan format blok JSON murni berikut:
-\`\`\`json
-{
-  "tool_calls": [
-    {
-      "name": "nama_tool",
-      "arguments": { "parameter_key": "parameter_value" }
-    }
-  ]
-}
-\`\`\`
-3. Jika dan HANYA JIKA tugas sudah 100% selesai atau hanya sekadar sapaan santai yang tidak membutuhkan sistem, barulah jawab dengan teks percakapan biasa.`
+# ATURAN PROTOKOL JSON (WAJIB):
+    1. CRITICAL: RESPONSE WAJIB DIAWALI KARAKTER { DAN DIAKHIRI KARAKTER }.
+    2. CRITICAL: RESPONSE HARUS TEPAT SATU JSON OBJECT VALID, BUKAN TEKS BIASA.
+    3. Jika permintaan membutuhkan aksi nyata atau observasi sistem, kembalikan satu JSON object bertipe "tool_calls".
+    4. Jika tugas tidak membutuhkan tool atau semua tool sudah selesai, kembalikan satu JSON object bertipe "final".
+    5. Jangan gunakan Markdown code fence, teks pembuka, teks penutup, komentar, atau JSON tambahan.
+    6. Jangan pernah mengklaim tool berhasil jika belum menerima tool_result dengan success=true.
+
+Format tool call:
+{"type":"tool_calls","tool_calls":[{"id":"call_001","type":"function","function":{"name":"nama_tool","arguments":"{\\"parameter_key\\":\\"parameter_value\\"}"}}]}
+
+Format jawaban biasa:
+{"type":"final","content":"Jawaban untuk user"}`
 
       effectiveMessages = (messages || []).map((m) => ({ ...m }))
       const sysIdx = effectiveMessages.findIndex((m) => m.role === 'system')
@@ -939,26 +1018,39 @@ ${toolDescriptions}
       }
       let textBody = ''
       if (Array.isArray(m.content)) {
-        textBody = m.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+        textBody = m.content
+          .map((p) => (p.type === 'text' ? p.text : ''))
+          .filter(Boolean)
+          .join('\n')
       } else {
         textBody = m.content || ''
       }
 
       if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-        const callsStr = JSON.stringify({
-          tool_calls: m.tool_calls.map((tc) => ({
-            name: tc.name || tc.function?.name,
-            arguments: typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments || '{}') : (tc.function?.arguments || tc.arguments || {})
-          }))
-        }, null, 2)
-        textBody = textBody ? `${textBody}\n\`\`\`json\n${callsStr}\n\`\`\`` : `\`\`\`json\n${callsStr}\n\`\`\``
+        const callsStr = JSON.stringify(
+          {
+            tool_calls: m.tool_calls.map((tc) => ({
+              name: tc.name || tc.function?.name,
+              arguments:
+                typeof tc.function?.arguments === 'string'
+                  ? JSON.parse(tc.function.arguments || '{}')
+                  : tc.function?.arguments || tc.arguments || {}
+            }))
+          },
+          null,
+          2
+        )
+        textBody = textBody
+          ? `${textBody}\n\`\`\`json\n${callsStr}\n\`\`\``
+          : `\`\`\`json\n${callsStr}\n\`\`\``
       }
 
       fullPrompt += `[${roleName}]: ${textBody}\n`
     }
 
     if (Array.isArray(tools) && tools.length > 0) {
-      fullPrompt += `\n[PANDUAN EKSEKUSI TOOL]: Jika tugas user di atas membutuhkan informasi riil, riset web, buka/tulis berkas, atau interaksi sistem, KAMU WAJIB MEMANGGIL TOOL dalam blok JSON murni (\`\`\`json { "tool_calls": [...] } \`\`\`). DILARANG KERAS hanya berjanji atau menjawab verbal tanpa memanggil tool!\n`
+      fullPrompt +=
+        '\n[CRITICAL JSON OUTPUT]: RESPONSE WAJIB DIAWALI { DAN DIAKHIRI }. Keluarkan tepat satu JSON object valid sesuai schema. Jangan keluarkan Markdown, teks pembuka, teks penutup, komentar, atau JSON tambahan.\n'
     }
 
     fullPrompt += '\n[ASSISTANT]:'
@@ -967,23 +1059,9 @@ ${toolDescriptions}
     let fullReasoning = ''
     let fullText = ''
 
-    const dsMoodFilter = createMoodStreamFilter(onToken, (mood) => {
-      onMood?.(mood)
-      moodExtracted = true
-    })
-
     const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken, {
-      onDelta: (delta) => {
-        if (delta.type === 'thinking') {
-          fullReasoning = delta.full
-          onReasoning?.(delta.delta)
-        } else if (delta.type === 'content') {
-          fullText = delta.full
-          dsMoodFilter(delta.delta)
-        }
-      }
+      onDelta: null
     })
-    dsMoodFilter.flush()
 
     let cleanContent = dsRes.text || fullText || ''
     let cleanReasoning = dsRes.thinking || fullReasoning || ''
@@ -993,88 +1071,61 @@ ${toolDescriptions}
       cleanReasoning = cleanReasoning.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
     }
 
-    // Deteksi tool_calls JSON dari DeepSeek
-    let extractedToolCalls = null
-    const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
-    const candidateStr = (jsonMatch[1] || cleanContent).trim()
-
-    if (
-      candidateStr.includes('"tool_calls"') ||
-      candidateStr.includes('"action"') ||
-      candidateStr.includes('"tool"') ||
-      (candidateStr.includes('"name"') && (candidateStr.includes('"arguments"') || candidateStr.includes('"query"') || candidateStr.includes('"parameters"')))
-    ) {
-      try {
-        const parsed = cleanAndParse(candidateStr)
-        if (parsed) {
-          if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
-            extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
-              id: tc.id || `call_${Date.now()}_${idx}`,
-              type: 'function',
-              function: {
-                name: tc.name || tc.function?.name,
-                arguments: typeof tc.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc.arguments || '{}')
-              }
-            }))
-          } else if (parsed.action && parsed.action.tool) {
-            extractedToolCalls = [
-              {
-                id: `call_${Date.now()}_0`,
-                type: 'function',
-                function: {
-                  name: parsed.action.tool,
-                  arguments: typeof parsed.action.query === 'object' ? JSON.stringify(parsed.action.query) : JSON.stringify(parsed.action.query ? { query: parsed.action.query } : {})
-                }
-              }
-            ]
-          } else if (parsed.tool) {
-            extractedToolCalls = [
-              {
-                id: `call_${Date.now()}_0`,
-                type: 'function',
-                function: {
-                  name: parsed.tool,
-                  arguments: typeof parsed.query === 'object' ? JSON.stringify(parsed.query) : JSON.stringify(parsed.query ? { query: parsed.query } : parsed.arguments || {})
-                }
-              }
-            ]
-          } else if (parsed.name && (parsed.arguments || parsed.query || parsed.parameters)) {
-            extractedToolCalls = [
-              {
-                id: `call_${Date.now()}_0`,
-                type: 'function',
-                function: {
-                  name: parsed.name,
-                  arguments: typeof parsed.arguments === 'object' ? JSON.stringify(parsed.arguments) : String(parsed.arguments || JSON.stringify(parsed.query ? { query: parsed.query } : parsed.parameters || {}))
-                }
-              }
-            ]
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (extractedToolCalls && extractedToolCalls.length > 0) {
-      onToolCall?.(extractedToolCalls)
+    const protocolResult = parseDeepSeekProtocolResponse(
+      cleanContent,
+      tools,
+      GROUP_TOOL_GROUP_NAMES
+    )
+    if (!protocolResult.ok) {
       return {
         content: null,
         reasoning: cleanReasoning,
-        toolCalls: extractedToolCalls,
-        finishReason: 'tool_calls'
+        toolCalls: null,
+        finishReason: 'error',
+        protocolError: protocolResult.error
       }
     }
 
-    if (cleanContent) {
-      cleanContent = cleanContent.replace(/\s*(?:\[?FINISHED\]?|Task Finished\.?)\s*$/i, '').trim()
-      extractMood(cleanContent)
-      cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+    if (protocolResult.type === 'tool_calls') {
+      onToolCall?.(protocolResult.toolCalls)
+      return {
+        content: null,
+        reasoning: cleanReasoning,
+        toolCalls: protocolResult.toolCalls,
+        finishReason: 'tool_calls',
+        protocolError: null,
+        sessionId: dsRes.sessionId || null
+      }
     }
+
+    if (protocolResult.type === 'error') {
+      return {
+        content: null,
+        reasoning: cleanReasoning,
+        toolCalls: null,
+        finishReason: 'error',
+        protocolError: {
+          code: protocolResult.code,
+          message: protocolResult.message,
+          retryable: protocolResult.retryable
+        },
+        sessionId: dsRes.sessionId || null
+      }
+    }
+
+    cleanContent = protocolResult.content.trim()
+    extractMood(cleanContent)
+    cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+    onReasoning?.(cleanReasoning)
+    onToken?.(cleanContent)
 
     return {
       content: cleanContent,
       reasoning: cleanReasoning,
       toolCalls: null,
-      finishReason: 'stop'
+      finishReason: 'stop',
+      protocolError: null,
+      sessionId: dsRes.sessionId || null
     }
   }
 
@@ -1112,7 +1163,8 @@ ${toolDescriptions}
 
   if (
     formattedMessages.length > 0 &&
-    (formattedMessages[formattedMessages.length - 1].role === 'assistant' || formattedMessages[formattedMessages.length - 1].role === 'model')
+    (formattedMessages[formattedMessages.length - 1].role === 'assistant' ||
+      formattedMessages[formattedMessages.length - 1].role === 'model')
   ) {
     formattedMessages.push({
       role: 'user',
@@ -1329,7 +1381,9 @@ export const cleanAndParse = (rawResponse) => {
     return JSON.parse(repaired)
   } catch (_) {
     try {
-      const lastResort = String(rawResponse).trim().replace(/^\xEF\xBB\xBF/, '')
+      const lastResort = String(rawResponse)
+        .trim()
+        .replace(/^\xEF\xBB\xBF/, '')
       const match = lastResort.match(/\{[\s\S]*\}/)
       return match ? JSON.parse(match[0]) : null
     } catch (_) {

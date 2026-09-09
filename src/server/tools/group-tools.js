@@ -1024,6 +1024,8 @@ export const GROUP_TOOLS_SCHEMA = {
   }
 }
 
+export const GROUP_TOOL_GROUP_NAMES = Object.keys(GROUP_TOOLS_SCHEMA)
+
 // Legacy dictionary representation for backwards-compatibility
 export const GROUP_TOOLS_DEFINITION = Object.entries(GROUP_TOOLS_SCHEMA).reduce(
   (acc, [groupKey, group]) => {
