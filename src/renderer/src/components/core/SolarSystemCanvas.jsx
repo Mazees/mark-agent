@@ -7,9 +7,7 @@ import { core_tools_schema } from '../../api/tools/core-tools'
  */
 function formatClusterName(key) {
   if (!key) return 'TOOLS'
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 /**
@@ -337,9 +335,7 @@ export const SolarSystemCanvas = ({
         ctx.beginPath()
         // Orbit berbentuk elips halus untuk ilusi kedalaman ruang
         ctx.ellipse(0, 0, p.radius, p.radius * 0.72, 0, 0, Math.PI * 2)
-        ctx.strokeStyle = isClusterActive
-          ? p.color
-          : 'rgba(255, 255, 255, 0.04)'
+        ctx.strokeStyle = isClusterActive ? p.color : 'rgba(255, 255, 255, 0.04)'
         ctx.lineWidth = isClusterActive ? 1.5 : 0.75
         if (isClusterActive) {
           ctx.shadowColor = p.color

@@ -31,7 +31,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         ? '[DARI SESAMA SUB-AGENT]:'
         : '[DARI LEAD AGENT (MARK)]:'
     await subagentStore.addMessage(subagentId, {
-      sender: isUser ? 'user' : (isPeer ? 'peer' : 'mark'),
+      sender: isUser ? 'user' : isPeer ? 'peer' : 'mark',
       role: 'user',
       content: `${tag} ${incomingMessage}`
     })
@@ -99,7 +99,11 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         ...history.map((m) => {
           let textContent = m.content
           if (typeof textContent === 'object' && textContent !== null) {
-            textContent = textContent.answer || textContent.content || textContent.message || JSON.stringify(textContent)
+            textContent =
+              textContent.answer ||
+              textContent.content ||
+              textContent.message ||
+              JSON.stringify(textContent)
           }
 
           // Jika ada turn assistant kosong dan tanpa tool_calls, ubah menjadi user turn dengan prefix
@@ -123,7 +127,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         })
       ]
 
-      if (messagesPayload.length > 1 && messagesPayload[messagesPayload.length - 1].role === 'assistant') {
+      if (
+        messagesPayload.length > 1 &&
+        messagesPayload[messagesPayload.length - 1].role === 'assistant'
+      ) {
         messagesPayload.push({
           role: 'user',
           content: '[Instruksi Lanjutan]: Lanjutkan giliran kerjamu.'
@@ -176,14 +183,19 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               const msgText = parsedArgs.message || ''
 
               if (!targetQuery || !msgText) {
-                res = { success: false, error: 'Parameter message_agent tidak lengkap (target_agent dan message wajib ada).' }
+                res = {
+                  success: false,
+                  error:
+                    'Parameter message_agent tidak lengkap (target_agent dan message wajib ada).'
+                }
               } else {
                 const allAgents = await subagentStore.listSubagents()
                 const targetAgent = allAgents.find(
                   (s) =>
                     s.id === targetQuery ||
                     s.name.toLowerCase() === targetQuery.toLowerCase() ||
-                    s.name.toLowerCase().replace(/^@/, '') === targetQuery.toLowerCase().replace(/^@/, '')
+                    s.name.toLowerCase().replace(/^@/, '') ===
+                      targetQuery.toLowerCase().replace(/^@/, '')
                 )
 
                 if (!targetAgent) {
@@ -192,7 +204,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                     error: `Sub-agent '${targetQuery}' tidak ditemukan. Daftar agen yang tersedia: ${allAgents.map((a) => `@${a.name}`).join(', ')}`
                   }
                 } else if (targetAgent.id === subagentId) {
-                  res = { success: false, error: 'Dilarang mengirim message_agent ke diri sendiri.' }
+                  res = {
+                    success: false,
+                    error: 'Dilarang mengirim message_agent ke diri sendiri.'
+                  }
                 } else {
                   // Jalankan turn pada sub-agent target
                   const peerResult = await runSubagentTurn(
@@ -206,7 +221,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                       data: `[JAWABAN DARI @${targetAgent.name}]:\n"${peerResult.reply}"\n${peerResult.thought ? `(Reasoning: ${peerResult.thought})` : ''}`
                     }
                   } else {
-                    res = { success: false, error: `Sub-agent @${targetAgent.name} error: ${peerResult.error}` }
+                    res = {
+                      success: false,
+                      error: `Sub-agent @${targetAgent.name} error: ${peerResult.error}`
+                    }
                   }
                 }
               }
@@ -249,12 +267,18 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               const groups = await group_tools()
               const groupName = (parsedArgs.group_name || '').trim()
               if (!groupName) {
-                res = { success: false, error: 'Harap sebutkan nama_grup (misal: "advanced_browser").' }
+                res = {
+                  success: false,
+                  error: 'Harap sebutkan nama_grup (misal: "advanced_browser").'
+                }
               } else if (groups[groupName]) {
                 const formatted = Object.entries(groups[groupName].tools)
                   .map(([k, v]) => `- ${k}: ${v}`)
                   .join('\n')
-                res = { success: true, data: `[PANDUAN TOOL ${groupName.toUpperCase()}]:\n${formatted}` }
+                res = {
+                  success: true,
+                  data: `[PANDUAN TOOL ${groupName.toUpperCase()}]:\n${formatted}`
+                }
               } else {
                 res = { success: false, error: `Grup tool '${groupName}' tidak ditemukan.` }
               }
@@ -263,7 +287,9 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               const formatted = await executeMemorySearch(parsedArgs.query || '')
               res = { success: true, data: formatted }
             } else if (window.api && window.api.executeNativeTool) {
-              res = await window.api.executeNativeTool(toolName, parsedArgs, { sessionId: subagentId })
+              res = await window.api.executeNativeTool(toolName, parsedArgs, {
+                sessionId: subagentId
+              })
             } else {
               res = { success: false, error: 'IPC executeNativeTool tidak tersedia.' }
             }
@@ -272,13 +298,17 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               if (res.data !== undefined) {
                 resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
               } else if (res.output !== undefined) {
-                resultString = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
+                resultString =
+                  typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
               } else if (res.result !== undefined) {
-                resultString = typeof res.result === 'string' ? res.result : JSON.stringify(res.result)
+                resultString =
+                  typeof res.result === 'string' ? res.result : JSON.stringify(res.result)
               } else if (res.content !== undefined) {
-                resultString = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+                resultString =
+                  typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
               } else if (res.contents !== undefined) {
-                resultString = typeof res.contents === 'string' ? res.contents : JSON.stringify(res.contents)
+                resultString =
+                  typeof res.contents === 'string' ? res.contents : JSON.stringify(res.contents)
               } else {
                 resultString = res.message || 'Success'
               }
@@ -395,7 +425,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
       role: 'system',
       content: `[ERROR EKSEKUSI]: ${err.message || 'Terjadi kesalahan tidak terduga saat memproses AI.'}`
     })
-    await subagentStore.updateSubagent(subagentId, { status: 'failed', finalAnswer: `Error: ${err.message}` })
+    await subagentStore.updateSubagent(subagentId, {
+      status: 'failed',
+      finalAnswer: `Error: ${err.message}`
+    })
     return { success: false, subagentId, error: err.message }
   } finally {
     subagentAbortControllers.delete(subagentId)

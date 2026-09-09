@@ -88,9 +88,19 @@ export async function executeAgentTool({
       Array.isArray(a.steps) && a.steps.length > 0
         ? a.steps
         : [
-            { id: 'step-1', title: 'Analisis & Pengumpulan Data', objective, deliverable: 'Data awal' },
+            {
+              id: 'step-1',
+              title: 'Analisis & Pengumpulan Data',
+              objective,
+              deliverable: 'Data awal'
+            },
             { id: 'step-2', title: 'Eksekusi Teknis', objective, deliverable: 'Hasil eksekusi' },
-            { id: 'step-3', title: 'Penyusunan Output Final', objective, deliverable: 'Hasil final' }
+            {
+              id: 'step-3',
+              title: 'Penyusunan Output Final',
+              objective,
+              deliverable: 'Hasil final'
+            }
           ]
 
     const documentsPath = await window.api.getDocumentsPath?.()
@@ -195,7 +205,10 @@ export async function executeAgentTool({
             data: `[BALASAN DARI @${targetAgent.name} (${targetAgent.id})]:\n"${runResult.reply}"\n${runResult.thought ? `(Reasoning: ${runResult.thought})\n` : ''}`
           }
         } else {
-          res = { success: false, error: `Sub-agent @${targetAgent.name} error: ${runResult.error}` }
+          res = {
+            success: false,
+            error: `Sub-agent @${targetAgent.name} error: ${runResult.error}`
+          }
         }
       }
     }
@@ -222,7 +235,10 @@ export async function executeAgentTool({
       const all = await subagentStore.listSubagents()
       const summary = all
         .slice(0, 5)
-        .map((s) => `- [${s.name} (${s.id})]: Status=${s.status}\n  Hasil: ${s.finalAnswer || '(Belum ada laporan)'}`)
+        .map(
+          (s) =>
+            `- [${s.name} (${s.id})]: Status=${s.status}\n  Hasil: ${s.finalAnswer || '(Belum ada laporan)'}`
+        )
         .join('\n\n')
       res = {
         success: true,
@@ -238,9 +254,7 @@ export async function executeAgentTool({
         const agents = await Promise.all(targetIds.map((id) => subagentStore.getSubagent(id)))
         finalAgents = agents.filter(Boolean)
 
-        const hasFailed = finalAgents.some(
-          (a) => a.status === 'failed' || a.status === 'killed'
-        )
+        const hasFailed = finalAgents.some((a) => a.status === 'failed' || a.status === 'killed')
         if (hasFailed) break
 
         const stillRunning = finalAgents.some((a) => a.status === 'running')
@@ -251,9 +265,7 @@ export async function executeAgentTool({
         await new Promise((r) => setTimeout(r, 1500))
       }
 
-      const failedAgents = finalAgents.filter(
-        (a) => a.status === 'failed' || a.status === 'killed'
-      )
+      const failedAgents = finalAgents.filter((a) => a.status === 'failed' || a.status === 'killed')
       const runningAgents = finalAgents.filter((a) => a.status === 'running')
 
       const reports = finalAgents
@@ -337,11 +349,16 @@ export async function executeAgentTool({
     try {
       const plugins = await window.api.getPlugins()
       if (!plugins || plugins.length === 0) {
-        res = { success: true, data: 'Belum ada custom plugin lokal yang terpasang di Documents/Mark Plugins.' }
+        res = {
+          success: true,
+          data: 'Belum ada custom plugin lokal yang terpasang di Documents/Mark Plugins.'
+        }
       } else {
         const summary = plugins
           .map((p) => {
-            const acts = (p.actions || []).map((a) => `    * ${a.name}: ${a.description || a.triggerHint || ''}`).join('\n')
+            const acts = (p.actions || [])
+              .map((a) => `    * ${a.name}: ${a.description || a.triggerHint || ''}`)
+              .join('\n')
             return `- Plugin "${p.name}" (v${p.version || '1.0.0'}, Status: ${p.isEnabled !== false ? 'AKTIF' : 'NONAKTIF'}):\n  Deskripsi: ${p.description || '-'}\n  Actions:\n${acts || '    (Tidak ada action)'}`
           })
           .join('\n\n')
@@ -390,9 +407,7 @@ export async function executeAgentTool({
         }
       } else {
         const { NATIVE_SKILLS } = await import('../../components/core/native-skills.js')
-        const native = NATIVE_SKILLS.find(
-          (s) => s.name.toLowerCase() === skillName.toLowerCase()
-        )
+        const native = NATIVE_SKILLS.find((s) => s.name.toLowerCase() === skillName.toLowerCase())
         if (native && native.content) {
           res = {
             success: true,
