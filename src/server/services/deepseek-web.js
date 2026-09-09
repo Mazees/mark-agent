@@ -5,6 +5,7 @@
 import https from 'https'
 import fs from 'fs'
 import path from 'path'
+import zlib from 'zlib'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -21,10 +22,17 @@ export const DEEPSEEK_WEB_MODELS = {
 }
 
 const BASE_HOST = 'chat.deepseek.com'
-const WASM_FALLBACK_URL =
-  'https://raw.githubusercontent.com/sums001/Deepseek-API/main/deepseek/sha3_wasm_bg.wasm'
 
 let wasmInstanceCache = null
+const activeSessionCache = new Map()
+
+export function clearDeepSeekSession(token = null) {
+  if (token) {
+    activeSessionCache.delete(token)
+  } else {
+    activeSessionCache.clear()
+  }
+}
 
 /**
  * Inisialisasi WebAssembly PoW Solver bawaan DeepSeek
@@ -35,6 +43,7 @@ async function getWasmSolver(wasmBuffer = null) {
   let buf = wasmBuffer
   if (!buf) {
     const localWasmPaths = [
+      path.resolve(__dirname, '../bin/sha3_wasm_bg.wasm'),
       path.resolve(__dirname, '../assets/sha3_wasm_bg.wasm'),
       path.resolve(__dirname, '../../../resources/sha3_wasm_bg.wasm')
     ]
@@ -50,9 +59,7 @@ async function getWasmSolver(wasmBuffer = null) {
   }
 
   if (!buf) {
-    const res = await fetch(WASM_FALLBACK_URL)
-    if (!res.ok) throw new Error(`Gagal mengunduh SHA3 WASM: ${res.statusText}`)
-    buf = await res.arrayBuffer()
+    throw new Error("Berkas WASM DeepSeek ('src/server/bin/sha3_wasm_bg.wasm') tidak ditemukan di disk lokal.")
   }
 
   const wasmModule = await WebAssembly.instantiate(buf, {})
@@ -229,7 +236,11 @@ export async function generateDeepSeekResponse(
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
   let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
 
-  const sessionId = inputSessionId || (await createChatSession(token))
+  let sessionId = inputSessionId || activeSessionCache.get(token)
+  if (!sessionId) {
+    sessionId = await createChatSession(token)
+    activeSessionCache.set(token, sessionId)
+  }
   const powHeader = await generatePowHeader(token, '/api/v0/chat/completion', wasmBuffer)
 
   const bodyData = {
@@ -250,6 +261,8 @@ export async function generateDeepSeekResponse(
   const payloadStr = JSON.stringify(bodyData)
   const headers = {
     ...getBaseHeaders(token),
+    accept: 'text/event-stream, */*',
+    'cache-control': 'no-cache',
     'content-type': 'application/json',
     'content-length': Buffer.byteLength(payloadStr),
     'x-ds-pow-response': powHeader
@@ -265,10 +278,22 @@ export async function generateDeepSeekResponse(
     }
 
     const req = https.request(reqOptions, (res) => {
+      const encoding = (res.headers['content-encoding'] || '').toLowerCase()
+      console.log(`[DeepSeek-Web] Status: ${res.statusCode}, encoding: "${encoding}", type: "${res.headers['content-type']}"`)
+
+      let stream = res
+      if (encoding === 'gzip') {
+        stream = res.pipe(zlib.createGunzip())
+      } else if (encoding === 'br') {
+        stream = res.pipe(zlib.createBrotliDecompress())
+      } else if (encoding === 'deflate') {
+        stream = res.pipe(zlib.createInflate())
+      }
+
       if (res.statusCode !== 200) {
         let errBody = ''
-        res.on('data', (d) => (errBody += d.toString()))
-        res.on('end', () => {
+        stream.on('data', (d) => (errBody += d.toString()))
+        stream.on('end', () => {
           reject(new Error(`DeepSeek Server menolak permintaan (${res.statusCode}): ${errBody}`))
         })
         return
@@ -278,70 +303,132 @@ export async function generateDeepSeekResponse(
       let fullContent = ''
       let reasoningContent = ''
       let activePath = null
+      let lastReceivedPayload = ''
 
-      res.on('data', (chunk) => {
+      const processLine = (line) => {
+        const trimmed = line.trim()
+        if (!trimmed) return
+
+        let payload = trimmed
+        if (trimmed.startsWith('data:')) {
+          payload = trimmed.slice(5).trim()
+        }
+        if (!payload || payload === '[DONE]') return
+        lastReceivedPayload = payload
+
+        try {
+          const obj = JSON.parse(payload)
+
+          // 0. Deteksi error resmi dari server DeepSeek
+          if (obj.code !== undefined && obj.code !== 0) {
+            activeSessionCache.delete(token)
+            const errMsg = obj.msg || obj.message || JSON.stringify(obj)
+            reject(new Error(`DeepSeek Server Error (${obj.code}): ${errMsg}`))
+            return
+          }
+          if (obj.data?.biz_code !== undefined && obj.data.biz_code !== 0) {
+            const muteUntil = obj.data.biz_data?.mute_until
+              ? ` (sampai ${new Date(obj.data.biz_data.mute_until * 1000).toLocaleTimeString('id-ID')})`
+              : ''
+            const errMsg = obj.data.biz_msg || `Kode bisnis ${obj.data.biz_code}`
+            reject(new Error(`Akun DeepSeek Web kamu sedang dibatasi sementara oleh DeepSeek: "${errMsg}"${muteUntil}. Tunggu beberapa saat atau ganti token akun baru.`))
+            return
+          }
+          if (obj.error || obj.error_msg) {
+            const errMsg = obj.error?.message || obj.error_msg || JSON.stringify(obj)
+            reject(new Error(`DeepSeek Server Error: ${errMsg}`))
+            return
+          }
+
+          const v = obj.v
+
+          // 1. Snapshot Response Frame
+          if (v && typeof v === 'object') {
+            if (v.response) {
+              for (const frag of v.response.fragments || []) {
+                if (frag.content) {
+                  if (frag.type === 'THINKING') {
+                    reasoningContent = frag.content
+                    onDelta?.({ type: 'thinking', delta: frag.content, full: reasoningContent })
+                  } else {
+                    activePath = 'response/fragments/-1/content'
+                    fullContent = frag.content
+                    onDelta?.({ type: 'content', delta: frag.content, full: fullContent })
+                  }
+                }
+              }
+              return
+            }
+            if (v.content && typeof v.content === 'string') {
+              fullContent += v.content
+              onDelta?.({ type: 'content', delta: v.content, full: fullContent })
+              return
+            }
+            if (v.thinking_content && typeof v.thinking_content === 'string') {
+              reasoningContent += v.thinking_content
+              onDelta?.({ type: 'thinking', delta: v.thinking_content, full: reasoningContent })
+              return
+            }
+          }
+
+          // 2. Path-Setting Frame
+          if (obj.p) {
+            activePath = obj.p
+            if (typeof v === 'string') {
+              if (activePath.includes('thinking')) {
+                reasoningContent += v
+                onDelta?.({ type: 'thinking', delta: v, full: reasoningContent })
+              } else {
+                fullContent += v
+                onDelta?.({ type: 'content', delta: v, full: fullContent })
+              }
+            }
+            return
+          }
+
+          // 3. Continuous Append Frame
+          if (typeof v === 'string') {
+            if (activePath && activePath.includes('thinking')) {
+              reasoningContent += v
+              onDelta?.({ type: 'thinking', delta: v, full: reasoningContent })
+            } else {
+              fullContent += v
+              onDelta?.({ type: 'content', delta: v, full: fullContent })
+            }
+          }
+        } catch (err) {
+          // Abaikan chunk malformed
+        }
+      }
+
+      stream.on('data', (chunk) => {
         buffer += chunk.toString()
         const lines = buffer.split('\n')
         buffer = lines.pop()
 
         for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed.startsWith('data:')) continue
-          const payload = trimmed.slice(5).trim()
-          if (!payload || payload === '[DONE]') continue
-
-          try {
-            const obj = JSON.parse(payload)
-            const v = obj.v
-
-            // 1. Snapshot Response Frame
-            if (v && typeof v === 'object' && v.response) {
-              for (const frag of v.response.fragments || []) {
-                if (frag.type === 'RESPONSE' && frag.content) {
-                  activePath = 'response/fragments/-1/content'
-                  if (!fullContent) {
-                    fullContent += frag.content
-                    onDelta?.({ type: 'content', delta: frag.content, full: fullContent })
-                  }
-                }
-              }
-              continue
-            }
-
-            // 2. Path-Setting Frame
-            if (obj.p) {
-              activePath = obj.p
-              if (obj.o === 'APPEND' && typeof v === 'string') {
-                if (activePath.endsWith('content')) {
-                  fullContent += v
-                  onDelta?.({ type: 'content', delta: v, full: fullContent })
-                } else if (activePath.endsWith('thinking_content')) {
-                  reasoningContent += v
-                  onDelta?.({ type: 'thinking', delta: v, full: reasoningContent })
-                }
-              }
-              continue
-            }
-
-            // 3. Continuous Append Frame
-            if (typeof v === 'string' && activePath) {
-              if (activePath.endsWith('content')) {
-                fullContent += v
-                onDelta?.({ type: 'content', delta: v, full: fullContent })
-              } else if (activePath.endsWith('thinking_content')) {
-                reasoningContent += v
-                onDelta?.({ type: 'thinking', delta: v, full: reasoningContent })
-              }
-            }
-          } catch (err) {
-            // Abaikan chunk malformed
-          }
+          processLine(line)
         }
       })
 
-      res.on('end', () => {
+      stream.on('end', () => {
+        if (buffer && buffer.trim()) {
+          processLine(buffer.trim())
+        }
+
+        // Fallback: Jika content kosong tapi thinking terisi, gunakan thinking sebagai jawaban
+        if (!fullContent && reasoningContent) {
+          fullContent = reasoningContent
+          reasoningContent = null
+        }
+
         if (!fullContent) {
-          reject(new Error('Gagal mengekstrak teks balasan dari streaming DeepSeek Web.'))
+          console.warn(`[DeepSeek-Web] Empty response on end. Last payload:`, lastReceivedPayload, `Buffer:`, buffer)
+          reject(
+            new Error(
+              `Gagal mengekstrak teks balasan dari streaming DeepSeek Web. Status: ${res.statusCode}, Tipe: ${res.headers['content-type']}, Respons server: ${lastReceivedPayload || buffer || 'tidak ada data streaming'}`
+            )
+          )
           return
         }
         resolve({

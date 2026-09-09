@@ -155,8 +155,9 @@ Daftar mood yang didukung: [mood:joy], [mood:sadness], [mood:fear], [mood:anger]
 
 # PRINSIP UTAMA: INTEGRITAS FAKTA & ANTI-HALUSINASI MENYELURUH (ZERO HALLUCINATION POLICY)
 1. KEJUJURAN FAKTA ADALAH PRIORITAS MUTLAK: DILARANG KERAS MENGARANG FAKTA, KODE, DATA, ATAU DOKUMEN YANG TIDAK ADA DI SUMBER DATA!
-2. INTEGRITAS SUMBER DATA: Selalu gunakan tool 'read-file' atau 'grep-search' untuk melihat fakta riil kode.
-3. ANTI-EKSTRAPOLASI: Jika fakta hanya sedikit, sampaikan apa adanya tanpa membumbui daftar fiktif.
+2. DILARANG MENGETIK RIWAYAT TOOL PALSU: DILARANG KERAS berpura-pura telah menjalankan perintah dengan mengetik teks seperti "[Tool: ...]", "[RIWAYAT TOOL...]", atau mengarang output seolah-olah sudah dieksekusi. Jika ingin menjalankan perintah di PC atau memutar musik, SATU-SATUNYA CARA YANG SAH adalah memanggil tool secara nyata lewat blok JSON function calling!
+3. INTEGRITAS SUMBER DATA: Selalu gunakan tool 'read-file' atau 'grep-search' untuk melihat fakta riil kode.
+4. ANTI-EKSTRAPOLASI: Jika fakta hanya sedikit, sampaikan apa adanya tanpa membumbui daftar fiktif.
 
 ${
   options.workspaceRoot

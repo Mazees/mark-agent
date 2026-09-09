@@ -139,15 +139,24 @@ export const fetchAI = async (
         if (roleName === 'TOOL') {
           roleName = 'OBSERVASI SISTEM (HASIL TOOL)'
         }
+        let textBody = ''
         if (Array.isArray(m.content)) {
-          for (const part of m.content) {
-            if (part.type === 'text') {
-              fullPrompt += `[${roleName}]: ${part.text}\n`
-            }
-          }
+          textBody = m.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
         } else {
-          fullPrompt += `[${roleName}]: ${m.content || ''}\n`
+          textBody = m.content || ''
         }
+
+        if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+          const callsStr = JSON.stringify({
+            tool_calls: m.tool_calls.map((tc) => ({
+              name: tc.name || tc.function?.name,
+              arguments: typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments || '{}') : (tc.function?.arguments || tc.arguments || {})
+            }))
+          }, null, 2)
+          textBody = textBody ? `${textBody}\n\`\`\`json\n${callsStr}\n\`\`\`` : `\`\`\`json\n${callsStr}\n\`\`\``
+        }
+
+        fullPrompt += `[${roleName}]: ${textBody}\n`
       }
       fullPrompt += '\n[ASSISTANT]:'
 
@@ -794,13 +803,18 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
     const candidateStr = (jsonMatch[1] || cleanContent).trim()
 
-    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"')) {
+    if (
+      candidateStr.includes('"tool_calls"') ||
+      candidateStr.includes('"action"') ||
+      candidateStr.includes('"tool"') ||
+      (candidateStr.includes('"name"') && (candidateStr.includes('"arguments"') || candidateStr.includes('"query"') || candidateStr.includes('"parameters"')))
+    ) {
       try {
         const parsed = cleanAndParse(candidateStr)
         if (parsed) {
           if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
             extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
-              id: tc.id || `call_gw_${Date.now()}_${idx}`,
+              id: tc.id || `call_${Date.now()}_${idx}`,
               type: 'function',
               function: {
                 name: tc.name || tc.function?.name,
@@ -810,7 +824,7 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
           } else if (parsed.action && parsed.action.tool) {
             extractedToolCalls = [
               {
-                id: `call_gw_${Date.now()}_0`,
+                id: `call_${Date.now()}_0`,
                 type: 'function',
                 function: {
                   name: parsed.action.tool,
@@ -821,11 +835,22 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
           } else if (parsed.tool) {
             extractedToolCalls = [
               {
-                id: `call_gw_${Date.now()}_0`,
+                id: `call_${Date.now()}_0`,
                 type: 'function',
                 function: {
                   name: parsed.tool,
                   arguments: typeof parsed.query === 'object' ? JSON.stringify(parsed.query) : JSON.stringify(parsed.query ? { query: parsed.query } : parsed.arguments || {})
+                }
+              }
+            ]
+          } else if (parsed.name && (parsed.arguments || parsed.query || parsed.parameters)) {
+            extractedToolCalls = [
+              {
+                id: `call_${Date.now()}_0`,
+                type: 'function',
+                function: {
+                  name: parsed.name,
+                  arguments: typeof parsed.arguments === 'object' ? JSON.stringify(parsed.arguments) : String(parsed.arguments || JSON.stringify(parsed.query ? { query: parsed.query } : parsed.parameters || {}))
                 }
               }
             ]
@@ -845,6 +870,7 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     }
 
     if (cleanContent) {
+      cleanContent = cleanContent.replace(/\s*(?:\[?FINISHED\]?|Task Finished\.?)\s*$/i, '').trim()
       extractMood(cleanContent)
       cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
       onToken?.(cleanContent)
@@ -878,9 +904,9 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
 Kamu memiliki akses ke fungsi-fungsi sistem berikut:
 ${toolDescriptions}
 
-# ATURAN EKSEKUSI TOOL (PENTING MUTLAK):
-Jika kamu ingin melakukan tindakan nyata, JANGAN hanya menjawab dengan janji verbal!
-Kamu HARUS SELALU memanggil tool dengan format blok JSON murni berikut:
+# ATURAN EKSEKUSI TOOL (PRIORITAS MUTLAK - TOOLS FIRST):
+1. Jika permintaan user membutuhkan riset web, informasi terkini, pembuatan/pembacaan berkas, atau tindakan teknis: KAMU WAJIB MEMANGGIL TOOL TERLEBIH DAHULU! DILARANG KERAS hanya menjawab dengan teks verbal tanpa observasi tool.
+2. Kamu HARUS memanggil tool dengan format blok JSON murni berikut:
 \`\`\`json
 {
   "tool_calls": [
@@ -891,7 +917,7 @@ Kamu HARUS SELALU memanggil tool dengan format blok JSON murni berikut:
   ]
 }
 \`\`\`
-Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada pengguna.`
+3. Jika dan HANYA JIKA tugas sudah 100% selesai atau hanya sekadar sapaan santai yang tidak membutuhkan sistem, barulah jawab dengan teks percakapan biasa.`
 
       effectiveMessages = (messages || []).map((m) => ({ ...m }))
       const sysIdx = effectiveMessages.findIndex((m) => m.role === 'system')
@@ -911,16 +937,30 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
       if (roleName === 'TOOL') {
         roleName = 'OBSERVASI SISTEM (HASIL TOOL)'
       }
+      let textBody = ''
       if (Array.isArray(m.content)) {
-        for (const part of m.content) {
-          if (part.type === 'text') {
-            fullPrompt += `[${roleName}]: ${part.text}\n`
-          }
-        }
+        textBody = m.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
       } else {
-        fullPrompt += `[${roleName}]: ${m.content || ''}\n`
+        textBody = m.content || ''
       }
+
+      if (m.tool_calls && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        const callsStr = JSON.stringify({
+          tool_calls: m.tool_calls.map((tc) => ({
+            name: tc.name || tc.function?.name,
+            arguments: typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments || '{}') : (tc.function?.arguments || tc.arguments || {})
+          }))
+        }, null, 2)
+        textBody = textBody ? `${textBody}\n\`\`\`json\n${callsStr}\n\`\`\`` : `\`\`\`json\n${callsStr}\n\`\`\``
+      }
+
+      fullPrompt += `[${roleName}]: ${textBody}\n`
     }
+
+    if (Array.isArray(tools) && tools.length > 0) {
+      fullPrompt += `\n[PANDUAN EKSEKUSI TOOL]: Jika tugas user di atas membutuhkan informasi riil, riset web, buka/tulis berkas, atau interaksi sistem, KAMU WAJIB MEMANGGIL TOOL dalam blok JSON murni (\`\`\`json { "tool_calls": [...] } \`\`\`). DILARANG KERAS hanya berjanji atau menjawab verbal tanpa memanggil tool!\n`
+    }
+
     fullPrompt += '\n[ASSISTANT]:'
 
     const modelName = conf.deepseekWebModel || 'deepseek-chat'
@@ -958,13 +998,18 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
     const candidateStr = (jsonMatch[1] || cleanContent).trim()
 
-    if (candidateStr.includes('"tool_calls"') || candidateStr.includes('"action"') || candidateStr.includes('"tool"')) {
+    if (
+      candidateStr.includes('"tool_calls"') ||
+      candidateStr.includes('"action"') ||
+      candidateStr.includes('"tool"') ||
+      (candidateStr.includes('"name"') && (candidateStr.includes('"arguments"') || candidateStr.includes('"query"') || candidateStr.includes('"parameters"')))
+    ) {
       try {
         const parsed = cleanAndParse(candidateStr)
         if (parsed) {
           if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
             extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
-              id: tc.id || `call_ds_${Date.now()}_${idx}`,
+              id: tc.id || `call_${Date.now()}_${idx}`,
               type: 'function',
               function: {
                 name: tc.name || tc.function?.name,
@@ -974,7 +1019,7 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
           } else if (parsed.action && parsed.action.tool) {
             extractedToolCalls = [
               {
-                id: `call_ds_${Date.now()}_0`,
+                id: `call_${Date.now()}_0`,
                 type: 'function',
                 function: {
                   name: parsed.action.tool,
@@ -985,11 +1030,22 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
           } else if (parsed.tool) {
             extractedToolCalls = [
               {
-                id: `call_ds_${Date.now()}_0`,
+                id: `call_${Date.now()}_0`,
                 type: 'function',
                 function: {
                   name: parsed.tool,
                   arguments: typeof parsed.query === 'object' ? JSON.stringify(parsed.query) : JSON.stringify(parsed.query ? { query: parsed.query } : parsed.arguments || {})
+                }
+              }
+            ]
+          } else if (parsed.name && (parsed.arguments || parsed.query || parsed.parameters)) {
+            extractedToolCalls = [
+              {
+                id: `call_${Date.now()}_0`,
+                type: 'function',
+                function: {
+                  name: parsed.name,
+                  arguments: typeof parsed.arguments === 'object' ? JSON.stringify(parsed.arguments) : String(parsed.arguments || JSON.stringify(parsed.query ? { query: parsed.query } : parsed.parameters || {}))
                 }
               }
             ]
@@ -1009,6 +1065,7 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
     }
 
     if (cleanContent) {
+      cleanContent = cleanContent.replace(/\s*(?:\[?FINISHED\]?|Task Finished\.?)\s*$/i, '').trim()
       extractMood(cleanContent)
       cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
     }

@@ -196,6 +196,11 @@ export const useMarkPlan = ({
       tgContext,
       isAutonomous,
       pluginProcessId,
+      activeSessionNum = 1,
+      activeTopic = null,
+      userInput = '',
+      durableTask = null,
+      agenticProcessId = null,
       targetSetChatData = setChatData,
       signal
     } = context
@@ -482,13 +487,6 @@ export const useMarkPlan = ({
         })
 
         const res = executionResult.res
-        if (executionResult.durableTask) {
-          durableTask = executionResult.durableTask
-          durableTaskForRecovery = executionResult.durableTask
-        }
-        if (executionResult.durableActiveStep) {
-          durableActiveStep = executionResult.durableActiveStep
-        }
 
         if (res && res.success) {
           if (res.data !== undefined) {
@@ -525,7 +523,9 @@ export const useMarkPlan = ({
           resultString,
           rejected: false,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
-          loadedGroup: res?.loaded_group || null
+          loadedGroup: res?.loaded_group || null,
+          durableTask: executionResult?.durableTask || null,
+          durableActiveStep: executionResult?.durableActiveStep || null
         }
       }
       // 12. Dynamic Plugin Execution
@@ -1148,11 +1148,24 @@ export const useMarkPlan = ({
               loopMessages,
               pluginProcessId,
               targetSetChatData,
+              activeSessionNum,
+              activeTopic,
+              userInput,
+              durableTask,
+              agenticProcessId,
               workspaceRoot: opts.workspaceRoot,
               sessionId: String(activeSessionNum || 1),
               sessionTitle: currentSessionTitle,
               signal: sessionAbortController.signal
             })
+
+            if (execResult.durableTask) {
+              durableTask = execResult.durableTask
+              durableTaskForRecovery = execResult.durableTask
+            }
+            if (execResult.durableActiveStep) {
+              durableActiveStep = execResult.durableActiveStep
+            }
 
             lastToolExecution = execResult.toolExecution
             if (execResult.loadedGroup) {

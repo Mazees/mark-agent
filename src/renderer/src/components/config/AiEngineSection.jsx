@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FaCog } from 'react-icons/fa'
+import { AlertTriangle } from 'lucide-react'
 
 export const AiEngineSection = ({ config, setConfig }) => {
   const [showCustomKey, setShowCustomKey] = useState(false)
@@ -50,6 +51,17 @@ export const AiEngineSection = ({ config, setConfig }) => {
 
       {config.aiProvider === 'deepseek-web' ? (
         <div className="space-y-4">
+          {/* Risk Warning Notice */}
+          <div className="p-3 bg-warning/10 border border-warning/30 rounded-xl text-warning text-xs flex items-start gap-2.5 leading-relaxed">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
+            <div>
+              <p className="font-semibold text-warning">Peringatan Risiko:</p>
+              <p className="text-white/80 mt-0.5">
+                Provider ini menggunakan sesi web/OAuth yang tidak dilisensikan secara resmi untuk penggunaan proxy/router pihak ketiga. Akun dapat dibatasi atau diblokir (banned) sementara oleh DeepSeek. Gunakan atas risiko sendiri.
+              </p>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <div className="flex justify-between items-center">
               <p className="text-sm font-semibold">DeepSeek User Token (Bearer)</p>
