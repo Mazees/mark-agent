@@ -1,15 +1,8 @@
 import readline from 'readline'
 import http from 'http'
-import fs from 'fs'
 import { WebSocket } from 'ws'
 import { colors as c, drawLeftRail } from './theme.js'
 import { launchUI, closeUI } from '../server/launcher.js'
-
-let appVersion = '5.0.0'
-try {
-  const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'))
-  if (pkg.version) appVersion = pkg.version
-} catch (_) {}
 
 const SERVER_URL = process.env.MARK_SERVER_URL || 'http://localhost:3000'
 const WS_URL = process.env.MARK_WS_URL || 'ws://localhost:3000/stream'
@@ -67,7 +60,7 @@ export function printMonitorHeader(config = {}, uiActive = false) {
     : `${c.yellow}○ Standby${c.reset} ${c.darkGray}(Jendela Ditutup)${c.reset}`
 
   const lines = [
-    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v${appVersion} Engine]${c.reset}`,
+    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v5.0.0 Engine]${c.reset}`,
     ` ${c.darkGray}Workspace  :${c.reset} ${c.gray}${cwd}${c.reset}`,
     ` ${c.darkGray}Core Server:${c.reset} ${c.blue}http://localhost:${activeServerPort}${c.reset}  ${c.darkGray}|${c.reset}  ${c.darkGray}Status:${c.reset} ${c.teal}Online${c.reset}`,
     ` ${c.darkGray}Status MARK:${c.reset} ${agentStatus}`,
