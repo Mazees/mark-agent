@@ -343,7 +343,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         })
         .catch(() => {})
     }
-    setIsLocalLoading(false)
   }
 
   const handleManualCompaction = async () => {
