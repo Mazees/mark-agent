@@ -9,7 +9,9 @@ export const useRelationalGrowth = ({ chatData }) => {
   useEffect(() => {
     const evaluateGrowth = async () => {
       try {
-        const allCleanChats = chatData.filter(m => !m.isThinking && !m.isSearching && !m.isSummarizing)
+        const allCleanChats = chatData.filter(
+          (m) => !m.isThinking && !m.isSearching && !m.isSummarizing
+        )
         const currentCleanLen = allCleanChats.length
 
         // Initialize state dari database saat pertama kali jalan
@@ -37,17 +39,20 @@ export const useRelationalGrowth = ({ chatData }) => {
           const startIndex = Math.max(lastEvalChatLenRef.current, currentCleanLen - 20)
           const recentForEval = allCleanChats
             .slice(startIndex)
-            .map(m => {
+            .map((m) => {
               let timeStr = ''
               if (m.timestamp) {
-                timeStr = typeof m.timestamp === 'number'
-                  ? `[${new Date(m.timestamp).toLocaleString('id-ID')}] `
-                  : `[${m.timestamp}] `
+                timeStr =
+                  typeof m.timestamp === 'number'
+                    ? `[${new Date(m.timestamp).toLocaleString('id-ID')}] `
+                    : `[${m.timestamp}] `
               }
-              const rawContent = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-              const safeContent = rawContent.length > 500 ? `${rawContent.slice(0, 500)}... [dipotong]` : rawContent
               const rawContent =
-                typeof m.content === 'string' ? m.content : m.content ? JSON.stringify(m.content) : ''
+                typeof m.content === 'string'
+                  ? m.content
+                  : m.content
+                    ? JSON.stringify(m.content)
+                    : ''
               const safeContent =
                 rawContent.length > 500 ? `${rawContent.slice(0, 500)}... [dipotong]` : rawContent
               return `${timeStr}${m.role === 'user' ? 'User' : 'Mark'}: ${safeContent}`
@@ -78,7 +83,10 @@ export const useRelationalGrowth = ({ chatData }) => {
               summary: '[Relational] Catatan hubungan otomatis',
               memory: newTraits.new_relational_memory
             })
-            console.log('[Relational Growth] Relational memory tersimpan:', newTraits.new_relational_memory)
+            console.log(
+              '[Relational Growth] Relational memory tersimpan:',
+              newTraits.new_relational_memory
+            )
           }
         }
       } catch (err) {

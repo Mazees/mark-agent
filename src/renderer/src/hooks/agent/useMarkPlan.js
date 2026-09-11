@@ -1435,20 +1435,11 @@ export const useMarkPlan = ({
         }
       } catch (_) {}
     } catch (error) {
-      console.error('[useMarkPlan] Critical ReAct Loop Error:', error)
       const isAbort =
         error.name === 'AbortError' ||
         error.message?.includes('AbortError') ||
         Boolean(sessionAbortController?.signal?.aborted)
 
-      targetPushProcess({
-        id: agenticProcessId,
-        type: 'planning',
-        status: 'failed',
-        data: {
-          steps: [...execSteps],
-          currentStep: execSteps.length,
-          reasoning: `Error: ${error.message}`
       if (!isAbort) {
         console.error('[useMarkPlan] Critical ReAct Loop Error:', error)
       } else {
@@ -1477,21 +1468,9 @@ export const useMarkPlan = ({
             `Uncaught exception: ${error.message}`
           ).catch(() => {})
         }
-      })
-      setTimeout(() => {
       } else {
         dismissProcess(agenticProcessId)
-      }, 3000)
-
-      if (durableTaskForRecovery && durableTaskForRecovery.status === 'running') {
-        transitionAgentTask(
-          durableTaskForRecovery.id,
-          'failed',
-          `Uncaught exception: ${error.message}`
-        ).catch(() => {})
       }
-
-      const isAbort = error.name === 'AbortError' || error.message?.includes('AbortError')
 
       targetSetChatData((prev) => [
         ...prev.filter((item) => !item.isThinking),
