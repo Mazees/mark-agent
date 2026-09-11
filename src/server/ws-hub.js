@@ -17,6 +17,7 @@ class WebSocketHub {
    */
   init(server) {
     this.wss = new WebSocketServer({ server, path: '/stream' })
+    this.uiClients = new Set()
 
     this.wss.on('error', (err) => {
       // Delegasikan error EADDRINUSE ke HTTP Server listener agar auto-fallback berjalan
@@ -28,10 +29,14 @@ class WebSocketHub {
     this.wss.on('connection', (ws) => {
       this.clients.add(ws)
 
-      // Kirim event sambutan ready
+      // Kirim event sambutan ready dan status presence UI terkini
       this.send(ws, 'core:ready', {
         version: '5.0.0',
         timestamp: Date.now()
+      })
+      this.send(ws, 'ui:status', {
+        active: this.uiClients.size > 0,
+        count: this.uiClients.size
       })
 
       ws.on('message', (data) => {
@@ -39,19 +44,37 @@ class WebSocketHub {
           const parsed = JSON.parse(data.toString())
           const { event, id, payload } = parsed
 
-          if (event) {
+          if (event === 'ui:presence') {
+            this.uiClients.add(ws)
+            this.broadcast('ui:status', {
+              active: true,
+              count: this.uiClients.size
+            })
+          } else if (event === 'ui:goodbye') {
+            this.uiClients.delete(ws)
+            this.broadcast('ui:status', {
+              active: this.uiClients.size > 0,
+              count: this.uiClients.size
+            })
+          } else if (event) {
             this.handleIncomingEvent(ws, event, payload, id)
           }
         } catch (_) {}
       })
 
-      ws.on('close', () => {
+      const cleanupClient = () => {
         this.clients.delete(ws)
-      })
+        if (this.uiClients.has(ws)) {
+          this.uiClients.delete(ws)
+          this.broadcast('ui:status', {
+            active: this.uiClients.size > 0,
+            count: this.uiClients.size
+          })
+        }
+      }
 
-      ws.on('error', () => {
-        this.clients.delete(ws)
-      })
+      ws.on('close', cleanupClient)
+      ws.on('error', cleanupClient)
     })
   }
 
@@ -87,7 +110,11 @@ class WebSocketHub {
       }
     } else {
       if (id) {
-        this.send(ws, `${event}:response`, { id, success: false, error: `No handler for event ${event}` })
+        this.send(ws, `${event}:response`, {
+          id,
+          success: false,
+          error: `No handler for event ${event}`
+        })
       }
     }
   }

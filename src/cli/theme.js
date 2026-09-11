@@ -1,4 +1,11 @@
 import readline from 'readline'
+import fs from 'fs'
+
+let appVersion = '5.0.0'
+try {
+  const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'))
+  if (pkg.version) appVersion = pkg.version
+} catch (_) {}
 
 /**
  * CLI Theme and Formatting Utilities for MARK
@@ -13,7 +20,7 @@ export const colors = {
   underline: '\x1b[4m',
 
   // Foreground
-  green: '\x1b[38;2;31;184;84m',      // #1fb854 (MARK Primary Green)
+  green: '\x1b[38;2;31;184;84m', // #1fb854 (MARK Primary Green)
   emerald: '\x1b[38;2;16;185;129m',
   teal: '\x1b[38;2;45;212;191m',
   cyan: '\x1b[38;2;56;189;248m',
@@ -43,6 +50,18 @@ export function drawBox(title, contentLines, width = 74, borderColor = colors.da
   console.log(bottomBorder)
 }
 
+export function drawLeftRail(title, contentLines, width = 74, borderColor = colors.darkGray) {
+  const c = colors
+  const topBorder = `${borderColor}┌─${title ? ` ${c.bold}${c.green}${title}${c.reset}${borderColor} ` : ''}${'─'.repeat(Math.max(0, width - (title ? title.length + 4 : 2)))}${c.reset}`
+  const bottomBorder = `${borderColor}└${'─'.repeat(Math.max(0, width - 1))}${c.reset}`
+
+  console.log(topBorder)
+  for (const line of contentLines) {
+    console.log(`${borderColor}│${c.reset} ${line}`)
+  }
+  console.log(bottomBorder)
+}
+
 export function printHeader(config = {}) {
   const c = colors
   console.clear()
@@ -56,34 +75,38 @@ export function printHeader(config = {}) {
   const cwd = process.cwd()
 
   const lines = [
-    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v5.0.0]${c.reset}`,
+    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v${appVersion}]${c.reset}`,
     ` ${c.darkGray}Workspace :${c.reset} ${c.gray}${cwd}${c.reset}`,
     ` ${c.darkGray}Provider  :${c.reset} ${c.cyan}${provider}${c.reset} ${c.darkGray}(${model})${c.reset}  ${c.darkGray}|${c.reset}  ${c.darkGray}Port:${c.reset} ${c.teal}3000${c.reset}`,
     ` ${c.darkGray}WebUI     :${c.reset} ${c.blue}http://localhost:3000${c.reset} ${c.darkGray}[Edge App Mode Ready]${c.reset}`
   ]
 
   drawBox('', lines, 74, c.darkGray)
-  console.log(` ${c.darkGray}Commands:${c.reset} ${c.green}/ui${c.reset} ${c.darkGray}|${c.reset} ${c.green}/web${c.reset} ${c.darkGray}|${c.reset} ${c.green}/provider${c.reset} ${c.darkGray}|${c.reset} ${c.green}/model${c.reset} ${c.darkGray}|${c.reset} ${c.green}/memory${c.reset} ${c.darkGray}|${c.reset} ${c.green}/status${c.reset} ${c.darkGray}|${c.reset} ${c.green}/clear${c.reset} ${c.darkGray}|${c.reset} ${c.green}/exit${c.reset}\n`)
+  console.log(
+    ` ${c.darkGray}Commands:${c.reset} ${c.green}/ui${c.reset} ${c.darkGray}|${c.reset} ${c.green}/web${c.reset} ${c.darkGray}|${c.reset} ${c.green}/provider${c.reset} ${c.darkGray}|${c.reset} ${c.green}/model${c.reset} ${c.darkGray}|${c.reset} ${c.green}/memory${c.reset} ${c.darkGray}|${c.reset} ${c.green}/status${c.reset} ${c.darkGray}|${c.reset} ${c.green}/clear${c.reset} ${c.darkGray}|${c.reset} ${c.green}/exit${c.reset}\n`
+  )
 }
 
 export function printThought(thought, turn = 1) {
   const c = colors
-  const lines = [
-    `  ${c.gray}${thought.trim()}${c.reset}`
-  ]
+  const lines = [`  ${c.gray}${thought.trim()}${c.reset}`]
   drawBox(`Thought (Turn ${turn})`, lines, 74, c.darkGray)
   console.log()
 }
 
 export function printToolCall(tool, query) {
   const c = colors
-  console.log(` ${c.yellow}⚡ Action${c.reset}  › ${c.bold}${c.white}${tool}${c.reset} ${query ? `${c.darkGray}› ${c.gray}${query}${c.reset}` : ''}`)
+  console.log(
+    ` ${c.yellow}⚡ Action${c.reset}  › ${c.bold}${c.white}${tool}${c.reset} ${query ? `${c.darkGray}› ${c.gray}${query}${c.reset}` : ''}`
+  )
 }
 
 export function printToolResult(tool, result) {
   const c = colors
   const preview = String(result).trim().slice(0, 140).replace(/\n/g, ' ')
-  console.log(` ${c.green}✓ Result${c.reset}  › ${c.darkGray}[${tool}]${c.reset} ${c.gray}${preview}${preview.length >= 140 ? '...' : ''}${c.reset}\n`)
+  console.log(
+    ` ${c.green}✓ Result${c.reset}  › ${c.darkGray}[${tool}]${c.reset} ${c.gray}${preview}${preview.length >= 140 ? '...' : ''}${c.reset}\n`
+  )
 }
 
 export function printAssistantAnswer(answer) {
@@ -116,7 +139,9 @@ export async function promptSelect({ title = 'Select Option', options = [], acti
       const lines = options.map((opt, i) => {
         const isSelected = i === selectedIndex
         const isCurrent = opt.id === activeId
-        const bullet = isCurrent ? `${colors.green}●${colors.reset}` : `${colors.darkGray}○${colors.reset}`
+        const bullet = isCurrent
+          ? `${colors.green}●${colors.reset}`
+          : `${colors.darkGray}○${colors.reset}`
         const pointer = isSelected ? `${colors.bold}${colors.green}›${colors.reset}` : ' '
         const titleText = isSelected
           ? `${colors.bold}${colors.green}${opt.title}${colors.reset}`

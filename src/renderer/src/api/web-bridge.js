@@ -46,6 +46,9 @@ function getWebSocket() {
 
     ws.onopen = () => {
       console.log('[WebBridge] Terhubung ke WebSocket MARK Core di', WS_BASE)
+      try {
+        ws.send(JSON.stringify({ event: 'ui:presence', payload: { client: 'webui' } }))
+      } catch (_) {}
     }
 
     ws.onmessage = (event) => {
