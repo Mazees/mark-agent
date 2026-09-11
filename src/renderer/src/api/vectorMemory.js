@@ -1,5 +1,11 @@
-import { searchArchives, searchDocuments, searchMemoriesInOrama, searchTurnPairsInOrama } from './oramaStore'
+import {
+  searchArchives,
+  searchDocuments,
+  searchMemoriesInOrama,
+  searchTurnPairsInOrama
+} from './oramaStore'
 import { getAllMemory } from './db'
+import { API_BASE } from './web-bridge'
 
 export const getExtractor = async () => {
   return true
@@ -11,7 +17,7 @@ export const generateVector = async (text) => {
   }
 
   try {
-    const res = await fetch('http://localhost:3000/api/vector', {
+    const res = await fetch(`${API_BASE}/api/vector`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
@@ -56,7 +62,13 @@ export const searchExtendedMemory = async (query, threshold = 0.5, limit = 5) =>
   const queryVector = await generateVector(query)
   if (!queryVector) return { memories: [], chatTurns: [] }
 
-  const memories = await searchMemoriesInOrama(query, queryVector, limit, ['notes', 'learn'], threshold)
+  const memories = await searchMemoriesInOrama(
+    query,
+    queryVector,
+    limit,
+    ['notes', 'learn'],
+    threshold
+  )
   const chatTurns = await searchTurnPairsInOrama(query, queryVector, limit, threshold)
 
   return { memories, chatTurns }
@@ -65,10 +77,15 @@ export const searchExtendedMemory = async (query, threshold = 0.5, limit = 5) =>
 export const executeMemorySearch = async (rawQuery) => {
   const parts = (rawQuery || '').split('||')
   const searchKeyword = parts[0]?.trim() || ''
-  const customThreshold = parts[1] && !isNaN(parseFloat(parts[1])) ? parseFloat(parts[1].trim()) : 0.5
+  const customThreshold =
+    parts[1] && !isNaN(parseFloat(parts[1])) ? parseFloat(parts[1].trim()) : 0.5
   const customLimit = parts[2] && !isNaN(parseInt(parts[2], 10)) ? parseInt(parts[2].trim(), 10) : 5
 
-  const { memories = [], chatTurns = [] } = await searchExtendedMemory(searchKeyword, customThreshold, customLimit)
+  const { memories = [], chatTurns = [] } = await searchExtendedMemory(
+    searchKeyword,
+    customThreshold,
+    customLimit
+  )
 
   const formattedMemories =
     memories.length > 0

@@ -344,11 +344,16 @@ export const useVAD = ({
     const checkAndEnsureWakeListener = async () => {
       if (!isMounted || isStartingWake) return
 
-      await refreshConfig()
       const wakeEnabled = currentConfigRef.current?.wakeWordEnabled !== false
 
       // Jangan jalankan jika: fitur dimatikan, sedang manual recording, Mark sedang bicara TTS, LiveAudio aktif, atau tidak didukung
-      if (!wakeEnabled || isRecordingRef.current || window.isMarkSpeaking || window.isLiveAudioActive || !isWebSpeechSupported()) {
+      if (
+        !wakeEnabled ||
+        isRecordingRef.current ||
+        window.isMarkSpeaking ||
+        window.isLiveAudioActive ||
+        !isWebSpeechSupported()
+      ) {
         if (isWakeListeningRef.current) {
           console.log('[WakeWord] ⏸️ Menjeda deteksi wake word latar belakang...')
           isWakeListeningRef.current = false
@@ -367,7 +372,10 @@ export const useVAD = ({
       const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
       const customWakeWords = currentConfigRef.current?.customWakeWords || ''
 
-      console.log('[WakeWord] 🎙️ Standby mendengarkan kata pemicu ("Hey Mark" / "Mark")...', { lang, customWakeWords })
+      console.log('[WakeWord] 🎙️ Standby mendengarkan kata pemicu ("Hey Mark" / "Mark")...', {
+        lang,
+        customWakeWords
+      })
 
       try {
         const rec = await startWebSpeechRecognition({
@@ -407,7 +415,9 @@ export const useVAD = ({
                   wakePhrase: check.wakePhrase || 'Mark'
                 })
               } else {
-                console.log('[WakeWord] 🔔 Nama dipanggil tanpa perintah, otomatis menyalakan mic manual...')
+                console.log(
+                  '[WakeWord] 🔔 Nama dipanggil tanpa perintah, otomatis menyalakan mic manual...'
+                )
                 startManualRecording()
               }
             }
@@ -431,10 +441,10 @@ export const useVAD = ({
       }
     }
 
-    // Polling Watchdog: memeriksa kondisi setiap 600ms
+    // Polling Watchdog: memeriksa kondisi setiap 1000ms
     const watchdogInterval = setInterval(() => {
       checkAndEnsureWakeListener()
-    }, 600)
+    }, 1000)
 
     // Panggil langsung pada start
     checkAndEnsureWakeListener()

@@ -3,6 +3,7 @@ import { exec } from 'child_process'
 import util from 'util'
 import { wsHub } from '../ws-hub.js'
 import { isDaemonAlive, startDaemon, sendCommand } from './pc-agent.js'
+import { getActiveConfig } from '../config-manager.js'
 
 const execPromise = util.promisify(exec)
 
@@ -71,56 +72,8 @@ async function getActiveWindowFallback() {
           app: parsed.process || 'Windows App'
         }
       }
-    }
-  } catch (_) {}
-
-  // 3. Fallback ke PowerShell Win32 API via EncodedCommand
-  try {
-    const psScript = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public class WinInfo {
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-}
-'@ -ErrorAction SilentlyContinue
-
-$hwnd = [WinInfo]::GetForegroundWindow()
-if ($hwnd -ne [IntPtr]::Zero) {
-    $sb = New-Object System.Text.StringBuilder 512
-    [WinInfo]::GetWindowText($hwnd, $sb, $sb.Capacity) | Out-Null
-    $pid = 0
-    [WinInfo]::GetWindowThreadProcessId($hwnd, [ref]$pid) | Out-Null
-    $pname = "System"
-    if ($pid -gt 0) {
-        try {
-            $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
-            if ($proc) { $pname = $proc.ProcessName }
-        } catch {}
-    }
-    $title = $sb.ToString().Trim()
-    if ($title -ne "") {
-        @{ title = $title; app = $pname } | ConvertTo-Json -Compress
-    }
-}
-`
-    const b64 = Buffer.from(psScript, 'utf16le').toString('base64')
-    const { stdout } = await execPromise(
-      `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${b64}`
-    )
-    const text = stdout?.trim()
-    if (text && text.startsWith('{') && text.endsWith('}')) {
-      const parsed = JSON.parse(text)
-      if (parsed && parsed.title) {
-        return {
-          title: parsed.title,
-          owner: { name: parsed.app },
-          app: parsed.app
-        }
-      }
+    } else if (process.platform === 'win32') {
+      startDaemon().catch(() => {})
     }
   } catch (_) {}
 
@@ -162,13 +115,22 @@ export async function getSystemIdleSeconds() {
 export function startOsActivityTracking(intervalMs = 10000) {
   if (trackerInterval) clearInterval(trackerInterval)
 
-  // Langsung panggil sekali saat start
-  getActiveWindowFallback().then((win) => {
-    if (win) recordActivityEntry(win)
-  })
+  // Langsung panggil sekali saat start jika awareness aktif
+  const cfg = getActiveConfig() || {}
+  if (cfg.awarenessEnabled !== false) {
+    if (process.platform === 'win32' && !isDaemonAlive()) {
+      startDaemon().catch(() => {})
+    }
+    getActiveWindowFallback().then((win) => {
+      if (win) recordActivityEntry(win)
+    })
+  }
 
   trackerInterval = setInterval(async () => {
     try {
+      const currentCfg = getActiveConfig() || {}
+      if (currentCfg.awarenessEnabled === false) return
+
       const windowInfo = await getActiveWindowFallback()
       if (windowInfo) {
         recordActivityEntry(windowInfo)

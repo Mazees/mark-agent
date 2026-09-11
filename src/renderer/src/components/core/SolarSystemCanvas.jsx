@@ -276,6 +276,11 @@ export const SolarSystemCanvas = ({
     let lastTime = performance.now()
 
     const render = (time) => {
+      if (document.hidden) {
+        animId = null
+        return
+      }
+
       const dt = Math.min(0.05, (time - lastTime) / 1000)
       lastTime = time
 
@@ -456,9 +461,18 @@ export const SolarSystemCanvas = ({
 
     animId = requestAnimationFrame(render)
 
+    const handleVisibility = () => {
+      if (!document.hidden && !animId) {
+        lastTime = performance.now()
+        animId = requestAnimationFrame(render)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
     return () => {
       window.removeEventListener('resize', handleResize)
-      cancelAnimationFrame(animId)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      if (animId) cancelAnimationFrame(animId)
     }
   }, [activeToolNames, moodColor])
 
