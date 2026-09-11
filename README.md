@@ -112,7 +112,7 @@ mark/
 │           │   └── subagent/  # Autonomous Sub-Agent Runner & Intercom Store
 │           ├── components/    # Reusable Holo UI Components & HUDs
 │           │   ├── Chat/      # Chat Bubbles (DurableTaskBubble, MessageBubble, dll)
-│           │   └── core/      # InputBar & Native Skills (/task, /plan)
+│           │   └── core/      # InputBar & Native Skills (/task)
 │           ├── hooks/         # Custom Hooks (useMarkPlan, useVAD, useAwareness)
 │           └── pages/         # MarkHome, ChatStudio, Subagents, Configuration, dll
 ```
