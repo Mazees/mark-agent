@@ -1072,7 +1072,6 @@ export const useMarkPlan = ({
       const dynamicallyLoadedToolGroups = new Set()
       let consecutiveErrors = 0
       const maxConsecutiveErrorRetries = 50
-      const toolCallCounts = new Map()
 
       while (!isDone && !sessionAbortController.signal.aborted) {
         // Cek Abort Signal
@@ -1130,18 +1129,26 @@ export const useMarkPlan = ({
               dynamicallyLoadedToolGroups
             )
 
-        // Loading thinking indicator di awal turn (tanpa teks placeholder dummy)
+        // Loading thinking indicator di awal turn (akumulasi semua pemikiran dari langkah sebelumnya)
         targetSetChatData((prev) => {
           const filtered = prev.filter((item) => !item.isThinking)
           const loadingText =
             isAutonomous && autonomousInitialMessage ? autonomousInitialMessage : ''
+          const allPriorThoughts = accumulatedThoughts
+            .map((t) => (typeof t === 'string' ? t.trim() : ''))
+            .filter(Boolean)
+          const initialReasoning =
+            allPriorThoughts.length > 0
+              ? Array.from(new Set(allPriorThoughts)).join('\n\n---\n\n')
+              : undefined
+
           return [
             ...filtered,
             {
               role: 'ai',
               content: loadingText,
               isThinking: true,
-              reasoning: accumulatedThoughts[accumulatedThoughts.length - 1] || undefined,
+              reasoning: initialReasoning,
               executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
               mood: currentActiveMood
             }
@@ -1158,6 +1165,11 @@ export const useMarkPlan = ({
           signal: sessionAbortController.signal,
           onReasoning: (chunk) => {
             currentTurnReasoning += chunk
+            const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+              .map((t) => (typeof t === 'string' ? t.trim() : ''))
+              .filter(Boolean)
+            const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+
             targetSetChatData((prev) => {
               const filtered = prev.filter((item) => !item.isThinking)
               return [
@@ -1166,7 +1178,7 @@ export const useMarkPlan = ({
                   role: 'ai',
                   content: currentTurnContent,
                   isThinking: true,
-                  reasoning: currentTurnReasoning,
+                  reasoning: liveReasoning || undefined,
                   executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
                   mood: currentActiveMood
                 }
@@ -1199,13 +1211,18 @@ export const useMarkPlan = ({
 
             targetSetChatData((prev) => {
               const filtered = prev.filter((item) => !item.isThinking)
+              const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+                .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                .filter(Boolean)
+              const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+
               return [
                 ...filtered,
                 {
                   role: 'ai',
                   content: currentTurnContent,
                   isThinking: true,
-                  reasoning: currentTurnReasoning || undefined,
+                  reasoning: liveReasoning || undefined,
                   executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
                   mood: currentActiveMood
                 }
@@ -1214,8 +1231,15 @@ export const useMarkPlan = ({
           }
         })
 
-        if (currentTurnReasoning && !accumulatedThoughts.includes(currentTurnReasoning)) {
-          accumulatedThoughts.push(currentTurnReasoning)
+        if (
+          currentTurnReasoning &&
+          typeof currentTurnReasoning === 'string' &&
+          currentTurnReasoning.trim()
+        ) {
+          const trimmed = currentTurnReasoning.trim()
+          if (!accumulatedThoughts.includes(trimmed)) {
+            accumulatedThoughts.push(trimmed)
+          }
         }
 
         if (streamResult?.mood && streamResult.mood !== 'neutral') {
@@ -1301,43 +1325,6 @@ export const useMarkPlan = ({
             if (!toolName) continue
             if (sessionAbortController.signal.aborted) break
 
-            const toolSignature = `${toolName}:${JSON.stringify(parsedArgs)}`
-            const toolCallCount = (toolCallCounts.get(toolSignature) || 0) + 1
-            toolCallCounts.set(toolSignature, toolCallCount)
-            if (toolCallCount > 3) {
-              const error = new Error(
-                `Tool yang sama dipanggil berulang kali tanpa perubahan: ${toolName}.`
-              )
-              error.code = 'LOOP_GUARD'
-              throw error
-            }
-
-            if (toolCallCount === 3) {
-              const loopWarning = `[SISTEM STOP LOOP]: Tool "${toolName}" dengan parameter identik telah dipanggil berulang kali tanpa perubahan hasil. DILARANG memanggil tool ini lagi dengan parameter yang sama. Segera evaluasi hasil yang sudah didapat dan lanjutkan ke langkah berikutnya atau berikan kesimpulan akhir kepada pengguna.`
-              executedToolsList.push({
-                tool: toolName,
-                query: JSON.stringify(parsedArgs),
-                status: 'failed',
-                fullResult: loopWarning,
-                resultSummary: loopWarning
-              })
-              const toolObservation = {
-                type: 'tool_result',
-                tool_call_id: tc.id,
-                name: toolName,
-                success: false,
-                data: null,
-                error: loopWarning
-              }
-              loopMessages.push({
-                role: 'tool',
-                tool_call_id: tc.id,
-                name: toolName,
-                content: JSON.stringify(toolObservation)
-              })
-              continue
-            }
-
             execSteps.push({ task: `Eksekusi ${toolName}`, query: JSON.stringify(parsedArgs) })
             targetPushProcess({
               id: agenticProcessId,
@@ -1355,6 +1342,11 @@ export const useMarkPlan = ({
               { tool: toolName, query: JSON.stringify(parsedArgs), status: 'running' }
             ]
 
+            const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+              .map((t) => (typeof t === 'string' ? t.trim() : ''))
+              .filter(Boolean)
+            const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+
             targetSetChatData((prev) => {
               const filtered = prev.filter((item) => !item.isThinking)
               return [
@@ -1363,7 +1355,7 @@ export const useMarkPlan = ({
                   role: 'ai',
                   content: streamResult.content || `Mengeksekusi [${toolName}]...`,
                   isThinking: true,
-                  reasoning: currentTurnReasoning || undefined,
+                  reasoning: liveReasoning || undefined,
                   executedTools: currentLiveTools,
                   mood: currentActiveMood
                 }
@@ -1601,7 +1593,6 @@ export const useMarkPlan = ({
             // Jika masih ada tahap berikutnya, promosikan dan lanjutkan loop ReAct
             if (nextStep) {
               consecutiveErrors = 0
-              toolCallCounts.clear()
               loopMessages.push({
                 role: 'assistant',
                 content: `[TAHAP SELESAI]: "${currentStep.title}". Output: ${turnAnswer}`
@@ -1695,12 +1686,20 @@ export const useMarkPlan = ({
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
           }
 
+          const finalAllThoughts = [...accumulatedThoughts, currentTurnReasoning]
+            .map((t) => (typeof t === 'string' ? t.trim() : ''))
+            .filter(Boolean)
+          const mergedReasoning =
+            finalAllThoughts.length > 0
+              ? Array.from(new Set(finalAllThoughts)).join('\n\n---\n\n')
+              : null
+
           const aiMsg = {
             role: 'ai',
             content: finalOutput,
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: true,
-            reasoning: currentTurnReasoning || accumulatedThoughts.join('\n\n') || null,
+            reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             pluginExecution: lastToolExecution,
             isProactive: isAutonomous,
@@ -1720,11 +1719,19 @@ export const useMarkPlan = ({
           executedToolsList.length > 0 &&
           finalContentAccumulator
         ) {
+          const finalAllThoughts = [...accumulatedThoughts, currentTurnReasoning]
+            .map((t) => (typeof t === 'string' ? t.trim() : ''))
+            .filter(Boolean)
+          const mergedReasoning =
+            finalAllThoughts.length > 0
+              ? Array.from(new Set(finalAllThoughts)).join('\n\n---\n\n')
+              : ''
+
           synthesizeSkillAndSave({
             userPrompt: lastUserPromptRef.current || userInput,
             executedTools: executedToolsList,
             finalAnswer: finalContentAccumulator,
-            thought: currentTurnReasoning || accumulatedThoughts.join('\n\n')
+            thought: mergedReasoning
           }).catch((err) => {
             console.warn('[useMarkPlan] Background Meta-Learning error:', err)
           })
@@ -1739,6 +1746,15 @@ export const useMarkPlan = ({
         if (!hasThinking) return prev
         const filtered = prev.filter((item) => !item.isThinking)
         if (finalContentAccumulator) return filtered
+
+        const finalAllThoughts = [...accumulatedThoughts]
+          .map((t) => (typeof t === 'string' ? t.trim() : ''))
+          .filter(Boolean)
+        const mergedReasoning =
+          finalAllThoughts.length > 0
+            ? Array.from(new Set(finalAllThoughts)).join('\n\n---\n\n')
+            : null
+
         return [
           ...filtered,
           {
@@ -1746,7 +1762,7 @@ export const useMarkPlan = ({
             content: 'Tugas telah selesai diproses.',
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: true,
-            reasoning: accumulatedThoughts.join('\n\n') || null,
+            reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             timestamp: getCurrentTimeInfo(),
             created_at: Date.now()

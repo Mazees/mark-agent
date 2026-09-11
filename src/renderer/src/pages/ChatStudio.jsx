@@ -677,111 +677,115 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           <div
             ref={messagesContainerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-6 custom-scrollbar space-y-2 min-h-0"
+            className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
           >
-            {currentDisplayMessages.length > visibleMessageCount && (
-              <div className="flex justify-center py-2">
-                <button
-                  type="button"
-                  onClick={() => setVisibleMessageCount((prev) => prev + 30)}
-                  className="btn btn-xs btn-ghost text-[11px] text-white/50 hover:text-white border border-white/10 rounded-full px-4 normal-case cursor-pointer"
-                >
-                  Muat pesan sebelumnya ({currentDisplayMessages.length - visibleMessageCount} pesan
-                  lagi)
-                </button>
-              </div>
-            )}
-
-            {currentDisplayMessages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4">
-                <img src="/icon-256.png" alt="icon" className="size-30" />
-                <div className="max-w-lg space-y-1">
-                  <h4 className="text-xl font-bold text-white">Selamat Datang di Mark Agent</h4>
-                  <p className="text-lg text-white/50">
-                    Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
-                  </p>
+            <div className="max-w-6xl mx-auto w-full flex flex-col space-y-8">
+              {currentDisplayMessages.length > visibleMessageCount && (
+                <div className="flex justify-center py-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleMessageCount((prev) => prev + 30)}
+                    className="btn btn-xs btn-ghost text-[11px] text-white/50 hover:text-white border border-white/10 rounded-full px-4 normal-case cursor-pointer"
+                  >
+                    Muat pesan sebelumnya ({currentDisplayMessages.length - visibleMessageCount}{' '}
+                    pesan lagi)
+                  </button>
                 </div>
-              </div>
-            ) : (
-              (() => {
-                const hasActivePlan = (currentDisplayMessages || []).some(
-                  (m) => m.isPlanSteps && m.taskStatus === 'running'
-                )
-                const activeThinkingMsg = isCurrentLoading
-                  ? [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking)
-                  : null
+              )}
 
-                return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
-                  if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
-                    return null
-                  }
-                  return (
-                    <ChatList
-                      key={
-                        msg.id
-                          ? `${msg.id}-${idx}`
-                          : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
-                      }
-                      id={msg.id || msg.timestamp || msg.created_at}
-                      lastCompactedMessageId={lastCompactedMessageId}
-                      isCompacting={msg.isCompacting}
-                      compactProgress={msg.compactProgress}
-                      role={msg.role}
-                      content={msg.content}
-                      reasoning={msg.reasoning}
-                      isThinking={msg.isThinking}
-                      isSearching={msg.isSearching}
-                      isSummarizing={msg.isSummarizing}
-                      isSearchingMusic={msg.isSearchingMusic}
-                      sources={msg.sources}
-                      executedTools={msg.executedTools}
-                      isMemorySaved={msg.isMemorySaved}
-                      isMemoryUpdated={msg.isMemoryUpdated}
-                      isMemoryDeleted={msg.isMemoryDeleted}
-                      timestamp={msg.timestamp}
-                      mood={msg.mood}
-                      source={msg.source}
-                      sender={msg.sender}
-                      isPlanSteps={msg.isPlanSteps}
-                      plan={msg.plan}
-                      currentStep={msg.currentStep}
-                      taskId={msg.taskId}
-                      taskTitle={msg.taskTitle}
-                      taskObjective={msg.taskObjective}
-                      taskStatus={msg.taskStatus}
-                      artifactRoot={msg.artifactRoot}
-                      activeLiveTools={
-                        hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.executedTools : null
-                      }
-                      activeThinkingContent={
-                        hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
-                      }
-                      onStop={handleStopSession}
-                    />
+              {currentDisplayMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4 my-auto">
+                  <img src="/icon-256.png" alt="icon" className="size-30" />
+                  <div className="max-w-lg space-y-1">
+                    <h4 className="text-xl font-bold text-white">Selamat Datang di Mark Agent</h4>
+                    <p className="text-lg text-white/50">
+                      Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                (() => {
+                  const hasActivePlan = (currentDisplayMessages || []).some(
+                    (m) => m.isPlanSteps && m.taskStatus === 'running'
                   )
-                })
-              })()
-            )}
-            <div ref={messagesEndRef} className="h-2" />
+                  const activeThinkingMsg = isCurrentLoading
+                    ? [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking)
+                    : null
+
+                  return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
+                    if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
+                      return null
+                    }
+                    return (
+                      <ChatList
+                        key={
+                          msg.id
+                            ? `${msg.id}-${idx}`
+                            : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
+                        }
+                        id={msg.id || msg.timestamp || msg.created_at}
+                        lastCompactedMessageId={lastCompactedMessageId}
+                        isCompacting={msg.isCompacting}
+                        compactProgress={msg.compactProgress}
+                        role={msg.role}
+                        content={msg.content}
+                        reasoning={msg.reasoning}
+                        isThinking={msg.isThinking}
+                        isSearching={msg.isSearching}
+                        isSummarizing={msg.isSummarizing}
+                        isSearchingMusic={msg.isSearchingMusic}
+                        sources={msg.sources}
+                        executedTools={msg.executedTools}
+                        isMemorySaved={msg.isMemorySaved}
+                        isMemoryUpdated={msg.isMemoryUpdated}
+                        isMemoryDeleted={msg.isMemoryDeleted}
+                        timestamp={msg.timestamp}
+                        mood={msg.mood}
+                        source={msg.source}
+                        sender={msg.sender}
+                        isPlanSteps={msg.isPlanSteps}
+                        plan={msg.plan}
+                        currentStep={msg.currentStep}
+                        taskId={msg.taskId}
+                        taskTitle={msg.taskTitle}
+                        taskObjective={msg.taskObjective}
+                        taskStatus={msg.taskStatus}
+                        artifactRoot={msg.artifactRoot}
+                        activeLiveTools={
+                          hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.executedTools : null
+                        }
+                        activeThinkingContent={
+                          hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
+                        }
+                        onStop={handleStopSession}
+                      />
+                    )
+                  })
+                })()
+              )}
+              <div ref={messagesEndRef} className="h-2" />
+            </div>
           </div>
 
           {/* Bottom Input Area */}
           <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
-            <InputBar
-              inline={true}
-              onSubmit={handleSendMessage}
-              isLoading={isCurrentLoading}
-              isRecording={isRecording}
-              isProcessing={isProcessing}
-              audioIntensity={audioIntensity}
-              onStartRecord={startRecording}
-              onStopRecord={stopRecording}
-              onStop={handleStopSession}
-              source={inputSource || 'pc'}
-              workspaceRoot={activeSessionObj?.workspaceRoot}
-              onSelectWorkspace={handleSelectSessionWorkspace}
-              onManualCompact={handleManualCompaction}
-            />
+            <div className="max-w-6xl mx-auto w-full">
+              <InputBar
+                inline={true}
+                onSubmit={handleSendMessage}
+                isLoading={isCurrentLoading}
+                isRecording={isRecording}
+                isProcessing={isProcessing}
+                audioIntensity={audioIntensity}
+                onStartRecord={startRecording}
+                onStopRecord={stopRecording}
+                onStop={handleStopSession}
+                source={inputSource || 'pc'}
+                workspaceRoot={activeSessionObj?.workspaceRoot}
+                onSelectWorkspace={handleSelectSessionWorkspace}
+                onManualCompact={handleManualCompaction}
+              />
+            </div>
           </div>
         </div>
       </div>

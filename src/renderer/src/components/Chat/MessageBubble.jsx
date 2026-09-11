@@ -1,9 +1,18 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
 import { CodeBlock } from './CodeBlock'
-import { Brain, ChevronRight, ExternalLink, Sparkles, Activity, Check, XCircle } from 'lucide-react'
+import {
+  Brain,
+  ChevronRight,
+  ExternalLink,
+  Sparkles,
+  Activity,
+  Check,
+  XCircle,
+  Terminal
+} from 'lucide-react'
 
 export const MessageBubble = React.memo(
   ({
@@ -13,9 +22,17 @@ export const MessageBubble = React.memo(
     sources = [],
     executedTools = [],
     isPlanConclusion = false,
-    isLearned = false
+    isLearned = false,
+    isThinking = false
   }) => {
     const [isCopied, setIsCopied] = useState(false)
+    const [isProcessOpen, setIsProcessOpen] = useState(Boolean(isThinking))
+
+    useEffect(() => {
+      if (isThinking) {
+        setIsProcessOpen(true)
+      }
+    }, [isThinking])
 
     const resolveImageUrl = (url) => {
       if (!url || typeof url !== 'string') return ''
@@ -112,40 +129,41 @@ export const MessageBubble = React.memo(
           </div>
         )}
 
-        {/* Executed Tools & Reasoning Summary Card */}
+        {/* Executed Tools & Reasoning Activity Trace (Antigravity Style) */}
         {((executedTools && executedTools.length > 0) || reasoning) && (
-          <details className="group/tools mb-2.5 bg-primary/5 rounded-lg border border-primary/15 overflow-hidden">
-            <summary className="list-none flex items-center justify-between px-3 py-1.5 cursor-pointer text-[11px] font-bold uppercase tracking-wider text-primary/90 hover:bg-primary/10 transition-all select-none">
-              <div className="flex items-center gap-1.5">
-                {executedTools && executedTools.length > 0 ? (
-                  <>
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>{executedTools.length} Langkah Alat Dieksekusi</span>
-                  </>
-                ) : (
-                  <>
-                    <Brain className="w-3.5 h-3.5" />
-                    <span>Proses Analisis & Pemikiran</span>
-                  </>
-                )}
-              </div>
-              <ChevronRight className="w-3.5 h-3.5 transition-transform duration-200 group-open/tools:rotate-90 opacity-70" />
-            </summary>
-            <div className="p-2 space-y-2 border-t border-primary/10 bg-black/30 max-h-60 overflow-y-auto custom-scrollbar">
-              {/* Thought / Reasoning Section */}
-              {reasoning && (
-                <div className="text-[11px] font-mono bg-base-300/60 p-2 rounded border border-white/5 whitespace-pre-wrap leading-relaxed text-base-content/90">
-                  <div className="flex items-center gap-1.5 text-primary font-bold mb-1 uppercase tracking-wider text-[10px]">
-                    <Brain className="w-3 h-3" />
-                    <span>Pemikiran AI</span>
-                  </div>
-                  {typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)}
+          <div className="my-2.5 space-y-1.5 select-none">
+            {/* Thinking / Reasoning Accordion */}
+            {reasoning && (
+              <details className="group/thought outline-none">
+                <summary className="list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/60 hover:text-white select-none py-0.5 transition-colors">
+                  <Brain className="w-3.5 h-3.5 text-primary/80 shrink-0" />
+                  <span className="font-medium text-white/80">Proses Pemikiran AI</span>
+                  <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/thought:rotate-90 ml-auto shrink-0" />
+                </summary>
+                <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
+                  <Markdown remarkPlugins={[remarkGfm]}>
+                    {typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)}
+                  </Markdown>
                 </div>
-              )}
+              </details>
+            )}
 
-              {/* Executed Tools List */}
-              {executedTools && executedTools.length > 0 && (
-                <div className="space-y-1.5 pt-1 border-t border-white/5">
+            {/* Executed Tools Folded Process Accordion */}
+            {executedTools && executedTools.length > 0 && (
+              <details
+                className="group/process outline-none"
+                open={isProcessOpen}
+                onToggle={(e) => setIsProcessOpen(e.currentTarget.open)}
+              >
+                <summary className="list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
+                  <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
+                  <span className="font-semibold text-white/90">Proses</span>
+                  <span className="text-[10px] text-white/40 font-normal">
+                    ({executedTools.length} langkah)
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-white/40 transition-transform duration-150 group-open/process:rotate-90 ml-auto shrink-0" />
+                </summary>
+                <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
                   {executedTools.map((t, idx) => {
                     const hasQuery = t.query !== undefined && t.query !== null && t.query !== ''
                     const queryString =
@@ -163,42 +181,52 @@ export const MessageBubble = React.memo(
                     const StatusIcon = isSuccessful ? Check : XCircle
                     const statusClass = isSuccessful ? 'text-success' : 'text-error'
 
+                    const toolLabel = t.tool || t.task || 'tool'
+                    let shortSummary = ''
+                    if (hasQuery) {
+                      try {
+                        const parsed = JSON.parse(queryString)
+                        shortSummary =
+                          parsed.command ||
+                          parsed.path ||
+                          parsed.query ||
+                          parsed.prompt ||
+                          parsed.skill_name ||
+                          queryString
+                      } catch (_) {
+                        shortSummary = queryString
+                      }
+                    }
+
                     if (!hasQuery && !hasResult) {
                       return (
                         <div
                           key={idx}
-                          className="text-[11px] font-mono bg-base-300/60 px-2 py-1 rounded border border-white/5 flex items-center gap-1.5"
+                          className="flex items-center gap-2 text-xs font-mono text-white/60 py-0.5"
                         >
-                          <StatusIcon className={`w-3 h-3 ${statusClass} font-bold shrink-0`} />
-                          <span className="text-primary font-bold">
-                            [{t.tool || t.task || 'tool'}]
-                          </span>
+                          <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
+                          <span className="font-semibold text-white/90">{toolLabel}</span>
                         </div>
                       )
                     }
 
                     return (
-                      <details
-                        key={idx}
-                        className="group/query bg-base-300/60 rounded border border-white/5 overflow-hidden"
-                      >
-                        <summary className="list-none flex items-center justify-between px-2 py-1 cursor-pointer text-[11px] font-mono hover:bg-white/5 transition-all select-none">
-                          <div className="flex items-center gap-1.5">
-                            <StatusIcon className={`w-3 h-3 ${statusClass} font-bold shrink-0`} />
-                            <span className="text-primary font-bold">
-                              [{t.tool || t.task || 'tool'}]
+                      <details key={idx} className="group/toolitem outline-none text-xs font-mono">
+                        <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
+                          <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
+                          <span className="font-semibold text-white/90">{toolLabel}</span>
+                          {shortSummary && (
+                            <span className="text-white/40 truncate max-w-md">
+                              {String(shortSummary).slice(0, 80)}
                             </span>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-60 group-hover/query:opacity-100">
-                            <span className="text-[10px] text-white/50 lowercase">detail</span>
-                            <ChevronRight className="w-3 h-3 transition-transform duration-150 group-open/query:rotate-90" />
-                          </div>
+                          )}
+                          <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
                         </summary>
-                        <div className="px-2.5 py-1.5 text-[10px] font-mono border-t border-white/5 bg-black/40 text-white/80 whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar border-l-2 border-primary/30 space-y-2">
+                        <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
                           {hasQuery && (
                             <div>
                               <div className="text-primary/70 font-semibold mb-0.5">Input:</div>
-                              <div className="text-white/80">{queryString}</div>
+                              <div className="text-white/90">{queryString}</div>
                             </div>
                           )}
                           {hasResult && (
@@ -212,9 +240,9 @@ export const MessageBubble = React.memo(
                     )
                   })}
                 </div>
-              )}
-            </div>
-          </details>
+              </details>
+            )}
+          </div>
         )}
 
         {/* Attached Images Preview Grid */}
