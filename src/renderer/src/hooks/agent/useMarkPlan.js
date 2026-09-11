@@ -17,7 +17,6 @@ import {
 import { checkTools, getActiveToolsSchema } from '../../api/tools/index'
 import { buildDurableStepCheckpoint } from '../../api/taskExecutor'
 import {
-  createAgentTask,
   startAgentTaskStep,
   checkpointAgentTaskStep,
   transitionAgentTask
@@ -1406,8 +1405,158 @@ export const useMarkPlan = ({
         // ======================================================================
         // CABANG 2: SELESAI / DIRECT TEXT RESPONSE (Stop / Selesai)
         // ======================================================================
+        const turnAnswer = streamResult.content || currentTurnContent || ''
+
+        // Jika giliran ini bagian dari Durable Task, kelola checkpointing & promosi step
+        if (durableTask && durableActiveStep) {
+          const currentStep = durableActiveStep
+          const checkpoint = buildDurableStepCheckpoint(
+            currentStep,
+            turnAnswer,
+            durableTask.maxRetries || 2
+          )
+          const stepValidation = checkpoint.validation
+          const checkpointData = { ...checkpoint }
+          delete checkpointData.canRetry
+
+          // Simpan artefak markdown jika lolos validasi dan memiliki artifactPath
+          if (
+            stepValidation?.isComplete &&
+            currentStep.artifactPath &&
+            window.api?.executeNativeTool
+          ) {
+            try {
+              await window.api.executeNativeTool(
+                'write-file',
+                { path: currentStep.artifactPath, content: turnAnswer },
+                { workspaceRoot: opts.workspaceRoot }
+              )
+            } catch (err) {
+              console.warn('[useMarkPlan] Gagal menulis artefak step:', err)
+            }
+          }
+
+          const checkpointCompleted = checkpointData.status === 'completed'
+          const checkpointCanRetry =
+            !checkpointCompleted && (currentStep.attempts || 0) < (durableTask.maxRetries || 2) + 1
+          const checkpointNeedsRevision = !checkpointCompleted && checkpointCanRetry
+
+          const checkpointedTask = await checkpointAgentTaskStep(
+            durableTask.id,
+            currentStep.id,
+            checkpointData
+          )
+
+          if (!checkpointCompleted && !checkpointCanRetry) {
+            await transitionAgentTask(
+              durableTask.id,
+              'failed',
+              'Tahap gagal memenuhi kriteria setelah batas retry.'
+            )
+            durableTask = checkpointedTask
+            durableActiveStep = null
+            if (activeTaskObjectiveRef) activeTaskObjectiveRef.current = null
+          } else {
+            const nextStep = checkpointCompleted
+              ? checkpointedTask?.steps?.find((s) => s.id === checkpointedTask.activeStepId)
+              : null
+
+            durableTask = checkpointedTask
+            durableActiveStep = nextStep || (checkpointNeedsRevision ? currentStep : null)
+            if (activeTaskObjectiveRef) {
+              activeTaskObjectiveRef.current =
+                nextStep?.objective || (checkpointNeedsRevision ? currentStep.objective : null)
+            }
+
+            // Perbarui state Task Workflow Bubble di chatData secara real-time
+            targetSetChatData((prev) =>
+              prev.map((msg) => {
+                if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
+                const updatedPlan = (msg.plan || []).map((s) => {
+                  if (s.id === currentStep.id) {
+                    return {
+                      ...s,
+                      status: checkpointCompleted ? 'completed' : 'failed',
+                      output: turnAnswer.slice(0, 1000),
+                      artifactPath: currentStep.artifactPath
+                    }
+                  }
+                  if (nextStep && s.id === nextStep.id) {
+                    return { ...s, status: 'running' }
+                  }
+                  return s
+                })
+                return {
+                  ...msg,
+                  taskStatus: nextStep ? 'running' : 'completed',
+                  currentStep: nextStep
+                    ? (nextStep.stepIndex ?? nextStep.index ?? 0)
+                    : (msg.plan || []).length,
+                  plan: updatedPlan
+                }
+              })
+            )
+
+            // Jika butuh revisi, minta AI memperbaiki dan ulangi tahap ini
+            if (!checkpointCompleted && checkpointNeedsRevision) {
+              loopMessages.push({
+                role: 'assistant',
+                content: `[TAHAP PERLU REVISI]: ${turnAnswer}`
+              })
+              loopMessages.push({
+                role: 'user',
+                content: `[REVISI TAHAP] Ulangi dan lengkapi tahap "${currentStep.title}". Kekurangan: ${(stepValidation?.missingRequirements || []).join('; ')}. Penuhi target deliverable!`
+              })
+              await startAgentTaskStep(durableTask.id, durableActiveStep.id)
+              continue
+            }
+
+            // Jika masih ada tahap berikutnya, promosikan dan lanjutkan loop ReAct
+            if (nextStep) {
+              loopMessages.push({
+                role: 'assistant',
+                content: `[TAHAP SELESAI]: "${currentStep.title}". Output: ${turnAnswer}`
+              })
+              loopMessages.push({
+                role: 'user',
+                content: `[LANJUTKAN TAHAP BERIKUTNYA]: "${nextStep.title}"\n- Sasaran: ${nextStep.objective}\n- Target Deliverable: ${nextStep.deliverable}\n${nextStep.acceptanceCriteria?.length ? `- Kriteria: ${nextStep.acceptanceCriteria.join(', ')}` : ''}\nKerjakan tahap ini sekarang menggunakan tools yang relevan sampai tuntas!`
+              })
+              await startAgentTaskStep(durableTask.id, nextStep.id)
+              targetPushProcess({
+                id: agenticProcessId,
+                type: 'planning',
+                status: 'active',
+                data: {
+                  steps: durableTask.steps.map((s) => ({ task: s.title })),
+                  currentStep: nextStep.stepIndex ?? nextStep.index ?? 0,
+                  reasoning: `Tahap "${currentStep.title}" selesai. Melanjutkan ke "${nextStep.title}"...`
+                }
+              })
+              continue
+            }
+          }
+        }
+
+        // Jika Durable Task selesai seluruhnya, tandai status final
+        if (durableTask) {
+          targetSetChatData((prev) =>
+            prev.map((msg) => {
+              if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
+              return {
+                ...msg,
+                taskStatus: 'completed',
+                currentStep: (msg.plan || []).length,
+                plan: (msg.plan || []).map((s) => ({
+                  ...s,
+                  status: s.status === 'failed' ? 'failed' : 'completed'
+                }))
+              }
+            })
+          )
+        }
+
         isDone = true
-        finalContentAccumulator = streamResult.content || currentTurnContent || 'Selesai.'
+        finalContentAccumulator = turnAnswer || 'Selesai.'
 
         execSteps.push({ task: 'Selesai' })
         targetPushProcess({

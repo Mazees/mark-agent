@@ -730,6 +730,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                     mood={msg.mood}
                     source={msg.source}
                     sender={msg.sender}
+                    isPlanSteps={msg.isPlanSteps}
+                    plan={msg.plan}
+                    currentStep={msg.currentStep}
+                    taskId={msg.taskId}
+                    taskTitle={msg.taskTitle}
+                    taskObjective={msg.taskObjective}
+                    taskStatus={msg.taskStatus}
+                    artifactRoot={msg.artifactRoot}
                   />
                 ))
             )}

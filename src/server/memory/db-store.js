@@ -302,6 +302,14 @@ class SqliteTable {
       }
     }
 
+    // Normalisasi khusus step_index agar kompatibel timbal balik di frontend (index & stepIndex)
+    if (this.tableName === 'agent_task_steps') {
+      if (res.step_index !== undefined) {
+        if (res.index === undefined) res.index = res.step_index
+        if (res.stepIndex === undefined) res.stepIndex = res.step_index
+      }
+    }
+
     for (const key of Object.keys(res)) {
       if (typeof res[key] === 'string') {
         const str = res[key].trim()
@@ -380,6 +388,13 @@ class SqliteTable {
     // Penanganan khusus untuk tabel config jika item berupa objek key-value langsung (bukan { id, data })
     if (this.tableName === 'config' && raw.data === undefined) {
       raw.data = { ...raw }
+    }
+
+    // Normalisasi index ke step_index untuk tabel agent_task_steps
+    if (this.tableName === 'agent_task_steps') {
+      if (raw.index !== undefined && raw.step_index === undefined && raw.stepIndex === undefined) {
+        raw.step_index = raw.index
+      }
     }
 
     const record = {

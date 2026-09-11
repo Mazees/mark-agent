@@ -1,10 +1,11 @@
-import React, { memo, useState } from 'react'
+/* eslint-disable react/prop-types */
+import { memo, useState } from 'react'
 import { Copy, Check, Bot, User, ChevronRight } from 'lucide-react'
 import { FaTelegramPlane } from 'react-icons/fa'
 import {
   MessageBubble,
   ThinkingBubble,
-  PlanningBubble,
+  DurableTaskBubble,
   MemoryFooterBubble,
   PluginExecutionBubble,
   YoutubeSummaryBubble,
@@ -39,27 +40,32 @@ const ChatList = ({
   isPlanSteps = false,
   plan = [],
   currentStep,
+  taskId = null,
+  taskTitle = '',
+  taskObjective = '',
+  taskStatus = null,
+  artifactRoot = null,
   isPlanConclusion = false,
   pluginExecution = null,
-  mood = 'neutral',
   timestamp = '',
   source = null,
   sender = null
 }) => {
+  const [isCopied, setIsCopied] = useState(false)
+  const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
+
   if (isCompacting) {
     return (
       <div className="flex items-center justify-center my-4 opacity-75 select-none animate-fade-in">
         <div className="border-t border-dashed border-white/20 flex-grow" />
         <div className="flex items-center gap-2 px-3 font-mono text-[11px] uppercase tracking-wider text-white/70">
-          <span>Merangkum Pesan</span>
+          <span>{compactProgress || 'Merangkum Pesan'}</span>
           <span className="loading loading-spinner loading-xs text-primary" />
         </div>
         <div className="border-t border-dashed border-white/20 flex-grow" />
       </div>
     )
   }
-  const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
-  const [isCopied, setIsCopied] = useState(false)
 
   const handleCopy = () => {
     if (!content) return
@@ -89,7 +95,16 @@ const ChatList = ({
 
   if (isPlanSteps && plan && plan.length > 0) {
     return (
-      <PlanningBubble plan={plan} resolvedCurrentStep={resolvedCurrentStep} reasoning={reasoning} />
+      <DurableTaskBubble
+        plan={plan}
+        resolvedCurrentStep={resolvedCurrentStep}
+        reasoning={reasoning}
+        taskId={taskId}
+        taskTitle={taskTitle}
+        taskObjective={taskObjective}
+        taskStatus={taskStatus}
+        artifactRoot={artifactRoot}
+      />
     )
   }
 

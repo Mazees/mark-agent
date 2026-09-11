@@ -104,10 +104,20 @@ export async function executeAgentTool({
             }
           ]
 
-    const documentsPath = await window.api.getDocumentsPath?.()
-    const artifactRoot = documentsPath
-      ? `${documentsPath.replace(/[\\/]$/, '')}/Mark Tasks/${Date.now()}`
-      : null
+    let artifactRoot = null
+    try {
+      const resp = await fetch('/api/tasks/artifacts-dir').then((r) => r.json())
+      if (resp?.success && resp?.data) {
+        const cleanBase = resp.data.replace(/[\\/]$/, '')
+        artifactRoot = `${cleanBase}/task-${Date.now()}`
+      }
+    } catch (err) {
+      void err
+    }
+
+    if (!artifactRoot && context?.workspaceRoot) {
+      artifactRoot = `${context.workspaceRoot.replace(/[\\/]$/, '')}/.mark/tasks/task-${Date.now()}`
+    }
 
     updatedDurableTask = await createAgentTask({
       title,
@@ -142,7 +152,7 @@ export async function executeAgentTool({
         data: {
           steps: stepsInput.map((step) => ({ task: step.title })),
           currentStep: 0,
-          reasoning: `Durable task dibuat: ${title}`
+          reasoning: `Task Workflow dibuat: ${title}`
         }
       })
     }
@@ -153,15 +163,27 @@ export async function executeAgentTool({
         {
           role: 'ai',
           isPlanSteps: true,
-          plan: stepsInput.map((step) => ({
-            id: step.id,
-            title: step.title,
-            task: step.title,
-            objective: step.objective,
-            deliverable: step.deliverable
+          taskId: updatedDurableTask.id,
+          taskTitle: title,
+          taskObjective: objective,
+          artifactRoot,
+          taskStatus: 'running',
+          plan: stepsInput.map((step, idx) => ({
+            id: step.id || `step-${idx + 1}`,
+            title: step.title || `Langkah ${idx + 1}`,
+            task: step.title || `Langkah ${idx + 1}`,
+            objective: step.objective || objective,
+            deliverable: step.deliverable || 'Output kerja',
+            acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
+              ? step.acceptanceCriteria
+              : [],
+            artifactPath: artifactRoot
+              ? `${artifactRoot}/${step.id || `step-${idx + 1}`}.md`
+              : null,
+            status: idx === 0 ? 'running' : 'pending'
           })),
           currentStep: 0,
-          reasoning: `Mission Control diaktifkan: ${title}`,
+          reasoning: `Task Workflow diaktifkan: ${title}`,
           timestamp: getCurrentTimeInfo ? getCurrentTimeInfo() : '',
           created_at: Date.now()
         }
@@ -170,7 +192,7 @@ export async function executeAgentTool({
 
     res = {
       success: true,
-      data: `[MISSION CONTROL DIAKTIFKAN - TASK BERHASIL DIBUAT]:\n- Task ID: ${updatedDurableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\nLangkah aktif saat ini: "${durableActiveStep?.title}". Sekarang fokus eksekusi langkah ini menggunakan tools yang sesuai!`
+      data: `[TASK WORKFLOW DIAKTIFKAN - TUGAS BERHASIL DIBUAT]:\n- Task ID: ${updatedDurableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\nLangkah aktif saat ini: "${durableActiveStep?.title}". Sekarang fokus eksekusi langkah ini menggunakan tools yang sesuai!`
     }
   } else if (tool === 'message_agent') {
     const { subagentStore } = await import('../../api/subagent/subagentStore.js')
