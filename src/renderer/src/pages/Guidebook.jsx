@@ -603,13 +603,6 @@ const Guidebook = () => {
                       queryFormat="judul window"
                       howItWorks="Fokus dan restore window aplikasi yang minimised berdasarkan judulnya."
                     />
-                    <ToolCard
-                      name="os-ask"
-                      description="Meminta bantuan/masukan user saat mengontrol PC atau saat dihentikan Ctrl+Shift+S."
-                      needsPermission={false}
-                      queryFormat="pertanyaan/pesan"
-                      howItWorks="Memunculkan modal dialog floating di layar untuk menanyakan alasan user menghentikan otomatisasi atau meminta instruksi."
-                    />
                   </div>
                 </div>
 

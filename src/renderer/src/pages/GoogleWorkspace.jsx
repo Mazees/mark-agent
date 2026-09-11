@@ -1,14 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  FaArrowLeft,
-  FaGoogle,
-  FaKey,
-  FaSave,
-  FaCheckCircle,
-  FaExclamationTriangle
-} from 'react-icons/fa'
+import { FaGoogle, FaKey, FaSave, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa'
 import { getAllConfig, saveConfiguration } from '../api/db'
+import { webApi } from '../api/web-bridge'
 
 const GoogleWorkspace = () => {
   const navigate = useNavigate()
@@ -25,10 +19,8 @@ const GoogleWorkspace = () => {
   }, [])
 
   const checkConnectionStatus = async () => {
-    if (window.api && window.api.googleStatus) {
-      const res = await window.api.googleStatus()
-      setIsConnected(res.isConnected)
-    }
+    const res = await webApi.googleStatus()
+    setIsConnected(Boolean(res?.isConnected))
   }
 
   const handleConnect = async () => {
@@ -38,7 +30,7 @@ const GoogleWorkspace = () => {
     }
     setIsConnecting(true)
     try {
-      const res = await window.api.googleConnect(config.googleClientId, config.googleClientSecret)
+      const res = await webApi.googleConnect(config.googleClientId, config.googleClientSecret)
       if (res.success) {
         showToast('Berhasil terhubung ke Google Workspace!')
         setIsConnected(true)
@@ -54,7 +46,7 @@ const GoogleWorkspace = () => {
 
   const handleDisconnect = async () => {
     try {
-      await window.api.googleDisconnect()
+      await webApi.googleDisconnect()
       setIsConnected(false)
       showToast('Terputus dari Google Workspace.')
     } catch (e) {
@@ -79,12 +71,7 @@ const GoogleWorkspace = () => {
     setIsSaving(true)
     try {
       await saveConfiguration(config)
-
-      // Notify main process if needed
-      if (window.api && window.api.syncConfig) {
-        window.api.syncConfig(config)
-      }
-
+      await webApi.syncConfig(config)
       showToast('Kredensial Google Workspace berhasil disimpan!')
     } catch (error) {
       console.error('Failed to save config:', error)
@@ -153,8 +140,8 @@ const GoogleWorkspace = () => {
                 <FaExclamationTriangle /> Panduan Singkat
               </h2>
               <p className="text-sm opacity-80 mb-4">
-                Untuk menghubungkan Mark dengan Google Workspace milikmu, kamu harus membuat **OAuth
-                Client ID** bertipe Desktop App di Google Cloud Console.
+                Untuk menghubungkan Mark dengan Google Workspace milikmu, kamu harus membuat{' '}
+                <strong>OAuth Client ID</strong> bertipe Desktop App di Google Cloud Console.
               </p>
               <ol className="list-decimal list-inside text-sm space-y-2 opacity-80 bg-base-200 p-4 rounded-xl font-mono">
                 <li>

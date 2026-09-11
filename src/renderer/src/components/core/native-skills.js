@@ -1,19 +1,34 @@
 export const NATIVE_SKILLS = [
   {
-    name: 'plan',
+    name: 'task',
     description:
-      'Membuat rencana sebelum mengeksekusi tugas untuk mendapatkan jawaban yang lebih berkualitas',
+      'Membuat dan mengeksekusi alur tugas multi-langkah terstruktur (Durable Tasks / Task Workflow)',
     content: `
-# SISTEM INSTRUKSI SKILL "/plan" (DURABLE TASK PLANNER)
-Kamu telah diinstruksikan oleh user untuk menggunakan fitur **/plan** atau **Durable Task Planner**!
+# SISTEM INSTRUKSI SKILL "/task" (DURABLE TASK WORKFLOW)
+Kamu telah diinstruksikan oleh user untuk mengaktifkan fitur **/task** (Task Workflow)!
 
 ## PERATURAN MUTLAK KETIKA SKILL INI DIAKTIFKAN:
-1. **DILARANG KERAS** mengeksekusi tool apapun di dalam response saat ini.
-2. Kamu **WAJIB** mengatur nilai properti "suggested_mode" di dalam JSON respons-mu menjadi "durable". Ini sangat penting karena sistem interceptor hanya akan memicu taskPlanner.js jika mode ini diset ke "durable".
-3. Kamu **WAJIB** mengatur nilai properti "task_status" menjadi "in_progress".
-4. Berikan pesan answer ke user, memberi tahu bahwa kamu sedang menyalakan sistem "Mission Control" dan membuat perencanaan multi-langkah.
-5. Pikirkan sejenak tentang tugas yang diminta user di dalam properti "thought" agar taskPlanner bisa mengambil logikamu.
-
-JANGAN MEMULAI PENGERJAAN TUGAS SEKARANG. Sistem akan memecahnya setelah kamu mengembalikan "suggested_mode": "durable".`
+1. PANGGIL TOOL 'create_agent_task' secara langsung!
+2. Parameter 'create_agent_task':
+   - "title": Judul ringkas tugas (misal: "Analisis Penyebab Karhutla di Kalimantan")
+   - "objective": Tujuan akhir yang ingin dicapai secara komprehensif
+   - "steps": Array berisi minimal 3-5 tahapan kerja teruji dengan format:
+     [
+       {
+         "id": "step-1",
+         "title": "Nama Tahap",
+         "objective": "Tujuan spesifik tahap ini",
+         "deliverable": "Hasil konkret yang diharapkan",
+         "acceptanceCriteria": ["Kriteria sukses 1", "Kriteria sukses 2"]
+       }
+     ]
+3. DILARANG membalas teks JSON mentah atau teks percakapan biasa sebelum memanggil tool 'create_agent_task'. Panggil tool tersebut terlebih dahulu agar Task Workflow aktif!`
+  },
+  {
+    name: 'plan',
+    description: 'Alias untuk /task: Menjalankan alur pengerjaan tugas terstruktur (Task Workflow)',
+    content: `
+# ALIAS PERINTAH: /plan -> /task
+Alihkan instruksi ini ke sistem Task Workflow. Segera panggil tool 'create_agent_task' dengan parameter judul, sasaran, dan minimal 3 tahapan eksekusi terstruktur!`
   }
 ]

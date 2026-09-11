@@ -1,140 +1,316 @@
-import Dexie from 'dexie'
+/**
+ * Client DB Layer (MARK SQLite Proxy Adapter)
+ * Menyediakan antarmuka async yang kompatibel dengan seluruh komponen UI/hooks,
+ * namun menyimpan data secara persisten dan terpusat di server SQLite backend.
+ */
 import { generateVector } from './vectorMemory'
 import { insertMemoryToOrama, updateMemoryInOrama, deleteMemoryFromOrama } from './oramaStore'
+import { API_BASE } from './web-bridge'
+export { SERVER_CONFIG, SERVER_HOST, SERVER_PORT, API_BASE } from './web-bridge'
 
-export const db = new Dexie('mark-db')
+// Helper fetch JSON
+async function apiGet(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`)
+    if (!res.ok) {
+      if (res.status === 404) return null
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return null
+    }
+    const json = await res.json()
+    return json.data ?? json
+  } catch (err) {
+    console.error(`[DB Proxy] GET ${path} error:`, err)
+    return null
+  }
+}
 
-db.version(1).stores({
-  // Index gabungan hanya [type+key] agar data lain (summary, confidence) bisa diubah
-  memory: '++id, [type+key], type, key, summary, memory, confidence',
-  sessions: '++id, title, data, timestamp',
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch'
-})
+async function apiPost(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    if (!res.ok) {
+      if (res.status === 404) return null
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return null
+    }
+    const json = await res.json()
+    return json.data ?? json
+  } catch (err) {
+    console.error(`[DB Proxy] POST ${path} error:`, err)
+    return null
+  }
+}
 
-db.version(2).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel'
-})
+async function apiDelete(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' })
+    if (!res.ok) {
+      return false
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return false
+    }
+    const json = await res.json()
+    return json.success ?? false
+  } catch (err) {
+    console.error(`[DB Proxy] DELETE ${path} error:`, err)
+    return false
+  }
+}
 
-db.version(3).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider'
-})
+/**
+ * Collection Proxy untuk chaining Dexie-like queries:
+ * where().equals(), anyOf(), filter(), sortBy(), limit(), reverse(), toArray(), delete(), first()
+ */
+class CollectionProxy {
+  constructor(tableProxy, filterFn = null, sortField = null, isReverse = false, limitCount = null) {
+    this.tableProxy = tableProxy
+    this.filterFn = filterFn
+    this.sortField = sortField
+    this.isReverse = isReverse
+    this.limitCount = limitCount
+  }
 
-db.version(4).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel'
-})
+  filter(fn) {
+    const prev = this.filterFn
+    const combined = prev ? (item) => prev(item) && fn(item) : fn
+    return new CollectionProxy(
+      this.tableProxy,
+      combined,
+      this.sortField,
+      this.isReverse,
+      this.limitCount
+    )
+  }
 
-db.version(5).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel'
-})
+  async sortBy(field) {
+    const proxy = new CollectionProxy(
+      this.tableProxy,
+      this.filterFn,
+      field,
+      this.isReverse,
+      this.limitCount
+    )
+    return await proxy.toArray()
+  }
 
-db.version(6).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins'
-})
+  reverse() {
+    return new CollectionProxy(
+      this.tableProxy,
+      this.filterFn,
+      this.sortField,
+      !this.isReverse,
+      this.limitCount
+    )
+  }
 
-db.version(7).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel'
-})
+  limit(count) {
+    return new CollectionProxy(
+      this.tableProxy,
+      this.filterFn,
+      this.sortField,
+      this.isReverse,
+      count
+    )
+  }
 
-db.version(8).stores({
-  chatArchive: '++id, summary, timestamp, topic',
-  documents: '++id, docName, chunkIndex, content, timestamp'
-})
+  async toArray() {
+    let all = await this.tableProxy.toArray()
+    if (this.filterFn) {
+      all = all.filter(this.filterFn)
+    }
+    if (this.sortField) {
+      const sf = this.sortField
+      all = all.slice().sort((a, b) => {
+        const valA = a[sf] ?? ''
+        const valB = b[sf] ?? ''
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return valA - valB
+        }
+        return String(valA).localeCompare(String(valB))
+      })
+    }
+    if (this.isReverse) {
+      all.reverse()
+    }
+    if (typeof this.limitCount === 'number' && this.limitCount > 0) {
+      all = all.slice(0, this.limitCount)
+    }
+    return all
+  }
 
-db.version(9).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel, awarenessEnabled'
-})
+  async first() {
+    const list = await this.limit(1).toArray()
+    return list[0] || null
+  }
 
-db.version(10).upgrade(async tx => {
-  // Reset all vectors to force re-indexing with the new multilingual MiniLM model
-  return tx.memory.toCollection().modify(mem => {
-    mem.vector = [];
-  });
-})
+  async count() {
+    const list = await this.toArray()
+    return list.length
+  }
 
-db.version(11).upgrade(async tx => {
-  // Reset vectors for chatArchive and documents as well because of the model change
-  await tx.chatArchive.toCollection().modify(arc => {
-    arc.vector = [];
-  });
-  await tx.documents.toCollection().modify(doc => {
-    doc.vector = [];
-  });
-})
+  async delete() {
+    const list = await this.toArray()
+    for (const item of list) {
+      const id = item[this.tableProxy.idField] || item.id || item.pairId
+      if (id) await this.tableProxy.delete(id)
+    }
+    return list.length
+  }
+}
 
-db.version(12).upgrade(async tx => {
-  // BUMP VERSION 12: Memastikan benar-benar terhapus (jika v11 ke-skip)
-  await tx.chatArchive.toCollection().modify(arc => {
-    arc.vector = [];
-  });
-  await tx.documents.toCollection().modify(doc => {
-    doc.vector = [];
-  });
-})
+/**
+ * Tabel Proxy untuk kompatibilitas kode lama yang memanggil `db.namaTabel`
+ */
+class TableProxy {
+  constructor(endpoint, idField = 'id') {
+    this.endpoint = endpoint
+    this.idField = idField
+  }
 
-db.version(13).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled'
-})
+  async toArray() {
+    const data = await apiGet(this.endpoint)
+    return Array.isArray(data) ? data : []
+  }
 
-db.version(14).stores({
-  relationships: 'userId, warmth, sarcasm_level, trust, energy, obedience, lastEvaluation, evalCount'
-})
+  async get(id) {
+    const item = await apiGet(`${this.endpoint}/${id}`)
+    return item || null
+  }
 
-db.version(15).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, waAdminNumber, waPendingAdmins, waApprovedAdmins, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel'
-})
+  async add(item) {
+    const res = await apiPost(this.endpoint, item)
+    return res?.[this.idField] || res?.id
+  }
 
-db.version(16).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel'
-}).upgrade(async tx => {
-  return tx.table('config').toCollection().modify(config => {
-    config.tgBotToken = config.tgBotToken || ''
-    config.tgAdminIds = config.tgAdminIds || ''
-    delete config.waAdminNumber
-    delete config.waPendingAdmins
-    delete config.waApprovedAdmins
-  })
-})
+  async put(item) {
+    return await apiPost(this.endpoint, item)
+  }
 
-db.version(17).stores({
-  agentTasks: 'id, status, mode, updatedAt, createdAt',
-  agentTaskSteps: 'id, taskId, [taskId+index], status, updatedAt'
-})
+  async bulkAdd(items) {
+    return await apiPost(`${this.endpoint}/batch`, items)
+  }
 
-db.version(18).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity'
-}).upgrade(tx => {
-  return tx.table('config').toCollection().modify(config => {
-    config.windowOpacity = config.windowOpacity ?? 0.85
-  })
-})
+  async bulkPut(items) {
+    return await apiPost(`${this.endpoint}/batch`, items)
+  }
 
-db.version(19).stores({
-  config: 'id, personality, model, temperature, context, ttsRate, ttsPitch, aiProvider, groqApiKey, groqModel, embedProvider, lmStudioEmbedModel, cerebrasApiKey, cerebrasModel, tgBotToken, tgAdminIds, customEndpoint, customApiKey, customModel, awarenessEnabled, cameraDeviceId, cameraEnabled, geminiWebModel, windowOpacity, localWhisperModel'
-}).upgrade(tx => {
-  return tx.table('config').toCollection().modify(config => {
-    config.localWhisperModel = config.localWhisperModel ?? 'whisper-small'
-  })
-})
+  async delete(id) {
+    return await apiDelete(`${this.endpoint}/${id}`)
+  }
 
-db.version(20).stores({
-  subagents: 'id, status, parentSessionId, createdAt, updatedAt',
-  subagent_messages: '++id, subagentId, sender, timestamp'
-})
+  async update(id, updates) {
+    const existing = await this.get(id)
+    if (!existing) return null
+    return await this.put({ ...existing, ...updates })
+  }
 
-db.version(21).stores({
-  learnedSkills: 'id, name, createdAt, updatedAt'
-})
+  async count() {
+    const arr = await this.toArray()
+    return arr.length
+  }
 
-db.version(22).stores({
-  chatTurns: 'pairId, sessionId, timestamp'
-})
+  async clear() {
+    const arr = await this.toArray()
+    for (const item of arr) {
+      const id = item[this.idField] || item.id || item.pairId
+      if (id) await this.delete(id)
+    }
+    return true
+  }
+
+  where(field) {
+    return {
+      equals: (val) => {
+        return new CollectionProxy(this, (item) => {
+          const v =
+            item[field] ??
+            (field === 'subagentId'
+              ? item.subagent_id
+              : field === 'subagent_id'
+                ? item.subagentId
+                : undefined)
+          return String(v) === String(val)
+        })
+      },
+      equalsIgnoreCase: (val) => {
+        const lowerVal = String(val || '').toLowerCase()
+        return new CollectionProxy(this, (item) => {
+          const v =
+            item[field] ??
+            (field === 'subagentId'
+              ? item.subagent_id
+              : field === 'subagent_id'
+                ? item.subagentId
+                : undefined)
+          return String(v || '').toLowerCase() === lowerVal
+        })
+      },
+      anyOf: (values) => {
+        const set = new Set((Array.isArray(values) ? values : [values]).map((v) => String(v)))
+        return new CollectionProxy(this, (item) => {
+          const v =
+            item[field] ??
+            (field === 'subagentId'
+              ? item.subagent_id
+              : field === 'subagent_id'
+                ? item.subagentId
+                : undefined)
+          return set.has(String(v))
+        })
+      }
+    }
+  }
+
+  orderBy(field) {
+    return new CollectionProxy(this, null, field, false, null)
+  }
+}
+
+// Objek db proxy menggantikan Dexie instances
+export const db = {
+  config: new TableProxy('/api/config'),
+  memory: new TableProxy('/api/memories'),
+  memories: new TableProxy('/api/memories'),
+  sessions: new TableProxy('/api/sessions'),
+  sessionCompact: new TableProxy('/api/session-compact', 'sessionId'),
+  session_compact: new TableProxy('/api/session-compact', 'sessionId'),
+  chatTurns: new TableProxy('/api/turns', 'pairId'),
+  chatArchive: new TableProxy('/api/archives'),
+  documents: new TableProxy('/api/documents'),
+  relationships: new TableProxy('/api/relationships', 'userId'),
+  subagents: new TableProxy('/api/subagents'),
+  subagent_messages: new TableProxy('/api/subagents/messages'),
+  subagentMessages: new TableProxy('/api/subagents/messages'),
+  learnedSkills: new TableProxy('/api/learned-skills'),
+  agentTasks: new TableProxy('/api/tasks'),
+  agentTaskSteps: new TableProxy('/api/tasks/steps'),
+  transaction: async (...args) => {
+    // Penanganan db.transaction(mode, ...tables, callback)
+    const callback = args[args.length - 1]
+    if (typeof callback === 'function') {
+      return await callback()
+    }
+  }
+}
 
 // --- VALIDATION ---
-const VALID_TYPES = ['profile', 'preference', 'notes', 'learn'];
+const VALID_TYPES = ['profile', 'preference', 'notes', 'learn']
 
 function getValidType(type) {
-  const t = (type || '').toLowerCase().trim();
-  return VALID_TYPES.includes(t) ? t : 'notes';
+  const t = (type || '').toLowerCase().trim()
+  return VALID_TYPES.includes(t) ? t : 'notes'
 }
 
 // --- CREATE ---
@@ -144,13 +320,21 @@ export async function insertMemory(data) {
   const vector = (await generateVector(memoryText)) || []
 
   try {
-    const id = await db.memory.add({
+    const record = await db.memory.put({
       type: type,
       summary: data.summary || '',
       memory: memoryText,
       vector: vector
     })
-    insertMemoryToOrama({ id, type, summary: data.summary || '', memory: memoryText, vector }).catch(console.error)
+    const id = record?.id || record
+    insertMemoryToOrama({
+      id,
+      type,
+      summary: data.summary || '',
+      memory: memoryText,
+      vector
+    }).catch(console.error)
+    return id
   } catch (error) {
     console.error('Error Save Memory:', error)
   }
@@ -158,7 +342,14 @@ export async function insertMemory(data) {
 
 export async function saveMainThread(data) {
   try {
-    await db.sessions.put({ id: 1, title: 'Main Thread', data: data, timestamp: Date.now() })
+    const existing = await db.sessions.get(1)
+    await db.sessions.put({
+      ...(existing || {}),
+      id: 1,
+      title: existing?.title || 'Main Thread',
+      data: data,
+      timestamp: Date.now()
+    })
   } catch (error) {
     console.error('Error saving main thread:', error)
   }
@@ -174,38 +365,224 @@ export async function getMainThread() {
   }
 }
 
-// --- UPDATE ---
-export async function updateMemory(data, maybeMemory, maybeType) {
+// --- SESSIONS & CHAT DATA HELPERS ---
+export async function getAllSessions() {
   try {
-    let id, memoryText, typeStr, summaryStr
-    if (typeof data === 'object' && data !== null) {
-      id = data.id
-      memoryText = data.memory || ''
-      typeStr = data.type
-      summaryStr = data.summary || ''
-    } else {
-      id = Number(data)
-      memoryText = String(maybeMemory || '')
-      typeStr = maybeType || 'profile'
-      summaryStr = ''
+    return await db.sessions.toArray()
+  } catch (error) {
+    console.error('Error getAllSessions:', error)
+    return []
+  }
+}
+
+export async function getSession(id) {
+  try {
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    return await db.sessions.get(cleanId)
+  } catch (error) {
+    console.error(`Error getSession ${id}:`, error)
+    return null
+  }
+}
+
+export async function createSession(title = 'Percakapan Baru') {
+  try {
+    const id = Date.now()
+    const session = { id, title, data: [], timestamp: Date.now() }
+    await db.sessions.put(session)
+    return session
+  } catch (error) {
+    console.error('Error createSession:', error)
+    return null
+  }
+}
+
+export async function saveSession(id, data, title = null) {
+  try {
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const existing = await db.sessions.get(cleanId)
+    const session = {
+      ...(existing || { id: cleanId, title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru' }),
+      id: cleanId,
+      data: Array.isArray(data) ? data : [],
+      ...(title ? { title } : {}),
+      timestamp: Date.now()
+    }
+    await db.sessions.put(session)
+    return session
+  } catch (error) {
+    console.error(`Error saveSession ${id}:`, error)
+  }
+}
+
+export async function deleteSession(id) {
+  try {
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    await db.sessions.delete(cleanId)
+    return { success: true }
+  } catch (error) {
+    console.error(`Error deleteSession ${id}:`, error)
+    return { success: false, error: error.message }
+  }
+}
+
+export async function renameSession(id, title) {
+  try {
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const existing = await db.sessions.get(cleanId)
+    if (existing) {
+      await db.sessions.put({ ...existing, id: cleanId, title, timestamp: Date.now() })
+    }
+  } catch (error) {
+    console.error(`Error renameSession ${id}:`, error)
+  }
+}
+
+export async function getChatData(sessionId = 1) {
+  try {
+    const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
+    const session = await db.sessions.get(cleanId)
+    return session && Array.isArray(session.data) ? session.data : []
+  } catch (error) {
+    console.error(`Error getChatData ${sessionId}:`, error)
+    return []
+  }
+}
+
+export async function setSessionWorkspace(sessionId, workspace) {
+  try {
+    const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
+    const existing = await db.sessions.get(cleanId)
+    await db.sessions.put({
+      ...(existing || {
+        id: cleanId,
+        title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru',
+        data: []
+      }),
+      id: cleanId,
+      workspace,
+      workspaceRoot: workspace,
+      timestamp: Date.now()
+    })
+  } catch (error) {
+    console.error(`Error setSessionWorkspace ${sessionId}:`, error)
+  }
+}
+
+// Bulk insert chatTurns
+export async function bulkInsertTurns(turns) {
+  try {
+    if (!Array.isArray(turns) || turns.length === 0) return []
+    const res = await db.chatTurns.bulkPut(turns)
+    return res
+  } catch (error) {
+    console.error('Error bulkInsertTurns:', error)
+    return []
+  }
+}
+
+export async function saveBatchChatTurns(turns) {
+  return await bulkInsertTurns(turns)
+}
+
+export async function saveChatTurn(turn) {
+  try {
+    const res = await db.chatTurns.put(turn)
+    return res
+  } catch (error) {
+    console.error('Error saveChatTurn:', error)
+    return null
+  }
+}
+
+// Bulk insert documents
+export async function bulkInsertDocuments(documents) {
+  try {
+    if (!Array.isArray(documents) || documents.length === 0) return []
+    const res = await db.documents.bulkPut(documents)
+    return res?.data?.map((d) => d.id) || documents.map((_, i) => i + 1)
+  } catch (error) {
+    console.error('Error bulkInsertDocuments:', error)
+    return []
+  }
+}
+
+export async function deleteDocumentByName(docName) {
+  try {
+    const docs = await db.documents.where('docName').equals(docName).toArray()
+    for (let d of docs) {
+      await db.documents.delete(d.id)
+    }
+  } catch (error) {
+    console.error('Error deleteDocumentByName:', error)
+  }
+}
+
+export async function getAllDocuments() {
+  try {
+    return await db.documents.toArray()
+  } catch (error) {
+    console.error('Error getAllDocuments:', error)
+    return []
+  }
+}
+
+export async function getAllChatArchives() {
+  try {
+    return await db.chatArchive.toArray()
+  } catch (error) {
+    console.error('Error getAllChatArchives:', error)
+    return []
+  }
+}
+
+export async function insertChatArchive(data) {
+  try {
+    const record = await db.chatArchive.put(data)
+    return record?.id || record
+  } catch (error) {
+    console.error('Error insertChatArchive:', error)
+  }
+}
+
+export async function deleteChatArchive(id) {
+  try {
+    await db.chatArchive.delete(id)
+  } catch (error) {
+    console.error('Error deleteChatArchive:', error)
+  }
+}
+
+export async function updateMemory(id, data) {
+  try {
+    const existing = await db.memory.get(id)
+    if (!existing) {
+      console.warn(`[DB Proxy] Memory dengan ID ${id} tidak ditemukan untuk diupdate.`)
+      return
     }
 
-    const newMemoryText = memoryText.trim()
-    const type = getValidType(typeStr)
-    
-    let updatePayload = {
-      type: type,
-      summary: summaryStr,
-      memory: newMemoryText,
-      vector: (await generateVector(newMemoryText)) || []
+    const memoryText = (data.memory || existing.memory).trim()
+    const type = getValidType(data.type || existing.type)
+    const summary = data.summary || existing.summary || ''
+
+    let vector = existing.vector
+    if (data.memory && data.memory !== existing.memory) {
+      vector = (await generateVector(memoryText)) || existing.vector
     }
 
-    if (id && !isNaN(id)) {
-      await db.memory.update(id, updatePayload)
-      updateMemoryInOrama(id, { ...updatePayload, id: id }).catch(console.error)
-      console.log(`✅ Memory ID ${id} berhasil di-update.`)
-    } else {
-      console.warn('⚠️ Gagal update: ID tidak ditemukan.')
+    const updatedRecord = {
+      ...existing,
+      type,
+      summary,
+      memory: memoryText,
+      vector,
+      updated_at: Date.now()
+    }
+
+    await db.memory.put(updatedRecord)
+    if (vector && vector.length === 384) {
+      updateMemoryInOrama(id, updatedRecord).catch(console.error)
+      console.log(`[DB Proxy] Memory ID ${id} berhasil di-update.`)
     }
   } catch (error) {
     console.error('Error in updateMemory logic:', error)
@@ -215,15 +592,12 @@ export async function updateMemory(data, maybeMemory, maybeType) {
 // --- DELETE ---
 export async function deleteMemory(data) {
   try {
-    const id = typeof data === 'object' && data !== null ? data.id : Number(data)
-    if (id && !isNaN(id)) {
+    const id = typeof data === 'object' && data !== null ? data.id : String(data)
+    if (id) {
       await db.memory.delete(id)
       deleteMemoryFromOrama(id).catch(console.error)
-      console.log(`🗑️ Memory ID ${id} berhasil dihapus oleh Mark.`)
       return { success: true }
     }
-    
-    console.warn('⚠️ Gagal menghapus memory: ID tidak ditemukan dalam perintah delete.')
     return { success: false, error: 'ID is required for deletion' }
   } catch (error) {
     console.error('Error in deleteMemory logic:', error)
@@ -243,22 +617,16 @@ export async function getAllMemory() {
 
 export async function getAllConfig() {
   try {
-    const data = await db.config.toArray()
-    if (data && data.length > 0) {
-      if (!data[0].geminiWebModel) {
-        data[0].geminiWebModel = 'gemini-3.6-flash'
-      }
-      if (!data[0].aiProvider) {
-        data[0].aiProvider = 'gemini-web'
-      }
-      if (data[0].windowOpacity === undefined) {
-        data[0].windowOpacity = 0.85
-      }
-      if (!data[0].localWhisperModel) {
-        data[0].localWhisperModel = 'whisper-small'
-      }
+    const configData = await apiGet('/api/config')
+    if (configData) {
+      const conf = { ...configData, id: 1 }
+      if (!conf.geminiWebModel) conf.geminiWebModel = 'gemini-3.6-flash'
+      if (!conf.aiProvider) conf.aiProvider = 'gemini-web'
+      if (conf.windowOpacity === undefined) conf.windowOpacity = 0.85
+      if (!conf.speechLanguage) conf.speechLanguage = 'id-ID'
+      return [conf]
     }
-    return data || []
+    return []
   } catch (error) {
     console.error('Error in getAllConfig logic:', error)
     return []
@@ -267,12 +635,9 @@ export async function getAllConfig() {
 
 export async function saveConfiguration(data) {
   try {
-    await db.config.put({ ...data, id: 1 })
-    if (window.api && window.api.syncConfig) {
-      window.api.syncConfig(data)
-    }
+    await apiPost('/api/config', data)
     window.dispatchEvent(new CustomEvent('config-updated', { detail: data }))
-    console.log('Configuration saved:', data)
+    console.log('[DB Proxy] Configuration saved:', data)
   } catch (error) {
     console.error('Error in saveConfiguration logic:', error)
   }
@@ -280,7 +645,7 @@ export async function saveConfiguration(data) {
 
 export async function getAlwaysAllowedPaths() {
   try {
-    const configs = await db.config.toArray()
+    const configs = await getAllConfig()
     if (configs && configs.length > 0 && Array.isArray(configs[0].alwaysAllowedPaths)) {
       return configs[0].alwaysAllowedPaths
     }
@@ -294,20 +659,14 @@ export async function getAlwaysAllowedPaths() {
 export async function addAlwaysAllowedPath(pathToAdd) {
   try {
     if (!pathToAdd) return []
-    const configs = await db.config.toArray()
+    const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
     const currentList = Array.isArray(currentConfig.alwaysAllowedPaths)
       ? currentConfig.alwaysAllowedPaths
       : []
-
     if (!currentList.includes(pathToAdd)) {
       const updatedList = [...currentList, pathToAdd]
-      const newConfig = { ...currentConfig, id: 1, alwaysAllowedPaths: updatedList }
-      await db.config.put(newConfig)
-      if (window.api && window.api.syncConfig) {
-        window.api.syncConfig(newConfig)
-      }
-      window.dispatchEvent(new CustomEvent('config-updated', { detail: newConfig }))
+      await saveConfiguration({ ...currentConfig, alwaysAllowedPaths: updatedList })
       return updatedList
     }
     return currentList
@@ -319,19 +678,14 @@ export async function addAlwaysAllowedPath(pathToAdd) {
 
 export async function removeAlwaysAllowedPath(pathToRemove) {
   try {
-    const configs = await db.config.toArray()
+    if (!pathToRemove) return []
+    const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
     const currentList = Array.isArray(currentConfig.alwaysAllowedPaths)
       ? currentConfig.alwaysAllowedPaths
       : []
-
     const updatedList = currentList.filter((p) => p !== pathToRemove)
-    const newConfig = { ...currentConfig, id: 1, alwaysAllowedPaths: updatedList }
-    await db.config.put(newConfig)
-    if (window.api && window.api.syncConfig) {
-      window.api.syncConfig(newConfig)
-    }
-    window.dispatchEvent(new CustomEvent('config-updated', { detail: newConfig }))
+    await saveConfiguration({ ...currentConfig, alwaysAllowedPaths: updatedList })
     return updatedList
   } catch (error) {
     console.error('Error in removeAlwaysAllowedPath logic:', error)
@@ -339,403 +693,201 @@ export async function removeAlwaysAllowedPath(pathToRemove) {
   }
 }
 
-export async function getAllSessionTitle() {
-  try {
-    const data = await db.sessions.toArray()
-    data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-    return data || []
-  } catch (error) {
-    console.error('Error in getAllSessionTitle logic:', error)
-    return []
-  }
-}
-
-export async function getAllSessions() {
-  try {
-    const sessions = await db.sessions.toArray()
-    if (!sessions || sessions.length === 0) {
-      const defaultSession = { id: 1, title: 'Main Thread', data: [], timestamp: Date.now() }
-      await db.sessions.put(defaultSession)
-      return [defaultSession]
-    }
-    // Pastikan session id: 1 ada
-    const hasMain = sessions.some((s) => s.id === 1)
-    if (!hasMain) {
-      await db.sessions.put({ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() })
-      sessions.unshift({ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() })
-    }
-    sessions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-    return sessions
-  } catch (error) {
-    console.error('Error in getAllSessions:', error)
-    return [{ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() }]
-  }
-}
-
-export async function getChatData(id) {
-  try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const session = await db.sessions.get(numId)
-    return session?.data || []
-  } catch (error) {
-    console.error('Error in getChatData logic:', error)
-    return []
-  }
-}
-
-export async function getSession(id) {
-  try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    return await db.sessions.get(numId)
-  } catch (error) {
-    console.error('Error in getSession:', error)
-    return null
-  }
-}
-
-export async function createSession(title = 'Percakapan Baru', initialData = []) {
-  try {
-    const timestamp = Date.now()
-    const id = await db.sessions.add({
-      title: title.trim() || 'Percakapan Baru',
-      data: initialData,
-      timestamp
-    })
-    return { id, title, data: initialData, timestamp }
-  } catch (error) {
-    console.error('Error in createSession:', error)
-    throw error
-  }
-}
-
-export async function saveSession(id, data, title = null, workspaceRoot = null) {
-  try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const existing = await db.sessions.get(numId)
-    const updatePayload = {
-      id: numId,
-      data: data,
-      timestamp: Date.now()
-    }
-    if (title) {
-      updatePayload.title = title
-    } else if (existing?.title) {
-      updatePayload.title = existing.title
-    } else {
-      updatePayload.title = numId === 1 ? 'Main Thread' : 'Percakapan Baru'
-    }
-    if (workspaceRoot !== null && workspaceRoot !== undefined) {
-      updatePayload.workspaceRoot = workspaceRoot
-    } else if (existing?.workspaceRoot) {
-      updatePayload.workspaceRoot = existing.workspaceRoot
-    }
-    await db.sessions.put(updatePayload)
-    return true
-  } catch (error) {
-    console.error('Error in saveSession:', error)
-    return false
-  }
-}
-
-export async function setSessionWorkspace(id, workspaceRoot) {
-  try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const existing = await db.sessions.get(numId)
-    if (existing) {
-      existing.workspaceRoot = workspaceRoot
-      existing.timestamp = Date.now()
-      await db.sessions.put(existing)
-      return true
-    } else {
-      await db.sessions.put({
-        id: numId,
-        title: numId === 1 ? 'Main Thread' : 'Percakapan Baru',
-        data: [],
-        workspaceRoot,
-        timestamp: Date.now()
-      })
-      return true
-    }
-  } catch (e) {
-    console.error('Error in setSessionWorkspace:', e)
-    return false
-  }
-}
-
-export async function deleteSession(id) {
-  try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    if (numId === 1) {
-      // Main Thread tidak boleh dihapus barisnya, hanya dikosongkan pesannya
-      await db.sessions.put({ id: 1, title: 'Main Thread', data: [], timestamp: Date.now() })
-      await db.chatTurns.where('sessionId').equals(1).delete()
-      try {
-        const { deleteTurnPairsBySessionFromOrama } = await import('./oramaStore')
-        await deleteTurnPairsBySessionFromOrama(1)
-      } catch (_) {}
-      return true
-    }
-    await db.sessions.delete(numId)
-    await db.chatTurns.where('sessionId').equals(Number(numId)).delete()
-    try {
-      const { deleteTurnPairsBySessionFromOrama } = await import('./oramaStore')
-      await deleteTurnPairsBySessionFromOrama(numId)
-    } catch (_) {}
-    return true
-  } catch (error) {
-    console.error('Error in deleteSession:', error)
-    return false
-  }
-}
-
-export async function renameSession(id, newTitle) {
-  try {
-    const numId = typeof id === 'string' && !isNaN(Number(id)) ? Number(id) : id
-    const existing = await db.sessions.get(numId)
-    if (existing) {
-      existing.title = newTitle.trim() || existing.title
-      existing.timestamp = Date.now()
-      await db.sessions.put(existing)
-      return true
-    }
-    return false
-  } catch (error) {
-    console.error('Error in renameSession:', error)
-    return false
-  }
-}
-
-// --- CHAT ARCHIVE CRUD ---
-export async function insertChatArchive(data) {
-  try {
-    return await db.chatArchive.add(data)
-  } catch (error) {
-    console.error('Error in insertChatArchive:', error)
-    throw error
-  }
-}
-
-export async function getAllChatArchives() {
-  try {
-    return await db.chatArchive.toArray()
-  } catch (error) {
-    console.error('Error in getAllChatArchives:', error)
-    return []
-  }
-}
-
-export async function deleteChatArchive(id) {
-  try {
-    await db.chatArchive.delete(id)
-  } catch (error) {
-    console.error('Error in deleteChatArchive:', error)
-    throw error
-  }
-}
-
-// --- DOCUMENTS CRUD ---
-export async function bulkInsertDocuments(chunks) {
-  try {
-    return await db.documents.bulkAdd(chunks, { allKeys: true })
-  } catch (error) {
-    console.error('Error in bulkInsertDocuments:', error)
-    throw error
-  }
-}
-
-export async function getAllDocuments() {
-  try {
-    return await db.documents.toArray()
-  } catch (error) {
-    console.error('Error in getAllDocuments:', error)
-    return []
-  }
-}
-
-export async function deleteDocumentByName(docName) {
-  try {
-    const chunks = await db.documents.where('docName').equals(docName).toArray()
-    const ids = chunks.map(c => c.id)
-    await db.documents.bulkDelete(ids)
-    return ids
-  } catch (error) {
-    console.error('Error in deleteDocumentByName:', error)
-    throw error
-  }
-}
-
-// --- CORE MEMORY ---
-export async function getCoreMemory() {
-  try {
-    const profiles = await db.memory.where('type').equals('profile').toArray()
-    if (profiles && profiles.length > 0) {
-      return profiles.map(p => `- ${p.summary || p.memory}`).join('\n')
-    }
-  } catch (error) {
-    console.error('Error in getCoreMemory:', error)
-  }
-  return 'Tidak ada profil user.'
-}
-
-// --- RELATIONSHIPS ---
-const DEFAULT_TRAITS = {
-  warmth: 0.5,
-  sarcasm_level: 0.5,
-  trust: 0.5,
-  energy: 0.5,
-  obedience: 0.5,
-  evalCount: 0,
-  lastChatIndex: 0,
-  reasoning: 'Baseline netral — belum ada evaluasi.'
-}
-
+// --- RELATIONSHIP 4D ---
 export async function getRelationship(userId = 'owner') {
   try {
-    const data = await db.relationships.get(userId)
-    if (!data) {
-      // Return default traits untuk user baru
-      return { userId, ...DEFAULT_TRAITS, lastEvaluation: null }
-    }
-    return data
+    const rel = await db.relationships.get(userId)
+    return (
+      rel || {
+        userId,
+        warmth: 0.5,
+        sarcasm_level: 0.5,
+        trust: 0.5,
+        energy: 0.5,
+        obedience: 0.5,
+        evalCount: 0,
+        lastChatIndex: 0
+      }
+    )
   } catch (error) {
-    console.error('[DB] Error getRelationship:', error)
-    return { userId, ...DEFAULT_TRAITS, lastEvaluation: null }
+    console.error('Error in getRelationship logic:', error)
+    return {
+      userId,
+      warmth: 0.5,
+      sarcasm_level: 0.5,
+      trust: 0.5,
+      energy: 0.5,
+      obedience: 0.5,
+      evalCount: 0,
+      lastChatIndex: 0
+    }
   }
 }
 
 export async function saveRelationship(data) {
   try {
-    await db.relationships.put(data)
-    console.log(`[DB] Relationship saved for ${data.userId}:`, data)
+    const userId = data.userId || 'owner'
+    const record = { ...data, userId }
+    await db.relationships.put(record)
+    return record
   } catch (error) {
-    console.error('[DB] Error saveRelationship:', error)
+    console.error('Error in saveRelationship logic:', error)
   }
 }
 
-// --- LEARNED SKILLS (METASYSTEM SELF-IMPROVEMENT) ---
-export async function saveLearnedSkill({ name, description, content }) {
-  try {
-    const cleanName = (name || '').toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/^-+|-+$/g, '')
-    if (!cleanName || !content) return null
-
-    // Cek apakah skill dengan nama ini sudah ada (update) atau baru (create)
-    const existing = await db.learnedSkills.where('name').equalsIgnoreCase(cleanName).first()
-    const id = existing?.id || `learned_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-    
-    const skillData = {
-      id,
-      name: cleanName,
-      description: description || 'Prosedur teknis teruji buatan Mark',
-      content: content.trim(),
-      createdAt: existing?.createdAt || Date.now(),
-      updatedAt: Date.now()
-    }
-
-    await db.learnedSkills.put(skillData)
-    console.log(`[DB] Learned skill saved: /${cleanName}`, skillData)
-    return skillData
-  } catch (err) {
-    console.error('[DB] Error saveLearnedSkill:', err)
-    return null
-  }
-}
-
-export async function getLearnedSkill(name) {
-  try {
-    if (!name) return null
-    const cleanName = name.toLowerCase().trim()
-    return await db.learnedSkills.where('name').equalsIgnoreCase(cleanName).first()
-  } catch (err) {
-    console.error('[DB] Error getLearnedSkill:', err)
-    return null
-  }
-}
-
+// --- LEARNED SKILLS ---
 export async function getAllLearnedSkills() {
   try {
-    return await db.learnedSkills.orderBy('createdAt').reverse().toArray()
-  } catch (err) {
-    console.error('[DB] Error getAllLearnedSkills:', err)
+    return await db.learnedSkills.toArray()
+  } catch (error) {
+    console.error('Error in getAllLearnedSkills logic:', error)
     return []
   }
 }
 
-export async function deleteLearnedSkill(idOrName) {
+export async function getLearnedSkill(skillName) {
   try {
-    if (!idOrName) return false
-    const existing = (await db.learnedSkills.get(idOrName)) || (await db.learnedSkills.where('name').equalsIgnoreCase(idOrName).first())
-    if (existing) {
-      await db.learnedSkills.delete(existing.id)
-      return true
-    }
-    return false
-  } catch (err) {
-    console.error('[DB] Error deleteLearnedSkill:', err)
-    return false
-  }
-}
-
-// ==========================================================================
-// CHAT TURNS (TURN-PAIR VECTOR MEMORY)
-// ==========================================================================
-
-export async function saveChatTurn(turnData) {
-  try {
-    if (!turnData || !turnData.pairId) return null
-    await db.chatTurns.put(turnData)
-    return turnData
-  } catch (err) {
-    console.error('[DB] Error saveChatTurn:', err)
+    const all = await getAllLearnedSkills()
+    const target = String(skillName || '')
+      .toLowerCase()
+      .trim()
+    return (
+      all.find(
+        (s) =>
+          String(s.id).toLowerCase() === target ||
+          String(s.name || '')
+            .toLowerCase()
+            .trim() === target
+      ) || null
+    )
+  } catch (error) {
+    console.error('Error in getLearnedSkill logic:', error)
     return null
   }
 }
 
-export async function saveBatchChatTurns(turnsArray) {
+export async function saveLearnedSkill(skill) {
   try {
-    if (!Array.isArray(turnsArray) || turnsArray.length === 0) return 0
-    await db.chatTurns.bulkPut(turnsArray)
-    return turnsArray.length
-  } catch (err) {
-    console.error('[DB] Error saveBatchChatTurns:', err)
-    return 0
+    const all = await getAllLearnedSkills()
+    const targetName = String(skill.name || '')
+      .toLowerCase()
+      .trim()
+    const existing = all.find(
+      (s) =>
+        s.id === skill.id ||
+        String(s.name || '')
+          .toLowerCase()
+          .trim() === targetName
+    )
+
+    const id = existing ? existing.id : skill.id || `skill_${Date.now()}`
+    const record = {
+      ...existing,
+      ...skill,
+      id,
+      updatedAt: Date.now()
+    }
+    await db.learnedSkills.put(record)
+    return record
+  } catch (error) {
+    console.error('Error in saveLearnedSkill logic:', error)
   }
 }
 
-export async function getAllChatTurns() {
+export async function deleteLearnedSkill(id) {
   try {
-    return await db.chatTurns.toArray()
-  } catch (err) {
-    console.error('[DB] Error getAllChatTurns:', err)
-    return []
+    await db.learnedSkills.delete(id)
+    return { success: true }
+  } catch (error) {
+    console.error('Error in deleteLearnedSkill logic:', error)
+    return { success: false, error: error.message }
   }
 }
 
-export async function getChatTurnsBySession(sessionId) {
+// --- RESET AI DATABASE (EXCEPT CONFIG) ---
+export async function resetAiDatabase() {
   try {
-    if (!sessionId) return []
-    return await db.chatTurns.where('sessionId').equals(Number(sessionId)).toArray()
-  } catch (err) {
-    console.error('[DB] Error getChatTurnsBySession:', err)
-    return []
+    const res = await apiPost('/api/db/reset-ai', {})
+    // Re-inisialisasi Orama index di frontend agar sinkron
+    try {
+      const { initOramaIndices, hydrateFromDb } = await import('./oramaStore')
+      await initOramaIndices()
+      await hydrateFromDb()
+    } catch (e) {
+      console.warn('[DB Proxy] Gagal re-hydrate Orama setelah reset:', e)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ai-reset-complete', { detail: res }))
+    }
+
+    return res || { success: true }
+  } catch (error) {
+    console.error('Error in resetAiDatabase logic:', error)
+    return { success: false, error: error.message }
   }
 }
 
-export async function deleteChatTurnsBySession(sessionId) {
+// --- DATABASE BACKUP & RESTORE HELPERS ---
+export async function exportDatabaseDump() {
   try {
-    if (!sessionId) return 0
-    return await db.chatTurns.where('sessionId').equals(Number(sessionId)).delete()
-  } catch (err) {
-    console.error('[DB] Error deleteChatTurnsBySession:', err)
-    return 0
+    const res = await apiGet('/api/db/export')
+    return res || null
+  } catch (error) {
+    console.error('Error in exportDatabaseDump:', error)
+    throw error
   }
 }
 
-export async function getChatTurnCount() {
+export async function restoreDatabaseDump(dumpData, overwrite = true) {
   try {
-    return await db.chatTurns.count()
-  } catch (err) {
-    console.error('[DB] Error getChatTurnCount:', err)
-    return 0
+    const res = await fetch(`${API_BASE}/api/db/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dumpData, overwrite })
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal memulihkan database dari server.')
+    }
+    return json
+  } catch (error) {
+    console.error('Error in restoreDatabaseDump:', error)
+    throw error
   }
 }
 
+// --- SESSION COMPACT HELPERS ---
+export async function getSessionCompact(sessionId) {
+  try {
+    const res = await apiGet(`/api/session-compact/${sessionId}`)
+    return res || null
+  } catch (err) {
+    console.error('[DB Proxy] Error getSessionCompact:', err)
+    return null
+  }
+}
+
+export async function saveSessionCompact(sessionId, data) {
+  try {
+    const payload = {
+      sessionId: String(sessionId),
+      ...data,
+      lastCompactedAt: data.lastCompactedAt || Date.now()
+    }
+    const res = await apiPost('/api/session-compact', payload)
+    return res || null
+  } catch (err) {
+    console.error('[DB Proxy] Error saveSessionCompact:', err)
+    return null
+  }
+}
+
+export async function deleteSessionCompact(sessionId) {
+  try {
+    return await apiDelete(`/api/session-compact/${sessionId}`)
+  } catch (err) {
+    console.error('[DB Proxy] Error deleteSessionCompact:', err)
+    return false
+  }
+}

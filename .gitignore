@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-release
 out
 build
 .DS_Store
@@ -13,3 +14,4 @@ web.whatsapp.com.html
 /web.whatsapp.com_files
 PLUGIN_SYSTEM_SRS.md
 .mark/
+MARK.exe

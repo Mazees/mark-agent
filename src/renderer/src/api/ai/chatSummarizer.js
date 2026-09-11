@@ -14,10 +14,10 @@ Aturan:
 3. Jika ada emosi kuat (marah, senang, sedih), sebutkan konteksnya.
 4. Gunakan bahasa Indonesia natural.
 5. JANGAN melebihi 3 kalimat.
-6. HANYA OUTPUT TEKS RANGKUMAN, tanpa penjelasan tambahan apapun.`;
+6. HANYA OUTPUT TEKS RANGKUMAN, tanpa penjelasan tambahan apapun.`
 
   const userPrompt = recentMessages
-    .map(m => `${m.role === 'ai' ? 'Mark' : 'User'}: ${m.content}`)
+    .map((m) => `${m.role === 'ai' ? 'Mark' : 'User'}: ${m.content}`)
     .join('\n')
 
   try {
@@ -26,10 +26,11 @@ Aturan:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      null, // signal
-      true, // isSmallTask
-      null, // jsonSchema
-      { aiProvider: 'gemini-web', geminiWebModel: 'gemini-3.5-flash-thinking' } // configOverride
+      false,
+      {
+        isSmallTask: true,
+        configOverride: { aiProvider: 'gemini-web', geminiWebModel: 'gemini-3.5-flash-thinking' }
+      }
     )
 
     if (response?.error) {
@@ -49,8 +50,8 @@ Aturan:
     const timestamp = Date.now()
     const topic = activeTopic || 'Obrolan Umum'
 
-    // 1. Simpan ke IndexedDB
-    const dexieId = await insertChatArchive({
+    // 1. Simpan ke SQLite Database
+    const dbId = await insertChatArchive({
       summary,
       timestamp,
       topic,
@@ -62,11 +63,14 @@ Aturan:
       summary,
       topic,
       timestamp,
-      dexieId,
+      dbId: String(dbId),
       vector
     })
 
-    console.log('[ChatSummarizer] Sukses merangkum dan mengarsipkan:', summary.substring(0, 60) + '...')
+    console.log(
+      '[ChatSummarizer] Sukses merangkum dan mengarsipkan:',
+      summary.substring(0, 60) + '...'
+    )
   } catch (error) {
     if (error.name !== 'AbortError' && !error.message.includes('AbortError')) {
       console.error('[ChatSummarizer] Exception saat merangkum:', error)

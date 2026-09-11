@@ -9,4 +9,9 @@ export const ChatProvider = ({ children }) => {
   return <ChatContext.Provider value={markAgent}>{children}</ChatContext.Provider>
 }
 
-export const useChat = () => useContext(ChatContext)
+const defaultChatContext = {}
+
+export const useChat = () => {
+  const context = useContext(ChatContext)
+  return context || defaultChatContext
+}

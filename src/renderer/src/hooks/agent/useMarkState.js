@@ -34,6 +34,7 @@ export const useMarkState = () => {
   const [activeProcesses, setActiveProcesses] = useState([])
   const [inputSource, setInputSource] = useState('pc')
   const [activeTopic, setActiveTopic] = useState(null)
+  const [currentActiveSessionId, setCurrentActiveSessionId] = useState('1')
   const [isChatLoaded, setIsChatLoaded] = useState(false)
   const [isBooting, setIsBooting] = useState(true)
   const sessionId = useRef('mark-main-thread')
@@ -55,9 +56,20 @@ export const useMarkState = () => {
       }
     }
 
+    const handleAiReset = () => {
+      setChatData([])
+      setCurrentActiveSessionId('1')
+      setActiveTopic(null)
+      setCurrentResponse(null)
+      setNotifications([])
+      setActiveProcesses([])
+    }
+
     window.addEventListener('config-updated', handleConfigUpdate)
+    window.addEventListener('ai-reset-complete', handleAiReset)
     return () => {
       window.removeEventListener('config-updated', handleConfigUpdate)
+      window.removeEventListener('ai-reset-complete', handleAiReset)
     }
   }, [])
 
@@ -147,6 +159,8 @@ export const useMarkState = () => {
     setInputSource,
     activeTopic,
     setActiveTopic,
+    currentActiveSessionId,
+    setCurrentActiveSessionId,
     isChatLoaded,
     isBooting,
     setIsBooting,

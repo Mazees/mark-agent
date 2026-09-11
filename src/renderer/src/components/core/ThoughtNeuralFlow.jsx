@@ -39,23 +39,11 @@ const ThoughtNeuralFlow = ({ processes }) => {
   const isDone = displayedPlan?.status === 'done';
 
   return (
-    <div 
+    <div
       className={`absolute inset-0 z-0 pointer-events-none flex items-center justify-center transition-all duration-500 ease-out
         ${isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}
       `}
     >
-      <style>
-        {`
-          @keyframes neuron-spin {
-            0% { transform: rotateX(45deg) rotateY(0deg) rotateZ(45deg); }
-            100% { transform: rotateX(45deg) rotateY(360deg) rotateZ(45deg); }
-          }
-          .perspective-1000 {
-            perspective: 1000px;
-          }
-        `}
-      </style>
-      
       {/* Reasoning text removed as per user request */}
 
       {/* Nodes around the Orb */}

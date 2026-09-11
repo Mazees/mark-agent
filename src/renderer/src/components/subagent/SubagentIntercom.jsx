@@ -142,7 +142,7 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
 
                       {isObsOpen && step.observation && (
                         <div className="p-2.5 bg-black/40 rounded-lg text-base-content/80 whitespace-pre-wrap break-all text-[10px] max-h-44 overflow-y-auto mt-1 border border-base-content/10 font-mono">
-                          {step.observation.replace(/^\[OBSERVATION\]:\s*/, '')}
+                          {(typeof step.observation === 'string' ? step.observation : JSON.stringify(step.observation)).replace(/^\[OBSERVATION\]:\s*/, '')}
                         </div>
                       )}
                     </div>
@@ -175,6 +175,7 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
 
 // Helper untuk mengelompokkan pesan mentah menjadi satu bubble per giliran
 function groupSubagentMessages(rawMessages) {
+  if (!Array.isArray(rawMessages)) return []
   const grouped = []
   let currentSubTurn = null
 

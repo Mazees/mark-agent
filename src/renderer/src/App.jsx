@@ -8,7 +8,7 @@ import Skills from './pages/Skills'
 import SkillEditor from './pages/SkillEditor'
 import Knowledge from './pages/Knowledge'
 import Guidebook from './pages/Guidebook'
-import RelationalGrowth from './pages/RelationalGrowth'
+import NeuralCore from './pages/NeuralCore'
 import GoogleWorkspace from './pages/GoogleWorkspace'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
@@ -19,35 +19,100 @@ import { ApprovalProvider } from './contexts/ApprovalContext'
 import { YoutubeMusicPlayer } from './components/YoutubeMusicPlayer'
 import { GlobalCameraManager } from './components/GlobalCameraManager'
 import { getAllConfig } from './api/db'
-import { initOramaIndices, hydrateFromDexie } from './api/oramaStore'
+import { initOramaIndices, hydrateFromDb } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
-import { env } from '@huggingface/transformers'
-
-// Global Transformers.js configuration
-env.allowLocalModels = false
-env.useBrowserCache = true
-env.useFSCache = false
 
 const GlobalListener = () => {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const handleShortcut = (event, action) => {
-      // Navigate to Home (MarkHome) and trigger microphone auto-toggle
-      navigate('/', { state: { autoToggleMic: Date.now() } })
+    let currentShortcut = 'CommandOrControl+Alt+M'
+
+    const updateConfig = async () => {
+      try {
+        const data = await getAllConfig()
+        if (data && data[0]?.shortcutKey) {
+          currentShortcut = data[0].shortcutKey
+        }
+      } catch (_) {}
+    }
+    updateConfig()
+
+    const handleConfigUpdated = (e) => {
+      if (e?.detail?.shortcutKey) {
+        currentShortcut = e.detail.shortcutKey
+      }
+    }
+    window.addEventListener('config-updated', handleConfigUpdated)
+
+    const triggerMicShortcut = () => {
+      // Dispatch custom event langsung agar didengar oleh useVAD / MarkHome seketika
+      window.dispatchEvent(new CustomEvent('trigger-mic-toggle'))
+      // Pastikan jika user sedang berada di sub-page atau drawer, kita juga arahkan view ke root Home
+      navigate('/')
     }
 
+    const matchesShortcut = (e, shortcutStr) => {
+      if (!shortcutStr) return false
+      const parts = shortcutStr.split('+').map((p) => p.trim())
+      const reqCtrl = parts.some((p) => /^(commandorcontrol|ctrl|control|cmd|meta)$/i.test(p))
+      const reqAlt = parts.some((p) => /^alt$/i.test(p))
+      const reqShift = parts.some((p) => /^shift$/i.test(p))
+      const keyPart = parts.find(
+        (p) => !/^(commandorcontrol|ctrl|control|cmd|meta|alt|shift)$/i.test(p)
+      )
+
+      if (reqCtrl && !(e.ctrlKey || e.metaKey)) return false
+      if (!reqCtrl && (e.ctrlKey || e.metaKey)) return false
+
+      if (reqAlt && !e.altKey) return false
+      if (!reqAlt && e.altKey) return false
+
+      if (reqShift && !e.shiftKey) return false
+      if (!reqShift && e.shiftKey) return false
+
+      if (!keyPart) return false
+
+      const expectedKey = keyPart.toUpperCase()
+      const actualKey = e.key.toUpperCase()
+      const actualCode = e.code.toUpperCase()
+
+      if (expectedKey === 'SPACE' && (actualKey === ' ' || actualCode === 'SPACE')) return true
+      if (actualKey === expectedKey || actualCode === `KEY${expectedKey}` || actualCode === expectedKey) return true
+
+      return false
+    }
+
+    const handleKeyDown = (e) => {
+      // Abaikan jika user sedang merekam shortcut di Configuration.jsx
+      if (e.target && e.target.tagName === 'INPUT' && e.target.readOnly) return
+
+      if (matchesShortcut(e, currentShortcut)) {
+        e.preventDefault()
+        e.stopPropagation()
+        triggerMicShortcut()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true)
+
+    let unsubTg = null
     if (window.api?.onLiveAudioShortcut) {
-      window.api.onLiveAudioShortcut(handleShortcut)
+      window.api.onLiveAudioShortcut(triggerMicShortcut)
     }
 
     if (window.api?.onTgRequestAgentExecution) {
-      window.api.onTgRequestAgentExecution((data) => {
+      unsubTg = window.api.onTgRequestAgentExecution((data) => {
         window.dispatchEvent(new CustomEvent('tg-admin-message', { detail: data }))
       })
     }
 
     return () => {
+      window.removeEventListener('config-updated', handleConfigUpdated)
+      window.removeEventListener('keydown', handleKeyDown, true)
+      if (typeof unsubTg === 'function') {
+        unsubTg()
+      }
       if (window.api?.removeLiveAudioShortcut) {
         window.api.removeLiveAudioShortcut()
       }
@@ -61,96 +126,12 @@ const GlobalListener = () => {
   return null
 }
 
-const WindowControls = () => {
-  const [isMax, setIsMax] = useState(false)
-
-  useEffect(() => {
-    if (window.api?.onWindowMaximized) {
-      window.api.onWindowMaximized((max) => setIsMax(max))
-    }
-  }, [])
-
-  return (
-    <div className="absolute top-0 left-0 right-0 h-10 z-[9999] [-webkit-app-region:drag] flex items-center justify-between px-4 pointer-events-none text-white">
-      {/* Invisible left spacer to balance the right controls */}
-      <div className="flex-1"></div>
-
-      {/* Center Drag Grip */}
-      <div
-        className="flex items-center justify-center opacity-30 hover:opacity-100 transition-opacity gap-2"
-        title="Tahan dan geser untuk memindahkan"
-      >
-        <svg
-          width="32"
-          height="32"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="9" r="1" />
-          <circle cx="19" cy="9" r="1" />
-          <circle cx="5" cy="9" r="1" />
-          <circle cx="12" cy="15" r="1" />
-          <circle cx="19" cy="15" r="1" />
-          <circle cx="5" cy="15" r="1" />
-        </svg>
-      </div>
-
-      {/* Right Controls */}
-      <div className="flex-1 flex justify-end gap-3 [-webkit-app-region:no-drag] opacity-50 hover:opacity-100 transition-opacity pointer-events-auto">
-        <button
-          onClick={() => window.api?.windowMinimize()}
-          className="text-white/70 hover:text-white transition-colors flex items-center justify-center p-2"
-          title="Minimize"
-        >
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M2 7h12v2H2z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => window.api?.windowMaximize()}
-          className="text-white/70 hover:text-white transition-colors flex items-center justify-center p-2"
-          title={isMax ? 'Restore' : 'Maximize'}
-        >
-          {isMax ? (
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" clipRule="evenodd" d="M4 4h7v7H4V4zm2 2v3h3V6H6z" />
-              <path d="M7 2h7v7h-2V4H7V2z" />
-            </svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" clipRule="evenodd" d="M2 2h12v12H2V2zm2 2v8h8V4H4z" />
-            </svg>
-          )}
-        </button>
-        <button
-          onClick={() => window.api?.windowClose()}
-          className="text-white/70 hover:text-red-500 transition-colors flex items-center justify-center p-2"
-          title="Close"
-        >
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M3.707 3.293a1 1 0 0 1 1.414 0L8 6.586l2.879-2.879a1 1 0 1 1 1.414 1.414L9.414 8l2.879 2.879a1 1 0 0 1-1.414 1.414L8 9.414l-2.879 2.879a1 1 0 1 1-1.414-1.414L6.586 8 3.707 5.121a1 1 0 0 1 0-1.414z"
-            />
-          </svg>
-        </button>
-      </div>
-    </div>
-  )
-}
-
 const MainLayout = () => {
   const location = useLocation()
   const isHome = location.pathname === '/'
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-transparent rounded-xl">
-      <WindowControls />
+    <div className="relative h-screen w-screen overflow-hidden bg-[#0f1715] text-[#cac9c9]">
       {/* Base Home Page - Always Mounted so AI Agent & Telegram Listeners Never Die */}
       <div className="h-full w-full">
         <MarkHome />
@@ -171,7 +152,7 @@ const MainLayout = () => {
               <Route path="/google-workspace" element={<GoogleWorkspace />} />
               <Route path="/knowledge" element={<Knowledge />} />
               <Route path="/guidebook" element={<Guidebook />} />
-              <Route path="/relational" element={<RelationalGrowth />} />
+              <Route path="/neural-core" element={<NeuralCore />} />
               <Route path="/subagents" element={<Subagents />} />
             </Routes>
           </div>
@@ -196,11 +177,11 @@ function App() {
 
   useEffect(() => {
     const checkConfig = async () => {
-      // 1. Init Orama and Hydrate from Dexie
+      // 1. Init Orama and Hydrate from Database
       try {
         setLoadingText('Memuat Knowledge Base...')
         await initOramaIndices()
-        await hydrateFromDexie((current, total) => {
+        await hydrateFromDb((current, total) => {
           setLoadingText(`Mengindeks memori percakapan lama (${current}/${total})...`)
         })
         // Recovery saat boot: task yang terputus tidak boleh tetap berstatus running.
@@ -243,36 +224,6 @@ function App() {
         console.error('[App] Failed to load Transformers:', e)
       }
 
-      // 1.6 Load Local STT (Whisper) Model
-      try {
-        setLoadingText('Memuat Voice Engine...')
-        const { loadWhisper } = await import('./api/localWhisper')
-        let sttStats = {}
-        await loadWhisper((info) => {
-          if (info.status === 'initiate') {
-            sttStats[info.file] = { loaded: 0, total: info.total || 0 }
-          } else if (info.status === 'progress') {
-            if (sttStats[info.file]) {
-              sttStats[info.file].loaded = info.loaded
-              sttStats[info.file].total = info.total
-            }
-            const values = Object.values(sttStats)
-            const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
-            const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
-            if (totalBytes > 0) {
-              const percent = Math.round((loadedBytes / totalBytes) * 100)
-              const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
-              const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
-              setLoadingText(`Mengunduh Voice Engine... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
-            }
-          } else if (info.status === 'done' || info.status === 'ready') {
-            setLoadingText('Membangunkan Mark...')
-          }
-        })
-      } catch (e) {
-        console.error('[App] Failed to load Whisper STT:', e)
-      }
-
       // 2. Load config
       const data = await getAllConfig()
       if (!data || data.length === 0) {
@@ -291,7 +242,6 @@ function App() {
   if (isChecking) {
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-base-300 rounded-xl flex flex-col">
-        <WindowControls />
         <div className="flex-1 flex flex-col items-center justify-center gap-5">
           <span className="loading loading-infinity w-16 text-primary"></span>
           <p className="text-sm font-semibold tracking-[0.2em] text-white/40 uppercase animate-pulse text-center px-4">

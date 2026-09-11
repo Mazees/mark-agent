@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 const ConfirmModal = ({ 
   isOpen,
@@ -25,8 +26,8 @@ const ConfirmModal = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="modal modal-open z-[99999] fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-[response-fade-in_0.15s_ease-out_forwards]">
+  const modalContent = (
+    <div className="modal modal-open z-[99999] fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-md animate-[response-fade-in_0.15s_ease-out_forwards]">
       <div className="modal-box relative bg-base-300 border border-white/10 shadow-2xl z-10 max-w-md">
         <h3 className={`font-bold text-lg ${isError ? 'text-error' : 'text-primary'}`}>{title}</h3>
         <p className="py-4 text-sm opacity-80 whitespace-pre-wrap">
@@ -60,7 +61,7 @@ const ConfirmModal = ({
         </div>
       </div>
       <div 
-        className="modal-backdrop fixed inset-0 cursor-pointer" 
+        className="modal-backdrop fixed inset-0 cursor-pointer bg-transparent" 
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -69,6 +70,11 @@ const ConfirmModal = ({
       />
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };
 
 export default ConfirmModal;

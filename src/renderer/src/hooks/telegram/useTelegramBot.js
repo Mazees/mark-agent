@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { webApi } from '../../api/web-bridge'
 
 export const useTelegramBot = () => {
   const [status, setStatus] = useState('disconnected')
@@ -7,65 +8,48 @@ export const useTelegramBot = () => {
   const [currentSender, setCurrentSender] = useState('')
 
   useEffect(() => {
-    if (!window.api) return
+    webApi.tgGetStatus().then((res) => {
+      if (res?.status) setStatus(res.status)
+    })
 
-    if (window.api.tgGetStatus) {
-      window.api.tgGetStatus().then(({ status: initialStatus }) => {
-        if (initialStatus) setStatus(initialStatus)
-      })
-    }
+    webApi.tgGetHistory().then((history) => {
+      if (history && history.length > 0) {
+        setMessages(history)
+      }
+    })
 
-    if (window.api.tgGetHistory) {
-      window.api.tgGetHistory().then((history) => {
-        if (history && history.length > 0) {
-          setMessages(history)
-        }
-      })
-    }
+    const unsubConn = webApi.onTgConnection((newStatus) => {
+      setStatus(newStatus)
+    })
 
-    if (window.api.onTgConnection) {
-      window.api.onTgConnection((newStatus) => {
-        setStatus(newStatus)
-      })
-    }
+    const unsubThink = webApi.onTgThinking(({ sender }) => {
+      setIsThinking(true)
+      setCurrentSender(sender)
+    })
 
-    if (window.api.onTgThinking) {
-      window.api.onTgThinking(({ sender }) => {
-        setIsThinking(true)
-        setCurrentSender(sender)
-      })
-    }
+    const unsubMsg = webApi.onTgMessage((data) => {
+      setMessages((prev) => [...prev, { type: 'incoming', ...data }])
+    })
 
-    if (window.api.onTgMessage) {
-      window.api.onTgMessage((data) => {
-        setMessages((prev) => [...prev, { type: 'incoming', ...data }])
-      })
-    }
-
-    if (window.api.onTgReplySent) {
-      window.api.onTgReplySent((data) => {
-        setMessages((prev) => [...prev, { type: 'outgoing', ...data }])
-        setIsThinking(false)
-      })
-    }
+    const unsubReply = webApi.onTgReplySent((data) => {
+      setMessages((prev) => [...prev, { type: 'outgoing', ...data }])
+      setIsThinking(false)
+    })
 
     return () => {
-      if (window.api?.removeTgListeners) {
-        window.api.removeTgListeners()
-      }
+      if (typeof unsubConn === 'function') unsubConn()
+      if (typeof unsubThink === 'function') unsubThink()
+      if (typeof unsubMsg === 'function') unsubMsg()
+      if (typeof unsubReply === 'function') unsubReply()
     }
   }, [])
 
   const startBot = (token) => {
-    if (window.api?.tgStart) {
-      window.api.tgStart(token)
-    }
+    webApi.tgStart(token)
   }
 
   const stopBot = () => {
-    if (window.api?.tgStop) {
-      window.api.tgStop()
-    }
+    webApi.tgStop()
   }
 
   return {

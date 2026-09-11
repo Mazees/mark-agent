@@ -1,8 +1,9 @@
 /**
- * Context Compactor (Antigravity-Style Token Optimizer)
+ * Context Compactor (Antigravity-Style Token Optimizer & Dual-Layer Chat History)
  * Mengoptimalkan payload riwayat chat yang dikirim ke LLM:
  * - Menjaga pesan terkini dalam resolusi tinggi
  * - Mengompaksi blok kode panjang dan log tool pada giliran masa lalu
+ * - Menjaga ephemeral ReAct loops terpisah dari persistent storage di SQLite
  * - Memastikan respons tetap instan (sub-second) tanpa kehilangan konsistensi coding
  */
 
@@ -27,7 +28,7 @@ export const compactCodeBlocks = (text) => {
 }
 
 /**
- * Mengompaksi daftar riwayat percakapan untuk prompt LLM
+ * Mengompaksi daftar riwayat percakapan untuk prompt LLM (Clean Dual-Layer Assembly)
  */
 export const buildOptimizedChatSession = (sourceChatData, maxTurns = 10) => {
   if (!Array.isArray(sourceChatData)) return []
@@ -55,7 +56,7 @@ export const buildOptimizedChatSession = (sourceChatData, maxTurns = 10) => {
       let toolLog = ''
       if (item.executedTools && item.executedTools.length > 0) {
         if (isInProgress) {
-          // Smart Retention: Pertahankan detail hasil tool (read-file, grep, list-dir) secara utuh
+          // Smart Retention: Pertahankan detail hasil tool secara terstruktur
           toolLog = item.executedTools
             .map((t) => {
               const res = t.fullResult || t.resultSummary || 'OK'
@@ -106,4 +107,42 @@ export const buildOptimizedChatSession = (sourceChatData, maxTurns = 10) => {
       sender: item.sender
     }
   })
+}
+
+/**
+ * Merakit multi-turn context secara bersih untuk prompt LLM (SRS Fase 4)
+ */
+export function assembleMultiTurnContext(systemPrompt, historicalTurns = [], currentQuery = '') {
+  const messages = []
+
+  if (systemPrompt) {
+    messages.push({
+      role: 'system',
+      content: systemPrompt
+    })
+  }
+
+  for (const turn of historicalTurns) {
+    if (turn.user_text || (turn.role === 'user' && turn.content)) {
+      messages.push({
+        role: 'user',
+        content: turn.user_text || turn.content
+      })
+    }
+    if (turn.ai_text || (turn.role === 'assistant' && turn.content)) {
+      messages.push({
+        role: 'assistant',
+        content: turn.ai_text || turn.content
+      })
+    }
+  }
+
+  if (currentQuery) {
+    messages.push({
+      role: 'user',
+      content: currentQuery
+    })
+  }
+
+  return messages
 }

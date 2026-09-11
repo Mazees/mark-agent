@@ -1,7 +1,22 @@
 import { db } from './db'
 
-export const TASK_STATUSES = ['pending', 'running', 'paused', 'waiting_user', 'failed', 'completed', 'cancelled']
-export const STEP_STATUSES = ['pending', 'running', 'needs_revision', 'completed', 'failed', 'skipped']
+export const TASK_STATUSES = [
+  'pending',
+  'running',
+  'paused',
+  'waiting_user',
+  'failed',
+  'completed',
+  'cancelled'
+]
+export const STEP_STATUSES = [
+  'pending',
+  'running',
+  'needs_revision',
+  'completed',
+  'failed',
+  'skipped'
+]
 const now = () => Date.now()
 
 // Hash ringan dipakai untuk mendeteksi output identik tanpa menyimpan isi besar di Dexie.
@@ -17,7 +32,7 @@ export function getAgentTaskContentHash(value = '') {
 
 function makeId(prefix) {
   const uuid = globalThis.crypto?.randomUUID?.()
-  return prefix + '-' + (uuid || (now() + '-' + Math.random().toString(36).slice(2, 10)))
+  return prefix + '-' + (uuid || now() + '-' + Math.random().toString(36).slice(2, 10))
 }
 
 function assertTaskStatus(status) {
@@ -51,26 +66,31 @@ export async function createAgentTask(input = {}) {
       step.id && step.id.startsWith(taskId + '-')
         ? step.id
         : taskId + '-' + (step.id || 'step-' + (index + 1)),
-    taskId, index,
+    taskId,
+    stepIndex: index,
+    index,
     title: step.title || 'Step ' + (index + 1),
     objective: step.objective || '',
     deliverable: step.deliverable || '',
     acceptanceCriteria: step.acceptanceCriteria || [],
-    status: step.status || 'pending',
+    status: step.status || (index === 0 ? 'running' : 'pending'),
     inputSummary: step.inputSummary || '',
     outputSummary: step.outputSummary || '',
     artifactPath: step.artifactPath || null,
     validation: step.validation || null,
     contentHash: step.contentHash || null,
-    attempts: 0, startedAt: null, completedAt: null,
-    updatedAt: timestamp, error: null
+    attempts: 0,
+    startedAt: null,
+    completedAt: null,
+    updatedAt: timestamp,
+    error: null
   }))
   const task = {
     id: taskId,
     title: input.title || 'MARK Task',
     objective: input.objective || '',
     mode: input.mode || 'durable',
-    status: input.status || (steps.length ? 'pending' : 'failed'),
+    status: input.status || (steps.length ? 'running' : 'failed'),
     currentStepIndex: input.currentStepIndex ?? 0,
     activeStepId: input.activeStepId || steps[0]?.id || null,
     constraints: input.constraints || {},
@@ -78,7 +98,8 @@ export async function createAgentTask(input = {}) {
     artifactRoot: input.artifactRoot || null,
     retryCount: input.retryCount || 0,
     maxRetries: input.maxRetries ?? 2,
-    createdAt: timestamp, updatedAt: timestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp,
     completedAt: null,
     error: steps.length ? null : 'Task harus memiliki minimal satu step'
   }
@@ -94,11 +115,29 @@ export async function getAgentTask(taskId) {
 }
 
 export async function getAgentTaskWithSteps(taskId) {
-  const [task, steps] = await Promise.all([
-    db.agentTasks.get(taskId),
-    db.agentTaskSteps.where('taskId').equals(taskId).sortBy('index')
-  ])
-  return task ? { ...task, steps } : null
+  const task = await db.agentTasks.get(taskId)
+  if (!task) return null
+
+  let steps = []
+  try {
+    steps = await db.agentTaskSteps.where('taskId').equals(taskId).toArray()
+  } catch (err) {
+    void err
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/steps`).then((r) => r.json())
+      if (res?.data) steps = res.data
+    } catch (e) {
+      console.warn('[taskStore] Failed to fetch task steps:', e)
+    }
+  }
+
+  steps.sort((a, b) => {
+    const idxA = a.stepIndex ?? a.step_index ?? a.index ?? 0
+    const idxB = b.stepIndex ?? b.step_index ?? b.index ?? 0
+    return idxA - idxB
+  })
+
+  return { ...task, steps }
 }
 
 export async function listAgentTasks({ status, limit = 50 } = {}) {
@@ -156,12 +195,17 @@ export async function startAgentTaskStep(taskId, stepId) {
     const step = await db.agentTaskSteps.get(stepId)
     if (!step || step.taskId !== taskId) throw new Error('Task step tidak ditemukan')
     await db.agentTaskSteps.update(stepId, {
-      status: 'running', attempts: (step.attempts || 0) + 1,
-      startedAt: step.startedAt || timestamp, error: null, updatedAt: timestamp
+      status: 'running',
+      attempts: (step.attempts || 0) + 1,
+      startedAt: step.startedAt || timestamp,
+      error: null,
+      updatedAt: timestamp
     })
     await db.agentTasks.update(taskId, {
-      status: 'running', activeStepId: stepId,
-      currentStepIndex: step.index, updatedAt: timestamp
+      status: 'running',
+      activeStepId: stepId,
+      currentStepIndex: step.index,
+      updatedAt: timestamp
     })
     return db.agentTaskSteps.get(stepId)
   })
@@ -176,17 +220,25 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
     if (!step || step.taskId !== taskId || !task) throw new Error('Task checkpoint tidak ditemukan')
     if (checkpoint.status) assertStepStatus(checkpoint.status)
     await db.agentTaskSteps.update(stepId, {
-      ...checkpoint, updatedAt: timestamp,
-      ...(checkpoint.status === 'completed' ? { completedAt: checkpoint.completedAt || timestamp } : {})
+      ...checkpoint,
+      updatedAt: timestamp,
+      ...(checkpoint.status === 'completed'
+        ? { completedAt: checkpoint.completedAt || timestamp }
+        : {})
     })
     const taskChanges = { updatedAt: timestamp }
     if (checkpoint.status === 'completed') {
       const allSteps = await db.agentTaskSteps.where('taskId').equals(taskId).toArray()
       const next = allSteps
-        .filter(item => item.id !== stepId && ['pending', 'needs_revision'].includes(item.status))
-        .sort((a, b) => a.index - b.index)[0]
+        .filter((item) => item.id !== stepId && ['pending', 'needs_revision'].includes(item.status))
+        .sort(
+          (a, b) =>
+            (a.stepIndex ?? a.step_index ?? a.index ?? 0) -
+            (b.stepIndex ?? b.step_index ?? b.index ?? 0)
+        )[0]
       taskChanges.activeStepId = next?.id || null
-      taskChanges.currentStepIndex = next?.index ?? step.index
+      taskChanges.currentStepIndex =
+        next?.stepIndex ?? next?.step_index ?? next?.index ?? step.stepIndex ?? step.index ?? 0
       if (!next) {
         taskChanges.status = 'completed'
         taskChanges.completedAt = timestamp
@@ -200,7 +252,9 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
 export async function transitionAgentTask(taskId, status, error = null) {
   assertTaskStatus(status)
   return updateAgentTask(taskId, {
-    status, error, ...(status === 'completed' ? { completedAt: now() } : {})
+    status,
+    error,
+    ...(status === 'completed' ? { completedAt: now() } : {})
   })
 }
 
@@ -210,9 +264,15 @@ export async function pauseStaleAgentTasks(reason = 'app_restart') {
   if (!active.length) return 0
   const timestamp = now()
   await db.transaction('rw', db.agentTasks, async () => {
-    await Promise.all(active.map(task => db.agentTasks.update(task.id, {
-      status: 'paused', error: reason, updatedAt: timestamp
-    })))
+    await Promise.all(
+      active.map((task) =>
+        db.agentTasks.update(task.id, {
+          status: 'paused',
+          error: reason,
+          updatedAt: timestamp
+        })
+      )
+    )
   })
   return active.length
 }

@@ -173,13 +173,7 @@ export const CameraPreview = ({
   }
 
   return (
-    <div className="fixed bottom-24 right-6 z-50" style={{ animation: 'slideUpFadeIn 0.3s ease-out' }}>
-      <style>{`
-        @keyframes slideUpFadeIn {
-          from { opacity: 0; transform: translateY(20px) scale(0.95); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
+    <div className="fixed bottom-24 right-6 z-50 animate-[slideUpFadeIn_0.3s_ease-out]">
       <div className="w-[320px] rounded-2xl border border-white/10 bg-base-100/70 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-4 py-3 flex items-center justify-between border-b border-white/5 bg-base-200/50">

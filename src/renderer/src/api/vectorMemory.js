@@ -1,94 +1,14 @@
-import { pipeline } from '@huggingface/transformers'
-import { searchArchives, searchDocuments, searchMemoriesInOrama, searchTurnPairsInOrama } from './oramaStore'
+import {
+  searchArchives,
+  searchDocuments,
+  searchMemoriesInOrama,
+  searchTurnPairsInOrama
+} from './oramaStore'
 import { getAllMemory } from './db'
+import { API_BASE } from './web-bridge'
 
-let worker = null
-let nextId = 1
-const pendingPromises = new Map()
-const progressListeners = new Set()
-
-function getWorker() {
-  if (!worker && typeof Worker !== 'undefined') {
-    try {
-      worker = new Worker(new URL('./embedding.worker.js', import.meta.url), { type: 'module' })
-      worker.onmessage = (event) => {
-        const { id, type, success, vector, results, error, data } = event.data || {}
-
-        if (type === 'progress') {
-          progressListeners.forEach((cb) => {
-            try {
-              cb(data)
-            } catch (_) {}
-          })
-          return
-        }
-
-        if (pendingPromises.has(id)) {
-          const { resolve } = pendingPromises.get(id)
-          pendingPromises.delete(id)
-          if (success) {
-            resolve(vector !== undefined ? vector : results)
-          } else {
-            console.warn('[EmbeddingWorker] Worker task error:', error)
-            resolve(null)
-          }
-        }
-      }
-
-      worker.onerror = (err) => {
-        console.error('[EmbeddingWorker] Worker uncaught error:', err)
-      }
-    } catch (e) {
-      console.warn('[EmbeddingWorker] Failed to initialize worker, fallback to main thread:', e)
-      worker = null
-    }
-  }
-  return worker
-}
-
-// Fallback main-thread extractor jika Web Worker tidak tersedia
-let directExtractor = null
-let isDirectDownloading = false
-
-async function getDirectExtractor(onProgress) {
-  if (!directExtractor && !isDirectDownloading) {
-    isDirectDownloading = true
-    try {
-      const device = typeof window !== 'undefined' && typeof caches !== 'undefined' ? 'wasm' : 'cpu'
-      directExtractor = await pipeline(
-        'feature-extraction',
-        'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
-        {
-          device,
-          progress_callback: onProgress
-        }
-      )
-    } catch (e) {
-      console.error('Failed to load transformer model directly', e)
-    } finally {
-      isDirectDownloading = false
-    }
-  }
-  return directExtractor
-}
-
-// We export this so we can manually trigger download from config page
-export const getExtractor = async (onProgress) => {
-  if (typeof onProgress === 'function') {
-    progressListeners.add(onProgress)
-  }
-  const w = getWorker()
-  if (w) {
-    return new Promise((resolve) => {
-      const id = nextId++
-      pendingPromises.set(id, {
-        resolve: () => resolve(w),
-        reject: () => resolve(w)
-      })
-      w.postMessage({ id, type: 'init' })
-    })
-  }
-  return await getDirectExtractor(onProgress)
+export const getExtractor = async () => {
+  return true
 }
 
 export const generateVector = async (text) => {
@@ -96,33 +16,16 @@ export const generateVector = async (text) => {
     return null
   }
 
-  const w = getWorker()
-  if (w) {
-    return new Promise((resolve) => {
-      const id = nextId++
-      pendingPromises.set(id, {
-        resolve,
-        reject: () => resolve(null)
-      })
-      w.postMessage({ id, type: 'embed', text })
-    })
-  }
-
-  // Fallback direct
   try {
-    const ext = await getDirectExtractor()
-    if (!ext) return null
-    const output = await ext(text, {
-      pooling: 'mean',
-      normalize: true,
-      truncation: true,
-      max_length: 512
+    const res = await fetch(`${API_BASE}/api/vector`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
     })
-    const result = Array.from(output.data)
-    if (output.dispose) output.dispose()
-    return result
+    const json = await res.json()
+    return json.vector || null
   } catch (error) {
-    console.error('Gagal generate vector directly:', error)
+    console.error('Gagal generate vector via server API:', error)
     return null
   }
 }
@@ -148,7 +51,6 @@ export const getRelevantMemory = async (userInput, memoryList) => {
   if (!Array.isArray(list)) {
     list = []
   }
-  // Hanya Core memory (profile & preference) dipanggil langsung tanpa filter
   const coreMemories = list
     .filter((m) => m && typeof m === 'object' && (m.type === 'profile' || m.type === 'preference'))
     .map(({ vector, ...rest }) => rest)
@@ -160,7 +62,13 @@ export const searchExtendedMemory = async (query, threshold = 0.5, limit = 5) =>
   const queryVector = await generateVector(query)
   if (!queryVector) return { memories: [], chatTurns: [] }
 
-  const memories = await searchMemoriesInOrama(query, queryVector, limit, ['notes', 'learn'], threshold)
+  const memories = await searchMemoriesInOrama(
+    query,
+    queryVector,
+    limit,
+    ['notes', 'learn'],
+    threshold
+  )
   const chatTurns = await searchTurnPairsInOrama(query, queryVector, limit, threshold)
 
   return { memories, chatTurns }
@@ -169,10 +77,15 @@ export const searchExtendedMemory = async (query, threshold = 0.5, limit = 5) =>
 export const executeMemorySearch = async (rawQuery) => {
   const parts = (rawQuery || '').split('||')
   const searchKeyword = parts[0]?.trim() || ''
-  const customThreshold = parts[1] && !isNaN(parseFloat(parts[1])) ? parseFloat(parts[1].trim()) : 0.5
+  const customThreshold =
+    parts[1] && !isNaN(parseFloat(parts[1])) ? parseFloat(parts[1].trim()) : 0.5
   const customLimit = parts[2] && !isNaN(parseInt(parts[2], 10)) ? parseInt(parts[2].trim(), 10) : 5
 
-  const { memories = [], chatTurns = [] } = await searchExtendedMemory(searchKeyword, customThreshold, customLimit)
+  const { memories = [], chatTurns = [] } = await searchExtendedMemory(
+    searchKeyword,
+    customThreshold,
+    customLimit
+  )
 
   const formattedMemories =
     memories.length > 0
@@ -211,7 +124,6 @@ export const executeMemorySearch = async (rawQuery) => {
 export const getUnifiedContext = async (userInput, memoryList) => {
   const memories = await getRelevantMemory(userInput, memoryList)
 
-  // Masih perlu generate vector untuk Orama (Documents & Archives)
   const output = await generateVector(userInput)
   if (!output) return { memories, archives: [], documents: [], turnPairs: [] }
   const userVector = Array.from(output)

@@ -1,91 +1,188 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
 import { getAllConfig } from '../api/db'
-import { transcribeAudioLocal } from '../api/localWhisper'
-import { FaChevronLeft, FaMicrophone, FaStop, FaExclamationTriangle } from 'react-icons/fa'
+import { webApi } from '../api/web-bridge'
+import {
+  startWebSpeechRecognition,
+  stopWebSpeechRecognition,
+  isWebSpeechSupported
+} from '../api/webSpeech'
+import { detectWakeWord, cleanSpokenCommand } from '../api/wakeWord'
+import { FaChevronLeft, FaMicrophone, FaStop, FaExclamationTriangle, FaHandPaper } from 'react-icons/fa'
 
 const LiveAudio = () => {
   const {
     chatData,
-    setChatData,
-    isLoading,
-    isSpeak,
     setIsSpeak,
-    message,
     setMessage,
-    handleSubmit,
-    handlePlanningCommand,
-    abortControllerRef,
-    config
+    handlePlanningCommand
   } = useChat()
-  const chatEndRef = useRef(null)
+
   const navigate = useNavigate()
   const location = useLocation()
   const [isActive, setIsActive] = useState(false)
-  const [status, setStatus] = useState('idle')
-  const timeoutsRef = useRef(null)
-  const recognitionRef = useRef(null)
-  const audioRef = useRef(null)
-  const prevChatLengthRef = useRef(chatData.length)
-
+  const [status, setStatus] = useState('idle') // 'idle' | 'listening' | 'thinking' | 'speaking'
   const [toastMessage, setToastMessage] = useState('')
 
-  // Local Whisper STT Refs (Now used for Audio Context VAD)
-  const streamRef = useRef(null)
-  const audioContextRef = useRef(null)
-  const processorRef = useRef(null)
-  const isSpeakingRef = useRef(false)
-  const audioChunksRef = useRef([])
-  const silenceTimerRef = useRef(null)
+  const isActiveRef = useRef(false)
+  const statusRef = useRef(status)
+  const audioRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const currentConfigRef = useRef({})
 
-  // Inisialisasi dengan pesan terakhir agar saat LiveAudio dibuka, tidak memutar ulang pesan lama
+  // Inisialisasi dengan pesan terakhir agar saat LiveAudio dibuka tidak memutar ulang pesan lama
   const lastSpokenMessageContentRef = useRef(
     chatData.length > 0 && chatData[chatData.length - 1].role === 'ai'
       ? chatData[chatData.length - 1].content
       : null
   )
 
-  const stopRecordingCleanup = () => {
-    const totalLength = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
+  useEffect(() => {
+    isActiveRef.current = isActive
+    window.isLiveAudioActive = isActive
+  }, [isActive])
 
-    // Jika dipanggil saat mau dimatikan secara manual dan ada data audio,
-    // kembalikan merged array agar bisa ditranskrip sebelum dihapus
-    let pendingAudio = null
-    if (totalLength >= 8000) {
-      pendingAudio = new Float32Array(totalLength)
-      let offset = 0
-      for (let arr of audioChunksRef.current) {
-        pendingAudio.set(arr, offset)
-        offset += arr.length
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
+  // Pastikan isSpeak dari ChatContext dimatikan agar tidak double playback
+  useEffect(() => {
+    setIsSpeak(false)
+  }, [setIsSpeak])
+
+  // Muat konfigurasi
+  const refreshConfig = async () => {
+    try {
+      const data = await getAllConfig()
+      if (data && data.length > 0) {
+        currentConfigRef.current = data[0] || {}
       }
-    }
-
-    if (processorRef.current) {
-      processorRef.current.disconnect()
-      processorRef.current = null
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-    }
-    isSpeakingRef.current = false
-    audioChunksRef.current = []
-
-    return pendingAudio
+    } catch (_) {}
   }
 
-  // Bersihkan mic saat unmount
   useEffect(() => {
-    return () => stopRecordingCleanup()
+    refreshConfig()
   }, [])
+
+  const stopRecognitionCleanup = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    window.isMarkSpeaking = false
+    stopWebSpeechRecognition()
+    recognitionRef.current = null
+  }, [])
+
+  // Bersihkan rekognisi saat unmount
+  useEffect(() => {
+    return () => {
+      window.isLiveAudioActive = false
+      window.isMarkSpeaking = false
+      stopRecognitionCleanup()
+    }
+  }, [stopRecognitionCleanup])
+
+  const startListeningSession = useCallback(async () => {
+    if (!isWebSpeechSupported()) {
+      setToastMessage('Web Speech API tidak didukung di peramban ini.')
+      setTimeout(() => setToastMessage(''), 4000)
+      setIsActive(false)
+      setStatus('idle')
+      return
+    }
+
+    // Jika saat ini sedang memutar suara AI (speaking), jangan aktifkan mic agar tidak terjadi loopback
+    if (statusRef.current === 'speaking') {
+      return
+    }
+
+    await refreshConfig()
+    const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
+    const customWakeWords = currentConfigRef.current?.customWakeWords || ''
+
+    stopWebSpeechRecognition()
+    recognitionRef.current = null
+
+    try {
+      const rec = await startWebSpeechRecognition({
+        lang,
+        continuous: true,
+        onResult: (finalText) => {
+          if (!finalText || !finalText.trim()) return
+
+          // Cegah eksekusi jika status sudah berubah ke thinking/speaking
+          if (statusRef.current === 'thinking' || statusRef.current === 'speaking') return
+
+          const rawText = finalText.trim()
+          const check = detectWakeWord(rawText, customWakeWords)
+          const wakePrefix = check.detected && check.wakePhrase ? `${check.wakePhrase} ` : ''
+          const cleanText = cleanSpokenCommand(rawText, customWakeWords)
+          const commandToRun = cleanText || rawText
+
+          if (commandToRun) {
+            setStatus('thinking')
+            stopWebSpeechRecognition()
+            recognitionRef.current = null
+            const fullMessage = `(Mikrofon) ${wakePrefix}${commandToRun}`.trim()
+            setMessage(fullMessage)
+            handlePlanningCommand(fullMessage)
+          }
+        },
+        onError: (err) => {
+          console.warn('[LiveAudio] Web Speech Error:', err.message)
+        },
+        onEnd: () => {
+          // Restart listening jika sesi masih aktif dan tidak sedang thinking/speaking
+          if (isActiveRef.current && statusRef.current === 'listening') {
+            setTimeout(() => {
+              if (isActiveRef.current && statusRef.current === 'listening') {
+                startListeningSession()
+              }
+            }, 300)
+          }
+        }
+      })
+
+      recognitionRef.current = rec
+      setStatus('listening')
+    } catch (err) {
+      console.error('[LiveAudio] Failed to start recognition:', err)
+      setToastMessage('Gagal memulai mikrofon.')
+      setTimeout(() => setToastMessage(''), 4000)
+      setIsActive(false)
+      setStatus('idle')
+    }
+  }, [handlePlanningCommand, setMessage])
+
+  // Tap-to-Interrupt & Mic Toggle Handler
+  const handleMicToggle = useCallback(async () => {
+    // 1. Jika Mark sedang berbicara -> TAP TO INTERRUPT (Sela Mark seketika dan buka mic)
+    if (statusRef.current === 'speaking') {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      window.isMarkSpeaking = false
+      setStatus('listening')
+      await startListeningSession()
+      return
+    }
+
+    // 2. Jika sesi aktif (sedang mendengarkan / thinking) -> Matikan sesi
+    if (isActive) {
+      setIsActive(false)
+      setStatus('idle')
+      stopRecognitionCleanup()
+    } else {
+      // 3. Jika sedang idle -> Mulai sesi live
+      setIsActive(true)
+      setStatus('listening')
+      await startListeningSession()
+    }
+  }, [isActive, startListeningSession, stopRecognitionCleanup])
 
   // Auto-start dari Global Shortcut / System Tray
   useEffect(() => {
@@ -93,188 +190,72 @@ const LiveAudio = () => {
       if (!isActive) {
         handleMicToggle()
       }
-      // Hapus state dari React Router secara benar agar tidak loop
       navigate(location.pathname, { replace: true, state: {} })
     }
-  }, [location.state, isActive, navigate])
+  }, [location.state, isActive, navigate, handleMicToggle])
 
-  // Refs untuk mengatasi stale closure pada event listener STT
-  const isActiveRef = useRef(isActive)
-  const statusRef = useRef(status)
+  const playAIResponse = useCallback(async (text) => {
+    try {
+      // Stop Web Speech selama Mark berbicara agar suara speaker tidak masuk ke mic
+      stopWebSpeechRecognition()
+      recognitionRef.current = null
 
-  useEffect(() => {
-    isActiveRef.current = isActive
-    statusRef.current = status
-  }, [isActive, status])
+      setStatus('speaking')
+      window.isMarkSpeaking = true
 
-  // Pastikan isSpeak dari ChatContext dimatikan agar tidak double playback
-  // karena LiveAudio menghandle playback-nya sendiri
-  useEffect(() => {
-    setIsSpeak(false)
-  }, [setIsSpeak])
+      const configList = await getAllConfig()
+      const rate = configList[0]?.ttsRate ?? 0
+      const pitch = configList[0]?.ttsPitch ?? 0
+      const voice = configList[0]?.ttsVoice || 'id-ID-ArdiNeural'
 
-  const isStartingRef = useRef(false)
+      const audioSrc = await webApi.textToSpeech(text, rate, pitch, voice)
+      if (audioSrc) {
+        const audio = new Audio(audioSrc)
+        audio.crossOrigin = 'anonymous'
+        audioRef.current = audio
 
-  const handleMicToggle = async () => {
-    if (isActive) {
-      // Dapatkan pending audio yang sempat terekam sebelum dimatikan
-      const pendingAudio = stopRecordingCleanup()
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
+        audio.onended = () => {
+          audioRef.current = null
+          window.isMarkSpeaking = false
+          // Begitu Mark selesai bicara, otomatis aktifkan mic kembali (Auto-loop)
+          if (isActiveRef.current) {
+            setStatus('listening')
+            startListeningSession()
+          } else {
+            setStatus('idle')
+          }
+        }
+        audio.onerror = () => {
+          audioRef.current = null
+          window.isMarkSpeaking = false
+          if (isActiveRef.current) {
+            setStatus('listening')
+            startListeningSession()
+          } else {
+            setStatus('idle')
+          }
+        }
+        await audio.play()
+      } else {
+        window.isMarkSpeaking = false
+        if (isActiveRef.current) {
+          setStatus('listening')
+          startListeningSession()
+        } else {
+          setStatus('idle')
+        }
       }
-      setIsActive(false)
-
-      // Jika ada audio yang sempat ngomong sebelum dimatikan paksa, transkrip!
-      if (pendingAudio) {
-        setStatus('thinking')
-
-        // Memberikan jeda 150ms agar UI React sempat re-render (mic mati) sebelum thread diblokir oleh WASM
-        setTimeout(() => {
-          transcribeAudioLocal(pendingAudio)
-            .then((text) => {
-              if (text && text.trim() !== '') {
-                setMessage(`(Mikrofon) ${text.trim()}`)
-                handlePlanningCommand(`(Mikrofon) ${text.trim()}`)
-              } else {
-                setStatus('idle')
-              }
-            })
-            .catch((err) => {
-              console.error('Local STT Error:', err)
-              setStatus('idle')
-            })
-        }, 150)
+    } catch (e) {
+      console.error('[LiveAudio] TTS Error:', e)
+      window.isMarkSpeaking = false
+      if (isActiveRef.current) {
+        setStatus('listening')
+        startListeningSession()
       } else {
         setStatus('idle')
       }
-    } else {
-      if (isStartingRef.current) return
-      isStartingRef.current = true
-
-      try {
-        stopRecordingCleanup()
-
-        const micId = config[0]?.micDeviceId
-        const audioConstraints = {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
-
-        if (micId && micId !== 'default') {
-          audioConstraints.deviceId = { exact: micId }
-        }
-
-        const constraints = {
-          audio: audioConstraints
-        }
-        const stream = await navigator.mediaDevices.getUserMedia(constraints)
-        streamRef.current = stream
-
-        const AudioContext = window.AudioContext || window.webkitAudioContext
-        const audioContext = new AudioContext({ sampleRate: 16000 })
-        audioContextRef.current = audioContext
-
-        const source = audioContext.createMediaStreamSource(stream)
-        const processor = audioContext.createScriptProcessor(4096, 1, 1)
-        processorRef.current = processor
-
-        const gainNode = audioContext.createGain()
-        gainNode.gain.value = 0 // Mute output to speakers
-
-        source.connect(processor)
-        processor.connect(gainNode)
-        gainNode.connect(audioContext.destination)
-
-        processor.onaudioprocess = (e) => {
-          // Jika AI sedang berbicara atau berpikir, kita pause VAD (kecuali untuk barge-in)
-          if (statusRef.current === 'speaking' || statusRef.current === 'thinking') {
-            const input = e.inputBuffer.getChannelData(0)
-            let sum = 0
-            for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
-            const rms = Math.sqrt(sum / input.length)
-
-            // Barge-in threshold: jika user teriak / bicara keras saat Mark bicara
-            if (statusRef.current === 'speaking' && rms > 0.05) {
-              if (audioRef.current) {
-                audioRef.current.pause()
-                audioRef.current = null
-              }
-              setStatus('listening')
-            }
-            return
-          }
-
-          const input = e.inputBuffer.getChannelData(0)
-          let sum = 0
-          for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
-          const rms = Math.sqrt(sum / input.length)
-
-          // Threshold suara (VAD sederhana) diturunkan agar lebih sensitif
-          if (rms > 0.01) {
-            if (!isSpeakingRef.current) {
-              isSpeakingRef.current = true
-              audioChunksRef.current = []
-            }
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-
-            silenceTimerRef.current = setTimeout(() => {
-              isSpeakingRef.current = false
-
-              const totalLength = audioChunksRef.current.reduce((acc, val) => acc + val.length, 0)
-              // Minimal 0.5 detik audio untuk dikirim ke Whisper (8000 samples @ 16kHz)
-              if (totalLength < 8000) {
-                return // Abaikan noise singkat
-              }
-
-              const merged = new Float32Array(totalLength)
-              let offset = 0
-              for (let arr of audioChunksRef.current) {
-                merged.set(arr, offset)
-                offset += arr.length
-              }
-
-              setStatus('thinking')
-
-              // Memberikan jeda 150ms agar UI React sempat re-render sebelum thread diblokir oleh WASM
-              setTimeout(() => {
-                transcribeAudioLocal(merged)
-                  .then((text) => {
-                    if (text && text.trim() !== '') {
-                      setMessage(`(Mikrofon) ${text.trim()}`)
-                      handlePlanningCommand(`(Mikrofon) ${text.trim()}`)
-                    } else {
-                      setStatus('listening')
-                    }
-                  })
-                  .catch((err) => {
-                    console.error('Local STT Error:', err)
-                    setToastMessage('Gagal memuat atau memproses Whisper Local.')
-                    setTimeout(() => setToastMessage(''), 5000)
-                    setStatus('listening')
-                  })
-              }, 150)
-            }, 1200) // Diam 1.2 detik = kirim ke Groq
-          }
-
-          if (isSpeakingRef.current) {
-            audioChunksRef.current.push(new Float32Array(input))
-          }
-        }
-
-        setIsActive(true)
-        setStatus('listening')
-        isStartingRef.current = false
-      } catch (error) {
-        console.error('Error starting mic:', error)
-        alert('Gagal mengakses mikrofon. Pastikan Anda telah memberikan izin.')
-        setIsActive(false)
-        setStatus('idle')
-        isStartingRef.current = false
-      }
     }
-  }
+  }, [startListeningSession])
 
   // Memantau chatData untuk auto-play respons TTS
   useEffect(() => {
@@ -291,39 +272,13 @@ const LiveAudio = () => {
         !lastMsg.isSummarizing &&
         !lastMsg.isSearchingMusic
       ) {
-        // Cek apakah pesan ini sudah diucapkan agar tidak dobel
         if (lastSpokenMessageContentRef.current !== lastMsg.content) {
           lastSpokenMessageContentRef.current = lastMsg.content
           playAIResponse(lastMsg.content)
         }
       }
     }
-  }, [chatData, isActive, status])
-
-  const playAIResponse = async (text) => {
-    try {
-      setStatus('speaking')
-      const configList = await getAllConfig()
-      const rate = configList[0]?.ttsRate ?? 0
-      const pitch = configList[0]?.ttsPitch ?? 0
-
-      const audioBase64 = await window.api.textToSpeech(text, rate, pitch)
-      if (audioBase64) {
-        const audio = new Audio(audioBase64)
-        audioRef.current = audio
-
-        audio.onended = () => {
-          setStatus('listening')
-        }
-        audio.play()
-      } else {
-        setStatus('listening')
-      }
-    } catch (e) {
-      console.error(e)
-      setStatus('listening')
-    }
-  }
+  }, [chatData, isActive, playAIResponse])
 
   const getStatusText = () => {
     switch (status) {
@@ -332,9 +287,9 @@ const LiveAudio = () => {
       case 'listening':
         return 'Mendengarkan...'
       case 'thinking':
-        return 'Mark sedang memikirkan balasan...'
+        return 'Mark sedang memproses...'
       case 'speaking':
-        return 'Mark sedang berbicara...'
+        return 'Mark sedang berbicara'
       default:
         return 'Tap untuk mulai bicara'
     }
@@ -343,20 +298,20 @@ const LiveAudio = () => {
   const getStatusSubtext = () => {
     switch (status) {
       case 'idle':
-        return 'Tekan tombol mikrofon untuk memulai percakapan live dengan Mark'
+        return 'Tekan tombol mikrofon untuk memulai percakapan live'
       case 'listening':
-        return 'Silakan bicara, Mark sedang mendengarkan'
+        return 'Silakan bicara secara wajar, Mark sedang mendengarkan'
       case 'thinking':
-        return 'Tunggu sebentar, Mark sedang memproses ucapanmu'
+        return 'Menyiapkan respons dan sintesis suara...'
       case 'speaking':
-        return 'Tunggu sebentar, Mark sedang merespon'
+        return 'Tap tombol atau lingkaran di tengah untuk menyela ucapan Mark'
       default:
         return ''
     }
   }
 
   const handleBack = () => {
-    stopRecordingCleanup()
+    stopRecognitionCleanup()
     setIsActive(false)
     setStatus('idle')
     navigate('/')
@@ -371,10 +326,10 @@ const LiveAudio = () => {
       {/* Ambient background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div
-          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl transition-all duration-1000 ${isActive ? 'scale-110 bg-primary/10' : 'scale-100'}`}
+          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 rounded-full bg-primary/5 blur-3xl transition-all duration-1000 ${isActive ? 'scale-110 bg-primary/10' : 'scale-100'}`}
         />
         <div
-          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-success/5 blur-3xl transition-all duration-1000 delay-200 ${isActive ? 'scale-125 bg-success/10' : 'scale-100'}`}
+          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-100 h-100 rounded-full bg-success/5 blur-3xl transition-all duration-1000 delay-200 ${isActive ? 'scale-125 bg-success/10' : 'scale-100'}`}
         />
       </div>
 
@@ -382,8 +337,7 @@ const LiveAudio = () => {
       <button
         type="button"
         onClick={handleBack}
-        className="absolute top-8 left-6 btn btn-ghost btn-sm gap-2 z-50 text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer select-none [-webkit-app-region:no-drag]"
-        style={{ WebkitAppRegion: 'no-drag' }}
+        className="absolute top-8 left-6 btn btn-ghost btn-sm gap-2 z-50 text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer select-none"
       >
         <FaChevronLeft size={14} />
         <span>Kembali</span>
@@ -397,11 +351,15 @@ const LiveAudio = () => {
           </div>
           <h1 className="text-2xl font-bold">Live Audio</h1>
         </div>
-        <p className="text-sm opacity-50">Percakapan suara real-time dengan Mark</p>
+        <p className="text-sm opacity-50">Percakapan suara real-time tanpa jeda</p>
       </div>
 
-      {/* Audio Visualizer Circle */}
-      <div className="relative z-10 flex items-center justify-center mb-10">
+      {/* Audio Visualizer Circle (Clickable to interrupt when speaking) */}
+      <div
+        className={`relative z-10 flex items-center justify-center mb-10 ${status === 'speaking' ? 'cursor-pointer' : ''}`}
+        onClick={status === 'speaking' ? handleMicToggle : undefined}
+        title={status === 'speaking' ? 'Tap untuk menyela ucapan Mark' : undefined}
+      >
         {/* Outer pulse rings */}
         {isActive && (
           <>
@@ -422,7 +380,7 @@ const LiveAudio = () => {
           className={`relative w-52 h-52 rounded-full flex items-center justify-center transition-all duration-700 ${
             isActive
               ? status === 'speaking'
-                ? 'audio-glow-speaking'
+                ? 'audio-glow-speaking hover:scale-105'
                 : 'audio-glow-listening'
               : 'audio-glow-idle'
           }`}
@@ -467,7 +425,7 @@ const LiveAudio = () => {
       </div>
 
       {/* Status text */}
-      <div className="relative z-10 text-center mb-12 select-none">
+      <div className="relative z-10 text-center mb-10 select-none">
         <p
           className={`text-lg font-semibold mb-1 transition-colors duration-300 ${
             status === 'listening'
@@ -482,32 +440,45 @@ const LiveAudio = () => {
         <p className="text-sm opacity-40 max-w-xs">{getStatusSubtext()}</p>
       </div>
 
-      {/* Mic button */}
+      {/* Mic / Interrupt Button */}
       <div className="relative z-10 flex flex-col items-center">
         <button
           onClick={handleMicToggle}
-          className={`relative w-18 h-18 rounded-full flex items-center justify-center transition-all duration-500 active:scale-95 ${
-            isActive
-              ? 'bg-error shadow-[0_0_20px_oklch(var(--er)/0.4)] hover:bg-error/90'
-              : 'bg-primary shadow-[0_0_20px_oklch(var(--p)/0.4)] hover:bg-primary/90'
+          className={`relative w-18 h-18 rounded-full flex items-center justify-center transition-all duration-500 active:scale-95 cursor-pointer shadow-xl ${
+            status === 'speaking'
+              ? 'bg-warning text-black shadow-[0_0_25px_rgba(234,179,8,0.5)] hover:bg-warning/90'
+              : isActive
+                ? 'bg-error shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:bg-error/90 text-white'
+                : 'bg-primary shadow-[0_0_20px_rgba(31,184,84,0.4)] hover:bg-primary/90 text-white'
           }`}
+          title={status === 'speaking' ? 'Tap untuk menyela' : isActive ? 'Hentikan percakapan' : 'Mulai bicara'}
         >
-          {isActive ? (
-            <FaStop className="text-white" size={24} />
+          {status === 'speaking' ? (
+            <FaHandPaper size={22} className="animate-pulse" />
+          ) : isActive ? (
+            <FaStop size={24} />
           ) : (
-            <FaMicrophone className="text-white" size={24} />
+            <FaMicrophone size={24} />
           )}
         </button>
 
-        {/* Active ring animation around mic button */}
+        {/* Active ring animation around button */}
         {isActive && (
-          <div className="absolute top-0 w-18 h-18 rounded-full border-2 border-error/50 audio-pulse-ring pointer-events-none" />
+          <div
+            className={`absolute top-0 w-18 h-18 rounded-full border-2 audio-pulse-ring pointer-events-none ${
+              status === 'speaking' ? 'border-warning/50' : 'border-error/50'
+            }`}
+          />
         )}
       </div>
 
       {/* Bottom hint */}
       <p className="relative z-10 mt-8 text-xs opacity-30 select-none">
-        {isActive ? 'Tekan tombol untuk menghentikan' : 'Pastikan mikrofon sudah tersambung'}
+        {status === 'speaking'
+          ? 'Tap tombol di atas atau lingkaran visualizer untuk menyela Mark'
+          : isActive
+            ? 'Tekan tombol untuk menghentikan percakapan'
+            : 'Pastikan mikrofon sudah tersambung'}
       </p>
 
       {/* Floating Toast Error */}

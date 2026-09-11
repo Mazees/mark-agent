@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Save, Trash2, ArrowLeft, Terminal, Folder, File as FileIcon, Plus, FolderPlus, Edit2, ChevronRight, ChevronDown, Heading1, Heading2, Bold, Italic, CheckSquare, Code, Link, Quote, List } from 'lucide-react'
+import { Save, Trash2, Terminal, Folder, File as FileIcon, Plus, FolderPlus, Edit2, ChevronRight, ChevronDown, Heading1, Heading2, Bold, Italic, CheckSquare, Code, Link, Quote, List } from 'lucide-react'
 import Editor from '@monaco-editor/react'
+import { webApi } from '../api/web-bridge'
 
 const FileTreeNode = ({ node, level = 0, selectedPath, onSelect, onRename, onDelete, expandedFolders, toggleFolder }) => {
   const isSelected = selectedPath === node.path
   const isExpanded = expandedFolders[node.path]
-  
+
   return (
     <div className="select-none">
-      <div 
+      <div
         className={`flex items-center gap-1.5 py-1 px-2 cursor-pointer hover:bg-white/10 transition-colors group ${isSelected ? 'bg-primary/20 text-primary' : 'text-gray-300'}`}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={() => {
@@ -27,22 +28,22 @@ const FileTreeNode = ({ node, level = 0, selectedPath, onSelect, onRename, onDel
             <FileIcon size={14} className="opacity-70" />
           )}
         </div>
-        
+
         {node.type === 'folder' && (
           <Folder size={14} className={isExpanded ? 'text-blue-400' : 'text-blue-400/70'} />
         )}
-        
+
         <span className="text-sm truncate flex-1">{node.name}</span>
 
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-          <button 
+          <button
             className="p-1 hover:bg-white/20 rounded text-gray-400 hover:text-white transition-colors"
             onClick={(e) => { e.stopPropagation(); onRename(node) }}
             title="Rename"
           >
             <Edit2 size={12} />
           </button>
-          <button 
+          <button
             className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
             onClick={(e) => { e.stopPropagation(); onDelete(node) }}
             title="Delete"
@@ -51,13 +52,13 @@ const FileTreeNode = ({ node, level = 0, selectedPath, onSelect, onRename, onDel
           </button>
         </div>
       </div>
-      
+
       {node.type === 'folder' && isExpanded && node.children && (
         <div>
           {node.children.map((child) => (
-            <FileTreeNode 
+            <FileTreeNode
               key={child.path}
-              node={child} 
+              node={child}
               level={level + 1}
               selectedPath={selectedPath}
               onSelect={onSelect}
@@ -76,7 +77,7 @@ const FileTreeNode = ({ node, level = 0, selectedPath, onSelect, onRename, onDel
 const SkillEditor = () => {
   const { id } = useParams()
   const navigate = useNavigate()
-  
+
   const [tree, setTree] = useState([])
   const [selectedPath, setSelectedPath] = useState('SKILL.md')
   const [content, setContent] = useState('')
@@ -93,9 +94,9 @@ const SkillEditor = () => {
     if (!selection || !model) return
 
     const selectedText = model.getValueInRange(selection)
-    
+
     let textToInsert = ''
-    
+
     switch (format) {
       case 'h1': textToInsert = `# ${selectedText || 'Heading 1'}`; break;
       case 'h2': textToInsert = `## ${selectedText || 'Heading 2'}`; break;
@@ -108,7 +109,7 @@ const SkillEditor = () => {
       case 'link': textToInsert = `[${selectedText || 'Teks Link'}](https://url-di-sini)`; break;
       default: return;
     }
-    
+
     editor.executeEdits('toolbar', [{
       range: selection,
       text: textToInsert,
@@ -119,7 +120,7 @@ const SkillEditor = () => {
 
   const loadTree = async () => {
     try {
-      const data = await window.api.getSkillTree(id)
+      const data = await webApi.getSkillTree(id)
       setTree(data)
     } catch (e) {
       console.error(e)
@@ -129,7 +130,7 @@ const SkillEditor = () => {
   const loadFileContent = async (path) => {
     setIsLoading(true)
     try {
-      const text = await window.api.readSkillFile(id, path)
+      const text = await webApi.readSkillFile(id, path)
       setContent(text)
       setSelectedPath(path)
       setIsEditing(false)
@@ -150,7 +151,7 @@ const SkillEditor = () => {
 
   const handleSave = async () => {
     try {
-      await window.api.saveSkillFile(id, selectedPath, content)
+      await webApi.saveSkillFile(id, selectedPath, content)
       setIsEditing(false)
     } catch (e) {
       console.error(e)
@@ -163,9 +164,9 @@ const SkillEditor = () => {
     if (!itemName) return
 
     const newPath = defaultPath ? `${defaultPath}/${itemName}` : itemName
-    
+
     try {
-      await window.api.createSkillItem(id, newPath, isFolder)
+      await webApi.createSkillItem(id, newPath, isFolder)
       await loadTree()
       if (!isFolder) {
         loadFileContent(newPath)
@@ -181,7 +182,7 @@ const SkillEditor = () => {
   const handleDeleteItem = async (node) => {
     if (!confirm(`Hapus ${node.type} "${node.name}"?`)) return
     try {
-      await window.api.deleteSkillItem(id, node.path)
+      await webApi.deleteSkillItem(id, node.path)
       await loadTree()
       if (selectedPath === node.path || selectedPath.startsWith(node.path + '/')) {
         loadFileContent('SKILL.md')
@@ -199,7 +200,7 @@ const SkillEditor = () => {
     const newPath = basePath ? `${basePath}/${newName}` : newName
 
     try {
-      await window.api.renameSkillItem(id, node.path, newPath)
+      await webApi.renameSkillItem(id, node.path, newPath)
       await loadTree()
       if (selectedPath === node.path) {
         setSelectedPath(newPath)
@@ -212,7 +213,7 @@ const SkillEditor = () => {
   const handleDeleteSkill = async () => {
     if (!confirm(`Hapus keseluruhan skill ${id} beserta semua filenya?`)) return
     try {
-      await window.api.deleteSkill(id)
+      await webApi.deleteSkill(id)
       navigate('/skills')
     } catch (e) {
       console.error(e)
@@ -223,7 +224,7 @@ const SkillEditor = () => {
     <div className="h-full flex flex-col p-6 overflow-hidden relative font-['Poppins',sans-serif] bg-base-300 rounded-xl border border-white/5 shadow-2xl">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,oklch(var(--n))_0%,transparent_70%)] opacity-20 pointer-events-none" />
       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 pointer-events-none" />
-      
+
       <div className="relative z-10 flex flex-col h-full">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -255,15 +256,15 @@ const SkillEditor = () => {
               <p className="opacity-50 text-xs mt-0.5">Workspace Editor</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
-            <button 
+            <button
               className="btn btn-outline btn-error gap-2"
               onClick={handleDeleteSkill}
             >
               <Trash2 size={16} /> Delete Skill
             </button>
-            <button 
+            <button
               className={`btn gap-2 ${isEditing ? 'btn-primary' : 'btn-disabled'}`}
               onClick={handleSave}
               disabled={!isEditing}
@@ -275,20 +276,20 @@ const SkillEditor = () => {
 
         {/* IDE Layout */}
         <div className="flex-1 flex gap-4 overflow-hidden">
-          
+
           {/* Sidebar: Explorer */}
           <div className="w-64 flex flex-col bg-[#1e1e1e]/80 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
             <div className="p-3 flex items-center justify-between border-b border-white/5 bg-black/20">
               <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Explorer</span>
               <div className="flex gap-1">
-                <button 
+                <button
                   className="p-1.5 hover:bg-white/10 rounded-md text-gray-400 transition-colors"
                   onClick={() => handleCreateItem(false)}
                   title="New File"
                 >
                   <Plus size={14} />
                 </button>
-                <button 
+                <button
                   className="p-1.5 hover:bg-white/10 rounded-md text-gray-400 transition-colors"
                   onClick={() => handleCreateItem(true)}
                   title="New Folder"
@@ -297,10 +298,10 @@ const SkillEditor = () => {
                 </button>
               </div>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
               {tree.map(node => (
-                <FileTreeNode 
+                <FileTreeNode
                   key={node.path}
                   node={node}
                   selectedPath={selectedPath}
@@ -322,7 +323,7 @@ const SkillEditor = () => {
                 <span className="text-sm text-gray-300 font-mono">{selectedPath}</span>
                 {isEditing && <span className="w-2 h-2 rounded-full bg-primary ml-2"></span>}
               </div>
-              
+
               {selectedPath.endsWith('.md') && (
                 <div className="flex items-center gap-1 bg-black/30 rounded-lg p-1 border border-white/5">
                   <button onClick={() => handleFormat('h1')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Heading 1"><Heading1 size={14} /></button>
@@ -340,7 +341,7 @@ const SkillEditor = () => {
                 </div>
               )}
             </div>
-            
+
             <div className="flex-1 relative">
               {isLoading ? (
                 <div className="flex items-center justify-center h-full text-gray-500">
@@ -354,7 +355,7 @@ const SkillEditor = () => {
                   value={content}
                   onMount={(editor) => { editorRef.current = editor }}
                   onChange={(val) => {
-                    setContent(val)
+                    setContent(val || '')
                     setIsEditing(true)
                   }}
                   options={{

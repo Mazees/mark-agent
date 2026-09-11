@@ -1,12 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { useTelegramBot } from '../hooks/telegram/useTelegramBot'
-import { FaTelegram, FaPlug, FaStop, FaArrowLeft, FaCog, FaSave, FaTimes } from 'react-icons/fa'
+import { FaTelegram, FaPlug, FaStop, FaCog, FaSave, FaTimes } from 'react-icons/fa'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
 import { CodeBlock } from '../components/Chat/CodeBlock'
 import { useNavigate } from 'react-router-dom'
 import { getAllConfig, saveConfiguration } from '../api/db'
+import { webApi } from '../api/web-bridge'
 
 const TelegramBot = () => {
   const { status, messages, isThinking, currentSender, startBot, stopBot } = useTelegramBot()
@@ -39,7 +40,7 @@ const TelegramBot = () => {
     loadConfigData().then(async (config) => {
       if (config.tgBotToken && !hasAutoConnectedRef.current) {
         hasAutoConnectedRef.current = true
-        const res = await window.api?.tgGetStatus()
+        const res = await webApi.tgGetStatus()
         if (!res || res.status === 'disconnected') {
           startBot(config.tgBotToken)
         }
@@ -68,9 +69,7 @@ const TelegramBot = () => {
       const currentCfg = configs[0] || {}
       const newCfg = { ...currentCfg, tgBotToken: token, tgAdminIds: adminIds }
       await saveConfiguration(newCfg)
-      if (window.api?.syncConfig) {
-        window.api.syncConfig(newCfg)
-      }
+      await webApi.syncConfig(newCfg)
       setShowConfigModal(false)
       startBot(token)
     } catch (e) {

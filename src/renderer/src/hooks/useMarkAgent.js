@@ -1,13 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useApproval } from '../contexts/ApprovalContext'
 import { fetchAI } from '../api/ai/core'
-import { db, getCoreMemory } from '../api/db'
+import { saveSession, getChatData, saveMainThread, getMainThread } from '../api/db'
 import { useMarkState, useMarkYoutube, useMarkMusic, useMarkPlan } from './agent'
 import { useAwareness } from './useAwareness'
 import { useRelationalGrowth } from './agent/useRelationalGrowth'
 import { useChatArchiver } from './useChatArchiver'
-import { formatForTelegram } from '../api/ai/utils'
+import { useVAD } from './useVAD'
+import { formatForTelegram, getCurrentTimeInfo } from '../api/ai/utils'
 
 export const useMarkAgent = () => {
   const { requestApproval } = useApproval()
@@ -50,6 +51,8 @@ export const useMarkAgent = () => {
     setInputSource,
     activeTopic,
     setActiveTopic,
+    currentActiveSessionId,
+    setCurrentActiveSessionId,
     isChatLoaded,
     isBooting,
     setIsBooting
@@ -206,6 +209,111 @@ export const useMarkAgent = () => {
     return () => window.removeEventListener('tg-admin-message', handleTgAdminMessage)
   }, [handlePlanningCommand, setInputSource, handleStop, setIsSpeak])
 
+  // Subagent Push Notification & Completion Listener
+  useEffect(() => {
+    if (!window.api?.onSubagentReport) return
+
+    const unsubReport = window.api.onSubagentReport(async (data) => {
+      console.log('[useMarkAgent] Menerima subagent:report push event:', data)
+      if (data && data.summary) {
+        const targetSessionId = String(data.parentSessionId || '1')
+        const targetSessionTitle =
+          data.parentSessionTitle ||
+          (targetSessionId === '1' ? 'Main Thread' : `Sesi #${targetSessionId}`)
+        const activeSession = String(currentActiveSessionId || activeTopic?.id || '1')
+        const isCurrentSession = activeSession === targetSessionId
+
+        // 1. Desktop Notification (Hanya jika window sedang tidak aktif / dibackground)
+        if (document.hidden && window.api?.showNotification) {
+          window.api.showNotification({
+            title: isCurrentSession
+              ? `Laporan @${data.subagentName || 'Sub-Agent'}`
+              : `Laporan @${data.subagentName || 'Sub-Agent'} [${targetSessionTitle}]`,
+            body: data.summary
+          })
+        }
+
+        // 2. Jika sesi yang menerima laporan sedang dibuka aktif oleh user
+        if (isCurrentSession) {
+          if (!isAgentBusy) {
+            handlePlanningCommand(
+              `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}\nBeri tanggapan atau rangkumkan secara singkat kepada user.`,
+              null,
+              false,
+              null,
+              {
+                sessionId: targetSessionId,
+                disableTools: false,
+                customUserMessage: {
+                  role: 'user',
+                  source: 'subagent',
+                  sender: `@${data.subagentName || 'Sub-Agent'}`,
+                  content: `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}`
+                }
+              },
+              true
+            ).catch((err) => {
+              console.error('[useMarkAgent] Error handling active session subagent report turn:', err)
+            })
+          }
+        } else {
+          // 3. Jika user sedang berada di sesi lain / background delivery
+          try {
+            const timestampStr = getCurrentTimeInfo()
+            const existingData =
+              targetSessionId === '1'
+                ? (await getMainThread()) || []
+                : (await getChatData(targetSessionId)) || []
+
+            const userReportMessage = {
+              role: 'user',
+              content: `[SUB-AGENT REPORT RECEIVED]: Sub-agent @${data.subagentName || 'Specialist'} telah menyelesaikan tugasnya dan melaporkan hasil berikut:\n"${data.summary}"\n${data.artifact ? `Artefak: ${data.artifact}` : ''}`,
+              timestamp: timestampStr,
+              created_at: Date.now(),
+              source: 'subagent',
+              sender: `@${data.subagentName || 'Sub-Agent'}`
+            }
+
+            const aiSummaryMessage = {
+              role: 'ai',
+              content: `Laporan dari @${data.subagentName || 'Specialist'} telah diterima dan diarsipkan ke sesi ini:\n\n${data.summary}${data.artifact ? `\n\n**Artefak:**\n${data.artifact}` : ''}`,
+              timestamp: timestampStr,
+              created_at: Date.now() + 1,
+              isThinking: false
+            }
+
+            const updatedHistory = [...existingData, userReportMessage, aiSummaryMessage]
+
+            if (targetSessionId === '1') {
+              await saveMainThread(updatedHistory)
+            } else {
+              await saveSession(targetSessionId, updatedHistory)
+            }
+
+            // Pancarkan event reactive update agar UI sesi yang sedang di background otomatis ter-update
+            window.dispatchEvent(
+              new CustomEvent('session-updated', {
+                detail: { sessionId: targetSessionId, data: updatedHistory }
+              })
+            )
+          } catch (dbErr) {
+            console.error('[useMarkAgent] Gagal menyimpan background subagent report:', dbErr)
+          }
+        }
+      }
+    })
+
+    return () => {
+      if (unsubReport) unsubReport()
+    }
+  }, [
+    handlePlanningCommand,
+    isAgentBusy,
+    pushNotification,
+    currentActiveSessionId,
+    activeTopic
+  ])
+
   const isInitialSyncDoneRef = useRef(false)
   const lastSyncedMsgIdRef = useRef(null)
 
@@ -231,22 +339,25 @@ export const useMarkAgent = () => {
         .reverse()
         .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       if (lastAiMsg) {
-        window.api?.sendTgAgentExecutionDone({
-          chatId: activeTgRequestRef.current.chatId,
-          result: { answer: formatForTelegram(lastAiMsg.content) },
-          msgId: activeTgRequestRef.current.msgId
-        })
+        const currentReq = activeTgRequestRef.current
         activeTgRequestRef.current = null
         setInputSource('pc')
+        lastSyncedMsgIdRef.current = lastAiMsg.timestamp || lastAiMsg.content
+
+        window.api?.sendTgAgentExecutionDone({
+          chatId: currentReq.chatId,
+          result: { answer: formatForTelegram(lastAiMsg.content) },
+          msgId: currentReq.msgId
+        })
       }
-    } else if (!isAgentBusy && chatData.length > 0) {
+    } else if (!isAgentBusy && chatData.length > 0 && inputSource !== 'tg' && !activeTgRequestRef.current) {
       const lastAiMsg = [...chatData]
         .reverse()
         .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       const msgKey = lastAiMsg ? lastAiMsg.timestamp || lastAiMsg.content : null
       if (lastAiMsg && lastAiMsg.content && lastSyncedMsgIdRef.current !== msgKey) {
         lastSyncedMsgIdRef.current = msgKey
-        if (window.api?.tgBroadcastToAdmins && !lastAiMsg.isProactive) {
+        if (window.api?.tgBroadcastToAdmins && !lastAiMsg.isProactive && lastAiMsg.source !== 'telegram') {
           window.api.tgBroadcastToAdmins(`*Mark (PC)*:\n${lastAiMsg.content}`)
         }
       }
@@ -267,6 +378,19 @@ export const useMarkAgent = () => {
       handlePlanningCommand(textToSend)
     }
   }
+
+  const handleVoiceTranscript = useCallback((text, meta = {}) => {
+    if (!text || !text.trim()) return
+    const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
+    const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
+    setMessage(prefixedText)
+    setIsSpeak(true)
+    handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
+  }, [setMessage, setIsSpeak, handlePlanningCommand])
+
+  const vad = useVAD({
+    onTranscript: handleVoiceTranscript
+  })
 
   return {
     chatData,
@@ -301,6 +425,14 @@ export const useMarkAgent = () => {
     handleStop: planHandleStop || handleStop,
     handleSubmit,
     isBooting,
-    requestCameraCaptureRef
+    requestCameraCaptureRef,
+    // VAD & Voice Engine
+    isRecording: vad.isRecording,
+    isProcessing: vad.isProcessing,
+    audioIntensity: vad.audioIntensity,
+    startRecording: vad.startRecording,
+    stopRecording: vad.stopRecording,
+    toggleRecording: vad.toggleRecording,
+    toastMessage: vad.toastMessage
   }
 }
