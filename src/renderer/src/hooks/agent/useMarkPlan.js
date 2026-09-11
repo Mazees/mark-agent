@@ -40,12 +40,27 @@ import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
 
 const isImagePath = (filePath = '') => {
-  const ext = filePath.split('.').pop().toLowerCase()
+  if (typeof filePath === 'string' && filePath.startsWith('data:image/')) return true
+  const ext = String(filePath || '')
+    .split('.')
+    .pop()
+    .toLowerCase()
   return IMAGE_EXTS.includes(`.${ext}`)
 }
 
 const convertFilePathToBase64 = async (filePath) => {
   try {
+    if (typeof filePath === 'string' && filePath.startsWith('data:image/')) {
+      return filePath
+    }
+    if (window.api?.executeNativeTool) {
+      try {
+        const toolRes = await window.api.executeNativeTool('read-file', { path: filePath })
+        if (toolRes && toolRes.success && toolRes.dataUrl) {
+          return toolRes.dataUrl
+        }
+      } catch (_) {}
+    }
     const formattedUrl = filePath.startsWith('file://')
       ? filePath
       : `file:///${filePath.replace(/\\/g, '/')}`
@@ -709,7 +724,25 @@ export const useMarkPlan = ({
     }
 
     let imageVisionPayloads = []
-    if (userInput.includes('[FILE TERLAMPIR]:')) {
+
+    // 1. Ekstraksi langsung dari opts.attachedFiles jika tersedia
+    if (Array.isArray(opts.attachedFiles) && opts.attachedFiles.length > 0) {
+      for (const f of opts.attachedFiles) {
+        const isImg =
+          (f.type && f.type.startsWith('image/')) ||
+          (f.path && isImagePath(f.path)) ||
+          (f.name && isImagePath(f.name))
+        if (isImg) {
+          const imgUrl = f.previewUrl || (f.path ? await convertFilePathToBase64(f.path) : null)
+          if (imgUrl) {
+            imageVisionPayloads.push({ type: 'image_url', image_url: { url: imgUrl } })
+          }
+        }
+      }
+    }
+
+    // 2. Fallback parsing dari teks [FILE TERLAMPIR]:
+    if (imageVisionPayloads.length === 0 && userInput.includes('[FILE TERLAMPIR]:')) {
       const matches = userInput.match(/"([^"]+)"/g)
       if (matches && matches.length > 0) {
         const paths = matches.map((m) => m.replace(/^"|"$/g, ''))
@@ -729,7 +762,7 @@ export const useMarkPlan = ({
       payloadContent = [{ type: 'text', text: finalContent }, ...imageVisionPayloads]
     }
 
-    let uiDisplayContent = opts.displayPrompt || userInput
+    let uiDisplayContent = opts.displayPrompt !== undefined ? opts.displayPrompt : userInput
     if (
       typeof uiDisplayContent === 'string' &&
       uiDisplayContent.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')
@@ -740,6 +773,20 @@ export const useMarkPlan = ({
       uiDisplayContent = cleanBeforeSkill || 'Jalankan Skill'
     }
 
+    // Jika ada gambar terlampir dan user tidak menulis teks manual, kosongkan teks display
+    if (imageVisionPayloads.length > 0 && typeof opts.displayPrompt === 'string') {
+      uiDisplayContent = opts.displayPrompt.trim()
+    }
+
+    let finalUserMessageContent = uiDisplayContent
+    if (imageVisionPayloads.length > 0) {
+      const textPart = typeof uiDisplayContent === 'string' ? uiDisplayContent.trim() : ''
+      finalUserMessageContent = [
+        ...(textPart ? [{ type: 'text', text: textPart }] : []),
+        ...imageVisionPayloads
+      ]
+    }
+
     const userMessage = opts.customUserMessage
       ? {
           ...opts.customUserMessage,
@@ -748,7 +795,7 @@ export const useMarkPlan = ({
         }
       : {
           role: 'user',
-          content: uiDisplayContent,
+          content: finalUserMessageContent,
           timestamp: timestampStr,
           created_at: Date.now(),
           source: tgContext ? 'telegram' : 'pc',

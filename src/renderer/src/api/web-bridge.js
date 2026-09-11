@@ -750,6 +750,29 @@ export const webApi = {
     }
     return json
   },
+  saveTempFile: async (dataUrlOrBuffer, fileName = 'file.png') => {
+    try {
+      let dataUrl = typeof dataUrlOrBuffer === 'string' ? dataUrlOrBuffer : null
+      if (!dataUrl && dataUrlOrBuffer instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(dataUrlOrBuffer)
+        let binary = ''
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i])
+        }
+        dataUrl = `data:application/octet-stream;base64,${btoa(binary)}`
+      }
+      const res = await fetch(`${API_BASE}/api/chat/upload-temp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName, dataUrl })
+      })
+      const json = await res.json()
+      if (json && json.success) return json.path
+    } catch (e) {
+      console.error('[webBridge] saveTempFile error:', e)
+    }
+    return null
+  },
 
   // Window Controls (WebUI App Mode)
   windowMinimize: () => {},

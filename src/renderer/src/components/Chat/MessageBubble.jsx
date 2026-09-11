@@ -17,11 +17,33 @@ export const MessageBubble = React.memo(
   }) => {
     const [isCopied, setIsCopied] = useState(false)
 
+    const resolveImageUrl = (url) => {
+      if (!url || typeof url !== 'string') return ''
+      if (
+        url.startsWith('data:image/') ||
+        url.startsWith('http://') ||
+        url.startsWith('https://') ||
+        url.startsWith('/api/') ||
+        url.startsWith('blob:')
+      ) {
+        return url
+      }
+      if (url.includes('temp-uploads')) {
+        const filename = url.split(/[/\\]/).pop()
+        return `/api/chat/temp-file/${encodeURIComponent(filename)}`
+      }
+      return url
+    }
+
     const extractContent = (val) => {
       if (val == null) return { text: '', images: [] }
       if (typeof val === 'string') {
-        if (val.startsWith('data:image/')) {
-          return { text: '', images: [val] }
+        if (
+          val.startsWith('data:image/') ||
+          val.startsWith('/api/chat/temp-file/') ||
+          (val.includes('temp-uploads') && /\.(png|jpe?g|webp|gif|bmp)$/i.test(val))
+        ) {
+          return { text: '', images: [resolveImageUrl(val)] }
         }
         return { text: val, images: [] }
       }
@@ -31,8 +53,12 @@ export const MessageBubble = React.memo(
         for (const item of val) {
           if (!item) continue
           if (typeof item === 'string') {
-            if (item.startsWith('data:image/')) {
-              images.push(item)
+            if (
+              item.startsWith('data:image/') ||
+              item.startsWith('/api/chat/temp-file/') ||
+              (item.includes('temp-uploads') && /\.(png|jpe?g|webp|gif|bmp)$/i.test(item))
+            ) {
+              images.push(resolveImageUrl(item))
             } else {
               texts.push(item)
             }
@@ -43,10 +69,10 @@ export const MessageBubble = React.memo(
               item.image_url?.url ||
               item.url ||
               (typeof item.image_url === 'string' ? item.image_url : null)
-            if (imgUrl) images.push(imgUrl)
+            if (imgUrl) images.push(resolveImageUrl(imgUrl))
           } else if (item.image_url || item.url) {
             const imgUrl = item.image_url?.url || item.image_url || item.url
-            if (typeof imgUrl === 'string') images.push(imgUrl)
+            if (typeof imgUrl === 'string') images.push(resolveImageUrl(imgUrl))
           } else {
             texts.push(JSON.stringify(item, null, 2))
           }
@@ -59,7 +85,7 @@ export const MessageBubble = React.memo(
             val.image_url?.url ||
             val.url ||
             (typeof val.image_url === 'string' ? val.image_url : null)
-          if (imgUrl) return { text: '', images: [imgUrl] }
+          if (imgUrl) return { text: '', images: [resolveImageUrl(imgUrl)] }
         }
         return { text: JSON.stringify(val, null, 2), images: [] }
       }

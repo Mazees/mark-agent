@@ -78,6 +78,7 @@ const InputBar = ({
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isDragging, setIsDragging] = useState(false)
   const lastPromptRef = useRef('')
+  const isPastingRef = useRef(false)
 
   const [skills, setSkills] = useState([])
   const [filteredSkills, setFilteredSkills] = useState([])
@@ -192,10 +193,70 @@ const InputBar = ({
     fileInputRef.current?.click()
   }
 
+  const handlePaste = async (e) => {
+    if (isPastingRef.current) return
+    const clipboardData = e.clipboardData || window.clipboardData
+    if (!clipboardData) return
+
+    let imageFiles = []
+
+    // 1. Ambil file bawaan dari clipboardData.files (sudah ter-deduplikasi oleh browser)
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      imageFiles = Array.from(clipboardData.files).filter(
+        (f) => f.type && f.type.startsWith('image/')
+      )
+    }
+
+    // 2. Fallback jika files kosong, cek clipboardData.items (hanya ambil file unik pertama)
+    if (imageFiles.length === 0 && clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i]
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) {
+            const ext = item.type.split('/')[1] || 'png'
+            const namedFile = new File([file], `screenshot-${Date.now()}.${ext}`, {
+              type: item.type
+            })
+            imageFiles.push(namedFile)
+            break
+          }
+        }
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault()
+      e.stopPropagation()
+      isPastingRef.current = true
+      try {
+        await addFiles(imageFiles)
+      } finally {
+        setTimeout(() => {
+          isPastingRef.current = false
+        }, 300)
+      }
+    }
+  }
+
   const addFiles = async (newFiles) => {
     const parsedFiles = await Promise.all(
       newFiles.map(async (f) => {
         let resolvedPath = ''
+        let previewUrl = null
+
+        // Baca Base64 untuk preview jika file gambar
+        if (f.type && f.type.startsWith('image/')) {
+          try {
+            previewUrl = await new Promise((res) => {
+              const reader = new FileReader()
+              reader.onload = () => res(reader.result)
+              reader.onerror = () => res(null)
+              reader.readAsDataURL(f)
+            })
+          } catch (_) {}
+        }
+
         if (window.api && window.api.getPathForFile) {
           try {
             resolvedPath = window.api.getPathForFile(f)
@@ -218,33 +279,39 @@ const InputBar = ({
           resolvedPath = f.path
         }
 
-        // Jika file berasal dari drag & drop web / memory tanpa local path asli
+        // Jika file belum memiliki path disk asli (misal pasted image atau drag-drop browser)
         if (
-          (!resolvedPath ||
-            resolvedPath === f.name ||
-            (!resolvedPath.includes('/') && !resolvedPath.includes('\\'))) &&
-          window.api?.saveTempFile
+          !resolvedPath ||
+          resolvedPath === f.name ||
+          (!resolvedPath.includes('/') && !resolvedPath.includes('\\'))
         ) {
           try {
-            const buffer = await f.arrayBuffer()
-            if (buffer && buffer.byteLength > 0) {
-              const tempPath = await window.api.saveTempFile(buffer, f.name)
-              if (tempPath) {
-                resolvedPath = tempPath
+            if (window.api?.saveTempFile && previewUrl) {
+              const tempPath = await window.api.saveTempFile(previewUrl, f.name)
+              if (tempPath) resolvedPath = tempPath
+            } else {
+              const buffer = await f.arrayBuffer()
+              if (buffer && buffer.byteLength > 0 && window.api?.saveTempFile) {
+                const tempPath = await window.api.saveTempFile(buffer, f.name)
+                if (tempPath) resolvedPath = tempPath
               }
             }
           } catch (err) {
-            console.error('[InputBar] Failed to save dragged file to temp:', err)
+            console.error('[InputBar] Failed to save dragged/pasted file to temp:', err)
           }
         }
 
+        if (!resolvedPath && previewUrl) {
+          resolvedPath = previewUrl
+        }
         if (!resolvedPath) resolvedPath = f.name
 
         return {
           name: f.name,
           path: resolvedPath,
           size: f.size,
-          type: f.type
+          type: f.type,
+          previewUrl: previewUrl || (resolvedPath.startsWith('data:image/') ? resolvedPath : null)
         }
       })
     )
@@ -339,6 +406,7 @@ const InputBar = ({
       }
     }
 
+    const currentAttachments = [...attachedFiles]
     if (attachedFiles.length > 0) {
       const filePathsText = attachedFiles.map((f) => `"${f.path}"`).join(', ')
       if (finalPrompt.trim()) {
@@ -356,7 +424,10 @@ const InputBar = ({
       const rawUserText = inputText.trim()
       setInputText('')
       if (typeof onSubmit === 'function') {
-        onSubmit(finalPrompt, { displayPrompt: rawUserText })
+        onSubmit(finalPrompt, {
+          displayPrompt: rawUserText,
+          attachedFiles: currentAttachments
+        })
       }
     }
   }
@@ -442,7 +513,15 @@ const InputBar = ({
               key={file.path + idx}
               className="flex items-center gap-2 bg-[var(--glass-bg)] backdrop-blur-xl border border-[var(--glass-border)] rounded-full px-3 py-1.5 text-xs text-white shadow-lg animate-fade-in group hover:border-primary/50 transition-all flex-shrink-0"
             >
-              <span className="text-sm">{getFileIcon(file.name)}</span>
+              {file.previewUrl ? (
+                <img
+                  src={file.previewUrl}
+                  alt={file.name}
+                  className="w-4.5 h-4.5 rounded-full object-cover border border-white/20 shrink-0"
+                />
+              ) : (
+                <span className="text-sm shrink-0">{getFileIcon(file.name)}</span>
+              )}
               <span className="max-w-[140px] truncate font-medium">{file.name}</span>
               {file.size > 0 && (
                 <span className="text-[10px] text-white/40">{formatFileSize(file.size)}</span>
@@ -450,7 +529,7 @@ const InputBar = ({
               <button
                 type="button"
                 onClick={() => removeFile(idx)}
-                className="text-white/40 hover:text-error hover:bg-error/20 p-1 rounded-full transition-all"
+                className="text-white/40 hover:text-error hover:bg-error/20 p-1 rounded-full transition-all cursor-pointer"
                 title="Hapus Lampiran"
               >
                 <FaTimes size={10} />
@@ -651,6 +730,7 @@ const InputBar = ({
           value={inputText}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={
             isLoading
               ? 'Beri intervensi ke Mark...'

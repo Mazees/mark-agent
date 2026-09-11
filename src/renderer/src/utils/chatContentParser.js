@@ -26,6 +26,28 @@ export function parseUserContent(content) {
       displayUserContent =
         promptPart || (extractedSkillTag ? `/${extractedSkillTag}` : 'Jalankan Skill')
     }
+  } else if (Array.isArray(content)) {
+    displayUserContent = content.map((item) => {
+      if (item && item.type === 'text' && typeof item.text === 'string') {
+        if (item.text.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')) {
+          const parts = item.text.split('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')
+          const promptPart = (parts[0] || '').trim()
+
+          const skillTagMatch = item.text.match(
+            /---\s*SKILL\s+(?:BAWAAN|EXTERNAL):\s*([a-zA-Z0-9_-]+)\s*---/i
+          )
+          if (skillTagMatch) {
+            extractedSkillTag = skillTagMatch[1].toLowerCase()
+          }
+
+          return {
+            ...item,
+            text: promptPart || (extractedSkillTag ? `/${extractedSkillTag}` : 'Jalankan Skill')
+          }
+        }
+      }
+      return item
+    })
   }
 
   return { displayUserContent, extractedSkillTag }

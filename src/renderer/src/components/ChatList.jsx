@@ -72,7 +72,19 @@ const ChatList = ({
 
   const handleCopy = () => {
     if (!content) return
-    navigator.clipboard.writeText(content)
+    let textToCopy = ''
+    if (typeof content === 'string') {
+      textToCopy = content
+    } else if (Array.isArray(content)) {
+      textToCopy = content
+        .filter((c) => c && (c.type === 'text' || typeof c === 'string'))
+        .map((c) => (typeof c === 'string' ? c : c.text))
+        .join('\n')
+    } else {
+      textToCopy = JSON.stringify(content, null, 2)
+    }
+    if (!textToCopy) return
+    navigator.clipboard.writeText(textToCopy)
     setIsCopied(true)
     setTimeout(() => setIsCopied(false), 2000)
   }
