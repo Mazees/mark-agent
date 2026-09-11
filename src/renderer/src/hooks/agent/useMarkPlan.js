@@ -1059,11 +1059,13 @@ export const useMarkPlan = ({
         // Fallback Interceptor: Jika model mengembalikan teks JSON (tool_calls, mood, atau structured answer)
         let effectiveToolCalls = streamResult.toolCalls
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && currentTurnContent) {
-          const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [
-            null,
-            currentTurnContent
-          ]
-          const cand = (rawMatch[1] || currentTurnContent).trim()
+          const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+          let cand = (rawMatch ? rawMatch[1] : currentTurnContent).trim()
+          const firstBrace = cand.indexOf('{')
+          const lastBrace = cand.lastIndexOf('}')
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            cand = cand.substring(firstBrace, lastBrace + 1).trim()
+          }
           if (
             cand.includes('"tool_calls"') ||
             (cand.includes('"action"') && cand.includes('"tool"')) ||

@@ -49,9 +49,10 @@ Kamu memiliki akses ke fungsi-fungsi sistem berikut:
 ${toolDescriptions}
 
 # ATURAN EKSEKUSI TOOL (PENTING MUTLAK):
-Jika kamu ingin melakukan tindakan nyata (seperti memutar musik, navigasi web, mengecek berkas, membaca layar, dll), JANGAN hanya menjawab dengan janji verbal!
-Kamu HARUS SELALU memanggil tool dengan format blok JSON murni berikut:
-\`\`\`json
+1. Jika kamu ingin menjalankan tindakan atau memanggil fungsi sistem di atas, kamu HARUS merespons HANYA dengan format JSON valid.
+2. Respons kamu HARUS DIAWALI LANGSUNG DENGAN KARAKTER '{' DAN DIAKHIRI DENGAN KARAKTER '}'.
+3. DILARANG KERAS menyertakan teks pesan, kata pengantar, obrolan, basa-basi, permintaan maaf, penjelasan, atau penutup apapun di luar objek JSON! Jangan tulis teks apapun sebelum '{' atau setelah '}'.
+4. Format JSON untuk memanggil tool WAJIB persis seperti ini:
 {
   "tool_calls": [
     {
@@ -60,9 +61,8 @@ Kamu HARUS SELALU memanggil tool dengan format blok JSON murni berikut:
     }
   ]
 }
-\`\`\`
-Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud!
-Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada pengguna.`
+5. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.
+6. HANYA JIKA kamu TIDAK memanggil tool sama sekali, barulah kamu boleh menjawab dengan pesan teks santai/biasa kepada pengguna.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
@@ -207,8 +207,25 @@ Jika kamu TIDAK memanggil tool, jawablah dengan teks jawaban biasa kepada penggu
 
   // Deteksi pemanggilan tool
   let extractedToolCalls = null
-  const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, cleanContent]
-  const candidateStr = (jsonMatch[1] || cleanContent).trim()
+  let candidateStr = cleanContent.trim()
+
+  const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  if (jsonMatch) {
+    candidateStr = jsonMatch[1].trim()
+  }
+
+  // Ekstrak substring murni antara '{' pertama dan '}' terakhir untuk membuang teks sebelum/sesudah JSON
+  const firstBrace = candidateStr.indexOf('{')
+  const lastBrace = candidateStr.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const prelude = candidateStr.substring(0, firstBrace)
+    const moodMatch =
+      prelude.match(/\[mood:([a-zA-Z_]+)\]/) || cleanContent.match(/\[mood:([a-zA-Z_]+)\]/)
+    if (moodMatch) {
+      onMood?.(moodMatch[1].toLowerCase())
+    }
+    candidateStr = candidateStr.substring(firstBrace, lastBrace + 1).trim()
+  }
 
   if (
     candidateStr.includes('"tool_calls"') ||
