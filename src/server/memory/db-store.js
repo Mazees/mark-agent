@@ -44,6 +44,8 @@ sqlite.exec(`
     id TEXT PRIMARY KEY,
     title TEXT DEFAULT 'New Session',
     data TEXT,
+    workspace TEXT,
+    workspace_root TEXT,
     timestamp INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER
@@ -212,6 +214,11 @@ function ensureTableColumns(tableName, requiredColumns) {
     console.warn(`[DB Store] Auto-migration error on ${tableName}:`, err.message)
   }
 }
+
+ensureTableColumns('sessions', {
+  workspace: 'TEXT',
+  workspace_root: 'TEXT'
+})
 
 ensureTableColumns('chat_turns', {
   created_at: 'INTEGER',

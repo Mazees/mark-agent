@@ -342,7 +342,14 @@ export async function insertMemory(data) {
 
 export async function saveMainThread(data) {
   try {
-    await db.sessions.put({ id: 1, title: 'Main Thread', data: data, timestamp: Date.now() })
+    const existing = await db.sessions.get(1)
+    await db.sessions.put({
+      ...(existing || {}),
+      id: 1,
+      title: existing?.title || 'Main Thread',
+      data: data,
+      timestamp: Date.now()
+    })
   } catch (error) {
     console.error('Error saving main thread:', error)
   }
@@ -446,15 +453,17 @@ export async function setSessionWorkspace(sessionId, workspace) {
   try {
     const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
     const existing = await db.sessions.get(cleanId)
-    if (existing) {
-      await db.sessions.put({
-        ...existing,
+    await db.sessions.put({
+      ...(existing || {
         id: cleanId,
-        workspace,
-        workspaceRoot: workspace,
-        timestamp: Date.now()
-      })
-    }
+        title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru',
+        data: []
+      }),
+      id: cleanId,
+      workspace,
+      workspaceRoot: workspace,
+      timestamp: Date.now()
+    })
   } catch (error) {
     console.error(`Error setSessionWorkspace ${sessionId}:`, error)
   }
