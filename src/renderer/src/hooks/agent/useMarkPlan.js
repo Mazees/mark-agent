@@ -15,7 +15,6 @@ import {
   db
 } from '../../api/db'
 import { checkTools, getActiveToolsSchema } from '../../api/tools/index'
-import { createDurableTaskPlan } from '../../api/ai/taskPlanner'
 import { buildDurableStepCheckpoint } from '../../api/taskExecutor'
 import {
   createAgentTask,
