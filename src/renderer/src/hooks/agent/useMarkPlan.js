@@ -1134,12 +1134,38 @@ export const useMarkPlan = ({
             const toolSignature = `${toolName}:${JSON.stringify(parsedArgs)}`
             const toolCallCount = (toolCallCounts.get(toolSignature) || 0) + 1
             toolCallCounts.set(toolSignature, toolCallCount)
-            if (toolCallCount > 2) {
+            if (toolCallCount > 3) {
               const error = new Error(
                 `Tool yang sama dipanggil berulang kali tanpa perubahan: ${toolName}.`
               )
               error.code = 'LOOP_GUARD'
               throw error
+            }
+
+            if (toolCallCount === 3) {
+              const loopWarning = `[SISTEM STOP LOOP]: Tool "${toolName}" dengan parameter identik telah dipanggil berulang kali tanpa perubahan hasil. DILARANG memanggil tool ini lagi dengan parameter yang sama. Segera evaluasi hasil yang sudah didapat dan lanjutkan ke langkah berikutnya atau berikan kesimpulan akhir kepada pengguna.`
+              executedToolsList.push({
+                tool: toolName,
+                query: JSON.stringify(parsedArgs),
+                status: 'failed',
+                fullResult: loopWarning,
+                resultSummary: loopWarning
+              })
+              const toolObservation = {
+                type: 'tool_result',
+                tool_call_id: tc.id,
+                name: toolName,
+                success: false,
+                data: null,
+                error: loopWarning
+              }
+              loopMessages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                name: toolName,
+                content: JSON.stringify(toolObservation)
+              })
+              continue
             }
 
             execSteps.push({ task: `Eksekusi ${toolName}`, query: JSON.stringify(parsedArgs) })

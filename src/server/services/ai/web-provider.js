@@ -196,7 +196,19 @@ ${toolSections.join('\n\n')}
       getActiveConfig()?.deepseekWebModel ||
       loadConfig()?.deepseekWebModel ||
       'deepseek-chat'
-    const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken)
+    const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken, {
+      onDelta: (payload) => {
+        if (!stream) return
+        if (typeof payload === 'string') {
+          onToken?.(payload)
+        } else if (payload?.type === 'content' && payload.delta) {
+          onToken?.(payload.delta)
+        } else if (payload?.type === 'thinking' && payload.delta) {
+          onReasoning?.(payload.delta)
+        }
+      },
+      onStatus
+    })
     answer = dsRes.text || ''
     reasoning = dsRes.thinking || null
   }

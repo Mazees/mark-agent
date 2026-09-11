@@ -381,7 +381,17 @@ export const webApi = {
   },
 
   readSkill: async (name) => {
-    return await webApi.readSkillFile(name, 'SKILL.md')
+    const fileRes = await webApi.readSkillFile(name, 'SKILL.md')
+    if (fileRes) return fileRes
+    try {
+      const serverRes = await webApi.executeNativeTool('read-skill', { skill_name: name })
+      if (serverRes && serverRes.success && (serverRes.content || serverRes.data)) {
+        return serverRes.content || serverRes.data
+      }
+    } catch {
+      // ignore fallback error
+    }
+    return ''
   },
 
   saveSkillFile: async (name, filePath, content) => {

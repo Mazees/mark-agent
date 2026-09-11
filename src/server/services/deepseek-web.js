@@ -64,13 +64,17 @@ async function getWasmSolver(wasmBuffer = null) {
           const fileBuf = fs.readFileSync(p)
           buf = fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength)
           break
-        } catch (_) {}
+        } catch {
+          // ignore error reading local wasm
+        }
       }
     }
   }
 
   if (!buf) {
-    throw new Error("Berkas WASM DeepSeek ('src/server/bin/sha3_wasm_bg.wasm') tidak ditemukan di disk lokal.")
+    throw new Error(
+      "Berkas WASM DeepSeek ('src/server/bin/sha3_wasm_bg.wasm') tidak ditemukan di disk lokal."
+    )
   }
 
   const wasmModule = await WebAssembly.instantiate(buf, {})
@@ -131,7 +135,7 @@ function httpPostJson(path, headers, bodyObj) {
         try {
           const json = JSON.parse(data)
           resolve(json)
-        } catch (e) {
+        } catch {
           resolve(data)
         }
       })
@@ -210,41 +214,24 @@ async function generatePowHeader(token, targetPath = '/api/v0/chat/completion', 
  * Membuat chat session ID baru
  */
 export async function createChatSession(token) {
-  const res = await httpPostJson(
-    '/api/v0/chat_session/create',
-    getBaseHeaders(token),
-    {}
-  )
+  const res = await httpPostJson('/api/v0/chat_session/create', getBaseHeaders(token), {})
   const biz = unwrapBizData(res)
   return biz.chat_session.id
 }
 
 /**
- * Fungsi Utama: Generate respons dari DeepSeek Web RPC
- * 
- * @param {string} prompt - Pertanyaan/pesan pengguna
- * @param {string} modelName - 'deepseek-chat' | 'deepseek-reasoner' | 'deepseek-search'
- * @param {string} token - DeepSeek Bearer token (dari localStorage userToken)
- * @param {object} options - Opsi tambahan: sessionId, parentMessageId, onDelta, wasmBuffer
+ * Eksekusi tunggal request ke DeepSeek Web RPC (langsung instan tanpa delay jika normal)
  */
-export async function generateDeepSeekResponse(
+async function _executeSingleDeepSeekCall(
   prompt,
   modelName = 'deepseek-chat',
   token = '',
   options = {}
 ) {
-  if (!token) {
-    throw new Error('DeepSeek User Token (Bearer) dibutuhkan. Silakan ambil dari localStorage.userToken.')
-  }
-
   // Auto-clear session cache jika token berubah
   ensureTokenSession(token)
 
-  const {
-    parentMessageId = null,
-    onDelta = null,
-    wasmBuffer = null
-  } = options
+  const { parentMessageId = null, onDelta = null, wasmBuffer = null } = options
 
   // Buat session baru jika tidak ada
   let sessionId = options.sessionId || activeSessionCache.get(token)
@@ -293,7 +280,9 @@ export async function generateDeepSeekResponse(
 
     const req = https.request(reqOptions, (res) => {
       const encoding = (res.headers['content-encoding'] || '').toLowerCase()
-      console.log(`[DeepSeek-Web] Status: ${res.statusCode}, encoding: "${encoding}", type: "${res.headers['content-type']}"`)
+      console.log(
+        `[DeepSeek-Web] Status: ${res.statusCode}, encoding: "${encoding}", type: "${res.headers['content-type']}"`
+      )
 
       let stream = res
       if (encoding === 'gzip') {
@@ -342,12 +331,22 @@ export async function generateDeepSeekResponse(
             if (fullContent) return
             // Content kosong + click_behavior = session expired
             activeSessionCache.delete(token)
-            reject(new Error('DeepSeek Web session expired atau tidak valid. Session di-clear, silakan coba lagi.'))
+            reject(
+              new Error(
+                'DeepSeek Web session expired atau tidak valid. Session di-clear, silakan coba lagi.'
+              )
+            )
             return
           }
           if (obj.code !== undefined && obj.code !== 0) {
-            activeSessionCache.delete(token)
             const errMsg = obj.msg || obj.message || JSON.stringify(obj)
+            const isFrequent =
+              errMsg.toLowerCase().includes('frequent') ||
+              errMsg.toLowerCase().includes('too many') ||
+              errMsg.toLowerCase().includes('terlalu sering')
+            if (!isFrequent) {
+              activeSessionCache.delete(token)
+            }
             reject(new Error(`DeepSeek Server Error (${obj.code}): ${errMsg}`))
             return
           }
@@ -356,7 +355,18 @@ export async function generateDeepSeekResponse(
               ? ` (sampai ${new Date(obj.data.biz_data.mute_until * 1000).toLocaleTimeString('id-ID')})`
               : ''
             const errMsg = obj.data.biz_msg || `Kode bisnis ${obj.data.biz_code}`
-            reject(new Error(`Akun DeepSeek Web kamu sedang dibatasi sementara oleh DeepSeek: "${errMsg}"${muteUntil}. Tunggu beberapa saat atau ganti token akun baru.`))
+            const isFrequent =
+              errMsg.toLowerCase().includes('frequent') ||
+              errMsg.toLowerCase().includes('too many') ||
+              errMsg.toLowerCase().includes('terlalu sering')
+            if (!isFrequent) {
+              activeSessionCache.delete(token)
+            }
+            reject(
+              new Error(
+                `Akun DeepSeek Web kamu sedang dibatasi sementara oleh DeepSeek: "${errMsg}"${muteUntil}. Tunggu beberapa saat atau ganti token akun baru.`
+              )
+            )
             return
           }
           if (obj.error || obj.error_msg) {
@@ -426,7 +436,7 @@ export async function generateDeepSeekResponse(
               onDelta?.({ type: 'content', delta: v, full: fullContent })
             }
           }
-        } catch (err) {
+        } catch {
           // Abaikan chunk malformed
         }
       }
@@ -453,7 +463,12 @@ export async function generateDeepSeekResponse(
         }
 
         if (!fullContent) {
-          console.warn(`[DeepSeek-Web] Empty response on end. Last payload:`, lastReceivedPayload, `Buffer:`, buffer)
+          console.warn(
+            `[DeepSeek-Web] Empty response on end. Last payload:`,
+            lastReceivedPayload,
+            `Buffer:`,
+            buffer
+          )
           reject(
             new Error(
               `Gagal mengekstrak teks balasan dari streaming DeepSeek Web. Status: ${res.statusCode}, Tipe: ${res.headers['content-type']}, Respons server: ${lastReceivedPayload || buffer || 'tidak ada data streaming'}`
@@ -473,4 +488,68 @@ export async function generateDeepSeekResponse(
     req.write(payloadStr)
     req.end()
   })
+}
+
+/**
+ * Fungsi Utama: Generate respons dari DeepSeek Web RPC dengan auto-retry hingga 50x dan jeda proteksi rate limit
+ *
+ * @param {string} prompt - Pertanyaan/pesan pengguna
+ * @param {string} modelName - 'deepseek-chat' | 'deepseek-reasoner' | 'deepseek-search'
+ * @param {string} token - DeepSeek Bearer token (dari localStorage userToken)
+ * @param {object} options - Opsi tambahan: sessionId, parentMessageId, onDelta, onStatus, wasmBuffer, maxAttempts, retryDelayMs
+ */
+export async function generateDeepSeekResponse(
+  prompt,
+  modelName = 'deepseek-chat',
+  token = '',
+  options = {}
+) {
+  if (!token) {
+    throw new Error(
+      'DeepSeek User Token (Bearer) dibutuhkan. Silakan ambil dari localStorage.userToken.'
+    )
+  }
+
+  const maxAttempts = options.maxAttempts ?? 50
+  const retryDelayMs = options.retryDelayMs ?? 5000
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await _executeSingleDeepSeekCall(prompt, modelName, token, options)
+    } catch (err) {
+      const errMsg = err?.message || ''
+      const isRetryable =
+        errMsg.toLowerCase().includes('session expired') ||
+        errMsg.toLowerCase().includes('tidak valid') ||
+        errMsg.toLowerCase().includes('frequent') ||
+        errMsg.toLowerCase().includes('too many') ||
+        errMsg.toLowerCase().includes('terlalu sering') ||
+        errMsg.toLowerCase().includes('rate limit') ||
+        errMsg.toLowerCase().includes('dibatasi') ||
+        errMsg.toLowerCase().includes('menolak permintaan') ||
+        errMsg.toLowerCase().includes('tidak ada data streaming') ||
+        errMsg.toLowerCase().includes('503') ||
+        errMsg.toLowerCase().includes('502') ||
+        errMsg.toLowerCase().includes('429')
+
+      if (isRetryable && attempt < maxAttempts) {
+        // Setiap 5 kali kegagalan berulang, reset session cache agar membuat session baru
+        if (attempt % 5 === 0) {
+          activeSessionCache.delete(token)
+        }
+
+        console.warn(
+          `[DeepSeek-Web] Kendala DeepSeek: "${errMsg}". Mencoba ulang (${attempt}/${maxAttempts}) dalam ${retryDelayMs / 1000}s...`
+        )
+        if (typeof options.onStatus === 'function') {
+          options.onStatus(
+            `DeepSeek sibuk (${errMsg.substring(0, 35)}...). Jeda ${retryDelayMs / 1000}s (Percobaan ${attempt}/${maxAttempts})...`
+          )
+        }
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+        continue
+      }
+      throw err
+    }
+  }
 }

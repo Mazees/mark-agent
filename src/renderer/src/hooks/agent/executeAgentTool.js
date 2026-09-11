@@ -421,9 +421,21 @@ export async function executeAgentTool({
     const skillName = (a.skill_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()
     if (!skillName) {
       res = { success: false, message: 'Harap sebutkan skill_name yang ingin dibaca.' }
-    } else {
-      const { getLearnedSkill } = await import('../../api/db.js')
-      const learned = await getLearnedSkill(skillName)
+      const { getLearnedSkill, getAllLearnedSkills } = await import('../../api/db.js')
+      let learned = await getLearnedSkill(skillName)
+      if (!learned || !learned.content) {
+        try {
+          const allLearned = await getAllLearnedSkills()
+          learned = (allLearned || []).find(
+            (s) =>
+              s.name?.toLowerCase() === skillName.toLowerCase() ||
+              s.id?.toLowerCase() === skillName.toLowerCase()
+          )
+        } catch {
+          // ignore
+        }
+      }
+
       if (learned && learned.content) {
         res = {
           success: true,
@@ -431,14 +443,37 @@ export async function executeAgentTool({
         }
       } else {
         const { NATIVE_SKILLS } = await import('../../components/core/native-skills.js')
-        const native = NATIVE_SKILLS.find((s) => s.name.toLowerCase() === skillName.toLowerCase())
+        const native = (NATIVE_SKILLS || []).find(
+          (s) => s.name.toLowerCase() === skillName.toLowerCase()
+        )
         if (native && native.content) {
           res = {
             success: true,
             data: `[PEDOMAN SKILL BAWAAN: ${skillName.toUpperCase()}]\n${native.content}`
           }
-        } else if (window.api && window.api.readSkill) {
-          const skillData = await window.api.readSkill(skillName)
+        } else {
+          let skillData = null
+          if (window.api && window.api.readSkill) {
+            try {
+              skillData = await window.api.readSkill(skillName)
+            } catch {
+              // ignore
+            }
+          }
+          if (!skillData) {
+            try {
+              const { webApi } = await import('../../api/web-bridge.js')
+              const serverSkill = await webApi.executeNativeTool('read-skill', {
+                skill_name: skillName
+              })
+              if (serverSkill && serverSkill.success && (serverSkill.content || serverSkill.data)) {
+                skillData = serverSkill.content || serverSkill.data
+              }
+            } catch {
+              // ignore
+            }
+          }
+
           if (skillData) {
             const content = typeof skillData === 'string' ? skillData : skillData.content
             const basePath =
@@ -450,13 +485,8 @@ export async function executeAgentTool({
           } else {
             res = {
               success: false,
-              message: `Skill "${skillName}" tidak ditemukan.`
+              message: `Skill "${skillName}" tidak ditemukan di direktori Mark Skills maupun basis data. PENTING: DILARANG mencoba memanggil tool 'read-skill' lagi untuk skill ini. Segera lanjutkan menyelesaikan instruksi user secara mandiri menggunakan tool umum yang relevan atau langsung berikan respon.`
             }
-          }
-        } else {
-          res = {
-            success: false,
-            message: `Skill "${skillName}" tidak ditemukan.`
           }
         }
       }
