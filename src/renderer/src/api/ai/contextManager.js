@@ -276,7 +276,8 @@ export async function executeSessionCompaction({
   sessionId = '1',
   messages = [],
   activeConfig = {},
-  onProgress = null
+  onProgress = null,
+  force = false
 }) {
   // Ambil summary & pointer sebelumnya dari tabel session_compact jika ada
   let existingSummaryBlock = ''
@@ -297,7 +298,7 @@ export async function executeSessionCompaction({
     existingSummaryBlock,
     existingLastCompactedId
   )
-  if (currentChars < MAX_CONTEXT_CHARS) {
+  if (!force && currentChars < MAX_CONTEXT_CHARS) {
     return {
       success: true,
       isCompacted: false,
@@ -320,8 +321,8 @@ export async function executeSessionCompaction({
     existingLastCompactedId
   )
 
-  // Jika Tahap 1 saja sudah cukup membawa karakter di bawah batas:
-  if (prunedChars < MAX_CONTEXT_CHARS) {
+  // Jika Tahap 1 saja sudah cukup membawa karakter di bawah batas (hanya saat auto-compact / !force):
+  if (!force && prunedChars < MAX_CONTEXT_CHARS) {
     // Simpan hasil prune ke tabel sessions
     try {
       await saveSession(sessionId, prunedMessages)

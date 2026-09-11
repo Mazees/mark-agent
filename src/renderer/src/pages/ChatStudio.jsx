@@ -21,6 +21,7 @@ import {
   Folder
 } from 'lucide-react'
 import {
+  db,
   getAllSessions,
   getSession,
   createSession,
@@ -345,6 +346,94 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     setIsLocalLoading(false)
   }
 
+  const handleManualCompaction = async () => {
+    if (!currentDisplayMessages || currentDisplayMessages.length <= 1) return
+
+    const compactBannerId = `compact-banner-${Date.now()}`
+    const bannerMsg = {
+      id: compactBannerId,
+      role: 'system',
+      isCompacting: true,
+      compactProgress: 'Merangkum konteks percakapan...'
+    }
+
+    if (String(activeSessionId) === '1') {
+      setMainChatData((prev) => [...(prev || []), bannerMsg])
+    } else {
+      setActiveSessionData((prev) => [...(prev || []), bannerMsg])
+    }
+
+    try {
+      const configList = await db.config.toArray()
+      const activeConfig = configList?.[0]?.data || configList?.[0] || {}
+
+      const { executeSessionCompaction } = await import('../api/ai/contextManager')
+      const res = await executeSessionCompaction({
+        sessionId: String(activeSessionId),
+        messages: currentDisplayMessages.filter((m) => !m.isCompacting),
+        activeConfig,
+        force: true,
+        onProgress: (prog) => {
+          const updateFn = (prev) =>
+            (prev || []).map((m) =>
+              m.id === compactBannerId
+                ? { ...m, compactProgress: prog?.text || m.compactProgress }
+                : m
+            )
+          if (String(activeSessionId) === '1') {
+            setMainChatData(updateFn)
+          } else {
+            setActiveSessionData(updateFn)
+          }
+        }
+      })
+
+      if (res?.isCompacted) {
+        if (res.lastCompactedMessageId) {
+          setLastCompactedMessageId(res.lastCompactedMessageId)
+          setActiveSessionCompact({
+            summaryBlock: res.newSummaryBlock,
+            lastCompactedMessageId: res.lastCompactedMessageId
+          })
+        }
+        window.dispatchEvent(
+          new CustomEvent('session-compact-updated', {
+            detail: {
+              sessionId: String(activeSessionId),
+              lastCompactedMessageId: res.lastCompactedMessageId,
+              summaryBlock: res.newSummaryBlock
+            }
+          })
+        )
+        window.dispatchEvent(
+          new CustomEvent('context-tracker-updated', {
+            detail: {
+              sessionId: String(activeSessionId),
+              currentChars: res.currentChars || 0,
+              maxChars: 525000,
+              percentage: Math.min(100, ((res.currentChars || 0) / 525000) * 100),
+              lastCompactedAt: Date.now()
+            }
+          })
+        )
+      }
+    } catch (e) {
+      console.error('[ChatStudio] Manual compaction error:', e)
+    } finally {
+      if (String(activeSessionId) === '1') {
+        setMainChatData((prev) => (prev || []).filter((m) => m.id !== compactBannerId))
+      } else {
+        setActiveSessionData((prev) => (prev || []).filter((m) => m.id !== compactBannerId))
+      }
+    }
+  }
+
+  useEffect(() => {
+    const handleReqCompact = () => handleManualCompaction()
+    window.addEventListener('request-manual-compaction', handleReqCompact)
+    return () => window.removeEventListener('request-manual-compaction', handleReqCompact)
+  }, [activeSessionId, currentDisplayMessages])
+
   const handleClose = () => {
     if (typeof onClose === 'function') {
       onClose()
@@ -621,7 +710,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                         ? `${msg.id}-${idx}`
                         : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
                     }
-                    id={msg.id}
+                    id={msg.id || msg.timestamp || msg.created_at}
                     lastCompactedMessageId={lastCompactedMessageId}
                     isCompacting={msg.isCompacting}
                     compactProgress={msg.compactProgress}
@@ -662,6 +751,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
               source={inputSource || 'pc'}
               workspaceRoot={activeSessionObj?.workspaceRoot}
               onSelectWorkspace={handleSelectSessionWorkspace}
+              onManualCompact={handleManualCompaction}
             />
           </div>
         </div>

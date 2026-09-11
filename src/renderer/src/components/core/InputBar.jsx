@@ -65,13 +65,16 @@ const InputBar = ({
   inline = false,
   className = '',
   workspaceRoot = null,
-  onSelectWorkspace = null
+  onSelectWorkspace = null,
+  onManualCompact = null
 }) => {
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const contextPopoverRef = useRef(null)
   const [inputText, setInputText] = useState('')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
+  const [showContextPopover, setShowContextPopover] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isDragging, setIsDragging] = useState(false)
   const lastPromptRef = useRef('')
@@ -87,6 +90,20 @@ const InputBar = ({
     percentage: 0,
     lastCompactedAt: null
   })
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (contextPopoverRef.current && !contextPopoverRef.current.contains(e.target)) {
+        setShowContextPopover(false)
+      }
+    }
+    if (showContextPopover) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showContextPopover])
 
   useEffect(() => {
     const handleTrackerUpdate = (e) => {
@@ -646,49 +663,105 @@ const InputBar = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Ring Gauge Context Indicator (~22px) */}
+          {/* Ring Gauge Context Indicator (~30px) */}
           {(() => {
             const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
-            const radius = 9
+            const roundedPct =
+              contextTracker.currentChars > 0 ? Math.max(1, Math.round(pct)) : Math.round(pct)
+            const radius = 14
             const circumference = 2 * Math.PI * radius
             const strokeDashoffset = circumference - (pct / 100) * circumference
             const colorClass =
               pct >= 90 ? 'stroke-rose-500' : pct >= 75 ? 'stroke-amber-400' : 'stroke-emerald-400'
 
-            const tooltipText = `Konteks: ${contextTracker.currentChars.toLocaleString('id-ID')} / ${contextTracker.maxChars.toLocaleString('id-ID')} karakter (${pct.toFixed(1)}%)${
-              contextTracker.lastCompactedAt
-                ? ` • Kompaksi: ${new Date(contextTracker.lastCompactedAt).toLocaleTimeString('id-ID')}`
-                : ' • Belum pernah dikompaksi'
-            }`
-
             return (
-              <div
-                className="tooltip tooltip-left md:tooltip-top flex items-center justify-center cursor-help px-1"
-                data-tip={tooltipText}
-              >
-                <div className="relative w-[22px] h-[22px] flex items-center justify-center">
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 24 24">
+              <div className="relative flex items-center justify-center px-1 select-none">
+                {/* Ring Gauge Trigger Button */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setShowContextPopover((prev) => !prev)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
+                  }}
+                  className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
+                  title="Context Window Info"
+                >
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                     <circle
-                      cx="12"
-                      cy="12"
+                      cx="18"
+                      cy="18"
                       r={radius}
                       className="stroke-white/10"
-                      strokeWidth="2.2"
+                      strokeWidth="2.5"
                       fill="none"
                     />
                     <circle
-                      cx="12"
-                      cy="12"
+                      cx="18"
+                      cy="18"
                       r={radius}
                       className={`${colorClass} transition-all duration-500 ease-out`}
-                      strokeWidth="2.2"
+                      strokeWidth="2.5"
                       strokeDasharray={circumference}
                       strokeDashoffset={strokeDashoffset}
                       strokeLinecap="round"
                       fill="none"
                     />
                   </svg>
+                  <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/gauge:opacity-100 transition-opacity duration-150 font-mono text-[8px] font-bold text-white tracking-tight leading-none pointer-events-none">
+                    {roundedPct}%
+                  </span>
                 </div>
+
+                {/* Popover Card Overlay */}
+                {showContextPopover && (
+                  <div
+                    ref={contextPopoverRef}
+                    className="absolute bottom-full right-0 mb-3.5 w-64 p-3.5 bg-base-200 border border-primary/30 rounded-xl shadow-2xl z-50 animate-fade-in text-left cursor-default"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-[11px] font-medium text-white/40 mb-0.5">Session Info</div>
+                    <div className="text-xs font-bold text-white mb-2.5">Context Window</div>
+
+                    <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
+                      <span className="text-white">
+                        {contextTracker.currentChars >= 1000
+                          ? `${(contextTracker.currentChars / 1000).toFixed(1)}K`
+                          : contextTracker.currentChars}{' '}
+                        / 525K chars
+                      </span>
+                      <span className="text-white/60">{roundedPct}%</span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
+                      <div
+                        className={`h-full ${pct >= 90 ? 'bg-rose-500' : pct >= 75 ? 'bg-amber-400' : 'bg-emerald-400'} transition-all duration-300 rounded-full`}
+                        style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
+                      />
+                    </div>
+
+                    {/* Compact Conversation Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowContextPopover(false)
+                        if (typeof onManualCompact === 'function') {
+                          onManualCompact()
+                        } else {
+                          window.dispatchEvent(new CustomEvent('request-manual-compaction'))
+                        }
+                      }}
+                      disabled={isLoading}
+                      className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-primary/30 text-xs font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span>Compact Conversation</span>
+                    </button>
+
+                    {/* Caret pointing to gauge */}
+                    <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-[#13161f] border-r border-b border-white/10 rotate-45" />
+                  </div>
+                )}
               </div>
             )
           })()}
