@@ -185,18 +185,23 @@ export async function executeAgentTool({
           taskObjective: objective,
           artifactRoot,
           taskStatus: 'running',
-          plan: stepsInput.map((step, idx) => ({
-            id: step.id || `step-${idx + 1}`,
-            title: step.title || `Langkah ${idx + 1}`,
-            task: step.title || `Langkah ${idx + 1}`,
+          plan: (updatedDurableTask.steps && updatedDurableTask.steps.length > 0
+            ? updatedDurableTask.steps
+            : stepsInput
+          ).map((step, idx) => ({
+            id: step.id || `${updatedDurableTask.id}-step-${idx + 1}`,
+            stepIndex: idx,
+            index: idx,
+            title: step.title || step.objective || `Tahap ${idx + 1}`,
+            task: step.title || step.objective || `Tahap ${idx + 1}`,
             objective: step.objective || objective,
             deliverable: step.deliverable || 'Output kerja',
             acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
               ? step.acceptanceCriteria
               : [],
-            artifactPath: artifactRoot
-              ? `${artifactRoot}/${step.id || `step-${idx + 1}`}.md`
-              : null,
+            artifactPath:
+              step.artifactPath ||
+              (artifactRoot ? `${artifactRoot}${pathSep}${step.id || `step-${idx + 1}`}.md` : null),
             status: idx === 0 ? 'running' : 'pending'
           })),
           currentStep: 0,

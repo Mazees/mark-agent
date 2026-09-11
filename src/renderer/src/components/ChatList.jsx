@@ -50,7 +50,9 @@ const ChatList = ({
   timestamp = '',
   source = null,
   sender = null,
-  onStop = null
+  onStop = null,
+  activeLiveTools = null,
+  activeThinkingContent = null
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
@@ -125,6 +127,8 @@ const ChatList = ({
             taskStatus={taskStatus}
             artifactRoot={artifactRoot}
             onStop={onStop}
+            activeLiveTools={activeLiveTools}
+            activeThinkingContent={activeThinkingContent}
           />
         </div>
       </div>

@@ -23,5 +23,12 @@ Kamu telah diinstruksikan oleh user untuk mengaktifkan fitur **/task** (Task Wor
        }
      ]
 3. DILARANG membalas teks JSON mentah atau teks percakapan biasa sebelum memanggil tool 'create_agent_task'. Panggil tool tersebut terlebih dahulu agar Task Workflow aktif!`
+  },
+  {
+    name: 'plan',
+    description: 'Alias untuk /task: Menjalankan alur pengerjaan tugas terstruktur (Task Workflow)',
+    content: `
+# ALIAS PERINTAH: /plan -> /task
+Alihkan instruksi ini ke sistem Task Workflow. Segera panggil tool 'create_agent_task' dengan parameter judul, sasaran, dan minimal 3 tahapan eksekusi terstruktur!`
   }
 ]

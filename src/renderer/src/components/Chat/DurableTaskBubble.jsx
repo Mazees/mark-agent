@@ -16,7 +16,9 @@ export const DurableTaskBubble = ({
   taskObjective = '',
   taskStatus = null,
   artifactRoot = null,
-  onStop = null
+  onStop = null,
+  activeLiveTools = null,
+  activeThinkingContent = null
 }) => {
   const totalSteps = plan.length
   const completedCount = plan.filter(
@@ -83,7 +85,7 @@ export const DurableTaskBubble = ({
           ) : isFailed ? (
             <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
           ) : (
-            <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0 ring-2 ring-primary/25" />
           )}
           <span className="font-semibold text-white/95 truncate">
             {taskTitle || 'Task Workflow'}
@@ -146,30 +148,34 @@ export const DurableTaskBubble = ({
       <div className="space-y-1 mt-2.5">
         {plan.map((step, idx) => {
           const stepStatus =
-            step.status ||
-            (idx < resolvedCurrentStep
-              ? 'completed'
-              : idx === resolvedCurrentStep
-                ? isStopped
-                  ? 'stopped'
-                  : 'running'
-                : 'pending')
+            step.status === 'failed'
+              ? 'failed'
+              : idx < resolvedCurrentStep
+                ? 'completed'
+                : idx === resolvedCurrentStep
+                  ? isStopped
+                    ? 'stopped'
+                    : 'running'
+                  : step.status || 'pending'
 
           const isDone = stepStatus === 'completed'
           const isStepStopped = stepStatus === 'stopped' || (isStopped && stepStatus === 'running')
           const isStepFailed = stepStatus === 'failed'
           const isCurrent = stepStatus === 'running' && !isAllDone && !isStopped && !isFailed
 
-          const title =
-            typeof step === 'string' ? step : step.title || step.task || `Tahap ${idx + 1}`
+          let title = typeof step === 'string' ? step : step.title || step.task || ''
+          if (!title || /^((langkah|tahap|step)\s*\d+[:.-]?\s*)$/i.test(title.trim())) {
+            title = step.objective || step.deliverable || `Tahap ${idx + 1}`
+          }
+
           const artifactPath = typeof step === 'object' ? step.artifactPath : null
 
           return (
             <div
               key={step.id || idx}
-              className={`flex items-center justify-between text-xs py-1 px-2 rounded-md transition-colors ${
+              className={`text-xs py-1.5 px-2.5 rounded-lg transition-colors ${
                 isCurrent
-                  ? 'bg-primary/10 text-white font-medium'
+                  ? 'bg-primary/10 border border-primary/20 text-white font-medium'
                   : isDone
                     ? 'text-white/60'
                     : isStepStopped
@@ -179,37 +185,81 @@ export const DurableTaskBubble = ({
                         : 'text-white/40'
               }`}
             >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="shrink-0 flex items-center justify-center w-3.5 h-3.5">
-                  {isDone ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : isCurrent ? (
-                    <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-                  ) : isStepStopped ? (
-                    <Square className="w-2.5 h-2.5 text-amber-400 fill-current" />
-                  ) : isStepFailed ? (
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                  ) : (
-                    <span className="text-[9px] text-white/30 font-mono">{idx + 1}</span>
-                  )}
-                </span>
-                <span className={`truncate ${isDone ? 'line-through text-white/40' : ''}`}>
-                  {title}
-                </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="shrink-0 flex items-center justify-center w-3.5 h-3.5">
+                    {isDone ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : isCurrent ? (
+                      <span className="w-3.5 h-3.5 rounded-full bg-primary/25 text-primary flex items-center justify-center font-mono text-[9px] font-bold border border-primary/40">
+                        {idx + 1}
+                      </span>
+                    ) : isStepStopped ? (
+                      <Square className="w-2.5 h-2.5 text-amber-400 fill-current" />
+                    ) : isStepFailed ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    ) : (
+                      <span className="text-[9px] text-white/30 font-mono">{idx + 1}</span>
+                    )}
+                  </span>
+                  <span className={`truncate ${isDone ? 'line-through text-white/40' : ''}`}>
+                    {title}
+                  </span>
+                </div>
+
+                {artifactPath && isDone && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenFile(artifactPath)}
+                    className="shrink-0 flex items-center gap-1 text-[10px] text-primary/80 hover:text-primary font-mono ml-2 transition-colors"
+                    title={artifactPath}
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span className="truncate max-w-[100px]">
+                      {artifactPath.split(/[\\/]/).pop()}
+                    </span>
+                  </button>
+                )}
               </div>
 
-              {artifactPath && isDone && (
-                <button
-                  type="button"
-                  onClick={() => handleOpenFile(artifactPath)}
-                  className="shrink-0 flex items-center gap-1 text-[10px] text-primary/80 hover:text-primary font-mono ml-2 transition-colors"
-                  title={artifactPath}
-                >
-                  <FileText className="w-3 h-3" />
-                  <span className="truncate max-w-[100px]">
-                    {artifactPath.split(/[\\/]/).pop()}
-                  </span>
-                </button>
+              {/* Live Tool Execution Sub-Box untuk Langkah Aktif */}
+              {isCurrent && (
+                <div className="mt-2 ml-5.5 p-2 rounded-lg bg-base-300/80 border border-primary/20 space-y-1 animate-[response-fade-in_0.2s_ease-out_forwards]">
+                  {activeLiveTools && activeLiveTools.length > 0 ? (
+                    (() => {
+                      const runningTool = activeLiveTools[activeLiveTools.length - 1]
+                      const queryText = runningTool.query
+                        ? typeof runningTool.query === 'string'
+                          ? runningTool.query.replace(/^[{"\s]+|[}"\s]+$/g, '')
+                          : JSON.stringify(runningTool.query)
+                        : activeThinkingContent || 'Mengeksekusi tahapan...'
+
+                      return (
+                        <div className="flex items-center justify-between gap-2 min-w-0 font-mono text-[10.5px]">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <Loader2 className="w-3 h-3 text-primary animate-spin shrink-0" />
+                            <span className="text-primary font-semibold shrink-0">
+                              [{runningTool.tool}]
+                            </span>
+                            <span className="text-white/70 truncate text-[10px]">{queryText}</span>
+                          </div>
+                          {activeLiveTools.length > 1 && (
+                            <span className="badge badge-xs bg-primary/10 text-primary border border-primary/20 text-[9px] shrink-0 font-mono">
+                              {activeLiveTools.length} alat
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()
+                  ) : (
+                    <div className="flex items-center gap-1.5 font-mono text-[10.5px] text-white/60">
+                      <Loader2 className="w-3 h-3 text-primary animate-spin shrink-0" />
+                      <span className="text-white/70 truncate text-[10px]">
+                        {activeThinkingContent || 'Menganalisis dan mengeksekusi tahapan...'}
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )

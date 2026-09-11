@@ -1023,16 +1023,11 @@ export const useMarkPlan = ({
       let finalContentAccumulator = ''
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
-      const maxAgentIterations = 50
+      let consecutiveErrors = 0
+      const maxConsecutiveErrorRetries = 50
       const toolCallCounts = new Map()
 
       while (!isDone && !sessionAbortController.signal.aborted) {
-        if (stepCount >= maxAgentIterations) {
-          const error = new Error(`Batas iterasi agent tercapai (${maxAgentIterations}).`)
-          error.code = 'LOOP_GUARD'
-          throw error
-        }
-
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
           if (durableTask) {
@@ -1371,6 +1366,19 @@ export const useMarkPlan = ({
               (!resStr.startsWith('[ERROR]') &&
                 !resStr.includes(' crash:') &&
                 !resStr.toLowerCase().includes(' gagal:'))
+            if (executionSucceeded) {
+              consecutiveErrors = 0
+            } else {
+              consecutiveErrors++
+              if (consecutiveErrors >= maxConsecutiveErrorRetries) {
+                const error = new Error(
+                  `Batas retry error berturut-turut tercapai (${maxConsecutiveErrorRetries}).`
+                )
+                error.code = 'LOOP_GUARD'
+                throw error
+              }
+            }
+
             executedToolsList.push({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
@@ -1486,8 +1494,16 @@ export const useMarkPlan = ({
             targetSetChatData((prev) =>
               prev.map((msg) => {
                 if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
-                const updatedPlan = (msg.plan || []).map((s) => {
-                  if (s.id === currentStep.id) {
+                const updatedPlan = (msg.plan || []).map((s, sIdx) => {
+                  const isCurrentMatch =
+                    s.id === currentStep.id ||
+                    (s.id &&
+                      currentStep.id &&
+                      (s.id.endsWith(currentStep.id) || currentStep.id.endsWith(s.id))) ||
+                    (s.stepIndex !== undefined && s.stepIndex === currentStep.stepIndex) ||
+                    sIdx === (currentStep.stepIndex ?? currentStep.index ?? 0)
+
+                  if (isCurrentMatch) {
                     return {
                       ...s,
                       status: checkpointCompleted ? 'completed' : 'failed',
@@ -1495,7 +1511,17 @@ export const useMarkPlan = ({
                       artifactPath: currentStep.artifactPath
                     }
                   }
-                  if (nextStep && s.id === nextStep.id) {
+
+                  const isNextMatch =
+                    nextStep &&
+                    (s.id === nextStep.id ||
+                      (s.id &&
+                        nextStep.id &&
+                        (s.id.endsWith(nextStep.id) || nextStep.id.endsWith(s.id))) ||
+                      (s.stepIndex !== undefined && s.stepIndex === nextStep.stepIndex) ||
+                      sIdx === (nextStep.stepIndex ?? nextStep.index ?? 0))
+
+                  if (isNextMatch) {
                     return { ...s, status: 'running' }
                   }
                   return s
@@ -1527,6 +1553,8 @@ export const useMarkPlan = ({
 
             // Jika masih ada tahap berikutnya, promosikan dan lanjutkan loop ReAct
             if (nextStep) {
+              consecutiveErrors = 0
+              toolCallCounts.clear()
               loopMessages.push({
                 role: 'assistant',
                 content: `[TAHAP SELESAI]: "${currentStep.title}". Output: ${turnAnswer}`

@@ -655,10 +655,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 </h3>
                 {activeSessionObj?.workspaceRoot && (
                   <span
-                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate"
+                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate inline-flex items-center gap-1"
                     title={`Workspace: ${activeSessionObj.workspaceRoot}`}
                   >
-                    📁 {activeSessionObj.workspaceRoot.split(/[\\/]/).pop()}
+                    <Folder className="w-2.5 h-2.5 shrink-0" />
+                    <span className="truncate">
+                      {activeSessionObj.workspaceRoot.split(/[\\/]/).pop()}
+                    </span>
                   </span>
                 )}
               </div>
@@ -700,46 +703,64 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 </div>
               </div>
             ) : (
-              currentDisplayMessages
-                .slice(-visibleMessageCount)
-                .map((msg, idx) => (
-                  <ChatList
-                    key={
-                      msg.id
-                        ? `${msg.id}-${idx}`
-                        : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
-                    }
-                    id={msg.id || msg.timestamp || msg.created_at}
-                    lastCompactedMessageId={lastCompactedMessageId}
-                    isCompacting={msg.isCompacting}
-                    compactProgress={msg.compactProgress}
-                    role={msg.role}
-                    content={msg.content}
-                    reasoning={msg.reasoning}
-                    isThinking={msg.isThinking}
-                    isSearching={msg.isSearching}
-                    isSummarizing={msg.isSummarizing}
-                    isSearchingMusic={msg.isSearchingMusic}
-                    sources={msg.sources}
-                    executedTools={msg.executedTools}
-                    isMemorySaved={msg.isMemorySaved}
-                    isMemoryUpdated={msg.isMemoryUpdated}
-                    isMemoryDeleted={msg.isMemoryDeleted}
-                    timestamp={msg.timestamp}
-                    mood={msg.mood}
-                    source={msg.source}
-                    sender={msg.sender}
-                    isPlanSteps={msg.isPlanSteps}
-                    plan={msg.plan}
-                    currentStep={msg.currentStep}
-                    taskId={msg.taskId}
-                    taskTitle={msg.taskTitle}
-                    taskObjective={msg.taskObjective}
-                    taskStatus={msg.taskStatus}
-                    artifactRoot={msg.artifactRoot}
-                    onStop={handleStopSession}
-                  />
-                ))
+              (() => {
+                const hasActivePlan = (currentDisplayMessages || []).some(
+                  (m) => m.isPlanSteps && m.taskStatus === 'running'
+                )
+                const activeThinkingMsg = isCurrentLoading
+                  ? [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking)
+                  : null
+
+                return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
+                  if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
+                    return null
+                  }
+                  return (
+                    <ChatList
+                      key={
+                        msg.id
+                          ? `${msg.id}-${idx}`
+                          : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
+                      }
+                      id={msg.id || msg.timestamp || msg.created_at}
+                      lastCompactedMessageId={lastCompactedMessageId}
+                      isCompacting={msg.isCompacting}
+                      compactProgress={msg.compactProgress}
+                      role={msg.role}
+                      content={msg.content}
+                      reasoning={msg.reasoning}
+                      isThinking={msg.isThinking}
+                      isSearching={msg.isSearching}
+                      isSummarizing={msg.isSummarizing}
+                      isSearchingMusic={msg.isSearchingMusic}
+                      sources={msg.sources}
+                      executedTools={msg.executedTools}
+                      isMemorySaved={msg.isMemorySaved}
+                      isMemoryUpdated={msg.isMemoryUpdated}
+                      isMemoryDeleted={msg.isMemoryDeleted}
+                      timestamp={msg.timestamp}
+                      mood={msg.mood}
+                      source={msg.source}
+                      sender={msg.sender}
+                      isPlanSteps={msg.isPlanSteps}
+                      plan={msg.plan}
+                      currentStep={msg.currentStep}
+                      taskId={msg.taskId}
+                      taskTitle={msg.taskTitle}
+                      taskObjective={msg.taskObjective}
+                      taskStatus={msg.taskStatus}
+                      artifactRoot={msg.artifactRoot}
+                      activeLiveTools={
+                        hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.executedTools : null
+                      }
+                      activeThinkingContent={
+                        hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
+                      }
+                      onStop={handleStopSession}
+                    />
+                  )
+                })
+              })()
             )}
             <div ref={messagesEndRef} className="h-2" />
           </div>
