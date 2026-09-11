@@ -421,6 +421,7 @@ export async function executeAgentTool({
     const skillName = (a.skill_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()
     if (!skillName) {
       res = { success: false, message: 'Harap sebutkan skill_name yang ingin dibaca.' }
+    } else {
       const { getLearnedSkill, getAllLearnedSkills } = await import('../../api/db.js')
       let learned = await getLearnedSkill(skillName)
       if (!learned || !learned.content) {
@@ -443,13 +444,13 @@ export async function executeAgentTool({
         }
       } else {
         const { NATIVE_SKILLS } = await import('../../components/core/native-skills.js')
-        const native = (NATIVE_SKILLS || []).find(
+        const nativeSkill = (NATIVE_SKILLS || []).find(
           (s) => s.name.toLowerCase() === skillName.toLowerCase()
         )
-        if (native && native.content) {
+        if (nativeSkill && nativeSkill.content) {
           res = {
             success: true,
-            data: `[PEDOMAN SKILL BAWAAN: ${skillName.toUpperCase()}]\n${native.content}`
+            data: `[PEDOMAN SKILL BAWAAN: ${skillName.toUpperCase()}]\n${nativeSkill.content}`
           }
         } else {
           let skillData = null
