@@ -90,7 +90,7 @@ function clampDrift(oldTraits, newTraits) {
 
     // Clamp delta ke ±MAX_DRIFT
     if (Math.abs(delta) > MAX_DRIFT) {
-      newVal = oldVal + (Math.sign(delta) * MAX_DRIFT)
+      newVal = oldVal + Math.sign(delta) * MAX_DRIFT
     }
 
     // Floor enforcement
@@ -131,7 +131,15 @@ Berdasarkan ringkasan di atas, evaluasi apakah trait perlu bergeser. Output JSON
       reasoning: { type: 'string' },
       new_relational_memory: { type: ['string', 'null'] }
     },
-    required: ['warmth', 'sarcasm_level', 'trust', 'energy', 'obedience', 'reasoning', 'new_relational_memory'],
+    required: [
+      'warmth',
+      'sarcasm_level',
+      'trust',
+      'energy',
+      'obedience',
+      'reasoning',
+      'new_relational_memory'
+    ],
     additionalProperties: false
   }
 
@@ -140,8 +148,7 @@ Berdasarkan ringkasan di atas, evaluasi apakah trait perlu bergeser. Output JSON
       { role: 'system', content: prompt },
       { role: 'user', content: 'Evaluasi dan output JSON.' }
     ]
-    // isSmallTask = true (arg 3)
-    const response = await fetchAI(messages, null, true, traitSchema)
+    const response = await fetchAI(messages, false, { isSmallTask: true, jsonSchema: traitSchema })
 
     if (response?.content) {
       const parsed = cleanAndParse(response.content)

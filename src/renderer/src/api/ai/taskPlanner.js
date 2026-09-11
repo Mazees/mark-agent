@@ -13,8 +13,14 @@ function slugify(value = '') {
 
 // Artifact hanya boleh berupa nama file relatif satu level; traversal path ditolak.
 function sanitizeArtifactName(value, fallback) {
-  const raw = String(value || fallback || '').replace(/\\/g, '/').split('/').pop()
-  const safe = raw.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^\.+/, '').slice(0, 100)
+  const raw = String(value || fallback || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop()
+  const safe = raw
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^\.+/, '')
+    .slice(0, 100)
   return safe || fallback
 }
 
@@ -132,7 +138,14 @@ export async function createDurableTaskPlan(userInput, classification = {}, sign
             },
             artifactName: { type: 'string' }
           },
-          required: ['id', 'title', 'objective', 'deliverable', 'acceptanceCriteria', 'artifactName'],
+          required: [
+            'id',
+            'title',
+            'objective',
+            'deliverable',
+            'acceptanceCriteria',
+            'artifactName'
+          ],
           additionalProperties: false
         }
       }
@@ -154,7 +167,7 @@ export async function createDurableTaskPlan(userInput, classification = {}, sign
   ]
 
   try {
-    const response = await fetchAI(messages, signal, false, schema)
+    const response = await fetchAI(messages, false, { signal, jsonSchema: schema })
     const parsed = cleanAndParse(response.content)
     return normalizePlan(parsed, userInput, classification)
   } catch (error) {

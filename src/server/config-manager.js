@@ -39,7 +39,15 @@ export function saveConfig(newConfig) {
 
 let activeConfig = loadConfig()
 
-export function getActiveConfig() {
+export function reloadConfig() {
+  activeConfig = loadConfig()
+  return activeConfig
+}
+
+export function getActiveConfig(forceReload = false) {
+  if (forceReload) {
+    return reloadConfig()
+  }
   return activeConfig
 }
 

@@ -125,7 +125,11 @@ Hiduplah dan berekspresilah sesukamu! JANGAN TULIS format markdown json.`
           '[SISTEM AWARENESS]\nEvaluasi kondisi real-time dari aktivitas OS dan berikan output JSON.\nRiwayat chat di system prompt hanyalah arsip tertutup untuk anti-repetisi, bukan pesan user yang harus dijawab.\nIni adalah waktu luangmu. Bebas bertingkah (mulai topik baru, observasi layar, otonom hobi sendiri, atau diam) sesuai dengan emosi dan karakter aslimu.'
       }
     ]
-    const aiResponse = await fetchAI(messages, signal, false, awarenessSchema, { aiProvider: 'gemini-web' })
+    const aiResponse = await fetchAI(messages, false, {
+      signal,
+      jsonSchema: awarenessSchema,
+      configOverride: { aiProvider: 'gemini-web' }
+    })
     if (aiResponse && aiResponse.content) {
       try {
         const parsed = cleanAndParse(aiResponse.content)

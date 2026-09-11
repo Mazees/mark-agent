@@ -11,7 +11,13 @@ function isWorthLearning(executedTools = []) {
   const toolNames = executedTools.map((t) => t.tool || t.task || '')
 
   // Abaikan jika hanya memanggil read-skill atau hanya 1 tool sepele
-  const trivialSingleTools = ['read-skill', 'read-tools', 'read-memory', 'camera-look', 'analyze-screen']
+  const trivialSingleTools = [
+    'read-skill',
+    'read-tools',
+    'read-memory',
+    'camera-look',
+    'analyze-screen'
+  ]
   const nonTrivialTools = toolNames.filter((name) => !trivialSingleTools.includes(name))
 
   if (nonTrivialTools.length === 0) return false
@@ -19,7 +25,14 @@ function isWorthLearning(executedTools = []) {
   // Layak jika:
   // 1. Mengeksekusi >= 2 langkah tool yang saling berkaitan, ATAU
   // 2. Mengeksekusi tool kompleks/high-impact (seperti run-powershell, replace-content, git-commit, browser multi-step, subagent)
-  const highImpactTools = ['run-powershell', 'replace-content', 'replace-lines', 'write-file', 'spawn_subagent', 'git-commit']
+  const highImpactTools = [
+    'run-powershell',
+    'replace-content',
+    'replace-lines',
+    'write-file',
+    'spawn_subagent',
+    'git-commit'
+  ]
   const hasHighImpact = nonTrivialTools.some((name) => highImpactTools.includes(name))
 
   return nonTrivialTools.length >= 2 || hasHighImpact
@@ -43,9 +56,10 @@ export async function synthesizeSkillAndSave({
     }
 
     const existingSkills = await getAllLearnedSkills()
-    const existingListStr = existingSkills.length > 0
-      ? existingSkills.map((s) => `- ${s.name}: ${s.description}`).join('\n')
-      : '(Belum ada skill terdaftar)'
+    const existingListStr =
+      existingSkills.length > 0
+        ? existingSkills.map((s) => `- ${s.name}: ${s.description}`).join('\n')
+        : '(Belum ada skill terdaftar)'
 
     // Susun ringkasan riwayat aksi & tool yang berhasil
     const toolsTrajectory = executedTools
@@ -112,15 +126,18 @@ Sebagai otak pembelajar, kamu memiliki dorongan kuat untuk SELALU BELAJAR, menge
       { role: 'user', content: promptText }
     ]
 
-    const response = await fetchAI(messages, null, true, {
-      type: 'object',
-      properties: {
-        should_save: { type: 'boolean' },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        content: { type: 'string' }
-      },
-      required: ['should_save', 'name', 'description', 'content']
+    const response = await fetchAI(messages, false, {
+      isSmallTask: true,
+      jsonSchema: {
+        type: 'object',
+        properties: {
+          should_save: { type: 'boolean' },
+          name: { type: 'string' },
+          description: { type: 'string' },
+          content: { type: 'string' }
+        },
+        required: ['should_save', 'name', 'description', 'content']
+      }
     })
 
     const parsed = cleanAndParse(response)
@@ -135,7 +152,9 @@ Sebagai otak pembelajar, kamu memiliki dorongan kuat untuk SELALU BELAJAR, menge
     })
 
     if (savedSkill) {
-      console.log(`[Meta-Learner] ✨ Keahlian berhasil disintesis/diupdate di Database: /${savedSkill.name}`)
+      console.log(
+        `[Meta-Learner] ✨ Keahlian berhasil disintesis/diupdate di Database: /${savedSkill.name}`
+      )
     }
 
     return savedSkill

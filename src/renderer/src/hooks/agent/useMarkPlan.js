@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { buildPlanningSystemPrompt } from '../../api/ai/planning'
 import { getYoutubeSummary } from '../../api/ai/tools'
-import { fetchAI, fetchAIStream } from '../../api/ai/core'
+import { fetchAI } from '../../api/ai/core'
 import { playVoice, speechQueue, getCurrentTimeInfo } from '../../api/ai/utils'
 import { executeAgentTool } from './executeAgentTool.js'
 import {
@@ -374,11 +374,10 @@ export const useMarkPlan = ({
               }))
             ]
 
-            const visionResponse = await fetchAI(
-              [{ role: 'user', content: contentArray }],
-              currentSignal,
-              false
-            )
+            const visionResponse = await fetchAI([{ role: 'user', content: contentArray }], false, {
+              signal: currentSignal,
+              isSmallTask: true
+            })
             const textContent =
               typeof visionResponse === 'object' && visionResponse.content
                 ? visionResponse.content
@@ -436,8 +435,8 @@ export const useMarkPlan = ({
 
               const visionResponse = await fetchAI(
                 [{ role: 'user', content: contentArray }],
-                currentSignal,
-                false
+                false,
+                { signal: currentSignal, isSmallTask: true }
               )
               const textContent =
                 typeof visionResponse === 'object' && visionResponse.content
@@ -910,7 +909,6 @@ export const useMarkPlan = ({
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
       const maxAgentIterations = 50
-      let protocolRetryCount = 0
       const toolCallCounts = new Map()
 
       while (!isDone && !sessionAbortController.signal.aborted) {
@@ -985,8 +983,7 @@ export const useMarkPlan = ({
         let sentenceBuffer = ''
 
         // Request streaming ke Backend AI Bridge
-        const streamResult = await fetchAIStream({
-          messages: loopMessages,
+        const streamResult = await fetchAI(loopMessages, true, {
           tools: activeTools,
           signal: sessionAbortController.signal,
           onReasoning: (chunk) => {
@@ -1056,20 +1053,7 @@ export const useMarkPlan = ({
         }
 
         if (streamResult?.finishReason === 'error') {
-          const protocolError = streamResult.protocolError || {}
-          if (protocolRetryCount < 2) {
-            protocolRetryCount += 1
-            loopMessages.push({
-              role: 'user',
-              content: `[SYSTEM RETRY ${protocolRetryCount}/2] Respons sebelumnya melanggar protokol JSON (${protocolError.code || 'INVALID_PROTOCOL'}). Keluarkan tepat satu JSON object bertipe "final" atau "tool_calls", tanpa Markdown atau teks tambahan.`
-            })
-            continue
-          }
-          const error = new Error(
-            protocolError.message || 'Respons DeepSeek tidak memenuhi protokol.'
-          )
-          error.code = protocolError.code || 'AI_PROTOCOL_ERROR'
-          throw error
+          throw new Error('Terjadi kesalahan pada respon stream AI.')
         }
 
         // Fallback Interceptor: Jika model mengembalikan teks JSON (tool_calls, mood, atau structured answer)

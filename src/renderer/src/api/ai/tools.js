@@ -1,4 +1,4 @@
-import { fetchAI, cleanAndParse } from './core'
+import { fetchAI, cleanAndParse } from './core'
 
 export const getYoutubeSummary = async (url, data, signal) => {
   try {
@@ -6,7 +6,7 @@ export const getYoutubeSummary = async (url, data, signal) => {
     if (!transcript) return 'Gagal mengambil transkrip video.'
 
     const MAX_CHARS = 4000
-    
+
     // Jika transkrip pendek, langsung proses tanpa chunking
     if (transcript.length <= MAX_CHARS) {
       const prompts = `
@@ -32,18 +32,21 @@ author: ${data.author}
 # TRANSCRIPT
 ${transcript}
 `
-      console.log('--- PROMPT YOUTUBE SHORT ---');
-      console.log(prompts);
-      
-      const response = await fetchAI([{ role: 'user', content: prompts }], signal, true)
+      console.log('--- PROMPT YOUTUBE SHORT ---')
+      console.log(prompts)
+
+      const response = await fetchAI([{ role: 'user', content: prompts }], false, {
+        signal,
+        isSmallTask: true
+      })
       return response.content
     }
 
     // --- SISTEM CHUNKING UNTUK VIDEO PANJANG ---
     const chunks = []
     let currentChunk = ''
-    const lines = transcript.split('\\n')
-    
+    const lines = transcript.split('\n')
+
     for (let line of lines) {
       // Jika ada satu baris yang sangat panjang melebihi batas (misal tidak ada newline)
       while (line.length > MAX_CHARS) {
@@ -57,9 +60,9 @@ ${transcript}
 
       if (currentChunk.length + line.length > MAX_CHARS) {
         if (currentChunk.length > 0) chunks.push(currentChunk)
-        currentChunk = line + '\\n'
+        currentChunk = line + '\n'
       } else {
-        currentChunk += line + '\\n'
+        currentChunk += line + '\n'
       }
     }
     if (currentChunk.trim().length > 0) {
@@ -89,16 +92,18 @@ author: ${data.author || 'Tidak diketahui'}
 # TRANSCRIPT BAGIAN ${i + 1}
 ${chunks[i]}
 `
-      console.log(`--- PROMPT YOUTUBE CHUNK ${i + 1}/${chunks.length} ---`);
-      console.log(chunkPrompt);
+      console.log(`--- PROMPT YOUTUBE CHUNK ${i + 1}/${chunks.length} ---`)
+      console.log(chunkPrompt)
 
-      const response = await fetchAI([{ role: 'user', content: chunkPrompt }], signal, true)
+      const response = await fetchAI([{ role: 'user', content: chunkPrompt }], false, {
+        signal,
+        isSmallTask: true
+      })
       finalSummary += `${response.content}\n\n`
 
       // Cooldown 12 detik jika bukan chunk terakhir (Menghindari TPM limit Groq)
       if (i < chunks.length - 1) {
-        // Delay 12 detik untuk bypass Groq TPM limit (karena 1 menit = 60 detik, 12 detik = 5 request/menit, sangat aman untuk limit 6000 TPM)
-        await new Promise(resolve => setTimeout(resolve, 12000))
+        await new Promise((resolve) => setTimeout(resolve, 12000))
       }
     }
 
@@ -108,7 +113,6 @@ ${chunks[i]}
     throw error
   }
 }
-
 
 export const getBestMusicMatch = async (userInput, musicList, signal) => {
   try {
@@ -149,7 +153,11 @@ ${JSON.stringify(
       additionalProperties: false
     }
 
-    const response = await fetchAI(messages, signal, true, schema)
+    const response = await fetchAI(messages, false, {
+      signal,
+      isSmallTask: true,
+      jsonSchema: schema
+    })
     const data = cleanAndParse(response.content)
     return data
   } catch (error) {

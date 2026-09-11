@@ -30,7 +30,7 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       payload: { messages, jsonSchema, isSmallTask }
     })
 
-    const result = await fetchAI(messages, finalConfig, isSmallTask, jsonSchema)
+    const result = await fetchAI(messages, false, { config: finalConfig, isSmallTask, jsonSchema })
     res.json(result)
   } catch (err) {
     res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })
@@ -41,7 +41,7 @@ aiRouter.post('/ai/fetch', async (req, res) => {
 aiRouter.post('/ai/stream', async (req, res) => {
   const { messages, tools = null, config = {}, isSmallTask = false } = req.body || {}
   try {
-    const { fetchAIStream } = await import('../services/ai-bridge.js')
+    const { fetchAI } = await import('../services/ai-bridge.js')
     const finalConfig = { ...getActiveConfig(), ...config }
     const provider = finalConfig.aiProvider || 'gemini-web'
     const resolvedModel =
@@ -63,8 +63,7 @@ aiRouter.post('/ai/stream', async (req, res) => {
       payload: { messages, tools, isSmallTask }
     })
 
-    const result = await fetchAIStream({
-      messages,
+    const result = await fetchAI(messages, true, {
       tools,
       config: finalConfig,
       isSmallTask,

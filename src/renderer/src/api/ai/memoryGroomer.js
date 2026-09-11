@@ -1,28 +1,28 @@
 import { fetchAI, cleanAndParse } from './core'
 
 const groomerSchema = {
-  name: "memory_consolidation_result",
+  name: 'memory_consolidation_result',
   schema: {
-    type: "object",
+    type: 'object',
     properties: {
       consolidations: {
-        type: "array",
+        type: 'array',
         items: {
-          type: "object",
+          type: 'object',
           properties: {
-            keep_id: { type: "number" },
-            merged_text: { type: "string" },
+            keep_id: { type: 'number' },
+            merged_text: { type: 'string' },
             delete_ids: {
-              type: "array",
-              items: { type: "number" }
+              type: 'array',
+              items: { type: 'number' }
             }
           },
-          required: ["keep_id", "merged_text", "delete_ids"],
+          required: ['keep_id', 'merged_text', 'delete_ids'],
           additionalProperties: false
         }
       }
     },
-    required: ["consolidations"],
+    required: ['consolidations'],
     additionalProperties: false
   }
 }
@@ -59,13 +59,17 @@ Wajib kembalikan HANYA objek JSON dengan skema:
 export function parseGroomerResponse(rawResponse) {
   if (!rawResponse) return []
   try {
-    const parsed = cleanAndParse(typeof rawResponse === 'string' ? rawResponse : JSON.stringify(rawResponse))
+    const parsed = cleanAndParse(
+      typeof rawResponse === 'string' ? rawResponse : JSON.stringify(rawResponse)
+    )
     if (parsed && Array.isArray(parsed.consolidations)) {
-      return parsed.consolidations.map(c => ({
-        keep_id: Number(c.keep_id),
-        merged_text: String(c.merged_text || '').trim(),
-        delete_ids: Array.isArray(c.delete_ids) ? c.delete_ids.map(id => Number(id)) : []
-      })).filter(c => !isNaN(c.keep_id) && c.merged_text.length > 0)
+      return parsed.consolidations
+        .map((c) => ({
+          keep_id: Number(c.keep_id),
+          merged_text: String(c.merged_text || '').trim(),
+          delete_ids: Array.isArray(c.delete_ids) ? c.delete_ids.map((id) => Number(id)) : []
+        }))
+        .filter((c) => !isNaN(c.keep_id) && c.merged_text.length > 0)
     }
   } catch (err) {
     console.error('[Groomer] Gagal memvalidasi/parse respons Groomer:', err)
@@ -85,8 +89,7 @@ export async function runBatchConsolidation(clusters) {
   ]
 
   try {
-    console.log(`[Groomer] Mengirim ${clusters.length} cluster ke LLM untuk konsolidasi...`)
-    const res = await fetchAI(messages, null, false, groomerSchema)
+    const res = await fetchAI(messages, false, { jsonSchema: groomerSchema })
     if (!res) return []
     const results = parseGroomerResponse(res)
     console.log(`[Groomer] Berhasil menerima ${results.length} hasil konsolidasi dari LLM.`)

@@ -1,4 +1,4 @@
-import { fetchAIStream } from '../ai/core'
+import { fetchAI } from '../ai/core'
 import { subagentStore } from './subagentStore'
 import { buildSubagentSystemPrompt } from './subagentPrompt'
 import { core_tools_schema } from '../tools/core-tools'
@@ -140,8 +140,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
       let turnReasoning = ''
       let turnContent = ''
 
-      const streamResult = await fetchAIStream({
-        messages: messagesPayload,
+      const streamResult = await fetchAI(messagesPayload, true, {
         tools: allowedSchemas,
         signal: abortController.signal,
         onReasoning: (chunk) => {

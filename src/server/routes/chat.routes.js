@@ -8,7 +8,7 @@ chatRouter.post('/chat', async (req, res) => {
   const { message, messages } = req.body || {}
   const effectiveMessages = messages || [{ role: 'user', content: message || '' }]
   try {
-    const result = await fetchAI(effectiveMessages, getActiveConfig(), false)
+    const result = await fetchAI(effectiveMessages, false, { config: getActiveConfig() })
     res.json(result)
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })

@@ -3,11 +3,20 @@
  * Menghubungkan antarmuka React secara langsung ke Node.js Core Backend via REST API & WebSocket.
  */
 
-const isBrowser = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.startsWith('file:')
+const isBrowser =
+  typeof window !== 'undefined' &&
+  window.location?.origin &&
+  !window.location.origin.startsWith('file:')
 
 export const SERVER_CONFIG = {
-  host: typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost',
-  port: typeof window !== 'undefined' && window.location?.port ? Number(window.location.port) || 3000 : 3000,
+  host:
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : 'localhost',
+  port:
+    typeof window !== 'undefined' && window.location?.port
+      ? Number(window.location.port) || 3000
+      : 3000,
   apiBase: isBrowser ? window.location.origin : 'http://localhost:3000',
   wsProtocol: isBrowser && window.location.protocol === 'https:' ? 'wss:' : 'ws:',
   wsHost: isBrowser ? window.location.host : 'localhost:3000',
@@ -118,23 +127,8 @@ export const webApi = {
 
   // 2. Chat & AI
   fetchAI: async (params, signal = null) => {
-    const res = await fetch(`${API_BASE}/api/ai/fetch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal: signal || undefined
-    })
-    const json = await res.json()
-    if (!res.ok || json.error) {
-      const err = new Error(json.error?.message || `HTTP error ${res.status}`)
-      err.code = json.error?.code
-      throw err
-    }
-    return json
-  },
-
-  fetchAIStream: async (params, signal = null) => {
-    const res = await fetch(`${API_BASE}/api/ai/stream`, {
+    const endpoint = params?.stream ? `${API_BASE}/api/ai/stream` : `${API_BASE}/api/ai/fetch`
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -310,7 +304,10 @@ export const webApi = {
   browserNavigate: async (url) => webApi.executeNativeTool('browser-navigate', url),
   browserReadDom: async () => webApi.executeNativeTool('browser-read-dom', ''),
   browserAction: async (data) =>
-    webApi.executeNativeTool('browser-action', typeof data === 'string' ? data : JSON.stringify(data)),
+    webApi.executeNativeTool(
+      'browser-action',
+      typeof data === 'string' ? data : JSON.stringify(data)
+    ),
   browserClose: async (sessionId = 'default') =>
     webApi.executeNativeTool(
       'browser-close',
@@ -357,7 +354,9 @@ export const webApi = {
 
   readSkillFile: async (name, filePath = 'SKILL.md') => {
     try {
-      const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/file?filePath=${encodeURIComponent(filePath)}`)
+      const res = await fetch(
+        `${API_BASE}/api/skills/${encodeURIComponent(name)}/file?filePath=${encodeURIComponent(filePath)}`
+      )
       const json = await res.json()
       return json.data?.content || ''
     } catch (_) {
@@ -417,8 +416,13 @@ export const webApi = {
   },
 
   installSkill: async (fileOrBuffer, overrideName = null) => {
-    const body = fileOrBuffer instanceof File || fileOrBuffer instanceof Blob ? fileOrBuffer : new Blob([fileOrBuffer])
-    const url = overrideName ? `${API_BASE}/api/skills/install?name=${encodeURIComponent(overrideName)}` : `${API_BASE}/api/skills/install`
+    const body =
+      fileOrBuffer instanceof File || fileOrBuffer instanceof Blob
+        ? fileOrBuffer
+        : new Blob([fileOrBuffer])
+    const url = overrideName
+      ? `${API_BASE}/api/skills/install?name=${encodeURIComponent(overrideName)}`
+      : `${API_BASE}/api/skills/install`
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/zip' },
@@ -488,7 +492,10 @@ export const webApi = {
   },
 
   openPluginFolder: async () => {
-    return webApi.executeNativeTool('run-powershell', 'explorer.exe "$HOME\\Documents\\Mark Plugins"')
+    return webApi.executeNativeTool(
+      'run-powershell',
+      'explorer.exe "$HOME\\Documents\\Mark Plugins"'
+    )
   },
 
   openSpecificFolder: async (folderPath) => {
@@ -680,11 +687,15 @@ export const webApi = {
     return await res.json()
   },
   readBackgroundTaskOutput: async (taskId, lines = 40) => {
-    const res = await fetch(`${API_BASE}/api/tasks/daemon/${encodeURIComponent(taskId)}/output?lines=${lines}`)
+    const res = await fetch(
+      `${API_BASE}/api/tasks/daemon/${encodeURIComponent(taskId)}/output?lines=${lines}`
+    )
     return await res.json()
   },
   killBackgroundTask: async (taskId) => {
-    const res = await fetch(`${API_BASE}/api/tasks/daemon/${encodeURIComponent(taskId)}/kill`, { method: 'POST' })
+    const res = await fetch(`${API_BASE}/api/tasks/daemon/${encodeURIComponent(taskId)}/kill`, {
+      method: 'POST'
+    })
     return await res.json()
   },
   listBackgroundTasks: async () => {
