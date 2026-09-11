@@ -531,6 +531,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 .map((msg, idx) => (
                   <ChatList
                     key={msg.id || msg.created_at || idx}
+                    key={msg.id ? `${msg.id}-${idx}` : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`}
                     role={msg.role}
                     content={msg.content}
                     reasoning={msg.reasoning}

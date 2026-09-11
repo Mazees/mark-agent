@@ -124,7 +124,15 @@ export const MessageBubble = React.memo(
                     const hasQuery = t.query !== undefined && t.query !== null && t.query !== ''
                     const queryString =
                       typeof t.query === 'string' ? t.query : JSON.stringify(t.query, null, 2)
-                    const isSuccessful = t.status === 'done' || t.status === 'success'
+                    const textResult = String(t.resultSummary || t.fullResult || '')
+                    const hasError =
+                      textResult.startsWith('[ERROR]') ||
+                      textResult.includes(' crash:') ||
+                      textResult.toLowerCase().includes(' gagal:')
+                    const isSuccessful =
+                      t.status === 'done' ||
+                      t.status === 'success' ||
+                      (!hasError && t.status !== 'error')
                     const StatusIcon = isSuccessful ? Check : XCircle
                     const statusClass = isSuccessful ? 'text-success' : 'text-error'
 

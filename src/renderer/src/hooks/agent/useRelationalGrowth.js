@@ -46,6 +46,10 @@ export const useRelationalGrowth = ({ chatData }) => {
               }
               const rawContent = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
               const safeContent = rawContent.length > 500 ? `${rawContent.slice(0, 500)}... [dipotong]` : rawContent
+              const rawContent =
+                typeof m.content === 'string' ? m.content : m.content ? JSON.stringify(m.content) : ''
+              const safeContent =
+                rawContent.length > 500 ? `${rawContent.slice(0, 500)}... [dipotong]` : rawContent
               return `${timeStr}${m.role === 'user' ? 'User' : 'Mark'}: ${safeContent}`
             })
             .join('\n')

@@ -521,6 +521,8 @@ export const useMarkPlan = ({
         }
 
         return {
+          res,
+          success: Boolean(res?.success),
           resultString,
           rejected: false,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
@@ -560,6 +562,8 @@ export const useMarkPlan = ({
         })
 
         return {
+          res,
+          success: Boolean(res?.success),
           resultString,
           rejected: false,
           toolExecution: { action: tool, query: stringQuery, result: resultString }
@@ -573,6 +577,7 @@ export const useMarkPlan = ({
     }
 
     return {
+      success: !resultString.startsWith('[ERROR]'),
       resultString,
       rejected: false,
       toolExecution: { action: tool, query: stringQuery, result: resultString }
@@ -1236,7 +1241,13 @@ export const useMarkPlan = ({
             if (execResult.loadedGroup) {
               dynamicallyLoadedToolGroups.add(execResult.loadedGroup)
             }
-            const executionSucceeded = execResult.res?.success === true
+            const resStr = String(execResult.resultString || '')
+            const executionSucceeded =
+              execResult.success === true ||
+              execResult.res?.success === true ||
+              (!resStr.startsWith('[ERROR]') &&
+                !resStr.includes(' crash:') &&
+                !resStr.toLowerCase().includes(' gagal:'))
             executedToolsList.push({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
@@ -1425,6 +1436,10 @@ export const useMarkPlan = ({
       } catch (_) {}
     } catch (error) {
       console.error('[useMarkPlan] Critical ReAct Loop Error:', error)
+      const isAbort =
+        error.name === 'AbortError' ||
+        error.message?.includes('AbortError') ||
+        Boolean(sessionAbortController?.signal?.aborted)
 
       targetPushProcess({
         id: agenticProcessId,
@@ -1434,9 +1449,37 @@ export const useMarkPlan = ({
           steps: [...execSteps],
           currentStep: execSteps.length,
           reasoning: `Error: ${error.message}`
+      if (!isAbort) {
+        console.error('[useMarkPlan] Critical ReAct Loop Error:', error)
+      } else {
+        console.log('[useMarkPlan] ReAct loop dihentikan oleh pengguna.')
+      }
+
+      if (!isAbort) {
+        targetPushProcess({
+          id: agenticProcessId,
+          type: 'planning',
+          status: 'failed',
+          data: {
+            steps: [...execSteps],
+            currentStep: execSteps.length,
+            reasoning: `Error: ${error.message}`
+          }
+        })
+        setTimeout(() => {
+          dismissProcess(agenticProcessId)
+        }, 3000)
+
+        if (durableTaskForRecovery && durableTaskForRecovery.status === 'running') {
+          transitionAgentTask(
+            durableTaskForRecovery.id,
+            'failed',
+            `Uncaught exception: ${error.message}`
+          ).catch(() => {})
         }
       })
       setTimeout(() => {
+      } else {
         dismissProcess(agenticProcessId)
       }, 3000)
 
