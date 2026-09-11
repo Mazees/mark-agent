@@ -108,16 +108,31 @@ export async function executeAgentTool({
     try {
       const resp = await fetch('/api/tasks/artifacts-dir').then((r) => r.json())
       if (resp?.success && resp?.data) {
-        const cleanBase = resp.data.replace(/[\\/]$/, '')
-        artifactRoot = `${cleanBase}/task-${Date.now()}`
+        const cleanBase = resp.data.replace(/[\\/]+$/, '')
+        const sep = cleanBase.includes('\\') ? '\\' : '/'
+        artifactRoot = `${cleanBase}${sep}task-${Date.now()}`
+        await fetch('/api/tasks/ensure-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dirPath: artifactRoot })
+        }).catch(() => {})
       }
     } catch (err) {
       void err
     }
 
     if (!artifactRoot && context?.workspaceRoot) {
-      artifactRoot = `${context.workspaceRoot.replace(/[\\/]$/, '')}/.mark/tasks/task-${Date.now()}`
+      const cleanWs = context.workspaceRoot.replace(/[\\/]+$/, '')
+      const sep = cleanWs.includes('\\') ? '\\' : '/'
+      artifactRoot = `${cleanWs}${sep}.mark${sep}tasks${sep}task-${Date.now()}`
+      await fetch('/api/tasks/ensure-dir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dirPath: artifactRoot })
+      }).catch(() => {})
     }
+
+    const pathSep = (artifactRoot || '').includes('\\') ? '\\' : '/'
 
     updatedDurableTask = await createAgentTask({
       title,
@@ -132,7 +147,9 @@ export async function executeAgentTool({
         acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
           ? step.acceptanceCriteria
           : ['Selesai sesuai instruksi'],
-        artifactPath: artifactRoot ? `${artifactRoot}/${step.id || `step-${idx + 1}`}.md` : null
+        artifactPath: artifactRoot
+          ? `${artifactRoot}${pathSep}${step.id || `step-${idx + 1}`}.md`
+          : null
       }))
     })
 

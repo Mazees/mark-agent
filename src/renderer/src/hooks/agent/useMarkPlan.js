@@ -1035,8 +1035,21 @@ export const useMarkPlan = ({
 
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
-          if (durableTask && durableTask.status === 'running') {
-            await transitionAgentTask(durableTask.id, 'paused', 'user_abort')
+          if (durableTask) {
+            await transitionAgentTask(durableTask.id, 'cancelled', 'user_abort').catch(() => {})
+            targetSetChatData((prev) =>
+              prev.map((msg) => {
+                if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
+                return {
+                  ...msg,
+                  taskStatus: 'stopped',
+                  plan: (msg.plan || []).map((s) => ({
+                    ...s,
+                    status: s.status === 'running' ? 'stopped' : s.status
+                  }))
+                }
+              })
+            )
           }
           break
         }
@@ -1462,6 +1475,7 @@ export const useMarkPlan = ({
               : null
 
             durableTask = checkpointedTask
+            durableTaskForRecovery = checkpointedTask
             durableActiveStep = nextStep || (checkpointNeedsRevision ? currentStep : null)
             if (activeTaskObjectiveRef) {
               activeTaskObjectiveRef.current =
@@ -1753,20 +1767,43 @@ export const useMarkPlan = ({
         }
       } else {
         dismissProcess(agenticProcessId)
+        if (durableTaskForRecovery) {
+          transitionAgentTask(
+            durableTaskForRecovery.id,
+            'cancelled',
+            'Eksekusi dibatalkan atas permintaan pengguna.'
+          ).catch(() => {})
+        }
       }
 
-      targetSetChatData((prev) => [
-        ...prev.filter((item) => !item.isThinking),
-        {
-          role: 'ai',
-          content: isAbort
-            ? 'Eksekusi dibatalkan atas permintaan pengguna.'
-            : `Terjadi kendala saat memproses: ${error.message}`,
-          mood: isAbort ? 'neutral' : 'sadness',
-          timestamp: getCurrentTimeInfo(),
-          created_at: Date.now()
+      targetSetChatData((prev) => {
+        let updated = prev.filter((item) => !item.isThinking)
+        if (isAbort && durableTaskForRecovery) {
+          updated = updated.map((msg) => {
+            if (!msg.isPlanSteps || msg.taskId !== durableTaskForRecovery.id) return msg
+            return {
+              ...msg,
+              taskStatus: 'stopped',
+              plan: (msg.plan || []).map((s) => ({
+                ...s,
+                status: s.status === 'running' ? 'stopped' : s.status
+              }))
+            }
+          })
         }
-      ])
+        return [
+          ...updated,
+          {
+            role: 'ai',
+            content: isAbort
+              ? 'Eksekusi dibatalkan atas permintaan pengguna.'
+              : `Terjadi kendala saat memproses: ${error.message}`,
+            mood: isAbort ? 'neutral' : 'sadness',
+            timestamp: getCurrentTimeInfo(),
+            created_at: Date.now()
+          }
+        ]
+      })
     } finally {
       activeSessionsRef.current.delete(activeSessionNum)
       activeSessionUpdatersRef.current.delete(activeSessionNum)

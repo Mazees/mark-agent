@@ -737,6 +737,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                     taskObjective={msg.taskObjective}
                     taskStatus={msg.taskStatus}
                     artifactRoot={msg.artifactRoot}
+                    onStop={handleStopSession}
                   />
                 ))
             )}

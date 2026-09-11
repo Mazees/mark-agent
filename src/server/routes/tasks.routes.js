@@ -9,13 +9,35 @@ import {
 
 import path from 'path'
 import os from 'os'
+import fs from 'fs'
 
 export const tasksRouter = Router()
 
-// Artifacts directory helper
+// Artifacts directory helper (memastikan folder dibuat otomatis)
 tasksRouter.get('/tasks/artifacts-dir', (_req, res) => {
   const artifactsDir = path.join(os.homedir(), 'Documents', 'Mark Tasks')
+  try {
+    if (!fs.existsSync(artifactsDir)) {
+      fs.mkdirSync(artifactsDir, { recursive: true })
+    }
+  } catch (_) {}
   res.json({ success: true, data: artifactsDir })
+})
+
+// Pastikan subfolder task dibuat di disk sebelum dibuka
+tasksRouter.post('/tasks/ensure-dir', (req, res) => {
+  const { dirPath } = req.body || {}
+  try {
+    const target = dirPath
+      ? path.normalize(dirPath)
+      : path.join(os.homedir(), 'Documents', 'Mark Tasks')
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(target, { recursive: true })
+    }
+    res.json({ success: true, data: target })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 // Step Routes (Wajib didaftarkan sebelum wildcard /tasks/:id)

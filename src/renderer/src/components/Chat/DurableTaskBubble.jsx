@@ -3,47 +3,63 @@ import {
   Check,
   CheckCircle2,
   Loader2,
-  ListOrdered,
-  Brain,
-  ChevronRight,
   FolderOpen,
   FileText,
   AlertTriangle,
-  Target
+  Square
 } from 'lucide-react'
 
 export const DurableTaskBubble = ({
   plan = [],
   resolvedCurrentStep = 0,
-  reasoning = '',
-  taskId = null,
   taskTitle = '',
   taskObjective = '',
   taskStatus = null,
-  artifactRoot = null
+  artifactRoot = null,
+  onStop = null
 }) => {
   const totalSteps = plan.length
   const completedCount = plan.filter(
     (s, idx) => s.status === 'completed' || (idx < resolvedCurrentStep && s.status !== 'failed')
   ).length
 
+  const isStopped = taskStatus === 'stopped' || taskStatus === 'cancelled'
+  const isFailed = taskStatus === 'failed'
   const isAllDone =
     taskStatus === 'completed' ||
-    (totalSteps > 0 && completedCount >= totalSteps) ||
-    (totalSteps > 0 && resolvedCurrentStep >= totalSteps && taskStatus !== 'failed')
-
-  const isFailed = taskStatus === 'failed'
+    (!isStopped && !isFailed && totalSteps > 0 && completedCount >= totalSteps)
+  const isRunning = !isAllDone && !isFailed && !isStopped
 
   const progressPercent =
     totalSteps > 0 ? Math.round((Math.min(completedCount, totalSteps) / totalSteps) * 100) : 0
 
   const handleOpenFolder = (folderPath) => {
     if (!folderPath) return
-    if (window.api && window.api.executeNativeTool) {
-      window.api.executeNativeTool('open', folderPath).catch(() => {})
-    } else if (window.api && window.api.openPath) {
-      window.api.openPath(folderPath)
-    }
+    fetch('/api/tasks/ensure-dir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dirPath: folderPath })
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        const target = res?.data || folderPath
+        if (window.api && window.api.executeNativeTool) {
+          window.api.executeNativeTool('open-folder', { path: target }).catch(() => {
+            window.api.executeNativeTool('open', target).catch(() => {})
+          })
+        } else if (window.api && window.api.openPath) {
+          window.api.openPath(target)
+        }
+      })
+      .catch(() => {
+        if (window.api && window.api.executeNativeTool) {
+          window.api.executeNativeTool('open-folder', { path: folderPath }).catch(() => {
+            window.api.executeNativeTool('open', folderPath).catch(() => {})
+          })
+        } else if (window.api && window.api.openPath) {
+          window.api.openPath(folderPath)
+        }
+      })
   }
 
   const handleOpenFile = (filePath) => {
@@ -56,246 +72,160 @@ export const DurableTaskBubble = ({
   }
 
   return (
-    <div className="bg-base-200/90 border border-primary/25 rounded-2xl p-4 shadow-xl flex flex-col gap-3.5 my-3 backdrop-blur-md max-w-full overflow-hidden text-base-content">
-      {/* Header Task Workflow */}
-      <div className="flex flex-col gap-2 border-b border-white/10 pb-3 select-none">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {isAllDone ? (
-              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
-            ) : isFailed ? (
-              <AlertTriangle className="w-4 h-4 text-error shrink-0" />
-            ) : (
-              <ListOrdered className="w-4 h-4 text-primary shrink-0" />
-            )}
-            <div className="flex items-center gap-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-primary">
-                Task Workflow
-              </h4>
-              <span
-                className={`badge badge-xs font-mono text-[9px] px-2 py-1 uppercase tracking-wide border ${
-                  isAllDone
-                    ? 'badge-success/20 text-success border-success/30'
-                    : isFailed
-                      ? 'badge-error/20 text-error border-error/30'
-                      : 'badge-primary/20 text-primary border-primary/30'
-                }`}
-              >
-                {isAllDone ? 'Selesai' : isFailed ? 'Gagal' : 'Sedang Berjalan'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {taskId && (
-              <span className="badge badge-xs badge-ghost font-mono text-[9px] px-1.5 py-0.5 text-white/50 border-white/10">
-                {taskId}
-              </span>
-            )}
-            <span className="badge badge-xs badge-ghost font-mono text-[10px] px-2 py-1 text-white/80 border-white/10">
-              {Math.min(completedCount, totalSteps)} / {totalSteps} Tahap
-            </span>
-          </div>
+    <div className="flex flex-col gap-2.5 w-full text-xs text-white/90">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 pb-2 select-none border-b border-white/5">
+        <div className="flex items-center gap-2 min-w-0">
+          {isAllDone ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : isStopped ? (
+            <Square className="w-3.5 h-3.5 text-amber-400 fill-amber-400/20 shrink-0" />
+          ) : isFailed ? (
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          ) : (
+            <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+          )}
+          <span className="font-semibold text-white/95 truncate">
+            {taskTitle || 'Task Workflow'}
+          </span>
+          <span
+            className={`font-mono text-[9px] px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+              isAllDone
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : isStopped
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  : isFailed
+                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                    : 'bg-primary/10 text-primary border-primary/20'
+            }`}
+          >
+            {isAllDone ? 'Selesai' : isStopped ? 'Dihentikan' : isFailed ? 'Gagal' : 'Berjalan'}
+          </span>
         </div>
 
-        {/* Judul & Sasaran Task */}
-        {taskTitle && (
-          <div className="mt-1">
-            <div className="text-xs font-semibold text-white/95 truncate">{taskTitle}</div>
-            {taskObjective && (
-              <div className="text-[11px] text-white/60 line-clamp-2 mt-0.5 font-normal">
-                {taskObjective}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Progress Bar Persentase */}
-        <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden mt-1 border border-white/5">
-          <div
-            className={`h-full transition-all duration-500 ease-out rounded-full ${
-              isAllDone
-                ? 'bg-success'
-                : isFailed
-                  ? 'bg-error'
-                  : 'bg-primary shadow-[0_0_8px_rgba(var(--p),0.6)]'
-            }`}
-            style={{ width: `${progressPercent}%` }}
-          />
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="font-mono text-[10px] text-white/40">
+            {completedCount}/{totalSteps}
+          </span>
+          {isRunning && typeof onStop === 'function' && (
+            <button
+              type="button"
+              onClick={onStop}
+              className="btn btn-ghost btn-xs text-white/50 hover:text-error hover:bg-error/10 gap-1 h-5 min-h-0 px-2 rounded font-mono text-[10px]"
+              title="Hentikan alur kerja"
+            >
+              <Square className="w-2.5 h-2.5 fill-current text-error" />
+              <span>Stop</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Reasoning / Proses Analisis Collapsible */}
-      {reasoning && (
-        <details className="group/details bg-black/20 rounded-lg border border-white/5 overflow-hidden">
-          <summary className="text-[10px] cursor-pointer select-none flex items-center justify-between px-3 py-1.5 opacity-70 hover:opacity-100 uppercase tracking-wider transition-opacity list-none [&::-webkit-details-marker]:hidden">
-            <div className="flex items-center gap-1.5 text-primary font-bold">
-              <Brain className="w-3.5 h-3.5" />
-              <span>Analisis Perencanaan</span>
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 group-open/details:rotate-90 transition-transform opacity-60" />
-          </summary>
-          <div className="px-3 py-2 text-[11px] opacity-80 border-t border-white/5 font-mono whitespace-pre-wrap leading-relaxed text-base-content/90 max-h-36 overflow-y-auto custom-scrollbar border-l-2 border-primary/40">
-            {reasoning}
-          </div>
-        </details>
+      {/* Progress Bar Tipis */}
+      <div className="w-full bg-white/5 rounded-full h-1 overflow-hidden mt-1.5">
+        <div
+          className={`h-full transition-all duration-300 rounded-full ${
+            isAllDone
+              ? 'bg-emerald-400'
+              : isStopped
+                ? 'bg-amber-400'
+                : isFailed
+                  ? 'bg-rose-400'
+                  : 'bg-primary'
+          }`}
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
+
+      {/* Deskripsi/Objective ringkas jika ada */}
+      {taskObjective && !isAllDone && !isStopped && (
+        <p className="text-[11px] text-white/50 mt-2 line-clamp-2">{taskObjective}</p>
       )}
 
-      {/* Steps List */}
-      <div className="space-y-2 mt-0.5">
+      {/* Step List Sederhana */}
+      <div className="space-y-1 mt-2.5">
         {plan.map((step, idx) => {
           const stepStatus =
             step.status ||
             (idx < resolvedCurrentStep
               ? 'completed'
               : idx === resolvedCurrentStep
-                ? 'running'
+                ? isStopped
+                  ? 'stopped'
+                  : 'running'
                 : 'pending')
+
           const isDone = stepStatus === 'completed'
-          const isCurrent = stepStatus === 'running' && !isAllDone
+          const isStepStopped = stepStatus === 'stopped' || (isStopped && stepStatus === 'running')
           const isStepFailed = stepStatus === 'failed'
+          const isCurrent = stepStatus === 'running' && !isAllDone && !isStopped && !isFailed
 
-          const taskTitleText =
+          const title =
             typeof step === 'string' ? step : step.title || step.task || `Tahap ${idx + 1}`
-          const objective = typeof step === 'object' ? step.objective : null
-          const deliverable = typeof step === 'object' ? step.deliverable : null
-          const acceptanceCriteria =
-            typeof step === 'object' && Array.isArray(step.acceptanceCriteria)
-              ? step.acceptanceCriteria
-              : []
           const artifactPath = typeof step === 'object' ? step.artifactPath : null
-          const outputSummary = typeof step === 'object' ? step.output : null
-
-          let statusIcon = (
-            <span className="w-4 h-4 rounded-full border border-white/20 flex items-center justify-center text-[10px] text-white/50">
-              {idx + 1}
-            </span>
-          )
-          let cardStyle = 'hover:bg-white/5 border border-white/5 bg-black/10'
-          let titleStyle = 'text-white/70 font-normal'
-
-          if (isDone) {
-            statusIcon = <Check className="w-4 h-4 text-success" />
-            cardStyle = 'bg-success/5 border border-success/20'
-            titleStyle = 'text-success/90 font-medium'
-          } else if (isCurrent) {
-            statusIcon = <Loader2 className="w-4 h-4 text-primary animate-spin" />
-            cardStyle =
-              'bg-primary/10 border border-primary/30 shadow-[0_0_12px_rgba(var(--p),0.15)]'
-            titleStyle = 'text-white font-semibold animate-pulse'
-          } else if (isStepFailed) {
-            statusIcon = <AlertTriangle className="w-4 h-4 text-error" />
-            cardStyle = 'bg-error/10 border border-error/30'
-            titleStyle = 'text-error font-medium'
-          }
 
           return (
             <div
               key={step.id || idx}
-              className={`text-[11px] font-mono p-2.5 rounded-xl transition-all ${cardStyle}`}
+              className={`flex items-center justify-between text-xs py-1 px-2 rounded-md transition-colors ${
+                isCurrent
+                  ? 'bg-primary/10 text-white font-medium'
+                  : isDone
+                    ? 'text-white/60'
+                    : isStepStopped
+                      ? 'text-amber-400/80'
+                      : isStepFailed
+                        ? 'text-rose-400'
+                        : 'text-white/40'
+              }`}
             >
-              <div className="flex items-start gap-2.5">
-                <span className="shrink-0 mt-0.5">{statusIcon}</span>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`truncate text-xs ${titleStyle}`}>{taskTitleText}</span>
-                    {isCurrent && (
-                      <span className="text-[9px] text-primary font-mono shrink-0 uppercase tracking-wider animate-pulse">
-                        Aktif
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Detail Tahap (Collapsible jika ada info ekstra) */}
-                  {(objective ||
-                    deliverable ||
-                    acceptanceCriteria.length > 0 ||
-                    outputSummary ||
-                    artifactPath) && (
-                    <details className="group/detail mt-1">
-                      <summary className="cursor-pointer select-none text-[10px] text-white/50 hover:text-white/80 flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden py-0.5">
-                        <ChevronRight className="w-3 h-3 group-open/detail:rotate-90 transition-transform shrink-0" />
-                        <span>Detail & Luaran</span>
-                      </summary>
-
-                      <div className="mt-1.5 pl-2 border-l border-primary/30 space-y-1.5 text-[10px] text-white/80">
-                        {objective && (
-                          <div>
-                            <span className="text-white/40 uppercase font-semibold text-[9px] block">
-                              Sasaran:
-                            </span>
-                            <span className="text-white/90">{objective}</span>
-                          </div>
-                        )}
-
-                        {deliverable && (
-                          <div>
-                            <span className="text-white/40 uppercase font-semibold text-[9px] block">
-                              Target Luaran:
-                            </span>
-                            <span className="text-white/90">{deliverable}</span>
-                          </div>
-                        )}
-
-                        {acceptanceCriteria.length > 0 && (
-                          <div>
-                            <span className="text-white/40 uppercase font-semibold text-[9px] block mb-0.5">
-                              Kriteria Kelayakan:
-                            </span>
-                            <ul className="list-disc list-inside space-y-0.5 text-white/70">
-                              {acceptanceCriteria.map((crit, cIdx) => (
-                                <li key={cIdx}>{crit}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {outputSummary && (
-                          <div className="bg-black/30 p-2 rounded border border-white/5 mt-1 max-h-28 overflow-y-auto custom-scrollbar">
-                            <span className="text-white/40 uppercase font-semibold text-[9px] block mb-0.5">
-                              Hasil Eksekusi:
-                            </span>
-                            <p className="whitespace-pre-wrap text-white/90 font-mono text-[10px]">
-                              {outputSummary}
-                            </p>
-                          </div>
-                        )}
-
-                        {artifactPath && (
-                          <div className="pt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenFile(artifactPath)}
-                              className="btn btn-xs btn-ghost border border-white/10 hover:border-primary/40 text-[10px] gap-1.5 text-primary lowercase font-mono py-0 h-6"
-                            >
-                              <FileText className="w-3 h-3" />
-                              <span>{artifactPath.split(/[\\/]/).pop()}</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </details>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="shrink-0 flex items-center justify-center w-3.5 h-3.5">
+                  {isDone ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : isCurrent ? (
+                    <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                  ) : isStepStopped ? (
+                    <Square className="w-2.5 h-2.5 text-amber-400 fill-current" />
+                  ) : isStepFailed ? (
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  ) : (
+                    <span className="text-[9px] text-white/30 font-mono">{idx + 1}</span>
                   )}
-                </div>
+                </span>
+                <span className={`truncate ${isDone ? 'line-through text-white/40' : ''}`}>
+                  {title}
+                </span>
               </div>
+
+              {artifactPath && isDone && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenFile(artifactPath)}
+                  className="shrink-0 flex items-center gap-1 text-[10px] text-primary/80 hover:text-primary font-mono ml-2 transition-colors"
+                  title={artifactPath}
+                >
+                  <FileText className="w-3 h-3" />
+                  <span className="truncate max-w-[100px]">
+                    {artifactPath.split(/[\\/]/).pop()}
+                  </span>
+                </button>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* Footer Aksi */}
+      {/* Footer Folder Artefak */}
       {artifactRoot && (
-        <div className="flex items-center justify-between border-t border-white/10 pt-2.5 mt-0.5 text-[10px] font-mono text-white/60 select-none">
-          <div className="flex items-center gap-1.5 truncate">
-            <Target className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span className="truncate">Artefak: {artifactRoot.split(/[\\/]/).pop()}</span>
-          </div>
-
+        <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-2 text-[10px] font-mono text-white/40 select-none">
+          <span className="truncate max-w-[200px]">
+            Artefak: {artifactRoot.split(/[\\/]/).pop()}
+          </span>
           <button
             type="button"
             onClick={() => handleOpenFolder(artifactRoot)}
-            className="btn btn-xs btn-outline btn-primary gap-1 text-[10px] font-mono h-6 min-h-0 px-2"
+            className="text-[10px] text-primary hover:underline flex items-center gap-1"
           >
             <FolderOpen className="w-3 h-3" />
             <span>Buka Folder</span>

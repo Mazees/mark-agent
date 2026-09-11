@@ -15,7 +15,11 @@ export const fileTools = {
   'read-skill': {
     needsApproval: false,
     handler: async (args) => {
-      const skillName = (typeof args === 'object' && args !== null ? args.skill_name || args.name : String(args || '')).trim()
+      const skillName = (
+        typeof args === 'object' && args !== null
+          ? args.skill_name || args.name
+          : String(args || '')
+      ).trim()
       if (!skillName) return { success: false, error: 'Nama skill kosong' }
       const skillDir = path.join(os.homedir(), 'Documents', 'Mark Skills')
 
@@ -50,7 +54,12 @@ export const fileTools = {
               s.id?.toLowerCase() === skillName.toLowerCase()
           )
           if (matched && matched.content) {
-            return { success: true, content: matched.content, data: matched.content, source: 'learned_skills_db' }
+            return {
+              success: true,
+              content: matched.content,
+              data: matched.content,
+              source: 'learned_skills_db'
+            }
           }
         } catch (_) {}
       }
@@ -83,7 +92,8 @@ export const fileTools = {
           }
         }
 
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
@@ -111,10 +121,7 @@ export const fileTools = {
         const totalLines = lines.length
 
         if (startLine !== null && endLine !== null && !isNaN(startLine) && !isNaN(endLine)) {
-          const sliceLines = lines.slice(
-            Math.max(0, startLine - 1),
-            Math.min(totalLines, endLine)
-          )
+          const sliceLines = lines.slice(Math.max(0, startLine - 1), Math.min(totalLines, endLine))
           const sliceContent = sliceLines.map((l, i) => `[${startLine + i}] ${l}`).join('\n')
           return {
             success: true,
@@ -146,8 +153,11 @@ export const fileTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        let filePath = (typeof args === 'object' && args !== null ? args.path : String(args || '')).trim()
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        let filePath = (
+          typeof args === 'object' && args !== null ? args.path : String(args || '')
+        ).trim()
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
@@ -427,7 +437,8 @@ export const fileTools = {
   'write-file': {
     needsApproval: true,
     approvalMessage: (args) => {
-      const p = typeof args === 'object' && args !== null ? args.path : String(args || '').split('||')[0]
+      const p =
+        typeof args === 'object' && args !== null ? args.path : String(args || '').split('||')[0]
       return `Mark ingin menulis/membuat file:\n${(p || '').trim()}`
     },
     handler: async (args, config) => {
@@ -437,7 +448,10 @@ export const fileTools = {
 
         if (typeof args === 'object' && args !== null) {
           filePath = (args.path || '').trim()
-          content = typeof args.content === 'string' ? args.content : JSON.stringify(args.content ?? '', null, 2)
+          content =
+            typeof args.content === 'string'
+              ? args.content
+              : JSON.stringify(args.content ?? '', null, 2)
         } else {
           const parts = String(args || '').split('||')
           if (parts.length < 2) {
@@ -454,7 +468,8 @@ export const fileTools = {
           return { success: false, message: 'Path file tidak boleh kosong.' }
         }
 
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
@@ -475,7 +490,10 @@ export const fileTools = {
           }
         }
 
-        return { success: true, message: `Berhasil menyimpan file ke ${filePath} tanpa error sintaks.` }
+        return {
+          success: true,
+          message: `Berhasil menyimpan file ke ${filePath} tanpa error sintaks.`
+        }
       } catch (e) {
         return { success: false, error: e.message }
       }
@@ -485,7 +503,8 @@ export const fileTools = {
   'replace-content': {
     needsApproval: true,
     approvalMessage: (args) => {
-      const p = typeof args === 'object' && args !== null ? args.path : String(args || '').split('||')[0]
+      const p =
+        typeof args === 'object' && args !== null ? args.path : String(args || '').split('||')[0]
       return `Mark ingin mengedit isi kode pada berkas:\n${(p || '').trim()}`
     },
     handler: async (args, config) => {
@@ -511,7 +530,8 @@ export const fileTools = {
           replacementContent = parts.slice(2).join('||')
         }
 
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
@@ -581,7 +601,7 @@ export const fileTools = {
           filePath = (args.path || '').trim()
           startLine = parseInt(args.start_line, 10)
           endLine = parseInt(args.end_line, 10)
-          newContent = args.new_code !== undefined ? args.new_code : (args.content || '')
+          newContent = args.new_code !== undefined ? args.new_code : args.content || ''
         } else {
           const parts = String(args || '').split('||')
           if (parts.length < 4) {
@@ -596,7 +616,8 @@ export const fileTools = {
           newContent = parts.slice(3).join('||')
         }
 
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
@@ -632,8 +653,11 @@ export const fileTools = {
     },
     handler: async (args, config) => {
       try {
-        let filePath = (typeof args === 'object' && args !== null ? args.path : String(args || '')).trim()
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        let filePath = (
+          typeof args === 'object' && args !== null ? args.path : String(args || '')
+        ).trim()
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(filePath)) {
           filePath = path.join(activeRoot, filePath)
         }
@@ -651,8 +675,11 @@ export const fileTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        let targetDir = (typeof args === 'object' && args !== null ? args.path : String(args || '')).trim()
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        let targetDir = (
+          typeof args === 'object' && args !== null ? args.path : String(args || '')
+        ).trim()
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(targetDir)) {
           targetDir = targetDir ? path.join(activeRoot, targetDir) : activeRoot
         }
@@ -682,8 +709,13 @@ export const fileTools = {
           subDir = parts[1]?.trim() || ''
         }
 
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-        const targetDir = path.isAbsolute(subDir) ? subDir : (subDir ? path.join(activeRoot, subDir) : activeRoot)
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const targetDir = path.isAbsolute(subDir)
+          ? subDir
+          : subDir
+            ? path.join(activeRoot, subDir)
+            : activeRoot
 
         if (!fs.existsSync(targetDir)) {
           return { success: false, message: `Direktori tidak ditemukan: ${targetDir}` }
@@ -778,7 +810,8 @@ export const fileTools = {
           return { success: false, message: 'Kata kunci pencarian tidak boleh kosong.' }
         }
 
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!path.isAbsolute(dirPath)) {
           dirPath = dirPath && dirPath !== '.' ? path.join(activeRoot, dirPath) : activeRoot
         }
@@ -806,12 +839,44 @@ export const fileTools = {
         ])
 
         const TEXT_EXTENSIONS = new Set([
-          '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
-          '.json', '.html', '.htm', '.css', '.scss', '.less',
-          '.py', '.md', '.markdown', '.txt', '.rs', '.go',
-          '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.sh',
-          '.ps1', '.bat', '.cmd', '.yml', '.yaml', '.xml',
-          '.env', '.sql', '.toml', '.ini', '.cfg', '.vue', '.svelte'
+          '.js',
+          '.jsx',
+          '.ts',
+          '.tsx',
+          '.mjs',
+          '.cjs',
+          '.json',
+          '.html',
+          '.htm',
+          '.css',
+          '.scss',
+          '.less',
+          '.py',
+          '.md',
+          '.markdown',
+          '.txt',
+          '.rs',
+          '.go',
+          '.java',
+          '.c',
+          '.cpp',
+          '.h',
+          '.hpp',
+          '.cs',
+          '.sh',
+          '.ps1',
+          '.bat',
+          '.cmd',
+          '.yml',
+          '.yaml',
+          '.xml',
+          '.env',
+          '.sql',
+          '.toml',
+          '.ini',
+          '.cfg',
+          '.vue',
+          '.svelte'
         ])
 
         const matches = []
@@ -881,7 +946,10 @@ export const fileTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const descText = typeof args === 'object' && args !== null ? (args.description || 'Pilih Folder Workspace Proyek') : String(args || 'Pilih Folder Workspace Proyek')
+        const descText =
+          typeof args === 'object' && args !== null
+            ? args.description || 'Pilih Folder Workspace Proyek'
+            : String(args || 'Pilih Folder Workspace Proyek')
         const safeDesc = descText.replace(/['`"\\]/g, ' ')
 
         const scriptPath = path.resolve(__dirname, '../pc-agent-scripts/pick-folder.ps1')
@@ -896,7 +964,9 @@ export const fileTools = {
           // Fallback via inline script jika file tidak ditemukan
           const inlinePs = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${safeDesc}'; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($f.SelectedPath) }`
           const enc = Buffer.from(inlinePs, 'utf16le').toString('base64')
-          const { stdout } = await execPromise(`powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -EncodedCommand ${enc}`)
+          const { stdout } = await execPromise(
+            `powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -EncodedCommand ${enc}`
+          )
           selectedPath = stdout.trim()
         }
 
@@ -915,10 +985,16 @@ export const fileTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        let targetPath = typeof args === 'object' && args !== null ? (args.path || '') : String(args || '').trim()
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        let targetPath =
+          typeof args === 'object' && args !== null ? args.path || '' : String(args || '').trim()
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
         if (!targetPath) targetPath = activeRoot
         else if (!path.isAbsolute(targetPath)) targetPath = path.join(activeRoot, targetPath)
+        targetPath = path.normalize(targetPath)
+        if (!fs.existsSync(targetPath)) {
+          fs.mkdirSync(targetPath, { recursive: true })
+        }
         await execPromise(`explorer.exe "${targetPath}"`)
         return { success: true, message: `Folder dibuka: ${targetPath}` }
       } catch (e) {

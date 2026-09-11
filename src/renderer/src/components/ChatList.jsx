@@ -49,7 +49,8 @@ const ChatList = ({
   pluginExecution = null,
   timestamp = '',
   source = null,
-  sender = null
+  sender = null,
+  onStop = null
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
@@ -95,16 +96,38 @@ const ChatList = ({
 
   if (isPlanSteps && plan && plan.length > 0) {
     return (
-      <DurableTaskBubble
-        plan={plan}
-        resolvedCurrentStep={resolvedCurrentStep}
-        reasoning={reasoning}
-        taskId={taskId}
-        taskTitle={taskTitle}
-        taskObjective={taskObjective}
-        taskStatus={taskStatus}
-        artifactRoot={artifactRoot}
-      />
+      <div className="chat chat-start mb-4 group animate-[response-fade-in_0.2s_ease-out_forwards]">
+        {/* Avatar */}
+        <div className="chat-image avatar">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center border shadow-md bg-base-300 border-white/10 text-white">
+            <Bot className="w-4 h-4 text-primary" />
+          </div>
+        </div>
+
+        {/* Header (Sender Name & Time) */}
+        <div className="chat-header text-[11px] font-semibold opacity-75 mb-1 flex items-center gap-2 px-1">
+          <span>Mark</span>
+          <span className="badge badge-xs bg-primary/10 text-primary border border-primary/20 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
+            Task Workflow
+          </span>
+          {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
+        </div>
+
+        {/* Bubble Container */}
+        <div className="chat-bubble max-w-[85%] md:max-w-[78%] p-3.5 shadow-lg transition-all duration-200 overflow-hidden bg-base-200/90 text-base-content border border-white/10 rounded-2xl rounded-tl-sm backdrop-blur-md">
+          <DurableTaskBubble
+            plan={plan}
+            resolvedCurrentStep={resolvedCurrentStep}
+            reasoning={reasoning}
+            taskId={taskId}
+            taskTitle={taskTitle}
+            taskObjective={taskObjective}
+            taskStatus={taskStatus}
+            artifactRoot={artifactRoot}
+            onStop={onStop}
+          />
+        </div>
+      </div>
     )
   }
 
