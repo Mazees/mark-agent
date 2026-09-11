@@ -2,6 +2,8 @@ import { generateGeminiResponse } from '../gemini-web.js'
 import { generateDeepSeekResponse } from '../deepseek-web.js'
 import { cleanAndParse, checkCloudThrottle, getSystemSignature } from './ai-utils.js'
 import { getActiveConfig, loadConfig } from '../../config-manager.js'
+import { GROUP_TOOLS_SCHEMA } from '../../tools/group-tools.js'
+import { loadAllPlugins } from '../../../main/plugins/plugin-loader.js'
 
 export async function executeWebProvider({
   messages,
@@ -37,16 +39,54 @@ export async function executeWebProvider({
 
   // 2. Injeksi Skema Tools OpenAPI jika ada
   if (Array.isArray(tools) && tools.length > 0) {
-    const toolDescriptions = tools
+    const activeToolList = tools
       .map((t) => {
         const fn = t.function || t
         return `- ${fn.name}: ${fn.description || ''}\n  Parameters: ${JSON.stringify(fn.parameters || {})}`
       })
       .join('\n')
 
+    const builtInGroupsGuide = Object.entries(GROUP_TOOLS_SCHEMA || {})
+      .map(([key, data]) => `- '${key}': ${data.description || '-'}`)
+      .join('\n')
+
+    let activePluginsGuide = ''
+    try {
+      const allPlugins = await loadAllPlugins()
+      if (Array.isArray(allPlugins)) {
+        const active = allPlugins.filter((p) => p.isEnabled !== false)
+        if (active.length > 0) {
+          activePluginsGuide = active
+            .map((p) => `- '${p.name}': ${p.description || '-'}`)
+            .join('\n')
+        }
+      }
+    } catch {
+      // ignore plugin load failure in web-provider
+    }
+
+    const toolSections = []
+
+    if (activeToolList) {
+      toolSections.push(`## 1. TOOLS AKTIF (DAPAT LANGSUNG DIEKSEKUSI):\n${activeToolList}`)
+    }
+
+    if (builtInGroupsGuide) {
+      toolSections.push(
+        `## 2. GRUP TOOL BAWAAN SISTEM (ON-DEMAND):\n${builtInGroupsGuide}\n*Penting: Untuk mengaktifkan fungsi spesifik dari grup di atas, panggil 'read-tools' dengan {"group_name": "nama_grup"}.*`
+      )
+    }
+
+    if (activePluginsGuide) {
+      toolSections.push(
+        `## 3. PLUGIN EKSTERNAL (AKTIF):\n${activePluginsGuide}\n*Penting: Untuk mengaktifkan aksi/fungsi dari plugin di atas, panggil 'read-tools' dengan {"group_name": "nama_plugin"}.*`
+      )
+    }
+
     const toolInstruction = `\n\n# TOOLS & CAPABILITY REGISTRY:
-Kamu memiliki akses ke fungsi-fungsi sistem berikut:
-${toolDescriptions}
+Kamu memiliki akses ke kapabilitas sistem berikut:
+
+${toolSections.join('\n\n')}
 
 # ATURAN EKSEKUSI TOOL (PENTING MUTLAK):
 1. Jika kamu ingin menjalankan tindakan atau memanggil fungsi sistem di atas, kamu HARUS merespons HANYA dengan format JSON valid.
@@ -133,7 +173,9 @@ ${toolDescriptions}
         onStatus?.('Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
         try {
           answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite')
-        } catch (_) {}
+        } catch {
+          // ignore fallback error
+        }
       }
       if (!answer) throw err
     }
@@ -302,7 +344,9 @@ ${toolDescriptions}
           ]
         }
       }
-    } catch (_) {}
+    } catch {
+      // JSON repair fallback ignored
+    }
   }
 
   if (extractedToolCalls && extractedToolCalls.length > 0) {

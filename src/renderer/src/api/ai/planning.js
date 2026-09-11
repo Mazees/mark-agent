@@ -3,13 +3,18 @@ import { getCurrentTimeInfo } from './utils'
 import { getPersonaPrompt } from './persona'
 import { NATIVE_SKILLS } from '../../components/core/native-skills'
 import { getWorkspaceContext } from '../workspaceRag'
-import { getActiveToolsSchema } from '../tools/index'
+import { getActiveToolsSchema, getGroupTools } from '../tools/index'
 
 /**
  * Menyusun System Prompt dinamis untuk MARK V5 (Native Function Calling & SSE Architecture).
  * Menghilangkan prompt-injected JSON schema 11-field dan memanfaatkan native tools serta tag [mood:emoji].
  */
-export const buildPlanningSystemPrompt = async (userInput = '', options = {}, unifiedContext = { memories: [], archives: [], documents: [] }, contextMsg = '') => {
+export const buildPlanningSystemPrompt = async (
+  userInput = '',
+  options = {},
+  unifiedContext = { memories: [], archives: [], documents: [] },
+  contextMsg = ''
+) => {
   const { memories = [], archives = [], documents = [] } = unifiedContext
   const currentConfig = await getAllConfig()
   const conf = currentConfig[0] || {}
@@ -40,11 +45,35 @@ export const buildPlanningSystemPrompt = async (userInput = '', options = {}, un
     description: s.description
   }))
 
+  let activePlugins = []
+  try {
+    if (typeof window !== 'undefined' && window.api && window.api.getPlugins) {
+      const allPlugins = await window.api.getPlugins()
+      if (Array.isArray(allPlugins)) {
+        activePlugins = allPlugins.filter((p) => p.isEnabled !== false)
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const groupToolsData = await getGroupTools()
+  const groupToolsGuide = Object.entries(groupToolsData?.schema || {})
+    .map(([groupKey, groupData]) => `   - '${groupKey}': ${groupData.description || '-'}`)
+    .join('\n')
+
+  const activePluginsGuide = activePlugins
+    .map((p) => `   - '${p.name}': ${p.description || 'Custom plugin'}`)
+    .join('\n')
+
   const targetWorkspace = options.workspaceRoot || conf.workspaceRoot || null
   let workspaceRagSection = ''
   if (targetWorkspace) {
     try {
-      const { workingMemoryText, codeRagText } = await getWorkspaceContext(targetWorkspace, userInput)
+      const { workingMemoryText, codeRagText } = await getWorkspaceContext(
+        targetWorkspace,
+        userInput
+      )
       const sections = []
       if (workingMemoryText) {
         sections.push(`## 1. ACTIVE WORKING MEMORY (.mark/)\n${workingMemoryText}`)
@@ -55,7 +84,9 @@ export const buildPlanningSystemPrompt = async (userInput = '', options = {}, un
       if (sections.length > 0) {
         workspaceRagSection = `\n# ACTIVE WORKSPACE CONTEXT & RAG (.mark/)\n${sections.join('\n\n')}\n`
       }
-    } catch (_) {}
+    } catch {
+      // workspace rag error ignored
+    }
   }
 
   const systemPrompt = `
@@ -111,9 +142,15 @@ ATURAN MUTLAK & PRIORITAS #1 - SELALU GUNAKAN 'read-skill' & PRINSIP SELALU BELA
    - 'browser-search': HANYA untuk mencari dan menemukan daftar URL / link sumber berdasarkan kata kunci (BUKAN untuk membaca isi artikel/konten lengkap).
    - 'browser-fetch': Gunakan untuk membaca/mengambil (curl/fetch) isi teks lengkap dari URL yang ditemukan secara instan dan cepat tanpa membuka browser fisik.
    - 'browser-*' (browser-navigate, browser-read, browser-click, browser-type): Gunakan HANYA jika halaman membutuhkan interaksi fisik (klik tombol, form input, atau login).
-4. **PANDUAN & SKEMA GROUP TOOLS**:
-   - Tersedia kelompok tool tambahan: 'advanced_browser', 'pc_automation', 'google_drive', 'google_calendar', 'google_gmail', 'youtube_music', 'git_vcs', 'task_terminal'.
-   - Jika kamu butuh membaca panduan atau mengaktifkan grup tool tertentu, panggil 'read-tools' (group_name: "nama_grup").
+4. **PANDUAN & SKEMA GROUP TOOLS (BAWAAN SISTEM)**:
+   - Kelompok tool bawaan yang tersedia:
+${groupToolsGuide}
+   - Jika kamu butuh membaca panduan atau mengaktifkan grup tool tertentu sebelum mengeksekusinya, panggil 'read-tools' (group_name: "nama_grup").
+${
+  activePluginsGuide
+    ? `\n5. **PLUGIN EKSTERNAL & CUSTOM GROUP TOOLS (AKTIF)**:\n   - Plugin eksternal terpasang yang sedang aktif:\n${activePluginsGuide}\n   - Jika kamu butuh membaca panduan atau mengaktifkan fungsi dari plugin eksternal di atas, panggil 'read-tools' (group_name: "nama_plugin").\n`
+    : ''
+}
 
 # ATURAN AUTONOMOUS CODING & DEVELOPMENT
 1. **STRATEGI EDIT VS BUAT**: Gunakan 'write-file' HANYA saat membuat file baru dari nol. Gunakan 'replace-content' untuk merevisi/mengedit file yang sudah ada.
@@ -194,7 +231,12 @@ export const getNextAction = async (
   activeTopic = '',
   options = {}
 ) => {
-  const systemPrompt = await buildPlanningSystemPrompt(userInput, options, unifiedContext, contextMsg)
+  const systemPrompt = await buildPlanningSystemPrompt(
+    userInput,
+    options,
+    unifiedContext,
+    contextMsg
+  )
   const activeTools = await getActiveToolsSchema(userInput)
 
   return {

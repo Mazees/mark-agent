@@ -271,6 +271,22 @@ export const webApi = {
     }
   },
 
+  _groupToolsCache: null,
+  getGroupTools: async () => {
+    if (webApi._groupToolsCache) return webApi._groupToolsCache
+    try {
+      const res = await fetch(`${API_BASE}/api/tools/groups`)
+      const json = await res.json()
+      if (json && json.success && json.data) {
+        webApi._groupToolsCache = json.data
+        return webApi._groupToolsCache
+      }
+    } catch (err) {
+      console.error('Gagal memuat skema group tools dari server:', err)
+    }
+    return { schema: {}, names: [], definition: {}, flat: {} }
+  },
+
   checkToolApproval: async (tool, query) => {
     try {
       const res = await fetch(`${API_BASE}/api/tools/needs-approval`, {

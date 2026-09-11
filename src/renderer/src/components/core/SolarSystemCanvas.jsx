@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useMemo } from 'react'
-import { GROUP_TOOLS_SCHEMA } from '../../../../server/tools/group-tools.js'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import { core_tools_schema } from '../../api/tools/core-tools'
+import { webApi } from '../../api/web-bridge'
 
 /**
  * Format string cluster key menjadi judul display yang rapi & ramah dibaca
@@ -27,17 +27,17 @@ export function getDeterministicColor(str = '') {
 }
 
 /**
- * Membangun registry kluster tools secara dinamis dari GROUP_TOOLS_SCHEMA, core_tools_schema, & dynamicPlugins
+ * Membangun registry kluster tools secara dinamis dari groupToolsSchema, core_tools_schema, & dynamicPlugins
  */
-export function buildCompleteToolClusters(dynamicPlugins = []) {
+export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema = {}) {
   const clusters = []
   const hasDynamicPlugins = Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0
 
   let currentRadius = 170
   let isClockwise = true
 
-  // 1. Ambil seluruh tool groups dari GROUP_TOOLS_SCHEMA
-  Object.entries(GROUP_TOOLS_SCHEMA).forEach(([groupKey, groupData]) => {
+  // 1. Ambil seluruh tool groups dari groupToolsSchema
+  Object.entries(groupToolsSchema || {}).forEach(([groupKey, groupData]) => {
     // Jika custom_plugins memiliki dynamic plugin terpasang, tangani terpisah di bawah
     if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
 
@@ -197,7 +197,10 @@ export function buildCompleteToolClusters(dynamicPlugins = []) {
   return clusters
 }
 
-export const STATIC_TOOL_CLUSTERS = buildCompleteToolClusters()
+export const STATIC_TOOL_CLUSTERS = buildCompleteToolClusters(
+  [],
+  webApi._groupToolsCache?.schema || {}
+)
 
 /**
  * SolarSystemCanvas (Cosmos Planetary Engine)
@@ -211,6 +214,31 @@ export const SolarSystemCanvas = ({
   orbStatus = 'idle'
 }) => {
   const canvasRef = useRef(null)
+  const [toolClusters, setToolClusters] = useState(() =>
+    buildCompleteToolClusters([], webApi._groupToolsCache?.schema || {})
+  )
+
+  useEffect(() => {
+    let isMounted = true
+    const loadClusters = async () => {
+      let dynamicPlugins = []
+      if (typeof window !== 'undefined' && window.api?.getPlugins) {
+        try {
+          dynamicPlugins = (await window.api.getPlugins()) || []
+        } catch {
+          // ignore
+        }
+      }
+      const groupData = await webApi.getGroupTools()
+      if (isMounted) {
+        setToolClusters(buildCompleteToolClusters(dynamicPlugins, groupData?.schema || {}))
+      }
+    }
+    loadClusters()
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   // Ekstrak nama tools yang sedang aktif berjalan secara real-time dari telemetry
   const activeToolNames = useMemo(() => {
@@ -256,9 +284,10 @@ export const SolarSystemCanvas = ({
     }))
 
     // Inisialisasi posisi sudut awal tiap planet
-    const planets = STATIC_TOOL_CLUSTERS.map((cluster, i) => ({
+    const activeClusters = toolClusters.length > 0 ? toolClusters : STATIC_TOOL_CLUSTERS
+    const planets = activeClusters.map((cluster, i) => ({
       ...cluster,
-      angle: (i / STATIC_TOOL_CLUSTERS.length) * Math.PI * 2,
+      angle: (i / Math.max(1, activeClusters.length)) * Math.PI * 2,
       pulsePhase: Math.random() * Math.PI * 2,
       flareIntensity: 0
     }))
@@ -474,7 +503,7 @@ export const SolarSystemCanvas = ({
       document.removeEventListener('visibilitychange', handleVisibility)
       if (animId) cancelAnimationFrame(animId)
     }
-  }, [activeToolNames, moodColor])
+  }, [activeToolNames, moodColor, toolClusters])
 
   return (
     <div className={`relative w-full h-full select-none overflow-hidden ${className}`}>

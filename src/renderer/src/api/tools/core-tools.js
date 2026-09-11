@@ -7,13 +7,15 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'browser-search',
-      description: 'HANYA untuk mencari dan menemukan URL / link website yang relevan dengan kata kunci (bukan untuk membaca isi artikel lengkap). Mengembalikan daftar judul & URL. Untuk membaca isi konten lengkap dari URL yang ditemukan, gunakan tool "browser-fetch".',
+      description:
+        'HANYA untuk mencari dan menemukan URL / link website yang relevan dengan kata kunci (bukan untuk membaca isi artikel lengkap). Mengembalikan daftar judul & URL. Untuk membaca isi konten lengkap dari URL yang ditemukan, gunakan tool "browser-fetch".',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Kata kunci pencarian web (misal: "gpt 6 astra", "kebakaran kalimantan 2026")'
+            description:
+              'Kata kunci pencarian web (misal: "gpt 6 astra", "kebakaran kalimantan 2026")'
           }
         },
         required: ['query'],
@@ -25,7 +27,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'browser-fetch',
-      description: 'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka jendela browser fisik. Sangat cepat untuk membaca isi berita, dokumentasi, atau artikel web.',
+      description:
+        'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka jendela browser fisik. Sangat cepat untuk membaca isi berita, dokumentasi, atau artikel web.',
       parameters: {
         type: 'object',
         properties: {
@@ -35,7 +38,8 @@ export const core_tools_schema = [
           },
           max_chars: {
             type: 'number',
-            description: 'Batas maksimal karakter teks yang diekstrak (default 4000, maksimal 12000)'
+            description:
+              'Batas maksimal karakter teks yang diekstrak (default 4000, maksimal 12000)'
           }
         },
         required: ['url'],
@@ -47,13 +51,14 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'read-tools',
-      description: 'WAJIB dipanggil jika kamu membutuhkan dokumentasi atau fungsi tambahan dari grup tool tertentu sebelum mengeksekusinya.',
+      description:
+        'WAJIB dipanggil jika kamu membutuhkan dokumentasi atau fungsi tambahan dari grup tool tertentu sebelum mengeksekusinya.',
       parameters: {
         type: 'object',
         properties: {
           group_name: {
             type: 'string',
-            description: 'Nama grup tool yang ingin dibaca (misal: "advanced_browser", "pc_automation", "youtube_music", "git_vcs", "task_terminal", "custom_plugins")'
+            description: 'Nama grup tool bawaan atau plugin yang ingin dibaca.'
           }
         },
         required: ['group_name'],
@@ -65,7 +70,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'manage-memory',
-      description: 'Menyimpan, memperbarui, atau menghapus fakta profil, preferensi user, atau catatan penting ke memori jangka panjang.',
+      description:
+        'Menyimpan, memperbarui, atau menghapus fakta profil, preferensi user, atau catatan penting ke memori jangka panjang.',
       parameters: {
         type: 'object',
         properties: {
@@ -97,7 +103,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'update-working-memory',
-      description: 'Menyimpan atau memperbarui catatan ringkas progres koding, lokasi baris/fungsi yang telah dipetakan ke .mark/working-memory.json.',
+      description:
+        'Menyimpan atau memperbarui catatan ringkas progres koding, lokasi baris/fungsi yang telah dipetakan ke .mark/working-memory.json.',
       parameters: {
         type: 'object',
         properties: {
@@ -115,7 +122,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'memory-search',
-      description: 'Mencari ingatan masa lalu, preferensi/catatan user, solusi historis, dan riwayat chat percakapan asli.',
+      description:
+        'Mencari ingatan masa lalu, preferensi/catatan user, solusi historis, dan riwayat chat percakapan asli.',
       parameters: {
         type: 'object',
         properties: {
@@ -189,7 +197,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'replace-content',
-      description: 'Mengedit berkas kode dengan mencocokkan teks lama dan menggantinya secara presisi.',
+      description:
+        'Mengedit berkas kode dengan mencocokkan teks lama dan menggantinya secara presisi.',
       parameters: {
         type: 'object',
         properties: {
@@ -280,7 +289,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'find-files',
-      description: 'Mencari berkas di seluruh subfolder secara rekursif dengan filter nama/ekstensi glob.',
+      description:
+        'Mencari berkas di seluruh subfolder secara rekursif dengan filter nama/ekstensi glob.',
       parameters: {
         type: 'object',
         properties: {
@@ -324,7 +334,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'file-outline',
-      description: 'Melihat peta dan struktur berkas (fungsi, class, heading) tanpa membaca seluruh isi.',
+      description:
+        'Melihat peta dan struktur berkas (fungsi, class, heading) tanpa membaca seluruh isi.',
       parameters: {
         type: 'object',
         properties: {
@@ -364,7 +375,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'read-skill',
-      description: 'Membaca file pedoman skill untuk memuat instruksi dan workflow khusus sebelum eksekusi aksi.',
+      description:
+        'Membaca file pedoman skill untuk memuat instruksi dan workflow khusus sebelum eksekusi aksi.',
       parameters: {
         type: 'object',
         properties: {
@@ -382,7 +394,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'open',
-      description: 'Membuka aplikasi Windows via shell execute atau membuka URL di browser default.',
+      description:
+        'Membuka aplikasi Windows via shell execute atau membuka URL di browser default.',
       parameters: {
         type: 'object',
         properties: {
@@ -418,15 +431,25 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'spawn_subagent',
-      description: 'Mendelegasikan tugas ke sub-agent baru yang bekerja mandiri di background secara non-blocking. Sub-agent akan mengeksekusi misi dan melapor kembali secara otomatis via push notification tanpa Lead Agent perlu memanggil wait_subagents.',
+      description:
+        'Mendelegasikan tugas ke sub-agent baru yang bekerja mandiri di background secara non-blocking. Sub-agent akan mengeksekusi misi dan melapor kembali secara otomatis via push notification tanpa Lead Agent perlu memanggil wait_subagents.',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Nama sub-agent spesialis (misal: "Developer", "Mr Tester", "Researcher")' },
+          name: {
+            type: 'string',
+            description: 'Nama sub-agent spesialis (misal: "Developer", "Mr Tester", "Researcher")'
+          },
           role: { type: 'string', description: 'Peran sub-agent' },
           goal: { type: 'string', description: 'Tujuan utama sub-agent' },
-          initial_message: { type: 'string', description: 'Pesan instruksi awal tugas yang didelegasikan' },
-          tools: { type: 'string', description: 'Daftar tool yang diizinkan (dipisah koma, atau "*")' }
+          initial_message: {
+            type: 'string',
+            description: 'Pesan instruksi awal tugas yang didelegasikan'
+          },
+          tools: {
+            type: 'string',
+            description: 'Daftar tool yang diizinkan (dipisah koma, atau "*")'
+          }
         },
         required: ['name', 'role', 'goal', 'initial_message'],
         additionalProperties: false
@@ -437,11 +460,16 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'message_agent',
-      description: 'Mengirim pesan atau instruksi teknis langsung ke sub-agent spesialis lain (atau membalas sub-agent) dan menerima responnya.',
+      description:
+        'Mengirim pesan atau instruksi teknis langsung ke sub-agent spesialis lain (atau membalas sub-agent) dan menerima responnya.',
       parameters: {
         type: 'object',
         properties: {
-          target_agent: { type: 'string', description: 'Nama atau ID sub-agent tujuan (misal: "Developer", "Mr Tester", atau "sub_xxx")' },
+          target_agent: {
+            type: 'string',
+            description:
+              'Nama atau ID sub-agent tujuan (misal: "Developer", "Mr Tester", atau "sub_xxx")'
+          },
           message: { type: 'string', description: 'Pesan, instruksi, atau pertanyaan teknis' }
         },
         required: ['target_agent', 'message'],
@@ -469,7 +497,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'list_subagents',
-      description: 'Melihat daftar seluruh sub-agent yang sedang aktif atau sudah selesai beserta statusnya.',
+      description:
+        'Melihat daftar seluruh sub-agent yang sedang aktif atau sudah selesai beserta statusnya.',
       parameters: {
         type: 'object',
         properties: {
@@ -483,12 +512,19 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'report_to_lead',
-      description: 'Melaporkan hasil akhir misi, rangkuman eksekusi, atau temuan penting langsung ke Lead Agent (Mark) dan memicu push notification di chat utama.',
+      description:
+        'Melaporkan hasil akhir misi, rangkuman eksekusi, atau temuan penting langsung ke Lead Agent (Mark) dan memicu push notification di chat utama.',
       parameters: {
         type: 'object',
         properties: {
-          summary: { type: 'string', description: 'Rangkuman lengkap hasil pekerjaan yang telah selesai' },
-          artifact: { type: 'string', description: 'Path berkas atau artefak yang berhasil dibuat/dimodifikasi jika ada' }
+          summary: {
+            type: 'string',
+            description: 'Rangkuman lengkap hasil pekerjaan yang telah selesai'
+          },
+          artifact: {
+            type: 'string',
+            description: 'Path berkas atau artefak yang berhasil dibuat/dimodifikasi jika ada'
+          }
         },
         required: ['summary'],
         additionalProperties: false
@@ -499,7 +535,8 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'create_agent_task',
-      description: 'Membuat dan mengaktifkan rencana tugas multi-langkah (Durable Agent Tasks) di sistem Mission Control.',
+      description:
+        'Membuat dan mengaktifkan rencana tugas multi-langkah (Durable Agent Tasks) di sistem Mission Control.',
       parameters: {
         type: 'object',
         properties: {

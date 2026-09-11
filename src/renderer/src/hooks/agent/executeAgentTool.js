@@ -1,4 +1,5 @@
 import { createAgentTask, startAgentTaskStep } from '../../api/taskStore.js'
+import { webApi } from '../../api/web-bridge.js'
 
 /**
  * executeAgentTool
@@ -368,8 +369,7 @@ export async function executeAgentTool({
       res = { success: false, error: `Gagal memuat plugin: ${pErr.message}` }
     }
   } else if (tool === 'read-tools') {
-    const { group_tools } = await import('../../../../server/tools/group-tools.js')
-    const groups = await group_tools()
+    const { definition: groups = {} } = await webApi.getGroupTools()
     const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
     const groupName = (a.group_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()
     if (!groupName) {
@@ -387,9 +387,33 @@ export async function executeAgentTool({
         message: `BERHASIL MEMUAT GRUP TOOL: ${groupName}.\nDokumentasi tool:\n${toolDescriptions}`
       }
     } else {
-      res = {
-        success: false,
-        message: `Grup tool "${groupName}" tidak ditemukan.`
+      let matchedPlugin = null
+      try {
+        if (typeof window !== 'undefined' && window.api && window.api.getPlugins) {
+          const plugins = await window.api.getPlugins()
+          matchedPlugin = (plugins || []).find((p) => p.name === groupName && p.isEnabled !== false)
+        }
+      } catch {
+        // ignore
+      }
+
+      if (matchedPlugin) {
+        const actionDescs = (matchedPlugin.actions || [])
+          .map(
+            (act) =>
+              `- plugin-${matchedPlugin.name}-${act.name}: ${act.description || act.triggerHint || ''}`
+          )
+          .join('\n')
+        res = {
+          success: true,
+          loaded_group: groupName,
+          message: `BERHASIL MEMUAT GRUP PLUGIN: ${groupName}.\nDeskripsi: ${matchedPlugin.description || '-'}\nDaftar Tool/Action:\n${actionDescs || '    (Tidak ada action)'}`
+        }
+      } else {
+        res = {
+          success: false,
+          message: `Grup tool "${groupName}" tidak ditemukan.`
+        }
       }
     }
   } else if (tool === 'read-skill') {

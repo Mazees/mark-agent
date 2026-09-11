@@ -2,6 +2,12 @@ import { Router } from 'express'
 import { getActiveConfig } from '../config-manager.js'
 import { wsHub } from '../ws-hub.js'
 import { launchUI } from '../launcher.js'
+import {
+  GROUP_TOOLS_SCHEMA,
+  GROUP_TOOL_GROUP_NAMES,
+  GROUP_TOOLS_DEFINITION,
+  group_tools_flat
+} from '../tools/group-tools.js'
 
 export const aiRouter = Router()
 
@@ -97,7 +103,20 @@ aiRouter.post('/ai/abort', async (req, res) => {
   }
 })
 
-// 3. Native Tools Execution API
+// 3. Group Tools Schema & Registry API
+aiRouter.get('/tools/groups', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      schema: GROUP_TOOLS_SCHEMA,
+      names: GROUP_TOOL_GROUP_NAMES,
+      definition: GROUP_TOOLS_DEFINITION,
+      flat: group_tools_flat
+    }
+  })
+})
+
+// 4. Native Tools Execution API
 aiRouter.post('/tools/execute', async (req, res) => {
   const { tool, query, config } = req.body || {}
   try {
@@ -131,7 +150,7 @@ aiRouter.post('/tools/needs-approval', async (req, res) => {
       needsApproval: Boolean(needs),
       message: needs && nativeTool.approvalMessage ? nativeTool.approvalMessage(query) : null
     })
-  } catch (err) {
+  } catch {
     res.json({ needsApproval: false })
   }
 })
