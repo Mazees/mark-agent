@@ -81,6 +81,31 @@ const InputBar = ({
   const [showSkillList, setShowSkillList] = useState(false)
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0)
 
+  const [contextTracker, setContextTracker] = useState({
+    currentChars: 0,
+    maxChars: 525000,
+    percentage: 0,
+    lastCompactedAt: null
+  })
+
+  useEffect(() => {
+    const handleTrackerUpdate = (e) => {
+      if (e.detail) {
+        setContextTracker({
+          currentChars: Number(e.detail.currentChars || 0),
+          maxChars: Number(e.detail.maxChars || 525000),
+          percentage: Number(e.detail.percentage || 0),
+          lastCompactedAt: e.detail.lastCompactedAt || null
+        })
+      }
+    }
+
+    window.addEventListener('context-tracker-updated', handleTrackerUpdate)
+    return () => {
+      window.removeEventListener('context-tracker-updated', handleTrackerUpdate)
+    }
+  }, [])
+
   const reloadSkills = async () => {
     if (window.api && window.api.getSkills) {
       try {
@@ -167,7 +192,12 @@ const InputBar = ({
           resolvedPath !== f.name &&
           (resolvedPath.includes('/') || resolvedPath.includes('\\'))
 
-        if (!isRealDiskPath && f.path && f.path !== f.name && (f.path.includes('/') || f.path.includes('\\'))) {
+        if (
+          !isRealDiskPath &&
+          f.path &&
+          f.path !== f.name &&
+          (f.path.includes('/') || f.path.includes('\\'))
+        ) {
           resolvedPath = f.path
         }
 
@@ -248,12 +278,14 @@ const InputBar = ({
     if (skillMatches && skillMatches.length > 0 && window.api && window.api.readSkill) {
       let combinedSkillsContent = ''
       const loadedSkills = []
-      
+
       for (const match of skillMatches) {
         const skillName = match.trim().substring(1) // Hilangkan spasi dan '/'
 
         // INTERCEPT BUILT-IN SKILLS
-        const nativeSkill = NATIVE_SKILLS.find(s => s.name.toLowerCase() === skillName.toLowerCase())
+        const nativeSkill = NATIVE_SKILLS.find(
+          (s) => s.name.toLowerCase() === skillName.toLowerCase()
+        )
         if (nativeSkill) {
           combinedSkillsContent += `\n\n--- SKILL BAWAAN: ${skillName.toUpperCase()} ---\n${nativeSkill.content}`
           loadedSkills.push(skillName)
@@ -266,14 +298,15 @@ const InputBar = ({
           if (skillData) {
             // Support both old string format and new object format
             const content = typeof skillData === 'string' ? skillData : skillData.content
-            const basePath = typeof skillData === 'object' && skillData.basePath ? skillData.basePath : ''
+            const basePath =
+              typeof skillData === 'object' && skillData.basePath ? skillData.basePath : ''
 
             combinedSkillsContent += `\n\n--- SKILL EXTERNAL: ${skillName.toUpperCase()} ---\n`
             if (basePath) {
-               combinedSkillsContent += `[LOKASI ABSOLUT SKILL INI (Base Path): ${basePath}]\n\n`
+              combinedSkillsContent += `[LOKASI ABSOLUT SKILL INI (Base Path): ${basePath}]\n\n`
             }
             combinedSkillsContent += `${content}`
-            
+
             loadedSkills.push(skillName)
             userText = userText.replace(match, '') // Hapus slash command dari teks yang dilihat AI
           }
@@ -322,11 +355,11 @@ const InputBar = ({
   const handleTextChange = async (e) => {
     const val = e.target.value
     setInputText(val)
-    
+
     if (val.startsWith('/')) {
-      const currentSkills = (skills && skills.length > 0) ? skills : await reloadSkills()
+      const currentSkills = skills && skills.length > 0 ? skills : await reloadSkills()
       const query = val.slice(1).toLowerCase()
-      const matches = currentSkills.filter(s => s.name.toLowerCase().includes(query))
+      const matches = currentSkills.filter((s) => s.name.toLowerCase().includes(query))
       setFilteredSkills(matches)
       setShowSkillList(true)
       setSelectedSkillIndex(0)
@@ -345,12 +378,12 @@ const InputBar = ({
     if (showSkillList && filteredSkills.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setSelectedSkillIndex(prev => (prev + 1) % filteredSkills.length)
+        setSelectedSkillIndex((prev) => (prev + 1) % filteredSkills.length)
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setSelectedSkillIndex(prev => (prev - 1 + filteredSkills.length) % filteredSkills.length)
+        setSelectedSkillIndex((prev) => (prev - 1 + filteredSkills.length) % filteredSkills.length)
         return
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
@@ -380,8 +413,8 @@ const InputBar = ({
         className
           ? className
           : inline
-          ? 'w-full max-w-4xl mx-auto relative z-10'
-          : 'fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50'
+            ? 'w-full max-w-4xl mx-auto relative z-10'
+            : 'fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50'
       }
     >
       {/* File Attachment Pills Preview */}
@@ -414,7 +447,9 @@ const InputBar = ({
       {workspaceRoot && (
         <div className="mb-2 flex items-center gap-2 px-3 py-1 bg-base-200/80 border border-primary/30 rounded-lg text-xs text-white/80 w-fit backdrop-blur-md animate-fade-in shadow-md">
           <FaFolder className="text-primary text-xs" />
-          <span className="text-[10px] text-primary uppercase font-bold tracking-wider">Workspace:</span>
+          <span className="text-[10px] text-primary uppercase font-bold tracking-wider">
+            Workspace:
+          </span>
           <span className="font-mono text-[11px] truncate max-w-xs">{workspaceRoot}</span>
           {onSelectWorkspace && (
             <button
@@ -470,7 +505,11 @@ const InputBar = ({
                 ? 'text-primary hover:text-primary hover:bg-primary/10'
                 : 'text-white/40 hover:text-white/80 hover:bg-white/5'
             }`}
-            title={workspaceRoot ? `Workspace Root: ${workspaceRoot} (Klik untuk ganti)` : 'Atur Folder Proyek (Workspace Root)'}
+            title={
+              workspaceRoot
+                ? `Workspace Root: ${workspaceRoot} (Klik untuk ganti)`
+                : 'Atur Folder Proyek (Workspace Root)'
+            }
           >
             <FaFolder size={16} />
             {workspaceRoot && (
@@ -498,19 +537,28 @@ const InputBar = ({
             isProcessing
               ? 'text-primary bg-primary/20 cursor-wait'
               : isLoading
-              ? 'text-white/20 bg-white/5 cursor-not-allowed'
-              : isRecording
-              ? 'text-error bg-error/20'
-              : 'text-white/40 hover:text-white/80 hover:bg-white/5'
+                ? 'text-white/20 bg-white/5 cursor-not-allowed'
+                : isRecording
+                  ? 'text-error bg-error/20'
+                  : 'text-white/40 hover:text-white/80 hover:bg-white/5'
           }`}
           style={{
             transform: isRecording && !isProcessing ? `scale(${1 + audioIntensity * 0.3})` : '',
-            boxShadow: isRecording && !isProcessing ? `0 0 ${10 + audioIntensity * 40}px rgba(255,0,0, ${0.3 + audioIntensity * 0.5})` : ''
+            boxShadow:
+              isRecording && !isProcessing
+                ? `0 0 ${10 + audioIntensity * 40}px rgba(255,0,0, ${0.3 + audioIntensity * 0.5})`
+                : ''
           }}
-          title={isProcessing ? 'Sedang memproses suara...' : isLoading ? 'Agen sedang sibuk' : 'Mulai/Berhenti Rekam (Ctrl+Alt+M)'}
+          title={
+            isProcessing
+              ? 'Sedang memproses suara...'
+              : isLoading
+                ? 'Agen sedang sibuk'
+                : 'Mulai/Berhenti Rekam (Ctrl+Alt+M)'
+          }
         >
           {isRecording && !isProcessing && (
-            <div 
+            <div
               className="absolute inset-0 rounded-full bg-error/30 -z-10 transition-transform duration-75"
               style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
             />
@@ -562,13 +610,15 @@ const InputBar = ({
                   key={skillObj.name}
                   onClick={() => selectSkill(skillObj)}
                   className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
-                    idx === selectedSkillIndex 
-                      ? 'bg-emerald-500/20 text-emerald-400' 
+                    idx === selectedSkillIndex
+                      ? 'bg-emerald-500/20 text-emerald-400'
                       : 'hover:bg-white/10 text-gray-300'
                   }`}
                 >
                   <div className="font-semibold text-sm">/{skillObj.name}</div>
-                  <div className={`text-xs ${idx === selectedSkillIndex ? 'text-emerald-400/80' : 'text-gray-400'} line-clamp-2`}>
+                  <div
+                    className={`text-xs ${idx === selectedSkillIndex ? 'text-emerald-400/80' : 'text-gray-400'} line-clamp-2`}
+                  >
                     {skillObj.description}
                   </div>
                 </div>
@@ -596,6 +646,53 @@ const InputBar = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Ring Gauge Context Indicator (~22px) */}
+          {(() => {
+            const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
+            const radius = 9
+            const circumference = 2 * Math.PI * radius
+            const strokeDashoffset = circumference - (pct / 100) * circumference
+            const colorClass =
+              pct >= 90 ? 'stroke-rose-500' : pct >= 75 ? 'stroke-amber-400' : 'stroke-emerald-400'
+
+            const tooltipText = `Konteks: ${contextTracker.currentChars.toLocaleString('id-ID')} / ${contextTracker.maxChars.toLocaleString('id-ID')} karakter (${pct.toFixed(1)}%)${
+              contextTracker.lastCompactedAt
+                ? ` • Kompaksi: ${new Date(contextTracker.lastCompactedAt).toLocaleTimeString('id-ID')}`
+                : ' • Belum pernah dikompaksi'
+            }`
+
+            return (
+              <div
+                className="tooltip tooltip-left md:tooltip-top flex items-center justify-center cursor-help px-1"
+                data-tip={tooltipText}
+              >
+                <div className="relative w-[22px] h-[22px] flex items-center justify-center">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 24 24">
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r={radius}
+                      className="stroke-white/10"
+                      strokeWidth="2.2"
+                      fill="none"
+                    />
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r={radius}
+                      className={`${colorClass} transition-all duration-500 ease-out`}
+                      strokeWidth="2.2"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={strokeDashoffset}
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                  </svg>
+                </div>
+              </div>
+            )
+          })()}
+
           {isLoading && (
             <button
               type="button"

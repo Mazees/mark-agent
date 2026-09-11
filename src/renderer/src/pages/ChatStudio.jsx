@@ -28,7 +28,8 @@ import {
   deleteSession,
   renameSession,
   getChatData,
-  setSessionWorkspace
+  setSessionWorkspace,
+  getSessionCompact
 } from '../api/db'
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
@@ -58,12 +59,47 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
+  const [lastCompactedMessageId, setLastCompactedMessageId] = useState(null)
+  const [activeSessionCompact, setActiveSessionCompact] = useState(null)
 
   useEffect(() => {
     if (typeof setCurrentActiveSessionId === 'function') {
       setCurrentActiveSessionId(String(activeSessionId))
     }
   }, [activeSessionId, setCurrentActiveSessionId])
+
+  useEffect(() => {
+    let isMounted = true
+    const loadCompactData = async () => {
+      try {
+        const data = await getSessionCompact(String(activeSessionId))
+        if (isMounted) {
+          setActiveSessionCompact(data || null)
+          setLastCompactedMessageId(
+            data?.lastCompactedMessageId || data?.last_compacted_message_id || null
+          )
+        }
+      } catch (_) {}
+    }
+    loadCompactData()
+
+    const handleCompactUpdated = (e) => {
+      if (String(e.detail?.sessionId) === String(activeSessionId)) {
+        setLastCompactedMessageId(e.detail?.lastCompactedMessageId || null)
+        setActiveSessionCompact({
+          summaryBlock: e.detail?.summaryBlock,
+          lastCompactedMessageId: e.detail?.lastCompactedMessageId
+        })
+      }
+    }
+
+    window.addEventListener('session-compact-updated', handleCompactUpdated)
+    return () => {
+      isMounted = false
+      window.removeEventListener('session-compact-updated', handleCompactUpdated)
+    }
+  }, [activeSessionId])
+
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(40)
   const [searchQuery, setSearchQuery] = useState('')
@@ -110,6 +146,51 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }, [activeSessionId])
 
+  // Sinkronisasi status karakter gauge ke UI saat sesi aktif dimuat/berganti
+  useEffect(() => {
+    if (!currentDisplayMessages || currentDisplayMessages.length === 0) {
+      window.dispatchEvent(
+        new CustomEvent('context-tracker-updated', {
+          detail: {
+            sessionId: String(activeSessionId),
+            currentChars: 0,
+            maxChars: 525000,
+            percentage: 0
+          }
+        })
+      )
+      return
+    }
+
+    let isMounted = true
+    import('../api/ai/contextManager')
+      .then(({ calculateSessionChars, MAX_CONTEXT_CHARS }) => {
+        if (!isMounted) return
+        const chars = calculateSessionChars(
+          currentDisplayMessages,
+          activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
+          activeSessionCompact?.lastCompactedMessageId ||
+            activeSessionCompact?.last_compacted_message_id ||
+            null
+        )
+        window.dispatchEvent(
+          new CustomEvent('context-tracker-updated', {
+            detail: {
+              sessionId: String(activeSessionId),
+              currentChars: chars,
+              maxChars: MAX_CONTEXT_CHARS,
+              percentage: Math.min(100, (chars / MAX_CONTEXT_CHARS) * 100)
+            }
+          })
+        )
+      })
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+    }
+  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact])
+
   const handleSendMessage = async (prompt, sendOptions = {}) => {
     if (!prompt.trim()) return
 
@@ -123,12 +204,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       await loadAllSessions()
     }
 
+    const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
     const commandOpts = {
       workspaceRoot: currentSession?.workspaceRoot,
       displayPrompt: rawDisplay,
-      ...(activeSessionId !== 1
-        ? { sessionId: activeSessionId, customChatData: activeSessionData }
-        : {})
+      ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
     }
 
     handlePlanningCommand(prompt, false, false, commandOpts)
@@ -217,8 +297,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     if (confirmed?.isConfirmed) {
       await deleteSession(id)
       await loadAllSessions()
-      if (activeSessionId === id) {
-        setActiveSessionId(1)
+      if (String(activeSessionId) === String(id)) {
+        setActiveSessionId('1')
       }
     }
   }
@@ -374,7 +454,9 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             </div>
 
             {filteredSessions
-              .filter((s) => String(s.id) !== '1')
+              .filter(
+                (s) => String(s.id) !== '1' && String(s.id) !== '1.0' && s.title !== 'Main Thread'
+              )
               .map((s) => {
                 const isActive = String(activeSessionId) === String(s.id)
                 const isEditing = String(editingSessionId) === String(s.id)
@@ -539,6 +621,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                         ? `${msg.id}-${idx}`
                         : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
                     }
+                    id={msg.id}
+                    lastCompactedMessageId={lastCompactedMessageId}
+                    isCompacting={msg.isCompacting}
+                    compactProgress={msg.compactProgress}
                     role={msg.role}
                     content={msg.content}
                     reasoning={msg.reasoning}

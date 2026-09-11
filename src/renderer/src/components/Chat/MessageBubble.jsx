@@ -124,7 +124,8 @@ export const MessageBubble = React.memo(
                     const hasQuery = t.query !== undefined && t.query !== null && t.query !== ''
                     const queryString =
                       typeof t.query === 'string' ? t.query : JSON.stringify(t.query, null, 2)
-                    const textResult = String(t.resultSummary || t.fullResult || '')
+                    const textResult = String(t.fullResult || t.resultSummary || '')
+                    const hasResult = Boolean(textResult.trim())
                     const hasError =
                       textResult.startsWith('[ERROR]') ||
                       textResult.includes(' crash:') ||
@@ -136,7 +137,7 @@ export const MessageBubble = React.memo(
                     const StatusIcon = isSuccessful ? Check : XCircle
                     const statusClass = isSuccessful ? 'text-success' : 'text-error'
 
-                    if (!hasQuery) {
+                    if (!hasQuery && !hasResult) {
                       return (
                         <div
                           key={idx}
@@ -163,12 +164,23 @@ export const MessageBubble = React.memo(
                             </span>
                           </div>
                           <div className="flex items-center gap-1 opacity-60 group-hover/query:opacity-100">
-                            <span className="text-[10px] text-white/50 lowercase">query</span>
+                            <span className="text-[10px] text-white/50 lowercase">detail</span>
                             <ChevronRight className="w-3 h-3 transition-transform duration-150 group-open/query:rotate-90" />
                           </div>
                         </summary>
-                        <div className="px-2.5 py-1.5 text-[10px] font-mono border-t border-white/5 bg-black/40 text-white/80 whitespace-pre-wrap break-all max-h-36 overflow-y-auto custom-scrollbar border-l-2 border-primary/30">
-                          {queryString}
+                        <div className="px-2.5 py-1.5 text-[10px] font-mono border-t border-white/5 bg-black/40 text-white/80 whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar border-l-2 border-primary/30 space-y-2">
+                          {hasQuery && (
+                            <div>
+                              <div className="text-primary/70 font-semibold mb-0.5">Input:</div>
+                              <div className="text-white/80">{queryString}</div>
+                            </div>
+                          )}
+                          {hasResult && (
+                            <div>
+                              <div className="text-success/70 font-semibold mb-0.5">Output:</div>
+                              <div className="text-white/80">{textResult}</div>
+                            </div>
+                          )}
                         </div>
                       </details>
                     )

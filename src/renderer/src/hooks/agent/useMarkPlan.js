@@ -11,6 +11,7 @@ import {
   updateMemory,
   saveSession,
   getChatData,
+  getSessionCompact,
   db
 } from '../../api/db'
 import { checkTools, getActiveToolsSchema } from '../../api/tools/index'
@@ -25,6 +26,12 @@ import {
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import { buildOptimizedChatSession } from '../../api/ai/contextCompactor'
+import {
+  MAX_CONTEXT_CHARS,
+  calculateSessionChars,
+  executeSessionCompaction,
+  assembleCompactedPayload
+} from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 
@@ -896,13 +903,118 @@ export const useMarkPlan = ({
       )
 
       // ------------------------------------------------------------------------
+      // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 525.000 Karakter)
+      // ------------------------------------------------------------------------
+      let activeSessionCompact = null
+      try {
+        activeSessionCompact = await getSessionCompact(String(activeSessionNum))
+      } catch (_) {}
+
+      const activeSummaryBlock =
+        activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || ''
+      const activeLastCompactedId =
+        activeSessionCompact?.lastCompactedMessageId ||
+        activeSessionCompact?.last_compacted_message_id ||
+        null
+
+      const currentUserMsg = { ...userMessage, content: payloadContent }
+      let effectiveSourceMessages = [...sourceChatData, currentUserMsg]
+
+      const currentEstimatedChars = calculateSessionChars(
+        effectiveSourceMessages,
+        activeSummaryBlock,
+        activeLastCompactedId
+      )
+
+      // Bypass proses kompaksi berat jika instruksi internal (greeting sistem / awareness autonomous / disableTools)
+      const isInternalTurn = Boolean(
+        isSystem || isAutonomous || opts.skipCompaction || opts.disableTools
+      )
+
+      if (!isInternalTurn && currentEstimatedChars >= MAX_CONTEXT_CHARS) {
+        const compactBannerId = `compact-banner-${Date.now()}`
+        targetSetChatData((prev) => [
+          ...prev,
+          {
+            id: compactBannerId,
+            role: 'system',
+            isCompacting: true,
+            compactProgress: 'Memangkas log tool di memori...'
+          }
+        ])
+
+        try {
+          const compactionResult = await executeSessionCompaction({
+            sessionId: String(activeSessionNum),
+            messages: effectiveSourceMessages,
+            activeConfig: config[0] || {},
+            onProgress: (prog) => {
+              targetSetChatData((prev) =>
+                prev.map((item) =>
+                  item.id === compactBannerId ? { ...item, compactProgress: prog.text } : item
+                )
+              )
+            }
+          })
+
+          if (compactionResult?.isCompacted) {
+            if (compactionResult.compactedMessages) {
+              effectiveSourceMessages = compactionResult.compactedMessages
+            }
+            if (compactionResult.newSummaryBlock && compactionResult.lastCompactedMessageId) {
+              activeSessionCompact = {
+                summaryBlock: compactionResult.newSummaryBlock,
+                lastCompactedMessageId: compactionResult.lastCompactedMessageId,
+                lastCompactedAt: Date.now()
+              }
+              window.dispatchEvent(
+                new CustomEvent('session-compact-updated', {
+                  detail: {
+                    sessionId: String(activeSessionNum),
+                    lastCompactedMessageId: compactionResult.lastCompactedMessageId,
+                    summaryBlock: compactionResult.newSummaryBlock
+                  }
+                })
+              )
+
+              // Segera update indikator context-tracker agar gauge langsung berwarna hijau
+              const activeCharsAfterCompact = Number(compactionResult.currentChars || 0)
+              window.dispatchEvent(
+                new CustomEvent('context-tracker-updated', {
+                  detail: {
+                    sessionId: String(activeSessionNum),
+                    currentChars: activeCharsAfterCompact,
+                    maxChars: MAX_CONTEXT_CHARS,
+                    percentage: Math.min(100, (activeCharsAfterCompact / MAX_CONTEXT_CHARS) * 100),
+                    lastCompactedAt: Date.now()
+                  }
+                })
+              )
+            }
+          }
+        } catch (compactErr) {
+          console.error('[useMarkPlan] Gagal context compaction:', compactErr)
+        } finally {
+          targetSetChatData((prev) => prev.filter((item) => item.id !== compactBannerId))
+        }
+      }
+
+      // ------------------------------------------------------------------------
       // FASE 4: AGENTIC REACT LOOP (Native Function Calling + SSE Token Stream)
       // ------------------------------------------------------------------------
-      const loopMessages = [
-        { role: 'system', content: systemPrompt },
-        ...optimizedHistory.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user', content: payloadContent }
-      ]
+      const loopMessages =
+        !isInternalTurn &&
+        (activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block)
+          ? assembleCompactedPayload({
+              messages: effectiveSourceMessages,
+              sessionCompact: activeSessionCompact,
+              systemPrompt
+            })
+          : [
+              { role: 'system', content: systemPrompt },
+              ...optimizedHistory.map((m) => ({ role: m.role, content: m.content })),
+              { role: 'user', content: payloadContent }
+            ]
 
       let isDone = false
       let stepCount = 0
@@ -1428,6 +1540,29 @@ export const useMarkPlan = ({
         }
         lastUserPromptRef.current = ''
       }
+
+      // Post-Turn Context Sync: Hitung total karakter terkini dan trigger event ke UI
+      try {
+        const latestSessionData = activeSessionNum === 1 ? chatData : inMemorySessionData
+        const latestChars = calculateSessionChars(
+          latestSessionData,
+          activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
+          activeSessionCompact?.lastCompactedMessageId ||
+            activeSessionCompact?.last_compacted_message_id ||
+            null
+        )
+        window.dispatchEvent(
+          new CustomEvent('context-tracker-updated', {
+            detail: {
+              sessionId: String(activeSessionNum),
+              currentChars: latestChars,
+              maxChars: MAX_CONTEXT_CHARS,
+              percentage: Math.min(100, (latestChars / MAX_CONTEXT_CHARS) * 100),
+              lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
+            }
+          })
+        )
+      } catch (_) {}
 
       try {
         if (window.api && window.api.executeNativeTool) {

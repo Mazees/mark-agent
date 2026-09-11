@@ -20,4 +20,14 @@ export function registerRoutes(app) {
   app.use('/api', tasksRouter)
   app.use('/api', integrationsRouter)
   app.use('/api', aiRouter)
+
+  // 404 handler khusus /api agar mengembalikan respons JSON bukan HTML SPA fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({
+      success: false,
+      data: null,
+      error: `Endpoint API ${req.method} ${req.originalUrl} tidak ditemukan`
+    })
+  })
 }
+

@@ -12,6 +12,14 @@ export { SERVER_CONFIG, SERVER_HOST, SERVER_PORT, API_BASE } from './web-bridge'
 async function apiGet(path) {
   try {
     const res = await fetch(`${API_BASE}${path}`)
+    if (!res.ok) {
+      if (res.status === 404) return null
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return null
+    }
     const json = await res.json()
     return json.data ?? json
   } catch (err) {
@@ -27,6 +35,14 @@ async function apiPost(path, body) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
+    if (!res.ok) {
+      if (res.status === 404) return null
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return null
+    }
     const json = await res.json()
     return json.data ?? json
   } catch (err) {
@@ -38,6 +54,13 @@ async function apiPost(path, body) {
 async function apiDelete(path) {
   try {
     const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' })
+    if (!res.ok) {
+      return false
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return false
+    }
     const json = await res.json()
     return json.success ?? false
   } catch (err) {
@@ -62,20 +85,44 @@ class CollectionProxy {
   filter(fn) {
     const prev = this.filterFn
     const combined = prev ? (item) => prev(item) && fn(item) : fn
-    return new CollectionProxy(this.tableProxy, combined, this.sortField, this.isReverse, this.limitCount)
+    return new CollectionProxy(
+      this.tableProxy,
+      combined,
+      this.sortField,
+      this.isReverse,
+      this.limitCount
+    )
   }
 
   async sortBy(field) {
-    const proxy = new CollectionProxy(this.tableProxy, this.filterFn, field, this.isReverse, this.limitCount)
+    const proxy = new CollectionProxy(
+      this.tableProxy,
+      this.filterFn,
+      field,
+      this.isReverse,
+      this.limitCount
+    )
     return await proxy.toArray()
   }
 
   reverse() {
-    return new CollectionProxy(this.tableProxy, this.filterFn, this.sortField, !this.isReverse, this.limitCount)
+    return new CollectionProxy(
+      this.tableProxy,
+      this.filterFn,
+      this.sortField,
+      !this.isReverse,
+      this.limitCount
+    )
   }
 
   limit(count) {
-    return new CollectionProxy(this.tableProxy, this.filterFn, this.sortField, this.isReverse, count)
+    return new CollectionProxy(
+      this.tableProxy,
+      this.filterFn,
+      this.sortField,
+      this.isReverse,
+      count
+    )
   }
 
   async toArray() {
@@ -187,21 +234,39 @@ class TableProxy {
     return {
       equals: (val) => {
         return new CollectionProxy(this, (item) => {
-          const v = item[field] ?? (field === 'subagentId' ? item.subagent_id : field === 'subagent_id' ? item.subagentId : undefined)
+          const v =
+            item[field] ??
+            (field === 'subagentId'
+              ? item.subagent_id
+              : field === 'subagent_id'
+                ? item.subagentId
+                : undefined)
           return String(v) === String(val)
         })
       },
       equalsIgnoreCase: (val) => {
         const lowerVal = String(val || '').toLowerCase()
         return new CollectionProxy(this, (item) => {
-          const v = item[field] ?? (field === 'subagentId' ? item.subagent_id : field === 'subagent_id' ? item.subagentId : undefined)
+          const v =
+            item[field] ??
+            (field === 'subagentId'
+              ? item.subagent_id
+              : field === 'subagent_id'
+                ? item.subagentId
+                : undefined)
           return String(v || '').toLowerCase() === lowerVal
         })
       },
       anyOf: (values) => {
         const set = new Set((Array.isArray(values) ? values : [values]).map((v) => String(v)))
         return new CollectionProxy(this, (item) => {
-          const v = item[field] ?? (field === 'subagentId' ? item.subagent_id : field === 'subagent_id' ? item.subagentId : undefined)
+          const v =
+            item[field] ??
+            (field === 'subagentId'
+              ? item.subagent_id
+              : field === 'subagent_id'
+                ? item.subagentId
+                : undefined)
           return set.has(String(v))
         })
       }
@@ -219,6 +284,8 @@ export const db = {
   memory: new TableProxy('/api/memories'),
   memories: new TableProxy('/api/memories'),
   sessions: new TableProxy('/api/sessions'),
+  sessionCompact: new TableProxy('/api/session-compact', 'sessionId'),
+  session_compact: new TableProxy('/api/session-compact', 'sessionId'),
   chatTurns: new TableProxy('/api/turns', 'pairId'),
   chatArchive: new TableProxy('/api/archives'),
   documents: new TableProxy('/api/documents'),
@@ -260,7 +327,13 @@ export async function insertMemory(data) {
       vector: vector
     })
     const id = record?.id || record
-    insertMemoryToOrama({ id, type, summary: data.summary || '', memory: memoryText, vector }).catch(console.error)
+    insertMemoryToOrama({
+      id,
+      type,
+      summary: data.summary || '',
+      memory: memoryText,
+      vector
+    }).catch(console.error)
     return id
   } catch (error) {
     console.error('Error Save Memory:', error)
@@ -297,7 +370,8 @@ export async function getAllSessions() {
 
 export async function getSession(id) {
   try {
-    return await db.sessions.get(id)
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    return await db.sessions.get(cleanId)
   } catch (error) {
     console.error(`Error getSession ${id}:`, error)
     return null
@@ -318,9 +392,11 @@ export async function createSession(title = 'Percakapan Baru') {
 
 export async function saveSession(id, data, title = null) {
   try {
-    const existing = await db.sessions.get(id)
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const existing = await db.sessions.get(cleanId)
     const session = {
-      ...(existing || { id }),
+      ...(existing || { id: cleanId, title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru' }),
+      id: cleanId,
       data: Array.isArray(data) ? data : [],
       ...(title ? { title } : {}),
       timestamp: Date.now()
@@ -334,7 +410,8 @@ export async function saveSession(id, data, title = null) {
 
 export async function deleteSession(id) {
   try {
-    await db.sessions.delete(id)
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    await db.sessions.delete(cleanId)
     return { success: true }
   } catch (error) {
     console.error(`Error deleteSession ${id}:`, error)
@@ -344,9 +421,10 @@ export async function deleteSession(id) {
 
 export async function renameSession(id, title) {
   try {
-    const existing = await db.sessions.get(id)
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const existing = await db.sessions.get(cleanId)
     if (existing) {
-      await db.sessions.put({ ...existing, title, timestamp: Date.now() })
+      await db.sessions.put({ ...existing, id: cleanId, title, timestamp: Date.now() })
     }
   } catch (error) {
     console.error(`Error renameSession ${id}:`, error)
@@ -355,7 +433,8 @@ export async function renameSession(id, title) {
 
 export async function getChatData(sessionId = 1) {
   try {
-    const session = await db.sessions.get(sessionId)
+    const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
+    const session = await db.sessions.get(cleanId)
     return session && Array.isArray(session.data) ? session.data : []
   } catch (error) {
     console.error(`Error getChatData ${sessionId}:`, error)
@@ -365,10 +444,12 @@ export async function getChatData(sessionId = 1) {
 
 export async function setSessionWorkspace(sessionId, workspace) {
   try {
-    const existing = await db.sessions.get(sessionId)
+    const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
+    const existing = await db.sessions.get(cleanId)
     if (existing) {
       await db.sessions.put({
         ...existing,
+        id: cleanId,
         workspace,
         workspaceRoot: workspace,
         timestamp: Date.now()
@@ -571,7 +652,9 @@ export async function addAlwaysAllowedPath(pathToAdd) {
     if (!pathToAdd) return []
     const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
-    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths) ? currentConfig.alwaysAllowedPaths : []
+    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths)
+      ? currentConfig.alwaysAllowedPaths
+      : []
     if (!currentList.includes(pathToAdd)) {
       const updatedList = [...currentList, pathToAdd]
       await saveConfiguration({ ...currentConfig, alwaysAllowedPaths: updatedList })
@@ -589,7 +672,9 @@ export async function removeAlwaysAllowedPath(pathToRemove) {
     if (!pathToRemove) return []
     const configs = await getAllConfig()
     const currentConfig = (configs && configs[0]) || { id: 1 }
-    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths) ? currentConfig.alwaysAllowedPaths : []
+    const currentList = Array.isArray(currentConfig.alwaysAllowedPaths)
+      ? currentConfig.alwaysAllowedPaths
+      : []
     const updatedList = currentList.filter((p) => p !== pathToRemove)
     await saveConfiguration({ ...currentConfig, alwaysAllowedPaths: updatedList })
     return updatedList
@@ -653,26 +738,40 @@ export async function getAllLearnedSkills() {
 
 export async function getLearnedSkill(skillName) {
   try {
-    const all = await getAllLearnedSkills();
-    const target = String(skillName || '').toLowerCase().trim();
-    return all.find((s) => String(s.id).toLowerCase() === target || String(s.name || '').toLowerCase().trim() === target) || null;
+    const all = await getAllLearnedSkills()
+    const target = String(skillName || '')
+      .toLowerCase()
+      .trim()
+    return (
+      all.find(
+        (s) =>
+          String(s.id).toLowerCase() === target ||
+          String(s.name || '')
+            .toLowerCase()
+            .trim() === target
+      ) || null
+    )
   } catch (error) {
-    console.error('Error in getLearnedSkill logic:', error);
-    return null;
+    console.error('Error in getLearnedSkill logic:', error)
+    return null
   }
 }
 
 export async function saveLearnedSkill(skill) {
   try {
     const all = await getAllLearnedSkills()
-    const targetName = String(skill.name || '').toLowerCase().trim()
+    const targetName = String(skill.name || '')
+      .toLowerCase()
+      .trim()
     const existing = all.find(
       (s) =>
         s.id === skill.id ||
-        String(s.name || '').toLowerCase().trim() === targetName
+        String(s.name || '')
+          .toLowerCase()
+          .trim() === targetName
     )
 
-    const id = existing ? existing.id : (skill.id || `skill_${Date.now()}`)
+    const id = existing ? existing.id : skill.id || `skill_${Date.now()}`
     const record = {
       ...existing,
       ...skill,
@@ -749,4 +848,37 @@ export async function restoreDatabaseDump(dumpData, overwrite = true) {
   }
 }
 
+// --- SESSION COMPACT HELPERS ---
+export async function getSessionCompact(sessionId) {
+  try {
+    const res = await apiGet(`/api/session-compact/${sessionId}`)
+    return res || null
+  } catch (err) {
+    console.error('[DB Proxy] Error getSessionCompact:', err)
+    return null
+  }
+}
 
+export async function saveSessionCompact(sessionId, data) {
+  try {
+    const payload = {
+      sessionId: String(sessionId),
+      ...data,
+      lastCompactedAt: data.lastCompactedAt || Date.now()
+    }
+    const res = await apiPost('/api/session-compact', payload)
+    return res || null
+  } catch (err) {
+    console.error('[DB Proxy] Error saveSessionCompact:', err)
+    return null
+  }
+}
+
+export async function deleteSessionCompact(sessionId) {
+  try {
+    return await apiDelete(`/api/session-compact/${sessionId}`)
+  } catch (err) {
+    console.error('[DB Proxy] Error deleteSessionCompact:', err)
+    return false
+  }
+}

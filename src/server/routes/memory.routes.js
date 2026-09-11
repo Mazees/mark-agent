@@ -65,7 +65,42 @@ memoryRouter.post('/sessions/batch', (req, res) => {
 memoryRouter.delete('/sessions/:id', (req, res) => {
   const { id } = req.params
   const success = dbStore.sessions.delete(id)
+  dbStore.sessionCompact.delete(id)
   res.json({ success })
+})
+
+// 3b. Session Compact
+memoryRouter.get('/session-compact/:id', (req, res) => {
+  try {
+    const { id } = req.params
+    const compact = dbStore.sessionCompact.getById(id)
+    res.json({ success: true, data: compact || null })
+  } catch (err) {
+    console.error('[memory.routes] Error GET /session-compact/:id:', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+memoryRouter.post('/session-compact', (req, res) => {
+  try {
+    const item = req.body
+    const record = dbStore.sessionCompact.insert(item)
+    res.json({ success: true, data: record })
+  } catch (err) {
+    console.error('[memory.routes] Error POST /session-compact:', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+memoryRouter.delete('/session-compact/:id', (req, res) => {
+  try {
+    const { id } = req.params
+    const success = dbStore.sessionCompact.delete(id)
+    res.json({ success })
+  } catch (err) {
+    console.error('[memory.routes] Error DELETE /session-compact/:id:', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 // 4. Chat Archives

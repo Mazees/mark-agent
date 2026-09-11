@@ -180,6 +180,14 @@ sqlite.exec(`
     error TEXT
   );
 
+  -- 13. Session Compact (Metadata Kompaksi Konteks)
+  CREATE TABLE IF NOT EXISTS session_compact (
+    session_id TEXT PRIMARY KEY,
+    summary_block TEXT,
+    last_compacted_message_id TEXT,
+    last_compacted_at INTEGER
+  );
+
   -- Indeks untuk pencarian cepat
   CREATE INDEX IF NOT EXISTS idx_chat_turns_session ON chat_turns(session_id);
   CREATE INDEX IF NOT EXISTS idx_chat_turns_timestamp ON chat_turns(timestamp);
@@ -191,7 +199,10 @@ sqlite.exec(`
 // Helper migrasi kolom otomatis jika tabel SQLite sudah ada dari versi sebelumnya
 function ensureTableColumns(tableName, requiredColumns) {
   try {
-    const existingCols = sqlite.prepare(`PRAGMA table_info(${tableName})`).all().map((c) => c.name)
+    const existingCols = sqlite
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all()
+      .map((c) => c.name)
     for (const [colName, colType] of Object.entries(requiredColumns)) {
       if (!existingCols.includes(colName)) {
         sqlite.exec(`ALTER TABLE ${tableName} ADD COLUMN ${colName} ${colType}`)
@@ -255,6 +266,12 @@ ensureTableColumns('agent_task_steps', {
   error: 'TEXT'
 })
 
+ensureTableColumns('session_compact', {
+  summary_block: 'TEXT',
+  last_compacted_message_id: 'TEXT',
+  last_compacted_at: 'INTEGER'
+})
+
 /**
  * Generic Table Helper untuk menyediakan API CRUD fleksibel
  */
@@ -281,7 +298,10 @@ class SqliteTable {
     for (const key of Object.keys(res)) {
       if (typeof res[key] === 'string') {
         const str = res[key].trim()
-        if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+        if (
+          (str.startsWith('{') && str.endsWith('}')) ||
+          (str.startsWith('[') && str.endsWith(']'))
+        ) {
           try {
             res[key] = JSON.parse(str)
           } catch (_) {}
@@ -307,21 +327,46 @@ class SqliteTable {
   }
 
   getById(id) {
-    const row = sqlite.prepare(`SELECT * FROM ${this.tableName} WHERE ${this.idCol} = ?`).get(String(id))
+    const row = sqlite
+      .prepare(`SELECT * FROM ${this.tableName} WHERE ${this.idCol} = ?`)
+      .get(String(id))
     return this._parseJsonFields(row)
   }
 
   insert(item) {
     const raw = { ...item }
     // Normalisasi alias primary key lama dari Dexie (pairId -> id)
-    let id = raw.id !== undefined && raw.id !== null ? raw.id : (raw.pairId || raw.userId || `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
-    if (id === 1 || id === 1.0 || id === '1' || id === '1.0' || id === '1.00') {
-      id = '1'
+    let id =
+      raw[this.idCol] !== undefined && raw[this.idCol] !== null
+        ? raw[this.idCol]
+        : raw.id !== undefined && raw.id !== null
+          ? raw.id
+          : raw.pairId ||
+            raw.userId ||
+            raw.sessionId ||
+            raw.session_id ||
+            `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
+    let cleanId = String(id).trim()
+    if (cleanId.endsWith('.0')) {
+      cleanId = cleanId.slice(0, -2)
     }
-    delete raw.id
+    if (cleanId === '1' || cleanId === '1.0' || cleanId === '1.00') {
+      cleanId = '1'
+    }
+
+    if (this.idCol !== 'id') {
+      delete raw.id
+    }
     delete raw.pairId // Hapus key lama agar tidak mencoba insert ke kolom yang tidak ada
 
-    if (raw.sessionId === 1 || raw.sessionId === 1.0 || raw.sessionId === '1' || raw.sessionId === '1.0' || raw.sessionId === '1.00') {
+    if (
+      raw.sessionId === 1 ||
+      raw.sessionId === 1.0 ||
+      raw.sessionId === '1' ||
+      raw.sessionId === '1.0' ||
+      raw.sessionId === '1.00'
+    ) {
       raw.sessionId = '1'
     }
 
@@ -331,22 +376,34 @@ class SqliteTable {
     }
 
     const record = {
-      id: String(id),
       createdAt: raw.createdAt || raw.timestamp || Date.now(),
       updatedAt: raw.updatedAt || Date.now(),
-      ...raw
+      ...raw,
+      id: cleanId,
+      [this.idCol]: cleanId
     }
 
     const serialized = this._serializeJsonFields(record)
-    // Filter hanya field yang ada di skema kolom tabel
-    const tableCols = sqlite.prepare(`PRAGMA table_info(${this.tableName})`).all().map(c => c.name)
-    const validEntries = Object.entries(serialized)
-      .map(([k, v]) => [this._toSnake(k), v])
-      .filter(([colName]) => tableCols.includes(colName))
+    // Filter hanya field yang ada di skema kolom tabel (gunakan Map untuk mencegah duplikasi kolom snake/camel)
+    const tableCols = sqlite
+      .prepare(`PRAGMA table_info(${this.tableName})`)
+      .all()
+      .map((c) => c.name)
 
-    const keys = validEntries.map(([k]) => k)
+    const colMap = new Map()
+    for (const [k, v] of Object.entries(serialized)) {
+      const col = this._toSnake(k)
+      if (tableCols.includes(col)) {
+        colMap.set(col, v)
+      }
+    }
+    if (tableCols.includes(this.idCol)) {
+      colMap.set(this.idCol, cleanId)
+    }
+
+    const keys = Array.from(colMap.keys())
     const placeholders = keys.map(() => '?').join(', ')
-    const values = validEntries.map(([, v]) => v)
+    const values = Array.from(colMap.values())
 
     const stmt = sqlite.prepare(`
       INSERT OR REPLACE INTO ${this.tableName} (${keys.join(', ')})
@@ -379,7 +436,9 @@ class SqliteTable {
   }
 
   delete(id) {
-    const info = sqlite.prepare(`DELETE FROM ${this.tableName} WHERE ${this.idCol} = ?`).run(String(id))
+    const info = sqlite
+      .prepare(`DELETE FROM ${this.tableName} WHERE ${this.idCol} = ?`)
+      .run(String(id))
     return info.changes > 0
   }
 
@@ -484,7 +543,9 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
     agentTasks: dbStore.agentTasks,
     agent_tasks: dbStore.agentTasks,
     agentTaskSteps: dbStore.agentTaskSteps,
-    agent_task_steps: dbStore.agentTaskSteps
+    agent_task_steps: dbStore.agentTaskSteps,
+    sessionCompact: dbStore.sessionCompact,
+    session_compact: dbStore.sessionCompact
   }
 
   const restoreTransaction = sqlite.transaction(() => {
@@ -506,7 +567,11 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
     if (Array.isArray(restoredConfig) && restoredConfig.length > 0) {
       try {
         const confObj = restoredConfig[0]
-        const finalConf = confObj.data ? (typeof confObj.data === 'string' ? JSON.parse(confObj.data) : confObj.data) : confObj
+        const finalConf = confObj.data
+          ? typeof confObj.data === 'string'
+            ? JSON.parse(confObj.data)
+            : confObj.data
+          : confObj
         const cfgPath = path.join(CONFIG_DIR, 'config.json')
         fs.writeFileSync(cfgPath, JSON.stringify(finalConf, null, 2), 'utf-8')
       } catch (_) {}
@@ -525,6 +590,7 @@ export function resetAllExceptConfig() {
     // 1. Bersihkan tabel memori & percakapan
     dbStore.memories.clear()
     dbStore.sessions.clear()
+    dbStore.sessionCompact.clear()
     dbStore.chatTurns.clear()
     dbStore.chatArchives.clear()
     dbStore.documents.clear()
@@ -562,7 +628,10 @@ export function resetAllExceptConfig() {
   })
 
   resetTransaction()
-  return { success: true, message: 'Seluruh data AI berhasil direset ke kondisi awal (konfigurasi dipertahankan).' }
+  return {
+    success: true,
+    message: 'Seluruh data AI berhasil direset ke kondisi awal (konfigurasi dipertahankan).'
+  }
 }
 
 export const dbStore = {
@@ -570,6 +639,7 @@ export const dbStore = {
   config: new SqliteTable('config'),
   memories: new SqliteTable('memories'),
   sessions: new SqliteTable('sessions'),
+  sessionCompact: new SqliteTable('session_compact', 'session_id'),
   chatTurns: new SqliteTable('chat_turns'),
   chatArchives: new SqliteTable('chat_archives'),
   documents: new SqliteTable('documents'),
