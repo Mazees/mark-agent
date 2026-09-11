@@ -9,13 +9,12 @@ import { webApi } from '../../api/web-bridge'
  * Docked Left Panel di MARK V5 yang merender seluruh kluster tools otonom,
  * telemetry proses aktif, dan daftar custom plugins yang tersinkronisasi secara real-time.
  */
-const ToolClustersDeck = ({
-  activeProcesses = [],
-  dismissProcess,
-  className = ''
-}) => {
+const ToolClustersDeck = ({ activeProcesses = [], dismissProcess, className = '' }) => {
   const [selectedClusterKey, setSelectedClusterKey] = useState(null)
   const [plugins, setPlugins] = useState([])
+  const [groupToolsSchema, setGroupToolsSchema] = useState(
+    () => webApi._groupToolsCache?.schema || {}
+  )
 
   // Ambil data plugins & dengarkan event update
   useEffect(() => {
@@ -29,6 +28,15 @@ const ToolClustersDeck = ({
         }
       } catch (err) {
         console.error('[ToolClustersDeck] Gagal memuat plugins:', err)
+      }
+
+      try {
+        const groupData = await webApi.getGroupTools()
+        if (isMounted && groupData?.schema) {
+          setGroupToolsSchema(groupData.schema)
+        }
+      } catch (err) {
+        console.error('[ToolClustersDeck] Gagal memuat group tools:', err)
       }
     }
 
@@ -49,8 +57,8 @@ const ToolClustersDeck = ({
 
   // Bangun daftar kluster lengkap termasuk custom plugins
   const clusters = useMemo(() => {
-    return buildCompleteToolClusters(plugins)
-  }, [plugins])
+    return buildCompleteToolClusters(plugins, groupToolsSchema)
+  }, [plugins, groupToolsSchema])
 
   // Total count tools di seluruh kluster
   const totalToolsCount = useMemo(() => {
@@ -74,7 +82,9 @@ const ToolClustersDeck = ({
   }, [activeProcesses])
 
   return (
-    <aside className={`absolute left-6 top-18 bottom-24 w-72 lg:w-76 z-20 flex flex-col gap-2.5 pointer-events-auto ${className}`}>
+    <aside
+      className={`absolute left-6 top-18 bottom-24 w-72 lg:w-76 z-20 flex flex-col gap-2.5 pointer-events-auto ${className}`}
+    >
       <div className="flex-1 bg-black/40 backdrop-blur-xl border border-white/5 rounded-2xl p-3 shadow-2xl flex flex-col min-h-0 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5 px-1">
@@ -92,7 +102,11 @@ const ToolClustersDeck = ({
         {/* Active Process In-Place Card (Jika ada proses/task yang sedang berjalan) */}
         {activeProcesses && activeProcesses.length > 0 && (
           <div className="mb-2 shrink-0 max-h-[35vh] overflow-y-auto no-scrollbar">
-            <ProcessPanel processes={activeProcesses} onDismiss={dismissProcess} isEmbedded={true} />
+            <ProcessPanel
+              processes={activeProcesses}
+              onDismiss={dismissProcess}
+              isEmbedded={true}
+            />
           </div>
         )}
 
@@ -101,7 +115,8 @@ const ToolClustersDeck = ({
           {clusters.map((c) => {
             const isClusterActive = c.tools.some((t) =>
               t.matchTools.some(
-                (mt) => activeToolNames.has(mt) || [...activeToolNames].some((an) => an.includes(mt))
+                (mt) =>
+                  activeToolNames.has(mt) || [...activeToolNames].some((an) => an.includes(mt))
               )
             )
             const isSelected = selectedClusterKey === c.key
@@ -145,7 +160,9 @@ const ToolClustersDeck = ({
                   <div className="pl-4 pr-1 py-1 flex flex-col gap-1 border-l border-white/10 ml-2.5 my-1 animate-[holo-project-in_0.15s_ease-out_forwards]">
                     {c.tools.map((t) => {
                       const isToolActive = t.matchTools.some(
-                        (mt) => activeToolNames.has(mt) || [...activeToolNames].some((an) => an.includes(mt))
+                        (mt) =>
+                          activeToolNames.has(mt) ||
+                          [...activeToolNames].some((an) => an.includes(mt))
                       )
                       return (
                         <div
@@ -164,7 +181,9 @@ const ToolClustersDeck = ({
                             />
                             <span className="truncate">{t.name}</span>
                           </div>
-                          {isToolActive && <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse shrink-0" />}
+                          {isToolActive && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse shrink-0" />
+                          )}
                         </div>
                       )
                     })}

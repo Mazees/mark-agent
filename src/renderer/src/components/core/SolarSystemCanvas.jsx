@@ -29,7 +29,11 @@ export function getDeterministicColor(str = '') {
 /**
  * Membangun registry kluster tools secara dinamis dari groupToolsSchema, core_tools_schema, & dynamicPlugins
  */
-export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema = {}) {
+export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema = null) {
+  const effectiveSchema =
+    groupToolsSchema && Object.keys(groupToolsSchema).length > 0
+      ? groupToolsSchema
+      : webApi._groupToolsCache?.schema || {}
   const clusters = []
   const hasDynamicPlugins = Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0
 
@@ -37,7 +41,7 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
   let isClockwise = true
 
   // 1. Ambil seluruh tool groups dari groupToolsSchema
-  Object.entries(groupToolsSchema || {}).forEach(([groupKey, groupData]) => {
+  Object.entries(effectiveSchema).forEach(([groupKey, groupData]) => {
     // Jika custom_plugins memiliki dynamic plugin terpasang, tangani terpisah di bawah
     if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
 
