@@ -64,9 +64,9 @@ export async function launchUI(options = {}) {
  */
 export function closeUI() {
   if (os.platform() === 'win32') {
-    // 1. Tutup instan via taskkill berdasarkan judul jendela Mark Agent (~15ms)
+    // 1. Tutup instan via taskkill HANYA untuk msedge.exe berdasarkan judul jendela Mark Agent (~15ms)
     try {
-      spawnSync('taskkill.exe', ['/F', '/FI', 'WINDOWTITLE eq Mark Agent*', '/T'], {
+      spawnSync('taskkill.exe', ['/F', '/IM', 'msedge.exe', '/FI', 'WINDOWTITLE eq Mark Agent*'], {
         windowsHide: true,
         timeout: 1500
       })

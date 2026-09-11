@@ -183,7 +183,6 @@ public class MarkWin32 {
         }, IntPtr.Zero);
 
         if (target != IntPtr.Zero) {
-            SetForegroundWindow(target);
             return target;
         }
         return fg;
@@ -273,11 +272,21 @@ while ($true) {
         switch ($cmd) {
             "read-focus" {
                 $global:ElementCache.Clear()
-                $hwnd = [MarkWin32]::GetTargetWindow()
+                $hwnd = [MarkWin32]::GetForegroundWindow()
                 $titleBuilder = New-Object System.Text.StringBuilder 512
                 [MarkWin32]::GetWindowText($hwnd, $titleBuilder, $titleBuilder.Capacity) | Out-Null
                 $windowTitle = $titleBuilder.ToString()
                 
+                $processId = 0
+                [MarkWin32]::GetWindowThreadProcessId($hwnd, [ref]$processId) | Out-Null
+                $procName = "Windows App"
+                if ($processId -gt 0) {
+                    try {
+                        $p = Get-Process -Id $processId -ErrorAction SilentlyContinue
+                        if ($p) { $procName = $p.ProcessName }
+                    } catch {}
+                }
+
                 $elements = @()
                 try {
                     $el = [System.Windows.Automation.AutomationElement]::FocusedElement
@@ -308,7 +317,7 @@ while ($true) {
                 
                 $output = @{
                     window = $windowTitle
-                    process = "focused"
+                    process = $procName
                     elements = $elements
                     element_count = $elements.Count
                     method = "uiautomation-focus"
