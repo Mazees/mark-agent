@@ -388,6 +388,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       })
 
       if (res?.isCompacted) {
+        if (res.compactedMessages) {
+          const cleanCompacted = res.compactedMessages.filter((m) => m.id !== compactBannerId)
+          if (String(activeSessionId) === '1') {
+            setMainChatData(cleanCompacted)
+          } else {
+            setActiveSessionData(cleanCompacted)
+          }
+        }
         if (res.lastCompactedMessageId) {
           setLastCompactedMessageId(res.lastCompactedMessageId)
           setActiveSessionCompact({

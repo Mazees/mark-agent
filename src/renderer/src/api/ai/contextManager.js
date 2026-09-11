@@ -120,16 +120,34 @@ export function pruneOldToolResultsInMemory(messages = [], preserveRecentTurns =
     }
     validIndex++
 
-    // Pertahankan N giliran terbaru tanpa pemangkasan
+    // Pertahankan N giliran terbaru tanpa pemangkasan penuh
     const isRecent = validIndex > totalValid - preserveRecentTurns
-    if (isRecent) continue
+    if (isRecent) {
+      // Pangkas fullResult raksasa pada tool yang sudah selesai di giliran non-aktif
+      if (
+        validIndex < totalValid &&
+        Array.isArray(item.executedTools) &&
+        item.executedTools.length > 0
+      ) {
+        item.executedTools = item.executedTools.map((t) => {
+          if (typeof t.fullResult === 'string' && t.fullResult.length > 500) {
+            return {
+              ...t,
+              fullResult: t.resultSummary || t.fullResult.slice(0, 250) + '... [output dipangkas]'
+            }
+          }
+          return t
+        })
+      }
+      continue
+    }
 
     // Pangkas executedTools pada giliran lama
     if (Array.isArray(item.executedTools) && item.executedTools.length > 0) {
       item.executedTools = item.executedTools.map((t) => ({
         tool: t.tool || 'unknown_tool',
         query: t.query ? String(t.query).slice(0, 100) : '',
-        resultSummary: `[tool result dipangkas: ${t.tool || 'tool'}]`,
+        resultSummary: t.resultSummary || `[tool result dipangkas: ${t.tool || 'tool'}]`,
         fullResult: `[tool result dipangkas: ${t.tool || 'tool'}]`
       }))
     }

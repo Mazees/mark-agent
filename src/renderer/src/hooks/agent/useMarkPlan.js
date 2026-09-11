@@ -1005,6 +1005,8 @@ export const useMarkPlan = ({
           if (compactionResult?.isCompacted) {
             if (compactionResult.compactedMessages) {
               effectiveSourceMessages = compactionResult.compactedMessages
+              // Sinkronkan riwayat pesan terpangkas ke state UI & persistent storage
+              targetSetChatData(compactionResult.compactedMessages)
             }
             if (compactionResult.newSummaryBlock && compactionResult.lastCompactedMessageId) {
               activeSessionCompact = {
@@ -1021,32 +1023,36 @@ export const useMarkPlan = ({
                   }
                 })
               )
-
-              // Segera update indikator context-tracker agar gauge langsung berwarna hijau
-              const activeCharsAfterCompact = Number(compactionResult.currentChars || 0)
-              window.dispatchEvent(
-                new CustomEvent('context-tracker-updated', {
-                  detail: {
-                    sessionId: String(activeSessionNum),
-                    currentChars: activeCharsAfterCompact,
-                    maxChars: MAX_CONTEXT_CHARS,
-                    percentage: Math.min(100, (activeCharsAfterCompact / MAX_CONTEXT_CHARS) * 100),
-                    lastCompactedAt: Date.now()
-                  }
-                })
-              )
             }
+
+            // Segera update indikator context-tracker agar gauge langsung berwarna hijau
+            const activeCharsAfterCompact = Number(compactionResult.currentChars || 0)
+            window.dispatchEvent(
+              new CustomEvent('context-tracker-updated', {
+                detail: {
+                  sessionId: String(activeSessionNum),
+                  currentChars: activeCharsAfterCompact,
+                  maxChars: MAX_CONTEXT_CHARS,
+                  percentage: Math.min(100, (activeCharsAfterCompact / MAX_CONTEXT_CHARS) * 100),
+                  lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
+                }
+              })
+            )
           }
         } catch (compactErr) {
           console.error('[useMarkPlan] Gagal context compaction:', compactErr)
         } finally {
-          targetSetChatData((prev) => prev.filter((item) => item.id !== compactBannerId))
+          targetSetChatData((prev) => (prev || []).filter((item) => item.id !== compactBannerId))
         }
       }
 
       // ------------------------------------------------------------------------
       // FASE 4: AGENTIC REACT LOOP (Native Function Calling + SSE Token Stream)
       // ------------------------------------------------------------------------
+      const fallbackOptimizedHistory = buildOptimizedChatSession(
+        effectiveSourceMessages.slice(0, -1),
+        config[0]?.context || 10
+      )
       const loopMessages =
         !isInternalTurn &&
         (activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block)
@@ -1057,7 +1063,7 @@ export const useMarkPlan = ({
             })
           : [
               { role: 'system', content: systemPrompt },
-              ...optimizedHistory.map((m) => ({ role: m.role, content: m.content })),
+              ...fallbackOptimizedHistory.map((m) => ({ role: m.role, content: m.content })),
               { role: 'user', content: payloadContent }
             ]
 
