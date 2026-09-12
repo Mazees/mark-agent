@@ -312,17 +312,19 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'grep-search',
-      description: 'Mencari kata kunci atau potongan kode dalam seluruh berkas di folder.',
+      description:
+        'Mencari kata kunci atau regex di dalam satu berkas spesifik maupun seluruh berkas dalam folder secara rekursif. Mengembalikan nomor baris dan cuplikan kode yang cocok.',
       parameters: {
         type: 'object',
         properties: {
           keyword: {
             type: 'string',
-            description: 'Kata kunci atau regex pencarian'
+            description: 'Kata kunci teks atau pola yang dicari'
           },
           path: {
             type: 'string',
-            description: 'Folder path target (default root)'
+            description:
+              'Path berkas spesifik (misal: "minecraft_2d.html") ATAU folder target (kosongkan untuk root workspace)'
           }
         },
         required: ['keyword'],

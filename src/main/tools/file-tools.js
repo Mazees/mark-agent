@@ -126,22 +126,31 @@ export const fileTools = {
           return {
             success: true,
             totalLines,
-            showing: `Baris ${startLine} - ${endLine}`,
+            showing: `Baris ${startLine} - ${Math.min(totalLines, endLine)} (dari total ${totalLines} baris)`,
             content: sliceContent
           }
         }
 
-        // Default potong 400 baris awal
-        const defaultLines = lines.slice(0, 400)
+        // Jika file <= 800 baris, sajikan 100% UTUH tanpa potongan buatan
+        if (totalLines <= 800) {
+          const fullContent = lines.map((l, i) => `[${i + 1}] ${l}`).join('\n')
+          return {
+            success: true,
+            totalLines,
+            showing: `Baris 1 - ${totalLines} (Lengkap 100%)`,
+            content: fullContent
+          }
+        }
+
+        // Jika file > 800 baris, sajikan 800 baris awal (standar Antigravity)
+        const defaultLines = lines.slice(0, 800)
         const defaultContent = defaultLines.map((l, i) => `[${i + 1}] ${l}`).join('\n')
         return {
           success: true,
           totalLines,
+          showing: `Baris 1 - 800 (dari total ${totalLines} baris)`,
           content: defaultContent,
-          note:
-            totalLines > 400
-              ? 'File panjang. Hanya menampilkan 400 baris awal. Gunakan read-file dengan argumen start_line & end_line untuk melihat sisa baris.'
-              : ''
+          note: `File panjang (${totalLines} baris). Menampilkan 800 baris awal. Gunakan read-file dengan argumen start_line & end_line, atau gunakan grep-search untuk mencari fungsi/variabel tertentu secara presisi.`
         }
       } catch (e) {
         return { success: false, error: e.message }
@@ -788,22 +797,22 @@ export const fileTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        let dirPath = ''
+        let targetPath = ''
         let keyword = ''
 
         if (typeof args === 'object' && args !== null) {
-          dirPath = (args.path || '').trim()
-          keyword = (args.keyword || '').trim()
+          targetPath = (args.path || args.file || args.filepath || args.target || '').trim()
+          keyword = (args.keyword || args.query || args.pattern || '').trim()
         } else {
-          const parts = String(args || '').split('||')
-          if (parts.length < 2) {
-            return {
-              success: false,
-              message: 'Argumen grep-search tidak lengkap (memerlukan path dan keyword).'
-            }
+          const rawStr = String(args || '').trim()
+          if (rawStr.includes('||')) {
+            const parts = rawStr.split('||')
+            targetPath = parts[0].trim()
+            keyword = parts.slice(1).join('||').trim()
+          } else {
+            // Jika hanya 1 string argumen tanpa pemisah, anggap sebagai keyword
+            keyword = rawStr
           }
-          dirPath = parts[0].trim()
-          keyword = parts[1].trim()
         }
 
         if (!keyword) {
@@ -812,14 +821,49 @@ export const fileTools = {
 
         const activeRoot =
           config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-        if (!path.isAbsolute(dirPath)) {
-          dirPath = dirPath && dirPath !== '.' ? path.join(activeRoot, dirPath) : activeRoot
+        if (!targetPath) {
+          targetPath = activeRoot
+        } else if (!path.isAbsolute(targetPath)) {
+          targetPath = path.join(activeRoot, targetPath)
         }
 
-        if (!fs.existsSync(dirPath)) {
-          return { success: false, message: `Direktori tidak ditemukan: ${dirPath}` }
+        if (!fs.existsSync(targetPath)) {
+          return { success: false, message: `Path tidak ditemukan: ${targetPath}` }
         }
 
+        const stat = await fs.promises.stat(targetPath)
+        const matches = []
+        const lowerKeyword = keyword.toLowerCase()
+
+        // SKENARIO 1: Pencarian pada SATU BERKAS SPESIFIK
+        if (stat.isFile()) {
+          const content = await fs.promises.readFile(targetPath, 'utf8')
+          const lines = content.split('\n')
+          const fileName = path.basename(targetPath)
+
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].toLowerCase().includes(lowerKeyword)) {
+              matches.push(`${fileName}:${i + 1}: ${lines[i].trim()}`)
+              if (matches.length >= 60) break
+            }
+          }
+
+          if (matches.length === 0) {
+            return {
+              success: true,
+              total_matches: 0,
+              result: `Tidak ditemukan baris yang cocok dengan "${keyword}" di dalam berkas ${fileName}.`
+            }
+          }
+
+          return {
+            success: true,
+            total_matches: matches.length,
+            result: `Ditemukan ${matches.length} kecocokan di ${fileName}:\n${matches.join('\n')}`
+          }
+        }
+
+        // SKENARIO 2: Pencarian rekursif pada DIREKTORI
         const IGNORED_GREP_DIRS = new Set([
           'node_modules',
           '.git',
@@ -879,11 +923,8 @@ export const fileTools = {
           '.svelte'
         ])
 
-        const matches = []
-        const lowerKeyword = keyword.toLowerCase()
-
         async function walk(dir) {
-          if (matches.length >= 50) return
+          if (matches.length >= 60) return
 
           let entries
           try {
@@ -893,7 +934,7 @@ export const fileTools = {
           }
 
           for (const entry of entries) {
-            if (matches.length >= 50) break
+            if (matches.length >= 60) break
 
             const fullPath = path.join(dir, entry.name)
 
@@ -905,17 +946,17 @@ export const fileTools = {
               const ext = path.extname(entry.name).toLowerCase()
               if (TEXT_EXTENSIONS.has(ext) || !ext || entry.name.startsWith('.')) {
                 try {
-                  const stat = await fs.promises.stat(fullPath)
-                  if (stat.size > 2 * 1024 * 1024) continue
+                  const fileStat = await fs.promises.stat(fullPath)
+                  if (fileStat.size > 2 * 1024 * 1024) continue
 
                   const content = await fs.promises.readFile(fullPath, 'utf8')
                   if (content.toLowerCase().includes(lowerKeyword)) {
                     const lines = content.split('\n')
                     for (let i = 0; i < lines.length; i++) {
                       if (lines[i].toLowerCase().includes(lowerKeyword)) {
-                        const relPath = path.relative(dirPath, fullPath)
+                        const relPath = path.relative(targetPath, fullPath)
                         matches.push(`${relPath}:${i + 1}: ${lines[i].trim()}`)
-                        if (matches.length >= 50) break
+                        if (matches.length >= 60) break
                       }
                     }
                   }
@@ -925,16 +966,20 @@ export const fileTools = {
           }
         }
 
-        await walk(dirPath)
+        await walk(targetPath)
 
         if (matches.length === 0) {
-          return { success: true, result: 'Pencarian tidak menemukan hasil apapun.' }
+          return {
+            success: true,
+            total_matches: 0,
+            result: `Pencarian "${keyword}" tidak menemukan hasil di ${path.basename(targetPath)}.`
+          }
         }
 
         return {
           success: true,
-          result: matches.join('\n'),
-          total_matches: matches.length
+          total_matches: matches.length,
+          result: `Ditemukan ${matches.length} kecocokan di ${path.basename(targetPath)}:\n${matches.join('\n')}`
         }
       } catch (e) {
         return { success: false, error: e.message }

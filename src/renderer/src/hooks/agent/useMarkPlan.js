@@ -23,7 +23,6 @@ import {
 } from '../../api/taskStore'
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
-import { buildOptimizedChatSession } from '../../api/ai/contextCompactor'
 import {
   MAX_CONTEXT_CHARS,
   calculateSessionChars,
@@ -857,7 +856,15 @@ export const useMarkPlan = ({
     // FASE 3: PENYIAPAN HISTORY CHAT & RETRIEVAL KONTEKS
     // ------------------------------------------------------------------------
     const sourceChatData = activeSessionNum === 1 ? chatData : inMemorySessionData
-    const optimizedHistory = buildOptimizedChatSession(sourceChatData, config[0]?.context || 10)
+    const validHistory = sourceChatData.filter(
+      (m) =>
+        m &&
+        !m.isThinking &&
+        !m.isSearching &&
+        !m.isSummarizing &&
+        m.role !== 'command' &&
+        m.role !== 'system'
+    )
 
     if (!isAutonomous && !isSystem) {
       targetSetChatData((prev) => [...prev, userMessage])
@@ -874,10 +881,11 @@ export const useMarkPlan = ({
 
       const allMemory = await getAllMemory()
       let searchQuery = userInput
-      if (optimizedHistory.length > 0) {
-        const lastMsg = optimizedHistory[optimizedHistory.length - 1]
-        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content) {
-          let lastAiText = lastMsg.content
+      if (validHistory.length > 0) {
+        const lastMsg = validHistory[validHistory.length - 1]
+        if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'ai') && lastMsg.content) {
+          let lastAiText =
+            typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)
           if (lastAiText.length > 600) {
             lastAiText = lastAiText.substring(0, 300) + ' ... ' + lastAiText.slice(-300)
           }
@@ -1049,23 +1057,63 @@ export const useMarkPlan = ({
       // ------------------------------------------------------------------------
       // FASE 4: AGENTIC REACT LOOP (Native Function Calling + SSE Token Stream)
       // ------------------------------------------------------------------------
-      const fallbackOptimizedHistory = buildOptimizedChatSession(
-        effectiveSourceMessages.slice(0, -1),
-        config[0]?.context || 10
-      )
-      const loopMessages =
-        !isInternalTurn &&
-        (activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block)
-          ? assembleCompactedPayload({
-              messages: effectiveSourceMessages,
-              sessionCompact: activeSessionCompact,
-              systemPrompt
-            })
-          : [
-              { role: 'system', content: systemPrompt },
-              ...fallbackOptimizedHistory.map((m) => ({ role: m.role, content: m.content })),
-              { role: 'user', content: payloadContent }
-            ]
+      let loopMessages = []
+
+      if (isSystem) {
+        // GREETING BOOT SEQUENCE: Sapaan awal startup hanya butuh systemPrompt + 1-2 pesan terakhir
+        // Mencegah ledakan 1M+ token dari akumulasi ratusan riwayat masa lalu di database.
+        const recentHistory = sourceChatData
+          .filter(
+            (m) =>
+              m &&
+              !m.isThinking &&
+              !m.isSearching &&
+              !m.isSummarizing &&
+              m.role !== 'command' &&
+              m.role !== 'system'
+          )
+          .slice(-2)
+
+        loopMessages = [
+          { role: 'system', content: systemPrompt },
+          ...recentHistory.map((m) => ({
+            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
+            content: m.content || ''
+          })),
+          { role: 'user', content: payloadContent }
+        ]
+      } else if (isAutonomous) {
+        // AWARENESS PROAKTIF: Cukup 3-4 pesan riwayat obrolan terkini
+        const recentHistory = sourceChatData
+          .filter(
+            (m) =>
+              m &&
+              !m.isThinking &&
+              !m.isSearching &&
+              !m.isSummarizing &&
+              m.role !== 'command' &&
+              m.role !== 'system'
+          )
+          .slice(-4)
+
+        loopMessages = [
+          { role: 'system', content: systemPrompt },
+          ...recentHistory.map((m) => ({
+            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
+            content: m.content || ''
+          })),
+          { role: 'user', content: payloadContent }
+        ]
+      } else {
+        // TURN CHAT/CODING NORMAL:
+        // Seluruh riwayat pesan & log tool dikirim 100% UTUH tanpa batasan turn (maxTurns)
+        // selama masih berada dalam kapasitas 525.000 karakter (MAX_CONTEXT_CHARS).
+        loopMessages = assembleCompactedPayload({
+          messages: effectiveSourceMessages,
+          sessionCompact: activeSessionCompact,
+          systemPrompt
+        })
+      }
 
       let isDone = false
       let stepCount = 0

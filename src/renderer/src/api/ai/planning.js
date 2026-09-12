@@ -161,7 +161,11 @@ ${
      Contoh instalasi & dep: \`cd <nama_folder>; npm install\`.
    - Setelah struktur proyek terbentuk, kembangkan kode komponen, styling, dan logika aplikasi menggunakan 'write-file' atau 'replace-content'.
 2. **STRATEGI EDIT VS BUAT**: Gunakan 'write-file' saat membuat file komponen/utilitas baru yang belum ada. Gunakan 'replace-content' untuk merevisi/mengedit file yang sudah ada.
-3. **NAVIGASI CODEBASE**: Jangan menebak struktur proyek. Gunakan 'find-files' untuk menemukan lokasi berkas (mengabaikan node_modules/.git secara otomatis) dan 'grep-search' untuk mencari deklarasi simbol/fungsi.
+3. **NAVIGASI CODEBASE & POLA GREP-FIRST**:
+   - Gunakan 'find-files' untuk menemukan lokasi berkas (otomatis mengabaikan node_modules/.git).
+   - Untuk berkas panjang (>500 baris) atau mencari deklarasi fungsi/variabel tertentu, WAJIB terapkan pola **Grep-First**: panggil 'grep-search' terlebih dahulu (dapat menargetkan satu berkas spesifik via 'path' atau seluruh folder) untuk mendapatkan nomor baris pasti.
+   - Setelah nomor baris diketahui, panggil 'read-file' dengan 'start_line' dan 'end_line' (rentang 50-100 baris di sekitar temuan) untuk membaca konteks yang diperlukan.
+   - DILARANG KERAS menggunakan 'run-powershell' (seperti Select-String, Get-Content, findstr) hanya untuk mencari teks/kode di berkas! Selalu gunakan tool native 'grep-search'.
 4. **SELF-HEALING SYNTAX RECOVERY (KRITIS)**: Jika tool 'write-file' atau 'replace-content' mengembalikan peringatan 'FILE_CREATED_WITH_SYNTAX_ERROR' atau 'FILE_UPDATED_WITH_SYNTAX_ERROR', kamu WAJIB membaca pesan SyntaxError tersebut dan memperbaikinya segera pada giliran ReAct berikutnya sebelum menyelesaikan tugas!
 5. **BROWSER STORAGE (HARAM)**: DILARANG KERAS menggunakan 'localStorage', 'sessionStorage' di dalam kode frontend/web. Selalu gunakan penyimpanan *In-Memory*.
 6. **FRONTEND & UI DESIGN (ESTETIKA KRITIS)**: Jika membuat aplikasi web/frontend, PRIORITASKAN UI/UX yang modern, dinamis, dan premium. Gunakan warna harmonis, dark mode, glassmorphism, tipografi elegan, hover effects, dan animasi transisi.

@@ -436,7 +436,28 @@ export async function executeSessionCompaction({
 }
 
 /**
- * Merakit payload prompt LLM secara non-destructive dengan summary block jika tersedia
+ * Memformat pesan dengan riwayat executedTools utuh (100% fullResult tanpa batasan turn)
+ */
+export function formatMessageWithToolLogs(msg) {
+  if (!msg) return ''
+  let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '')
+  if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
+    const toolLog = msg.executedTools
+      .map((t) => {
+        const res = t.fullResult || t.resultSummary || 'OK'
+        return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+      })
+      .join('\n\n')
+    if (toolLog) {
+      content = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${content}`
+    }
+  }
+  return content
+}
+
+/**
+ * Merakit payload prompt LLM secara non-destructive dengan summary block jika tersedia,
+ * atau seluruh pesan 100% utuh beserta log tool jika belum melewati 525K karakter.
  */
 export function assembleCompactedPayload({
   messages = [],
@@ -472,7 +493,7 @@ export function assembleCompactedPayload({
       content: `[ COMPACTED MESSAGE SUMMARY ] ${summaryBlock}`
     })
 
-    // Masukkan pesan-pesan tail terkini
+    // Masukkan pesan-pesan tail terkini dengan log tool utuh
     for (const msg of activeSlice) {
       if (
         !msg ||
@@ -484,22 +505,22 @@ export function assembleCompactedPayload({
         continue
       }
       payload.push({
-        role: msg.role === 'ai' ? 'assistant' : msg.role,
-        content: msg.content || ''
+        role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
+        content: formatMessageWithToolLogs(msg)
       })
     }
 
     return cleanOrphanToolPairs(payload)
   }
 
-  // Jika belum ada summary, susun normal
+  // Jika belum ada summary (konteks < 525K), susun SELURUH pesan dan log tool 100% UTUH
   for (const msg of messages) {
     if (!msg || msg.isThinking || msg.isSearching || msg.isSummarizing || msg.role === 'command') {
       continue
     }
     payload.push({
-      role: msg.role === 'ai' ? 'assistant' : msg.role,
-      content: msg.content || ''
+      role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
+      content: formatMessageWithToolLogs(msg)
     })
   }
 

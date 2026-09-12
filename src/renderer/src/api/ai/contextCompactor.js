@@ -28,9 +28,10 @@ export const compactCodeBlocks = (text) => {
 }
 
 /**
- * Mengompaksi daftar riwayat percakapan untuk prompt LLM (Clean Dual-Layer Assembly)
+ * Mengompaksi daftar riwayat percakapan untuk prompt LLM:
+ * Menjaga seluruh pesan dan riwayat tool 100% UTUH selama masih dalam batas kapasitas 525K karakter.
  */
-export const buildOptimizedChatSession = (sourceChatData, maxTurns = 10) => {
+export const buildOptimizedChatSession = (sourceChatData) => {
   if (!Array.isArray(sourceChatData)) return []
 
   const validMessages = sourceChatData.filter(
@@ -42,63 +43,27 @@ export const buildOptimizedChatSession = (sourceChatData, maxTurns = 10) => {
       !item.isSummarizing
   )
 
-  const recentSlice = validMessages.slice(-1 * maxTurns)
-  const totalCount = recentSlice.length
-
-  return recentSlice.map((item, idx) => {
-    const isRecentTurn = idx >= totalCount - 2 // 2 pesan terakhir dibiarkan resolusi tinggi
-    // In-progress retention: Jika pesan AI ini belum selesai (tanya user/in-progress) atau pesan AI paling akhir
-    const isInProgress = item.isTaskDone === false || (item.isTaskDone !== true && isRecentTurn)
+  return validMessages.map((item) => {
     let msgContent = item.content || ''
 
-    if (item.role === 'ai') {
-      // 1. Kompaksi log tool
+    if (item.role === 'ai' || item.role === 'assistant' || item.role === 'planSteps') {
       let toolLog = ''
       if (item.executedTools && item.executedTools.length > 0) {
-        if (isInProgress) {
-          // Smart Retention: Pertahankan detail hasil tool secara terstruktur
-          toolLog = item.executedTools
-            .map((t) => {
-              const res = t.fullResult || t.resultSummary || 'OK'
-              return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
-            })
-            .join('\n\n')
-        } else if (isRecentTurn) {
-          toolLog = item.executedTools
-            .map(
-              (t) =>
-                `  * [Tool: ${t.tool}] query: "${t.query || ''}" -> Hasil: ${t.resultSummary || 'OK'}`
-            )
-            .join('\n')
-        } else {
-          // Giliran lama: hanya catat nama tool & target query
-          toolLog = item.executedTools
-            .map((t) => `  * [Tool: ${t.tool}] (query: "${(t.query || '').slice(0, 60)}")`)
-            .join('\n')
-        }
-      }
-
-      // 2. Kompaksi blok kode panjang pada giliran lama (hanya jika sudah bukan in-progress)
-      let formattedBody = msgContent
-      if (!isRecentTurn && !isInProgress) {
-        formattedBody = compactCodeBlocks(msgContent)
-        // Batasi panjang teks maksimal pada pesan lama
-        if (formattedBody.length > 1500) {
-          formattedBody =
-            formattedBody.slice(0, 1200) +
-            '\n\n[... sisa teks lampau diringkas. Gunakan tool terkait jika butuh detail lengkap ...]'
-        }
+        toolLog = item.executedTools
+          .map((t) => {
+            const res = t.fullResult || t.resultSummary || 'OK'
+            return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+          })
+          .join('\n\n')
       }
 
       if (toolLog) {
-        msgContent = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${formattedBody}`
-      } else {
-        msgContent = formattedBody
+        msgContent = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${msgContent}`
       }
     }
 
     return {
-      role: item.role === 'ai' ? 'assistant' : 'user',
+      role: item.role === 'ai' || item.role === 'planSteps' ? 'assistant' : item.role,
       content: msgContent,
       mood: item.mood,
       isProactive: item.isProactive,
