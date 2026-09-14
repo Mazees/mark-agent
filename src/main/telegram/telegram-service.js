@@ -89,13 +89,12 @@ loadSavedChatIds()
 
 const formatMarkdownToTelegramHTML = (text) => {
   if (!text) return ''
-  let html = String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  let html = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
   html = html.replace(/```([a-z0-9-]*)\n([\s\S]*?)```/gi, (_match, lang, code) => {
-    return lang ? `<pre><code class="language-${lang}">${code}</code></pre>` : `<pre><code>${code}</code></pre>`
+    return lang
+      ? `<pre><code class="language-${lang}">${code}</code></pre>`
+      : `<pre><code>${code}</code></pre>`
   })
 
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -143,7 +142,10 @@ export const startTelegramBot = async (token) => {
     bot = new Telegraf(token.trim(), { telegram: telegramOpts })
 
     if (config.tgAdminIds) {
-      const ids = config.tgAdminIds.split(',').map((s) => s.trim()).filter(Boolean)
+      const ids = config.tgAdminIds
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
       ids.forEach((id) => {
         const cleanId = id.replace(/^@/, '')
         if (/^\d+$/.test(cleanId)) {
@@ -167,12 +169,12 @@ export const startTelegramBot = async (token) => {
     bot.command('info', (ctx) => {
       ctx.reply(
         'Daftar Perintah MARK:\n\n' +
-        '/start - Memulai bot\n' +
-        '/info - Menampilkan daftar perintah\n' +
-        '/abort - Menghentikan proses AI yang sedang berjalan\n' +
-        '/accept - Mengizinkan persetujuan sekali saja\n' +
-        '/always - Mengizinkan selamanya untuk path folder ini\n' +
-        '/reject - Menolak prompt persetujuan'
+          '/start - Memulai bot\n' +
+          '/info - Menampilkan daftar perintah\n' +
+          '/abort - Menghentikan proses AI yang sedang berjalan\n' +
+          '/accept - Mengizinkan persetujuan sekali saja\n' +
+          '/always - Mengizinkan selamanya untuk path folder ini\n' +
+          '/reject - Menolak prompt persetujuan'
       )
     })
 
@@ -202,7 +204,13 @@ export const startTelegramBot = async (token) => {
         clean === 'reject' ||
         clean === '/tolak' ||
         clean === 'tolak' ||
-        clean.startsWith('/reject@')
+        clean.startsWith('/reject@') ||
+        clean === '/session' ||
+        clean === 'session' ||
+        clean === '/sesi' ||
+        clean === 'sesi' ||
+        clean.startsWith('/session@') ||
+        clean.startsWith('/sesi@')
       )
     }
 
@@ -219,6 +227,46 @@ export const startTelegramBot = async (token) => {
     bot.command('reject', (ctx) => {
       const chatId = String(ctx.chat?.id || ctx.from?.id || '')
       wsHub.broadcast('tg:command-reject', { chatId })
+    })
+
+    bot.command(['session', 'sesi'], (ctx) => {
+      const chatId = String(ctx.chat?.id || ctx.from?.id || '')
+      wsHub.broadcast('tg:command-session', { chatId })
+    })
+
+    bot.command(['auto', 'automode'], async (ctx) => {
+      const arg = (ctx.message?.text || '')
+        .replace(/^\/(auto|automode)(@\w+)?/i, '')
+        .trim()
+        .toLowerCase()
+      try {
+        const session1 = dbStore.sessions.getById('1') || { id: '1' }
+        if (arg === 'on' || arg === '1' || arg === 'enable') {
+          session1.is_auto_mode = 1
+          session1.updated_at = Date.now()
+          dbStore.sessions.insert(session1)
+          wsHub.broadcast('session-auto-mode-updated', { sessionId: '1', isAutoMode: true })
+          await ctx.reply(
+            '[INFO]: Auto Mode untuk Sesi Utama telah DIAKTIFKAN (ON). Semua persetujuan tool akan disetujui otomatis.'
+          )
+        } else if (arg === 'off' || arg === '0' || arg === 'disable') {
+          session1.is_auto_mode = 0
+          session1.updated_at = Date.now()
+          dbStore.sessions.insert(session1)
+          wsHub.broadcast('session-auto-mode-updated', { sessionId: '1', isAutoMode: false })
+          await ctx.reply(
+            '[INFO]: Auto Mode untuk Sesi Utama telah DINONAKTIFKAN (OFF). Persetujuan tool aktif kembali.'
+          )
+        } else {
+          const current = Boolean(session1.is_auto_mode)
+          await ctx.reply(
+            `[INFO]: Status Auto Mode Sesi Utama saat ini: ${current ? 'AKTIF (ON)' : 'NONAKTIF (OFF)'}.\nKetik \`/auto on\` untuk mengaktifkan atau \`/auto off\` untuk mematikan.`,
+            { parse_mode: 'Markdown' }
+          )
+        }
+      } catch (err) {
+        await ctx.reply(`[ERROR]: Gagal memperbarui Auto Mode: ${err.message}`)
+      }
     })
 
     bot.on('text', async (ctx) => {
@@ -253,11 +301,29 @@ export const startTelegramBot = async (token) => {
       // Jika teks adalah perintah approval (/accept, /always, /reject), jangan picu loop planning agent baru
       if (isApprovalCommand(text)) {
         const clean = text.trim().toLowerCase()
-        if (clean === '/accept' || clean === 'accept' || clean === '/izinkan' || clean === 'izinkan' || clean.startsWith('/accept@')) {
+        if (
+          clean === '/accept' ||
+          clean === 'accept' ||
+          clean === '/izinkan' ||
+          clean === 'izinkan' ||
+          clean.startsWith('/accept@')
+        ) {
           wsHub.broadcast('tg:command-accept', { chatId })
-        } else if (clean === '/always' || clean === 'always' || clean === '/selamanya' || clean === 'selamanya' || clean.startsWith('/always@')) {
+        } else if (
+          clean === '/always' ||
+          clean === 'always' ||
+          clean === '/selamanya' ||
+          clean === 'selamanya' ||
+          clean.startsWith('/always@')
+        ) {
           wsHub.broadcast('tg:command-always', { chatId })
-        } else if (clean === '/reject' || clean === 'reject' || clean === '/tolak' || clean === 'tolak' || clean.startsWith('/reject@')) {
+        } else if (
+          clean === '/reject' ||
+          clean === 'reject' ||
+          clean === '/tolak' ||
+          clean === 'tolak' ||
+          clean.startsWith('/reject@')
+        ) {
           wsHub.broadcast('tg:command-reject', { chatId })
         }
         return
@@ -284,7 +350,9 @@ export const startTelegramBot = async (token) => {
 
       let loadingMsgId = null
       try {
-        const loadingMsg = await ctx.reply('[LOADING]: Sedang diproses...', { disable_notification: true })
+        const loadingMsg = await ctx.reply('[LOADING]: Sedang diproses...', {
+          disable_notification: true
+        })
         loadingMsgId = loadingMsg.message_id
       } catch (_) {}
 
@@ -312,7 +380,9 @@ export const startTelegramBot = async (token) => {
 
     bot.on(['document', 'photo'], async (ctx) => {
       const senderId = String(ctx.from?.id || '')
-      const senderName = ctx.from?.first_name ? `${ctx.from.first_name} ${ctx.from.last_name || ''}`.trim() : ctx.from?.username || senderId
+      const senderName = ctx.from?.first_name
+        ? `${ctx.from.first_name} ${ctx.from.last_name || ''}`.trim()
+        : ctx.from?.username || senderId
       const chatId = String(ctx.chat?.id || senderId)
 
       const senderUsername = (ctx.from?.username || '').toLowerCase()
@@ -321,7 +391,9 @@ export const startTelegramBot = async (token) => {
         .split(',')
         .map((item) => item.trim().toLowerCase().replace(/^@/, ''))
         .filter(Boolean)
-      const isAdmin = adminList.includes(senderId.toLowerCase()) || (senderUsername && adminList.includes(senderUsername))
+      const isAdmin =
+        adminList.includes(senderId.toLowerCase()) ||
+        (senderUsername && adminList.includes(senderUsername))
 
       if (!isAdmin) {
         await ctx.reply('Maaf, kamu belum punya akses ke MARK.')
@@ -353,7 +425,12 @@ export const startTelegramBot = async (token) => {
         const buffer = await response.arrayBuffer()
         fs.writeFileSync(savePath, Buffer.from(buffer))
 
-        await ctx.telegram.editMessageText(chatId, statusMsg.message_id, undefined, `[INFO]: Berhasil mengunduh: ${originalName}\n[LOADING]: Sedang diproses...`)
+        await ctx.telegram.editMessageText(
+          chatId,
+          statusMsg.message_id,
+          undefined,
+          `[INFO]: Berhasil mengunduh: ${originalName}\n[LOADING]: Sedang diproses...`
+        )
 
         const caption = ctx.message.caption || ''
         const text = `[FILE TERLAMPIR]: "${savePath}"\n${caption ? `Caption dari user: ${caption}` : 'Silakan baca/analisa file gambar atau dokumen ini jika perlu.'}`
@@ -492,7 +569,11 @@ export const sendTelegramScreenshot = async (chatId = null) => {
         if (base64List.length === 1) {
           const cleanBase64 = base64List[0].replace(/^data:image\/\w+;base64,/, '')
           const buffer = Buffer.from(cleanBase64, 'base64')
-          await bot.telegram.sendPhoto(target, { source: buffer }, { caption: 'Screenshot Layar PC Mark' })
+          await bot.telegram.sendPhoto(
+            target,
+            { source: buffer },
+            { caption: 'Screenshot Layar PC Mark' }
+          )
         } else {
           for (let i = 0; i < base64List.length; i++) {
             const cleanBase64 = base64List[i].replace(/^data:image\/\w+;base64,/, '')

@@ -83,138 +83,133 @@ export async function executeAgentTool({
     }
   } else if (tool === 'create_agent_task') {
     const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
-    const title = a.title || 'Durable Task'
+    const title = a.title || 'Workflow'
     const objective = a.objective || userInput
-    const stepsInput =
-      Array.isArray(a.steps) && a.steps.length > 0
-        ? a.steps
-        : [
-            {
-              id: 'step-1',
-              title: 'Analisis & Pengumpulan Data',
-              objective,
-              deliverable: 'Data awal'
-            },
-            { id: 'step-2', title: 'Eksekusi Teknis', objective, deliverable: 'Hasil eksekusi' },
-            {
-              id: 'step-3',
-              title: 'Penyusunan Output Final',
-              objective,
-              deliverable: 'Hasil final'
-            }
-          ]
 
-    let artifactRoot = null
-    try {
-      const resp = await fetch('/api/tasks/artifacts-dir').then((r) => r.json())
-      if (resp?.success && resp?.data) {
-        const cleanBase = resp.data.replace(/[\\/]+$/, '')
-        const sep = cleanBase.includes('\\') ? '\\' : '/'
-        artifactRoot = `${cleanBase}${sep}task-${Date.now()}`
+    if (!Array.isArray(a.steps) || a.steps.length === 0) {
+      res = {
+        success: false,
+        error:
+          "Parameter 'steps' wajib berupa array minimal 1 langkah terstruktur (berisi id, title, objective, deliverable)."
+      }
+    } else {
+      const stepsInput = a.steps
+
+      let artifactRoot = null
+      try {
+        const resp = await fetch('/api/tasks/artifacts-dir').then((r) => r.json())
+        if (resp?.success && resp?.data) {
+          const cleanBase = resp.data.replace(/[\\/]+$/, '')
+          const sep = cleanBase.includes('\\') ? '\\' : '/'
+          artifactRoot = `${cleanBase}${sep}task-${Date.now()}`
+          await fetch('/api/tasks/ensure-dir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dirPath: artifactRoot })
+          }).catch(() => {})
+        }
+      } catch (err) {
+        void err
+      }
+
+      if (!artifactRoot && context?.workspaceRoot) {
+        const cleanWs = context.workspaceRoot.replace(/[\\/]+$/, '')
+        const sep = cleanWs.includes('\\') ? '\\' : '/'
+        artifactRoot = `${cleanWs}${sep}.mark${sep}tasks${sep}task-${Date.now()}`
         await fetch('/api/tasks/ensure-dir', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dirPath: artifactRoot })
         }).catch(() => {})
       }
-    } catch (err) {
-      void err
-    }
 
-    if (!artifactRoot && context?.workspaceRoot) {
-      const cleanWs = context.workspaceRoot.replace(/[\\/]+$/, '')
-      const sep = cleanWs.includes('\\') ? '\\' : '/'
-      artifactRoot = `${cleanWs}${sep}.mark${sep}tasks${sep}task-${Date.now()}`
-      await fetch('/api/tasks/ensure-dir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dirPath: artifactRoot })
-      }).catch(() => {})
-    }
+      const pathSep = (artifactRoot || '').includes('\\') ? '\\' : '/'
 
-    const pathSep = (artifactRoot || '').includes('\\') ? '\\' : '/'
-
-    updatedDurableTask = await createAgentTask({
-      title,
-      objective,
-      mode: 'durable',
-      artifactRoot,
-      steps: stepsInput.map((step, idx) => ({
-        id: step.id || `step-${idx + 1}`,
-        title: step.title || `Langkah ${idx + 1}`,
-        objective: step.objective || objective,
-        deliverable: step.deliverable || 'Output kerja',
-        acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
-          ? step.acceptanceCriteria
-          : ['Selesai sesuai instruksi'],
-        artifactPath: artifactRoot
-          ? `${artifactRoot}${pathSep}${step.id || `step-${idx + 1}`}.md`
-          : null
-      }))
-    })
-
-    durableActiveStep = await startAgentTaskStep(
-      updatedDurableTask.id,
-      updatedDurableTask.activeStepId
-    )
-    if (activeTaskObjectiveRef) {
-      activeTaskObjectiveRef.current = durableActiveStep?.objective || updatedDurableTask.objective
-    }
-
-    if (targetPushProcess) {
-      targetPushProcess({
-        id: agenticProcessId,
-        type: 'planning',
-        status: 'active',
-        data: {
-          steps: stepsInput.map((step) => ({ task: step.title })),
-          currentStep: 0,
-          reasoning: `Task Workflow dibuat: ${title}`
-        }
+      updatedDurableTask = await createAgentTask({
+        title,
+        objective,
+        mode: 'durable',
+        artifactRoot,
+        steps: stepsInput.map((step, idx) => ({
+          id: step.id || `step-${idx + 1}`,
+          title: step.title || `Langkah ${idx + 1}`,
+          objective: step.objective || objective,
+          deliverable: step.deliverable || 'Output kerja',
+          acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
+            ? step.acceptanceCriteria
+            : ['Selesai sesuai instruksi'],
+          artifactPath: artifactRoot
+            ? `${artifactRoot}${pathSep}${step.id || `step-${idx + 1}`}.md`
+            : null
+        }))
       })
-    }
 
-    if (targetSetChatData) {
-      targetSetChatData((prev) => [
-        ...prev.filter((item) => !item.isThinking),
-        {
-          role: 'ai',
-          isPlanSteps: true,
-          taskId: updatedDurableTask.id,
-          taskTitle: title,
-          taskObjective: objective,
-          artifactRoot,
-          taskStatus: 'running',
-          plan: (updatedDurableTask.steps && updatedDurableTask.steps.length > 0
-            ? updatedDurableTask.steps
-            : stepsInput
-          ).map((step, idx) => ({
-            id: step.id || `${updatedDurableTask.id}-step-${idx + 1}`,
-            stepIndex: idx,
-            index: idx,
-            title: step.title || step.objective || `Tahap ${idx + 1}`,
-            task: step.title || step.objective || `Tahap ${idx + 1}`,
-            objective: step.objective || objective,
-            deliverable: step.deliverable || 'Output kerja',
-            acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
-              ? step.acceptanceCriteria
-              : [],
-            artifactPath:
-              step.artifactPath ||
-              (artifactRoot ? `${artifactRoot}${pathSep}${step.id || `step-${idx + 1}`}.md` : null),
-            status: idx === 0 ? 'running' : 'pending'
-          })),
-          currentStep: 0,
-          reasoning: `Task Workflow diaktifkan: ${title}`,
-          timestamp: getCurrentTimeInfo ? getCurrentTimeInfo() : '',
-          created_at: Date.now()
-        }
-      ])
-    }
+      durableActiveStep = await startAgentTaskStep(
+        updatedDurableTask.id,
+        updatedDurableTask.activeStepId
+      )
+      if (activeTaskObjectiveRef) {
+        activeTaskObjectiveRef.current =
+          durableActiveStep?.objective || updatedDurableTask.objective
+      }
 
-    res = {
-      success: true,
-      data: `[TASK WORKFLOW DIAKTIFKAN - TUGAS BERHASIL DIBUAT]:\n- Task ID: ${updatedDurableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\nLangkah aktif saat ini: "${durableActiveStep?.title}". Sekarang fokus eksekusi langkah ini menggunakan tools yang sesuai!`
+      if (targetPushProcess) {
+        targetPushProcess({
+          id: agenticProcessId,
+          type: 'planning',
+          status: 'active',
+          data: {
+            steps: stepsInput.map((step) => ({ task: step.title })),
+            currentStep: 0,
+            reasoning: `Task Workflow dibuat: ${title}`
+          }
+        })
+      }
+
+      if (targetSetChatData) {
+        targetSetChatData((prev) => [
+          ...prev.filter((item) => !item.isThinking),
+          {
+            role: 'ai',
+            isPlanSteps: true,
+            taskId: updatedDurableTask.id,
+            taskTitle: title,
+            taskObjective: objective,
+            artifactRoot,
+            taskStatus: 'running',
+            plan: (updatedDurableTask.steps && updatedDurableTask.steps.length > 0
+              ? updatedDurableTask.steps
+              : stepsInput
+            ).map((step, idx) => ({
+              id: step.id || `${updatedDurableTask.id}-step-${idx + 1}`,
+              stepIndex: idx,
+              index: idx,
+              title: step.title || step.objective || `Tahap ${idx + 1}`,
+              task: step.title || step.objective || `Tahap ${idx + 1}`,
+              objective: step.objective || objective,
+              deliverable: step.deliverable || 'Output kerja',
+              acceptanceCriteria: Array.isArray(step.acceptanceCriteria)
+                ? step.acceptanceCriteria
+                : [],
+              artifactPath:
+                step.artifactPath ||
+                (artifactRoot
+                  ? `${artifactRoot}${pathSep}${step.id || `step-${idx + 1}`}.md`
+                  : null),
+              status: idx === 0 ? 'running' : 'pending'
+            })),
+            currentStep: 0,
+            reasoning: `Task Workflow diaktifkan: ${title}`,
+            timestamp: getCurrentTimeInfo ? getCurrentTimeInfo() : '',
+            created_at: Date.now()
+          }
+        ])
+      }
+
+      res = {
+        success: true,
+        data: `[TASK WORKFLOW DIAKTIFKAN - TUGAS BERHASIL DIBUAT]:\n- Task ID: ${updatedDurableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\nLangkah aktif saat ini: "${durableActiveStep?.title}". Sekarang fokus eksekusi langkah ini menggunakan tools yang sesuai!`
+      }
     }
   } else if (tool === 'message_agent') {
     const { subagentStore } = await import('../../api/subagent/subagentStore.js')
@@ -536,6 +531,16 @@ export async function executeAgentTool({
         }
       }
     }
+  } else if (typeof tool === 'string' && tool.startsWith('plugin-')) {
+    const pluginPromise = window.api?.executePlugin
+      ? window.api.executePlugin(tool, rawArgs)
+      : webApi.executePluginAction(tool, rawArgs)
+    const abortPromise = new Promise((_, reject) => {
+      const onAbort = () => reject(new Error('AbortError'))
+      if (currentSignal?.aborted) return onAbort()
+      currentSignal?.addEventListener('abort', onAbort)
+    })
+    res = await Promise.race([pluginPromise, abortPromise])
   } else {
     const activeConfig = {
       ...(Array.isArray(config) ? config[0] : config),

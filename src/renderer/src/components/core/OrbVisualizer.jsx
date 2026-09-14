@@ -491,13 +491,33 @@ const JarvisHolographicHUD = ({ colorHex = '#1fb854', isPaused = false }) => {
  * OrbVisualizer (Main Holographic Orb + Jarvis HUD Component)
  */
 const OrbVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => {
-  const { hex: colorHex, glow: glowClass } = getMoodColor(mood, status)
+  const [isSleeping, setIsSleeping] = useState(false)
+  const [isWakingUp, setIsWakingUp] = useState(false)
+
+  useEffect(() => {
+    const handleSleepingEvent = (e) => {
+      const sleeping = Boolean(e.detail?.isSleeping)
+      const wakeUp = Boolean(e.detail?.wakeUpPulse)
+      setIsSleeping(sleeping)
+      if (wakeUp) {
+        setIsWakingUp(true)
+        setTimeout(() => setIsWakingUp(false), 800)
+      }
+    }
+    window.addEventListener('mark:sleeping', handleSleepingEvent)
+    return () => window.removeEventListener('mark:sleeping', handleSleepingEvent)
+  }, [])
+
+  const effectiveMood = isSleeping && !isWakingUp && status === 'idle' ? 'ennui' : mood
+  const { hex: colorHex, glow: glowClass } = getMoodColor(effectiveMood, status)
 
   // Scale dinamis berdasarkan status eksekusi
   let targetScale = 1
-  if (status === 'thinking') targetScale = 1.15
+  if (isWakingUp) targetScale = 1.18
+  else if (status === 'thinking') targetScale = 1.15
   else if (status === 'nudge') targetScale = 1.05
   else if (status === 'speaking') targetScale = 1 + intensity * 0.4
+  else if (isSleeping) targetScale = 0.92
   else targetScale = 1
 
   const isListening = status === 'listening'
@@ -505,14 +525,18 @@ const OrbVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => 
 
   return (
     <div
-      className={`relative shrink-0 w-64 h-64 md:w-80 md:h-80 mb-15 flex items-center justify-center select-none will-change-transform animate-[orb-breathe_5s_ease-in-out_infinite] ${
+      className={`relative shrink-0 w-64 h-64 md:w-80 md:h-80 mb-15 flex items-center justify-center select-none will-change-transform ${
+        isSleeping
+          ? 'animate-[orb-breathe_12s_ease-in-out_infinite]'
+          : 'animate-[orb-breathe_5s_ease-in-out_infinite]'
+      } ${
         isListening || isSpeaking
           ? '[animation-play-state:paused]'
           : '[animation-play-state:running]'
       }`}
     >
       {/* Layer 0: Jarvis-Style Holographic HUD SVG Background */}
-      <JarvisHolographicHUD colorHex={colorHex} isPaused={isListening} />
+      <JarvisHolographicHUD colorHex={colorHex} isPaused={isListening || isSleeping} />
 
       {/* Layer 1: Container Wrapper */}
       <div className="relative w-full h-full flex items-center justify-center z-10">
@@ -521,26 +545,32 @@ const OrbVisualizer = ({ status = 'idle', intensity = 0, mood = 'neutral' }) => 
           className="relative w-full h-full flex items-center justify-center ease-out will-change-transform"
           style={{
             transitionProperty: 'transform',
-            transitionDuration: status === 'speaking' ? '75ms' : '500ms',
+            transitionDuration: isWakingUp ? '200ms' : status === 'speaking' ? '75ms' : '600ms',
             transform: `scale(${targetScale})`
           }}
         >
           {/* Background Aura Glow */}
           <div
-            className={`absolute inset-0 m-auto w-44 h-44 rounded-full ${glowClass} blur-[60px] will-change-transform opacity-75`}
+            className={`absolute inset-0 m-auto w-44 h-44 rounded-full ${glowClass} blur-[60px] will-change-transform transition-opacity duration-1000 ${
+              isSleeping ? 'opacity-30' : 'opacity-75'
+            }`}
           />
 
           {/* Holographic Orbital Rings */}
           <div
-            className={`absolute inset-0 m-auto w-48 h-48 rounded-full border border-dashed opacity-30 animate-[orbital-spin_20s_linear_infinite] ${
-              isListening ? '[animation-play-state:paused]' : '[animation-play-state:running]'
-            }`}
+            className={`absolute inset-0 m-auto w-48 h-48 rounded-full border border-dashed opacity-30 ${
+              isSleeping
+                ? 'animate-[orbital-spin_45s_linear_infinite]'
+                : 'animate-[orbital-spin_20s_linear_infinite]'
+            } ${isListening ? '[animation-play-state:paused]' : '[animation-play-state:running]'}`}
             style={{ borderColor: colorHex }}
           />
           <div
-            className={`absolute inset-0 m-auto w-36 h-36 rounded-full border border-dotted opacity-20 animate-[orbital-spin-rev_15s_linear_infinite] ${
-              isListening ? '[animation-play-state:paused]' : '[animation-play-state:running]'
-            }`}
+            className={`absolute inset-0 m-auto w-36 h-36 rounded-full border border-dotted opacity-20 ${
+              isSleeping
+                ? 'animate-[orbital-spin-rev_35s_linear_infinite]'
+                : 'animate-[orbital-spin-rev_15s_linear_infinite]'
+            } ${isListening ? '[animation-play-state:paused]' : '[animation-play-state:running]'}`}
             style={{ borderColor: colorHex }}
           />
 

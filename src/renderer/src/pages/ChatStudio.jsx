@@ -44,6 +44,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     chatData: mainChatData,
     setChatData: setMainChatData,
     handlePlanningCommand,
+    handleIntervention,
     isLoading: isMainLoading,
     isAgentBusy,
     runningSessionId,
@@ -66,6 +67,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   useEffect(() => {
     if (typeof setCurrentActiveSessionId === 'function') {
       setCurrentActiveSessionId(String(activeSessionId))
+    }
+    return () => {
+      if (typeof setCurrentActiveSessionId === 'function') {
+        setCurrentActiveSessionId('1')
+      }
     }
   }, [activeSessionId, setCurrentActiveSessionId])
 
@@ -203,6 +209,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       newTitle = rawDisplay.slice(0, 30) + (rawDisplay.length > 30 ? '...' : '')
       await renameSession(activeSessionId, newTitle)
       await loadAllSessions()
+    }
+
+    if (isCurrentLoading && typeof handleIntervention === 'function') {
+      handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
+      return
     }
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
@@ -766,6 +777,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                           hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
                         }
                         onStop={handleStopSession}
+                        isApproval={msg.isApproval}
+                        approvalId={msg.approvalId}
+                        approvalTool={msg.tool}
+                        approvalQuery={msg.query}
+                        approvalStatus={msg.status}
                       />
                     )
                   })
@@ -779,6 +795,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
             <div className="max-w-6xl mx-auto w-full">
               <InputBar
+                sessionId={String(activeSessionId)}
                 inline={true}
                 onSubmit={handleSendMessage}
                 isLoading={isCurrentLoading}

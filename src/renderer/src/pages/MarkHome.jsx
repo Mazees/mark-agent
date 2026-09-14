@@ -7,12 +7,7 @@ import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
 import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
-import {
-  MessageSquare,
-  Sparkles,
-  Terminal,
-  Brain
-} from 'lucide-react'
+import { MessageSquare, Sparkles, Terminal, Brain } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
@@ -45,7 +40,8 @@ const MarkHome = () => {
     audioIntensity,
     startRecording,
     stopRecording,
-    toastMessage
+    toastMessage,
+    setCurrentActiveSessionId
   } = chatContext
   const { isPlaying, currentTrack } = useYoutubeMusic()
   useMemoryGroomer(true)
@@ -56,6 +52,25 @@ const MarkHome = () => {
   const [ttsIntensity, setTtsIntensity] = useState(0)
   const [workspaceRoot, setWorkspaceRoot] = useState(null)
   const [bgOverlayOpacity, setBgOverlayOpacity] = useState(65)
+  const [thought, setThought] = useState('')
+
+  // Listener untuk event batin Thought Ticker dari Awareness Engine
+  useEffect(() => {
+    const handleThoughtEvent = (e) => {
+      if (e.detail?.thought) {
+        setThought(e.detail.thought)
+      }
+    }
+    window.addEventListener('mark:thought', handleThoughtEvent)
+    return () => window.removeEventListener('mark:thought', handleThoughtEvent)
+  }, [])
+
+  // Pastikan sesi aktif MarkHome selalu Main Thread (Sesi 1)
+  useEffect(() => {
+    if (typeof setCurrentActiveSessionId === 'function') {
+      setCurrentActiveSessionId('1')
+    }
+  }, [setCurrentActiveSessionId])
 
   // Muat konfigurasi workspace & overlay opacity dari database
   useEffect(() => {
@@ -162,7 +177,8 @@ const MarkHome = () => {
         } else {
           setCurrentResponse({
             text: lastItem.content,
-            type: lastItem.content?.length > 200 || lastItem.content?.includes('\n') ? 'long' : 'short',
+            type:
+              lastItem.content?.length > 200 || lastItem.content?.includes('\n') ? 'long' : 'short',
             sources: lastItem.sources || [],
             youtubeData: lastItem.youtubeData,
             youtubeSummary: lastItem.youtubeLink,
@@ -274,10 +290,7 @@ const MarkHome = () => {
       </div>
 
       {/* ── 5. LEFT PANEL: TOOL CLUSTER DECK (Docked Left, In-Place Process Panel & Plugins) ── */}
-      <ToolClustersDeck
-        activeProcesses={activeProcesses}
-        dismissProcess={dismissProcess}
-      />
+      <ToolClustersDeck activeProcesses={activeProcesses} dismissProcess={dismissProcess} />
 
       {/* ── 6. RIGHT PANEL: ACTIVE STREAM FEED (Docked Right, Clean Minimalist Glass) ── */}
       <aside className="absolute right-6 top-18 bottom-24 w-80 lg:w-92 z-20 flex flex-col gap-2.5 pointer-events-auto">
@@ -398,24 +411,35 @@ const MarkHome = () => {
         </div>
       </aside>
 
-      {/* ── 7. BOTTOM DOCKED INPUT BAR ── */}
-      <footer className="absolute inset-x-0 bottom-0 z-40 pointer-events-auto">
-        <InputBar
-          onSubmit={(prompt, sendOptions = {}) => {
-            setIsSpeak(false)
-            handleSubmit(null, prompt, sendOptions)
-          }}
-          isLoading={isLoading || isAgentBusy}
-          isRecording={isRecording}
-          isProcessing={isProcessing}
-          audioIntensity={audioIntensity}
-          onStartRecord={startRecording}
-          onStopRecord={stopRecording}
-          onStop={handleStop}
-          source={inputSource}
-          workspaceRoot={workspaceRoot}
-          onSelectWorkspace={handleSelectWorkspace}
-        />
+      {/* ── 7. BOTTOM DOCKED INPUT BAR & SIMPLE THOUGHT TICKER ── */}
+      <footer className="absolute inset-x-0 bottom-0 z-40 pointer-events-auto flex flex-col items-center">
+        {thought && (
+          <div className="w-full max-w-2xl px-4 pb-1 flex items-center justify-center gap-2 pointer-events-none select-none transition-opacity duration-500 animate-[fade-in_0.3s_ease-out]">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse shrink-0" />
+            <span className="text-[11px] font-mono italic text-white/45 truncate max-w-lg">
+              {thought}
+            </span>
+          </div>
+        )}
+        <div className="w-full">
+          <InputBar
+            sessionId="1"
+            onSubmit={(prompt, sendOptions = {}) => {
+              setIsSpeak(false)
+              handleSubmit(null, prompt, sendOptions)
+            }}
+            isLoading={isLoading || isAgentBusy}
+            isRecording={isRecording}
+            isProcessing={isProcessing}
+            audioIntensity={audioIntensity}
+            onStartRecord={startRecording}
+            onStopRecord={stopRecording}
+            onStop={handleStop}
+            source={inputSource}
+            workspaceRoot={workspaceRoot}
+            onSelectWorkspace={handleSelectWorkspace}
+          />
+        </div>
       </footer>
     </div>
   )

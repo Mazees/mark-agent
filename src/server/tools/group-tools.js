@@ -148,13 +148,21 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-screenshot',
-          description: 'Mengambil screenshot halaman browser web dan menyimpannya.',
+          description:
+            'Mengambil tangkapan layar (screenshot) halaman browser web Puppeteer. Jika parameter query disertakan, tampilan visual halaman web akan langsung dianalisis oleh AI Vision.',
           parameters: {
             type: 'object',
             properties: {
-              filename: { type: 'string', description: 'Nama berkas gambar screenshot (.png)' }
+              filename: {
+                type: 'string',
+                description: 'Nama berkas tujuan screenshot (.png, opsional)'
+              },
+              query: {
+                type: 'string',
+                description:
+                  'Instruksi atau pertanyaan analisis visual terhadap tampilan halaman web (opsional)'
+              }
             },
-            required: ['filename'],
             additionalProperties: false
           }
         }
@@ -785,6 +793,30 @@ export const GROUP_TOOLS_SCHEMA = {
     description:
       'Integrasi sistem vision layar desktop, webcam, output suara lisan (TTS), dan integrasi perpesanan Telegram Bot.',
     tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'read-image',
+          description:
+            'Membaca berkas gambar lokal (.png, .jpg, .jpeg, .webp, .gif, dll.) dari workspace atau komputer pengguna dan menganalisis tampilan visualnya menggunakan AI Vision.',
+          parameters: {
+            type: 'object',
+            properties: {
+              file_path: {
+                type: 'string',
+                description: 'Path berkas gambar lokal (absolut atau relatif terhadap workspace)'
+              },
+              query: {
+                type: 'string',
+                description:
+                  'Instruksi atau pertanyaan tentang apa yang ingin kamu analisis dari gambar (opsional)'
+              }
+            },
+            required: ['file_path'],
+            additionalProperties: false
+          }
+        }
+      },
       {
         type: 'function',
         function: {

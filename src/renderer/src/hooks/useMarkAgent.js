@@ -71,7 +71,11 @@ export const useMarkAgent = () => {
 
   const requestCameraCaptureRef = useRef(null)
 
-  const { handlePlanningCommand, handleIntervention, handleStop: planHandleStop } = useMarkPlan({
+  const {
+    handlePlanningCommand,
+    handleIntervention,
+    handleStop: planHandleStop
+  } = useMarkPlan({
     ...state,
     ...tools,
     requestApproval,
@@ -253,7 +257,10 @@ export const useMarkAgent = () => {
               },
               true
             ).catch((err) => {
-              console.error('[useMarkAgent] Error handling active session subagent report turn:', err)
+              console.error(
+                '[useMarkAgent] Error handling active session subagent report turn:',
+                err
+              )
             })
           }
         } else {
@@ -306,13 +313,7 @@ export const useMarkAgent = () => {
     return () => {
       if (unsubReport) unsubReport()
     }
-  }, [
-    handlePlanningCommand,
-    isAgentBusy,
-    pushNotification,
-    currentActiveSessionId,
-    activeTopic
-  ])
+  }, [handlePlanningCommand, isAgentBusy, pushNotification, currentActiveSessionId, activeTopic])
 
   const isInitialSyncDoneRef = useRef(false)
   const lastSyncedMsgIdRef = useRef(null)
@@ -350,43 +351,57 @@ export const useMarkAgent = () => {
           msgId: currentReq.msgId
         })
       }
-    } else if (!isAgentBusy && chatData.length > 0 && inputSource !== 'tg' && !activeTgRequestRef.current) {
+    } else if (
+      !isAgentBusy &&
+      chatData.length > 0 &&
+      inputSource !== 'tg' &&
+      !activeTgRequestRef.current
+    ) {
       const lastAiMsg = [...chatData]
         .reverse()
         .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       const msgKey = lastAiMsg ? lastAiMsg.timestamp || lastAiMsg.content : null
       if (lastAiMsg && lastAiMsg.content && lastSyncedMsgIdRef.current !== msgKey) {
         lastSyncedMsgIdRef.current = msgKey
-        if (window.api?.tgBroadcastToAdmins && !lastAiMsg.isProactive && lastAiMsg.source !== 'telegram') {
+        if (
+          window.api?.tgBroadcastToAdmins &&
+          !lastAiMsg.isProactive &&
+          lastAiMsg.source !== 'telegram'
+        ) {
           window.api.tgBroadcastToAdmins(`*Mark (PC)*:\n${lastAiMsg.content}`)
         }
       }
     }
   }, [isAgentBusy, chatData, isChatLoaded, setInputSource])
 
-  const handleSubmit = (e, textPrompt) => {
+  const handleSubmit = (e, textPrompt, sendOptions = {}) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault()
     const textToSend =
       typeof textPrompt === 'string' ? textPrompt.trim() : typeof e === 'string' ? e.trim() : ''
     if (!textToSend) return
 
+    const targetSessionId = sendOptions?.sessionId || 1
+
     if (isLoading || isAgentBusy) {
       if (handleIntervention) {
-        handleIntervention(textToSend)
+        handleIntervention(textToSend, targetSessionId, sendOptions)
       }
     } else {
-      handlePlanningCommand(textToSend)
+      handlePlanningCommand(textToSend, false, false, sendOptions)
     }
   }
 
-  const handleVoiceTranscript = useCallback((text, meta = {}) => {
-    if (!text || !text.trim()) return
-    const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
-    const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
-    setMessage(prefixedText)
-    setIsSpeak(true)
-    handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
-  }, [setMessage, setIsSpeak, handlePlanningCommand])
+  const handleVoiceTranscript = useCallback(
+    (text, meta = {}) => {
+      if (!text || !text.trim()) return
+      const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
+      const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
+      setMessage(prefixedText)
+      setIsSpeak(true)
+      handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
+    },
+    [setMessage, setIsSpeak, handlePlanningCommand]
+  )
 
   const vad = useVAD({
     onTranscript: handleVoiceTranscript
@@ -422,6 +437,7 @@ export const useMarkAgent = () => {
     inputSource,
     setInputSource,
     handlePlanningCommand,
+    handleIntervention,
     handleStop: planHandleStop || handleStop,
     handleSubmit,
     isBooting,

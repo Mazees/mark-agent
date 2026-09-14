@@ -47,9 +47,12 @@ function getEdgePath() {
 function resetSessionIdleTimeout(session) {
   if (!session) return
   if (session.idleTimeout) clearTimeout(session.idleTimeout)
-  session.idleTimeout = setTimeout(() => {
-    closeBrowser(session.id)
-  }, 5 * 60 * 1000)
+  session.idleTimeout = setTimeout(
+    () => {
+      closeBrowser(session.id)
+    },
+    5 * 60 * 1000
+  )
 }
 
 async function getOrCreateSession(sessionId = 'default', headless = false) {
@@ -60,7 +63,13 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
   }
 
   const edgePath = getEdgePath()
-  const userDataDir = path.join(os.homedir(), '.config', 'mark-agent', 'browser-sessions', sessionId)
+  const userDataDir = path.join(
+    os.homedir(),
+    '.config',
+    'mark-agent',
+    'browser-sessions',
+    sessionId
+  )
   if (!fs.existsSync(userDataDir)) {
     fs.mkdirSync(userDataDir, { recursive: true })
   }
@@ -113,7 +122,7 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
       return fn
     }
 
-    // 1. Mock Screen & Window Coordinates (Bypasses -32000 off-screen window detection)
+    // 1. Mock Screen & Window Coordinates (Anti-Bot Stealth)
     Object.defineProperties(window, {
       screenX: { get: () => 80, configurable: true },
       screenY: { get: () => 60, configurable: true },
@@ -151,7 +160,11 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
     window.chrome = {
       app: {
         isInstalled: false,
-        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+        InstallState: {
+          DISABLED: 'disabled',
+          INSTALLED: 'installed',
+          NOT_INSTALLED: 'not_installed'
+        },
         RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
       },
       runtime: {
@@ -193,11 +206,31 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
 
     // 4. PluginArray and MimeTypeArray Prototype emulation
     const pluginData = [
-      { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-      { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-      { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-      { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-      { name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format' }
+      {
+        name: 'PDF Viewer',
+        filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format'
+      },
+      {
+        name: 'Chrome PDF Viewer',
+        filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format'
+      },
+      {
+        name: 'Chromium PDF Viewer',
+        filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format'
+      },
+      {
+        name: 'Microsoft Edge PDF Viewer',
+        filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format'
+      },
+      {
+        name: 'WebKit built-in PDF',
+        filename: 'internal-pdf-viewer',
+        description: 'Portable Document Format'
+      }
     ]
 
     const createPluginArray = (plugins) => {
@@ -229,7 +262,10 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
     } catch (_) {}
 
     // 5. Hardware and Locale properties
-    Object.defineProperty(navigator, 'languages', { get: () => ['id-ID', 'id', 'en-US', 'en'], configurable: true })
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['id-ID', 'id', 'en-US', 'en'],
+      configurable: true
+    })
     Object.defineProperty(navigator, 'language', { get: () => 'id-ID', configurable: true })
     Object.defineProperty(navigator, 'platform', { get: () => 'Win32', configurable: true })
     Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true })
@@ -271,10 +307,11 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
     // 7. Notification Permissions
     const originalQuery = window.navigator.permissions?.query
     if (originalQuery) {
-      window.navigator.permissions.query = makeNative((parameters) =>
-        parameters && parameters.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission || 'default', onchange: null })
-          : originalQuery.call(window.navigator.permissions, parameters),
+      window.navigator.permissions.query = makeNative(
+        (parameters) =>
+          parameters && parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission || 'default', onchange: null })
+            : originalQuery.call(window.navigator.permissions, parameters),
         'query'
       )
     }
@@ -284,7 +321,8 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
       const original = proto.getParameter
       proto.getParameter = makeNative(function (param) {
         if (param === 37445) return 'Google Inc. (Intel)'
-        if (param === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
+        if (param === 37446)
+          return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
         return original.apply(this, arguments)
       }, 'getParameter')
     }
@@ -299,7 +337,7 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
     url: 'about:blank',
     title: 'New Tab',
     idleTimeout: null,
-    isForeground: false
+    isForeground: true
   }
 
   // Handle page close / tab close gracefully (Keep alive in background)
@@ -320,13 +358,13 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
     }
   })
 
-  // Pastikan window bounds diatur ke off-screen (-32000, -32000) saat launch
+  // Pastikan window bounds diatur ke posisi normal di layar (80, 60) saat launch
   try {
     const client = await page.target().createCDPSession()
     const { windowId } = await client.send('Browser.getWindowForTarget')
     await client.send('Browser.setWindowBounds', {
       windowId,
-      bounds: { windowState: 'normal', left: -32000, top: -32000, width: 1280, height: 800 }
+      bounds: { windowState: 'normal', left: 80, top: 60, width: 1280, height: 800 }
     })
   } catch (_) {}
 
@@ -548,7 +586,11 @@ async function detectChallenge(page) {
     if (isGoogleBlocked || isCloudflareBlocked || isGenericCaptcha) {
       return {
         isBlocked: true,
-        type: isGoogleBlocked ? 'Google Unusual Traffic' : isCloudflareBlocked ? 'Cloudflare Challenge' : 'CAPTCHA Protection',
+        type: isGoogleBlocked
+          ? 'Google Unusual Traffic'
+          : isCloudflareBlocked
+            ? 'Cloudflare Challenge'
+            : 'CAPTCHA Protection',
         url,
         title
       }
@@ -590,7 +632,8 @@ async function seedAntiBotCookies(page) {
     const cookies = [
       {
         name: 'SOCS',
-        value: 'CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJpZCADGgYIgJnPpwY',
+        value:
+          'CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJpZCADGgYIgJnPpwY',
         domain: '.google.com',
         path: '/'
       },
@@ -648,7 +691,9 @@ export async function navigateTo(url, sessionId = 'default') {
         return false
       })
       if (consentHandled) {
-        await session.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {})
+        await session.page
+          .waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 })
+          .catch(() => {})
         session.url = session.page.url()
         session.title = await session.page.title()
       }
@@ -718,16 +763,17 @@ export async function executeAction(data, sessionId = 'default') {
     await showBrowserWindow(sessionId)
 
     // 2. Ubah blocker menjadi unblock prompt widget di kanan bawah
-    const promptMsg = value || 'Silakan selesaikan CAPTCHA atau login pada halaman ini, lalu klik tombol di bawah.'
+    const promptMsg =
+      value || 'Silakan selesaikan CAPTCHA atau login pada halaman ini, lalu klik tombol di bawah.'
     await session.page.evaluate((msg) => {
-      let blocker = document.getElementById('mark-user-blocker');
+      let blocker = document.getElementById('mark-user-blocker')
       if (!blocker) {
-        blocker = document.createElement('div');
-        blocker.id = 'mark-user-blocker';
-        document.documentElement.appendChild(blocker);
+        blocker = document.createElement('div')
+        blocker.id = 'mark-user-blocker'
+        document.documentElement.appendChild(blocker)
       }
 
-      blocker.dataset.mode = 'unblock';
+      blocker.dataset.mode = 'unblock'
       blocker.style.cssText = `
         position: fixed !important;
         bottom: 24px !important;
@@ -744,7 +790,7 @@ export async function executeAction(data, sessionId = 'default') {
         align-items: flex-end !important;
         background: transparent !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-      `;
+      `
 
       blocker.innerHTML = `
         <div style="
@@ -795,62 +841,62 @@ export async function executeAction(data, sessionId = 'default') {
             box-shadow: 0 4px 12px rgba(31, 184, 84, 0.3);
           ">Lanjutkan Otomasi (Resume)</button>
         </div>
-      `;
+      `
 
       // 3. Setup listener click dan Enter
-      const btn = document.getElementById('mark-btn-selesai');
-      const input = document.getElementById('mark-user-input');
+      const btn = document.getElementById('mark-btn-selesai')
+      const input = document.getElementById('mark-user-input')
 
       const submit = () => {
-        const comment = input ? input.value : '';
-        btn.innerText = 'Melanjutkan...';
-        btn.style.opacity = '0.7';
-        btn.disabled = true;
-        document.title = 'MARK_UNBLOCK_DONE:' + (comment.trim() || 'Sudah selesai.');
-      };
+        const comment = input ? input.value : ''
+        btn.innerText = 'Melanjutkan...'
+        btn.style.opacity = '0.7'
+        btn.disabled = true
+        document.title = 'MARK_UNBLOCK_DONE:' + (comment.trim() || 'Sudah selesai.')
+      }
 
-      if (btn) btn.onclick = submit;
+      if (btn) btn.onclick = submit
       if (input) {
         input.onkeydown = (e) => {
-          if (e.key === 'Enter') submit();
-        };
-        setTimeout(() => input.focus(), 300);
+          if (e.key === 'Enter') submit()
+        }
+        setTimeout(() => input.focus(), 300)
       }
-    }, promptMsg);
+    }, promptMsg)
 
-    await broadcastPreview(session);
+    await broadcastPreview(session)
 
     // 4. Tunggu respons pengguna via perubahan document.title di page
     const userFeedback = await new Promise((resolve) => {
-      let resolved = false;
+      let resolved = false
       const timeoutId = setTimeout(() => {
         if (!resolved) {
-          resolved = true;
-          session.page.off('titlechanged', titleListener);
-          resolve('Waktu tunggu intervensi user habis (600 detik).');
+          resolved = true
+          session.page.off('titlechanged', titleListener)
+          resolve('Waktu tunggu intervensi user habis (600 detik).')
         }
-      }, 600000); // 10 menit timeout
+      }, 600000) // 10 menit timeout
 
       const titleListener = (newTitle) => {
         if (newTitle && newTitle.startsWith('MARK_UNBLOCK_DONE:')) {
           if (!resolved) {
-            resolved = true;
-            clearTimeout(timeoutId);
-            session.page.off('titlechanged', titleListener);
-            const userText = newTitle.replace('MARK_UNBLOCK_DONE:', '').trim();
-            resolve(userText || 'Sudah selesai.');
+            resolved = true
+            clearTimeout(timeoutId)
+            session.page.off('titlechanged', titleListener)
+            const userText = newTitle.replace('MARK_UNBLOCK_DONE:', '').trim()
+            resolve(userText || 'Sudah selesai.')
           }
         }
-      };
+      }
 
-      session.page.on('titlechanged', titleListener);
-    });
+      session.page.on('titlechanged', titleListener)
+    })
 
     // 5. Kembalikan blocker ke mode Fullscreen working indicator
     await session.page.evaluate(() => {
-      let blocker = document.getElementById('mark-user-blocker');
+      let blocker = document.getElementById('mark-user-blocker')
       if (blocker) {
-        blocker.dataset.mode = 'working';
+        blocker.dataset.mode = 'working'
         blocker.style.cssText = `
           position: fixed !important;
           top: 0 !important;
@@ -867,7 +913,7 @@ export async function executeAction(data, sessionId = 'default') {
           box-sizing: border-box !important;
           background: transparent !important;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-        `;
+        `
         blocker.innerHTML = `
           <div style="
             background: rgba(25, 54, 45, 0.92);
@@ -892,13 +938,13 @@ export async function executeAction(data, sessionId = 'default') {
             </svg>
             <span class="mark-pulse" style="color: #f8fafc;">Mark is working...</span>
           </div>
-        `;
+        `
       }
-    });
+    })
 
     // 6. Baca ulang DOM setelah user selesai
-    const updatedDOM = await readDOM(sessionId);
-    return `[USER SELESAI INTERVENSI]: Catatan user: "${userFeedback}".\nBerikut kondisi DOM terbaru setelah intervensi:\n${updatedDOM}`;
+    const updatedDOM = await readDOM(sessionId)
+    return `[USER SELESAI INTERVENSI]: Catatan user: "${userFeedback}".\nBerikut kondisi DOM terbaru setelah intervensi:\n${updatedDOM}`
   }
 
   return `Aksi ${action} tidak dikenali.`
@@ -913,15 +959,26 @@ export async function executeScript(code, sessionId = 'default') {
 
 export async function extractData(selector, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
-  const text = await session.page.$$eval(selector, (els) => els.map((e) => e.innerText.trim()).filter(Boolean))
+  const text = await session.page.$$eval(selector, (els) =>
+    els.map((e) => e.innerText.trim()).filter(Boolean)
+  )
   return JSON.stringify(text)
 }
 
 export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
-  const outPath = path.isAbsolute(filename) ? filename : path.join(os.homedir(), 'Desktop', filename)
-  await session.page.screenshot({ path: outPath, fullPage: false })
-  return `Screenshot berhasil disimpan ke ${outPath}`
+  const outPath = path.isAbsolute(filename)
+    ? filename
+    : path.join(os.homedir(), 'Desktop', filename)
+  const buffer = await session.page.screenshot({ path: outPath, fullPage: false })
+  const base64 = buffer ? buffer.toString('base64') : ''
+  const dataUrl = base64 ? `data:image/png;base64,${base64}` : null
+  return {
+    success: true,
+    message: `Screenshot berhasil disimpan ke ${outPath}`,
+    path: outPath,
+    dataUrl
+  }
 }
 
 export async function downloadFile(url, filename, sessionId = 'default') {
@@ -1038,7 +1095,7 @@ export async function showBrowserWindow(sessionId = 'default') {
       }
 
       return `Berhasil menampilkan jendela browser untuk sesi '${sessionId}'.`
-    } catch (cdpErr) {
+    } catch (_) {
       try {
         await session.page.bringToFront()
         session.isForeground = true
@@ -1063,14 +1120,13 @@ export async function hideBrowserWindow(sessionId = 'default') {
       const { windowId } = await client.send('Browser.getWindowForTarget')
       await client.send('Browser.setWindowBounds', {
         windowId,
-        bounds: { windowState: 'normal', left: -32000, top: -32000, width: 1280, height: 800 }
+        bounds: { windowState: 'minimized' }
       })
       session.isForeground = false
-      return `Berhasil menyembunyikan jendela browser sesi '${sessionId}' ke latar belakang.`
+      return `Berhasil meminimalkan jendela browser sesi '${sessionId}' ke latar belakang.`
     } catch (err) {
       return `Gagal menyembunyikan jendela browser: ${err.message}`
     }
   }
   return `Sesi browser '${sessionId}' tidak ditemukan atau sedang tidak aktif.`
 }
-

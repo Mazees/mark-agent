@@ -96,4 +96,33 @@ export const useRelationalGrowth = ({ chatData }) => {
 
     evaluateGrowth()
   }, [chatData])
+
+  // Listener untuk evaluasi relasi berbasis event (misal dari Private Journal / akhir sesi)
+  useEffect(() => {
+    const handleForceRelationalEval = async (e) => {
+      try {
+        const oldTraits = await getRelationship('owner')
+        const contextText =
+          e.detail?.summary || 'Sesi kerja panjang dan refleksi batin harian bersama pengguna.'
+        const newTraits = await evaluateTraitDrift(oldTraits, contextText, 'owner')
+        await saveRelationship({
+          userId: 'owner',
+          ...newTraits,
+          lastEvaluation: new Date().toISOString(),
+          evalCount: (oldTraits.evalCount || 0) + 1
+        })
+        if (newTraits.new_relational_memory) {
+          await insertMemory({
+            type: 'notes',
+            summary: '[Relational] Catatan hubungan otomatis',
+            memory: newTraits.new_relational_memory
+          })
+        }
+      } catch (err) {
+        console.warn('[Relational Growth] Gagal evaluasi relasi dari event:', err)
+      }
+    }
+    window.addEventListener('mark:evaluate-relationship', handleForceRelationalEval)
+    return () => window.removeEventListener('mark:evaluate-relationship', handleForceRelationalEval)
+  }, [])
 }

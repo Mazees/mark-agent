@@ -9,9 +9,9 @@
  * - Perakitan payload prompt berformat [ COMPACTED MESSAGE SUMMARY ]
  */
 
-import { fetchAI } from './core'
-import { getSessionCompact, saveSessionCompact, saveSession } from '../db'
-import { compactCodeBlocks } from './contextCompactor'
+import { fetchAI } from './core.js'
+import { getSessionCompact, saveSessionCompact, saveSession } from '../db.js'
+import { compactCodeBlocks } from './contextCompactor.js'
 
 export const MAX_CONTEXT_CHARS = 525000
 
@@ -30,13 +30,30 @@ export function calculateMessageChars(msg) {
   if (!msg) return 0
   let total = 0
 
-  // Konten teks
+  // Konten teks & multimodal (normalisasi bobot gambar Base64)
   if (typeof msg.content === 'string') {
     total += msg.content.length
   } else if (Array.isArray(msg.content)) {
-    total += JSON.stringify(msg.content).length
+    for (const part of msg.content) {
+      if (!part) continue
+      if (typeof part === 'string') {
+        total += part.length
+      } else if (part.type === 'text') {
+        total += (part.text || '').length
+      } else if (part.type === 'image_url' || part.image_url || part.type === 'image') {
+        // Satu gambar pada LLM bernilai ~258 s/d 500 token (~1.000 - 2.000 karakter ekuivalen),
+        // BUKAN ukuran string Base64 mentah ratusan ribu karakter.
+        total += 2000
+      } else {
+        total += JSON.stringify(part).length
+      }
+    }
   } else if (msg.content && typeof msg.content === 'object') {
-    total += JSON.stringify(msg.content).length
+    if (msg.content.type === 'image_url' || msg.content.image_url) {
+      total += 2000
+    } else {
+      total += JSON.stringify(msg.content).length
+    }
   }
 
   // Reasoning / Thought
@@ -183,7 +200,25 @@ export async function summarizeMiddle(
     }
 
     const sender = msg.role === 'user' ? 'User' : 'Mark'
-    let text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '')
+    let text = ''
+    if (typeof msg.content === 'string') {
+      text = msg.content
+    } else if (Array.isArray(msg.content)) {
+      const textParts = []
+      for (const part of msg.content) {
+        if (!part) continue
+        if (typeof part === 'string') textParts.push(part)
+        else if (part.type === 'text') textParts.push(part.text || '')
+        else if (part.type === 'image_url' || part.image_url || part.type === 'image') {
+          textParts.push('[Gambar terlampir oleh pengguna]')
+        } else {
+          textParts.push(JSON.stringify(part))
+        }
+      }
+      text = textParts.join('\n')
+    } else {
+      text = JSON.stringify(msg.content || '')
+    }
 
     // Ringkas teks jika per giliran terlalu panjang agar tidak overload summarizer
     if (text.length > 2500) {
@@ -436,7 +471,43 @@ export async function executeSessionCompaction({
 }
 
 /**
- * Merakit payload prompt LLM secara non-destructive dengan summary block jika tersedia
+ * Memformat pesan dengan riwayat executedTools utuh (100% fullResult tanpa batasan turn)
+ */
+export function formatMessageWithToolLogs(msg) {
+  if (!msg) return ''
+  if (Array.isArray(msg.content)) {
+    if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
+      const toolLog = msg.executedTools
+        .map((t) => {
+          const res = t.fullResult || t.resultSummary || 'OK'
+          return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+        })
+        .join('\n\n')
+      if (toolLog) {
+        return [...msg.content, { type: 'text', text: `\n\n[RIWAYAT TOOL TURN INI]:\n${toolLog}` }]
+      }
+    }
+    return msg.content
+  }
+
+  let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '')
+  if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
+    const toolLog = msg.executedTools
+      .map((t) => {
+        const res = t.fullResult || t.resultSummary || 'OK'
+        return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+      })
+      .join('\n\n')
+    if (toolLog) {
+      content = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${content}`
+    }
+  }
+  return content
+}
+
+/**
+ * Merakit payload prompt LLM secara non-destructive dengan summary block jika tersedia,
+ * atau seluruh pesan 100% utuh beserta log tool jika belum melewati 525K karakter.
  */
 export function assembleCompactedPayload({
   messages = [],
@@ -472,7 +543,7 @@ export function assembleCompactedPayload({
       content: `[ COMPACTED MESSAGE SUMMARY ] ${summaryBlock}`
     })
 
-    // Masukkan pesan-pesan tail terkini
+    // Masukkan pesan-pesan tail terkini dengan log tool utuh
     for (const msg of activeSlice) {
       if (
         !msg ||
@@ -484,24 +555,69 @@ export function assembleCompactedPayload({
         continue
       }
       payload.push({
-        role: msg.role === 'ai' ? 'assistant' : msg.role,
-        content: msg.content || ''
+        role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
+        content: formatMessageWithToolLogs(msg)
       })
     }
 
     return cleanOrphanToolPairs(payload)
   }
 
-  // Jika belum ada summary, susun normal
+  // Jika belum ada summary (konteks < 525K), susun SELURUH pesan dan log tool 100% UTUH
   for (const msg of messages) {
     if (!msg || msg.isThinking || msg.isSearching || msg.isSummarizing || msg.role === 'command') {
       continue
     }
     payload.push({
-      role: msg.role === 'ai' ? 'assistant' : msg.role,
-      content: msg.content || ''
+      role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
+      content: formatMessageWithToolLogs(msg)
     })
   }
 
   return cleanOrphanToolPairs(payload)
+}
+
+/**
+ * In-Flight Pruning untuk loop ReAct.
+ * Murni berbasis kapasitas ambang batas 525K karakter (MAX_CONTEXT_CHARS).
+ * Jika selama giliran panjang (banyak pemanggilan tool) akumulasi loopMessages >= MAX_CONTEXT_CHARS,
+ * pangkas data output tool terlama di dalam loopMessages sampai total karakter kembali < MAX_CONTEXT_CHARS.
+ */
+export function pruneInFlightMessages(messages = [], maxChars = MAX_CONTEXT_CHARS) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages
+
+  let totalChars = 0
+  for (const m of messages) {
+    totalChars += calculateMessageChars(m)
+  }
+
+  if (totalChars < maxChars) return messages
+
+  // Pangkas output tool terlama satu per satu sampai di bawah maxChars
+  for (let i = 0; i < messages.length; i++) {
+    if (totalChars < maxChars) break
+    const m = messages[i]
+    if (m && m.role === 'tool' && m.content) {
+      const origLen =
+        typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length
+      let parsed = null
+      try {
+        parsed = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
+      } catch (_) {}
+
+      if (parsed && (parsed.data || parsed.output)) {
+        const prunedText = '[Output dipangkas: kapasitas sesi mencapai 525K]'
+        parsed.data = prunedText
+        if (parsed.output) parsed.output = prunedText
+        m.content = JSON.stringify(parsed)
+        const newLen = m.content.length
+        totalChars -= origLen - newLen
+      } else if (typeof m.content === 'string' && m.content.length > 200) {
+        m.content = '[Output tool lama dipangkas karena kapasitas 525K]'
+        totalChars -= origLen - m.content.length
+      }
+    }
+  }
+
+  return messages
 }

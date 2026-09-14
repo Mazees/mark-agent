@@ -174,6 +174,30 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
+      name: 'read-image',
+      description:
+        'Membaca berkas gambar lokal (.png, .jpg, .jpeg, .webp, .gif, dll.) dari workspace atau sistem operasi dan menganalisis tampilan visualnya menggunakan AI Vision.',
+      parameters: {
+        type: 'object',
+        properties: {
+          file_path: {
+            type: 'string',
+            description: 'Path absolut atau relatif berkas gambar yang akan dibaca'
+          },
+          query: {
+            type: 'string',
+            description:
+              'Instruksi atau pertanyaan tentang apa yang ingin kamu analisis dari gambar (opsional)'
+          }
+        },
+        required: ['file_path'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'write-file',
       description: 'Membuat berkas baru atau menulis ulang berkas dari nol.',
       parameters: {
@@ -312,17 +336,19 @@ export const core_tools_schema = [
     type: 'function',
     function: {
       name: 'grep-search',
-      description: 'Mencari kata kunci atau potongan kode dalam seluruh berkas di folder.',
+      description:
+        'Mencari kata kunci atau regex di dalam satu berkas spesifik maupun seluruh berkas dalam folder secara rekursif. Mengembalikan nomor baris dan cuplikan kode yang cocok.',
       parameters: {
         type: 'object',
         properties: {
           keyword: {
             type: 'string',
-            description: 'Kata kunci atau regex pencarian'
+            description: 'Kata kunci teks atau pola yang dicari'
           },
           path: {
             type: 'string',
-            description: 'Folder path target (default root)'
+            description:
+              'Path berkas spesifik (misal: "minecraft_2d.html") ATAU folder target (kosongkan untuk root workspace)'
           }
         },
         required: ['keyword'],

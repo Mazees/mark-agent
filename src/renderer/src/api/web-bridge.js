@@ -553,9 +553,23 @@ export const webApi = {
     try {
       const res = await fetch(`${API_BASE}/api/awareness/activity-buffer`)
       const json = await res.json()
-      return json.data || []
+      const list = Array.isArray(json.data) ? [...json.data] : []
+      if (json.telemetry) {
+        list.telemetry = json.telemetry
+      }
+      return list
     } catch (_) {
       return []
+    }
+  },
+
+  getSystemTelemetry: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/awareness/telemetry`)
+      const json = await res.json()
+      return json.telemetry || null
+    } catch (_) {
+      return null
     }
   },
 
@@ -684,6 +698,10 @@ export const webApi = {
   onTgCommandReject: (cb) => {
     addWebListener('tg:command-reject', cb)
     return () => removeWebListener('tg:command-reject', cb)
+  },
+  onTgCommandSession: (cb) => {
+    addWebListener('tg:command-session', cb)
+    return () => removeWebListener('tg:command-session', cb)
   },
   onTgConnection: (cb) => {
     addWebListener('tg:connection', cb)

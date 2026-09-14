@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react'
-import {
-  getAllConfig,
-  saveConfiguration
-} from '../api/db'
+import { getAllConfig, saveConfiguration } from '../api/db'
 import { getExtractor } from '../api/vectorMemory'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
@@ -13,7 +10,8 @@ import {
   CameraSection,
   VisualSection,
   ShortcutSection,
-  VoiceSection
+  VoiceSection,
+  PermissionsSection
 } from '../components/config'
 
 const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
@@ -22,7 +20,6 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     model: 'local-model',
     customModel: 'default-model',
     temperature: 0,
-    context: 10,
     ttsRate: 0,
     ttsPitch: 0,
     aiProvider: 'gemini-web',
@@ -156,19 +153,9 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
               }
             },
             {
-              element: '#tour-context',
-              popover: {
-                title: '6. Konteks Obrolan',
-                description:
-                  'Ini batas seberapa jauh Mark bisa mengingat riwayat chat dalam satu sesi. Makin besar angkanya, makin panjang ingatan dia, tapi makin berat juga kerjanya.',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
               element: '#tour-tts',
               popover: {
-                title: '7. Pengaturan Suara',
+                title: '6. Pengaturan Suara',
                 description:
                   'Atur kecepatan (Rate) dan tinggi-rendahnya nada suara (Pitch) Mark. Kamu bisa klik "Test Suara Mark" buat dengerin hasil racikanmu!',
                 side: 'top',
@@ -204,7 +191,8 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
         deepseekUserToken: data[0].deepseekUserToken || '',
         micDeviceId: data[0].micDeviceId || 'default',
         awarenessEnabled: data[0].awarenessEnabled ?? true,
-        bgOverlayOpacity: data[0].bgOverlayOpacity !== undefined ? Number(data[0].bgOverlayOpacity) : 65
+        bgOverlayOpacity:
+          data[0].bgOverlayOpacity !== undefined ? Number(data[0].bgOverlayOpacity) : 65
       }))
     }
   }
@@ -335,7 +323,12 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
             handleTestVoice={handleTestVoice}
           />
 
-          {/* 6. Save Bar */}
+          <div className="divider"></div>
+
+          {/* 6. Security & Whitelist Permissions */}
+          <PermissionsSection />
+
+          {/* 7. Save Bar */}
           <div className="flex flex-col items-end pt-2">
             {isDownloadingModel && (
               <div className="w-full max-w-xs mb-4">

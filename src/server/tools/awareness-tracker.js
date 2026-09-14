@@ -1,6 +1,7 @@
 import activeWin from 'active-win'
 import { exec } from 'child_process'
 import util from 'util'
+import os from 'os'
 import { wsHub } from '../ws-hub.js'
 import { isDaemonAlive, startDaemon, sendCommand } from './pc-agent.js'
 import { getActiveConfig } from '../config-manager.js'
@@ -11,11 +12,92 @@ const activityBuffer = []
 const MAX_BUFFER_SIZE = 30
 let trackerInterval = null
 
+let currentActiveApp = null
+let currentActiveTitle = null
+let currentAppStartTime = Date.now()
+
+let lastCpuSample = null
+let cachedCpuPercent = 0
+let cachedBattery = { hasBattery: false, percent: 100, isCharging: true }
+let lastBatteryFetch = 0
+
+function sampleCpuPercent() {
+  const cpus = os.cpus()
+  if (!cpus || cpus.length === 0) return 0
+  let user = 0
+  let nice = 0
+  let sys = 0
+  let idle = 0
+  let irq = 0
+  for (const cpu of cpus) {
+    user += cpu.times.user
+    nice += cpu.times.nice
+    sys += cpu.times.sys
+    idle += cpu.times.idle
+    irq += cpu.times.irq
+  }
+  const currentSample = { idle, total: user + nice + sys + idle + irq }
+  if (lastCpuSample) {
+    const idleDelta = currentSample.idle - lastCpuSample.idle
+    const totalDelta = currentSample.total - lastCpuSample.total
+    if (totalDelta > 0) {
+      cachedCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)))
+    }
+  }
+  lastCpuSample = currentSample
+  return cachedCpuPercent
+}
+
+async function getBatteryTelemetry() {
+  const now = Date.now()
+  if (now - lastBatteryFetch < 60000 && lastBatteryFetch > 0) {
+    return cachedBattery
+  }
+  lastBatteryFetch = now
+  if (process.platform !== 'win32') return cachedBattery
+
+  try {
+    const { stdout } = await execPromise(
+      'powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Battery | Select-Object -Property EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json"'
+    )
+    const text = stdout ? stdout.trim() : ''
+    if (text && text.startsWith('{')) {
+      const parsed = JSON.parse(text)
+      const percent = Number(parsed.EstimatedChargeRemaining ?? 100)
+      const isCharging = [2, 6, 7, 8, 3].includes(parsed.BatteryStatus)
+      cachedBattery = {
+        hasBattery: true,
+        percent,
+        isCharging,
+        status: parsed.BatteryStatus
+      }
+    } else if (text && text.startsWith('[')) {
+      const arr = JSON.parse(text)
+      const parsed = arr[0] || {}
+      cachedBattery = {
+        hasBattery: true,
+        percent: Number(parsed.EstimatedChargeRemaining ?? 100),
+        isCharging: [2, 6, 7, 8, 3].includes(parsed.BatteryStatus),
+        status: parsed.BatteryStatus
+      }
+    }
+  } catch {
+    cachedBattery = { hasBattery: false, percent: 100, isCharging: true }
+  }
+  return cachedBattery
+}
+
 export function recordActivityEntry(winData) {
   if (!winData || !winData.title) return
 
   const appName = winData.owner?.name || winData.app || 'System'
   const title = winData.title.trim()
+
+  if (currentActiveApp !== appName || currentActiveTitle !== title) {
+    currentActiveApp = appName
+    currentActiveTitle = title
+    currentAppStartTime = Date.now()
+  }
 
   if (
     activityBuffer.length > 0 &&
@@ -58,7 +140,9 @@ async function getActiveWindowFallback() {
         url: win.url || null
       }
     }
-  } catch (_) {}
+  } catch {
+    // ignore
+  }
 
   // 2. Coba persistent Win32 PC-Daemon jika aktif
   try {
@@ -75,7 +159,9 @@ async function getActiveWindowFallback() {
     } else if (process.platform === 'win32') {
       startDaemon().catch(() => {})
     }
-  } catch (_) {}
+  } catch {
+    // ignore
+  }
 
   return null
 }
@@ -107,7 +193,7 @@ export async function getSystemIdleSeconds() {
       `powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\n/g, ' ')}"`
     )
     return parseInt(stdout.trim(), 10) || 0
-  } catch (_) {
+  } catch {
     return 0
   }
 }
@@ -135,7 +221,9 @@ export function startOsActivityTracking(intervalMs = 10000) {
       if (windowInfo) {
         recordActivityEntry(windowInfo)
       }
-    } catch (_) {}
+    } catch {
+      // ignore
+    }
   }, intervalMs)
 }
 
@@ -152,4 +240,32 @@ export function getActivityBuffer() {
 
 export function clearActivityBuffer() {
   activityBuffer.length = 0
+}
+
+export async function getSystemTelemetry() {
+  const idleSeconds = await getSystemIdleSeconds()
+  const battery = await getBatteryTelemetry()
+  const totalMem = os.totalmem()
+  const freeMem = os.freemem()
+  const ramPercent = Math.round(((totalMem - freeMem) / totalMem) * 100)
+  const cpuPercent = sampleCpuPercent()
+  const uptimeSeconds = os.uptime()
+  const uptimeHours = Math.round((uptimeSeconds / 3600) * 10) / 10
+  const isFreshBoot = uptimeSeconds < 1800
+  const activeDurationMinutes = Math.max(0, Math.floor((Date.now() - currentAppStartTime) / 60000))
+
+  return {
+    idleSeconds,
+    isUserAFK: idleSeconds >= 900,
+    activeApp: currentActiveApp || 'System',
+    activeTitle: currentActiveTitle || '',
+    activeAppDurationMinutes: activeDurationMinutes,
+    battery,
+    hardware: {
+      ramPercent,
+      cpuPercent,
+      uptimeHours,
+      isFreshBoot
+    }
+  }
 }

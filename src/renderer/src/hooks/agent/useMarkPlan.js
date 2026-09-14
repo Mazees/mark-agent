@@ -23,12 +23,12 @@ import {
 } from '../../api/taskStore'
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
-import { buildOptimizedChatSession } from '../../api/ai/contextCompactor'
 import {
   MAX_CONTEXT_CHARS,
   calculateSessionChars,
   executeSessionCompaction,
-  assembleCompactedPayload
+  assembleCompactedPayload,
+  pruneInFlightMessages
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
@@ -149,7 +149,6 @@ export const useMarkPlan = ({
   }, [setChatData])
 
   const activeTaskObjectiveRef = useRef(null)
-  const interventionBufferRef = useRef([])
   const lastUserPromptRef = useRef('')
   const activeRunningSessionIdRef = useRef(1)
 
@@ -163,8 +162,36 @@ export const useMarkPlan = ({
   }
 
   // Menampung arahan/intervensi user saat ReAct loop sedang berjalan
-  const handleIntervention = (msg) => {
-    interventionBufferRef.current.push(msg)
+  const handleIntervention = (msg, targetSessionId = null, opts = {}) => {
+    if (!msg || (typeof msg === 'string' && !msg.trim())) return
+    const textMsg = typeof msg === 'string' ? msg.trim() : String(msg)
+    const displayMsg = opts.displayPrompt || textMsg
+    const sId =
+      targetSessionId !== null && targetSessionId !== undefined
+        ? Number(targetSessionId)
+        : activeRunningSessionIdRef.current || 1
+
+    const session = activeSessionsRef.current.get(sId)
+    if (session) {
+      if (!session.interventions) session.interventions = []
+      session.interventions.push(textMsg)
+    }
+
+    const updater = activeSessionUpdatersRef.current.get(sId) || (sId === 1 ? setChatData : null)
+    if (updater) {
+      updater((prev) => {
+        const thinkingItem = prev.find((item) => item.isThinking)
+        const filtered = prev.filter((item) => !item.isThinking)
+        const item = {
+          role: 'user',
+          content: displayMsg,
+          timestamp: getCurrentTimeInfo(),
+          created_at: Date.now(),
+          isIntervention: true
+        }
+        return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+      })
+    }
   }
 
   // Penghentian tugas per-sesi secara independen
@@ -380,8 +407,10 @@ export const useMarkPlan = ({
 
             const promptText =
               (typeof rawArgs === 'object' && rawArgs?.prompt) ||
+              (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               (typeof rawArgs === 'string' ? rawArgs : '') ||
               'Jelaskan apa yang kamu lihat di layar ini secara ringkas.'
+            ;('Jelaskan apa yang kamu lihat di layar ini secara ringkas, fokus pada jendela aplikasi, teks, dan status UI.')
 
             const contentArray = [
               {
@@ -394,20 +423,37 @@ export const useMarkPlan = ({
               }))
             ]
 
-            const visionResponse = await fetchAI([{ role: 'user', content: contentArray }], false, {
-              signal: currentSignal,
-              isSmallTask: true
-            })
-            const textContent =
-              typeof visionResponse === 'object' && visionResponse.content
-                ? visionResponse.content
-                : String(visionResponse)
+            let textContent = ''
+            try {
+              const visionResponse = await fetchAI(
+                [{ role: 'user', content: contentArray }],
+                false,
+                {
+                  signal: currentSignal,
+                  isSmallTask: true
+                }
+              )
+              textContent =
+                typeof visionResponse === 'object' && visionResponse.content
+                  ? visionResponse.content
+                  : String(visionResponse)
+            } catch (vErr) {
+              textContent = `(Analisis teks awal dilewati: ${vErr.message})`
+            }
 
             console.log(
               `[Vision AI - analyze-screen] Hasil analisis (${screenArray.length} monitor):`,
               textContent
             )
             resultString = `Hasil Analisis Layar (${screenArray.length} monitor):\n${textContent}`
+            return {
+              success: true,
+              resultString,
+              rejected: false,
+              imageUrls: screenArray,
+              previewUrl: screenArray[0],
+              toolExecution: { action: tool, query: stringQuery, result: resultString }
+            }
           } else {
             resultString = 'Gagal mengambil screenshot layar untuk analisis.'
           }
@@ -441,7 +487,7 @@ export const useMarkPlan = ({
               ])
 
               const promptText =
-                (typeof rawArgs === 'object' && rawArgs?.prompt) ||
+                (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
                 (typeof rawArgs === 'string' ? rawArgs : '') ||
                 'Jelaskan dengan detail apa yang terlihat dari kamera ini.'
 
@@ -453,18 +499,31 @@ export const useMarkPlan = ({
                 { type: 'image_url', image_url: { url: cameraFrame } }
               ]
 
-              const visionResponse = await fetchAI(
-                [{ role: 'user', content: contentArray }],
-                false,
-                { signal: currentSignal, isSmallTask: true }
-              )
-              const textContent =
-                typeof visionResponse === 'object' && visionResponse.content
-                  ? visionResponse.content
-                  : String(visionResponse)
+              let textContent = ''
+              try {
+                const visionResponse = await fetchAI(
+                  [{ role: 'user', content: contentArray }],
+                  false,
+                  { signal: currentSignal, isSmallTask: true }
+                )
+                textContent =
+                  typeof visionResponse === 'object' && visionResponse.content
+                    ? visionResponse.content
+                    : String(visionResponse)
+              } catch (vErr) {
+                textContent = `(Analisis teks awal dilewati: ${vErr.message})`
+              }
 
               console.log(`[Vision AI - camera-look] Hasil analisis:`, textContent)
               resultString = `Hasil Analisis Kamera:\n${textContent}`
+              return {
+                success: true,
+                resultString,
+                rejected: false,
+                imageUrls: [cameraFrame],
+                previewUrl: cameraFrame,
+                toolExecution: { action: tool, query: stringQuery, result: resultString }
+              }
             } else {
               resultString = 'Gagal mengambil gambar dari kamera.'
             }
@@ -478,7 +537,10 @@ export const useMarkPlan = ({
         const approvalCheck = await window.api.checkToolApproval(tool, rawArgs)
 
         if (approvalCheck.needsApproval && requestApproval) {
-          const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs)
+          const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs, {
+            sessionId: activeSessionNum,
+            targetSetChatData
+          })
           if (!userApproved) {
             resultString = `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
             return {
@@ -536,15 +598,92 @@ export const useMarkPlan = ({
               resultString = `${fullText.slice(0, 2500)}\n\n[DOKUMEN DIPOTONG (Total: ${fullText.length} karakter). Gunakan read-document dengan keyword untuk pencarian spesifik]`
             }
           }
+
+          // Analisis visual untuk read-image
+          if (tool === 'read-image' && res.dataUrl) {
+            const promptText =
+              (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
+              (typeof rawArgs === 'string' ? rawArgs : '') ||
+              'Jelaskan apa yang kamu lihat pada gambar ini secara rinci.'
+            try {
+              targetSetChatData((prev) => [
+                ...prev.filter((item) => !item.isThinking),
+                {
+                  role: 'ai',
+                  content: `Menganalisis gambar ${res.filename || ''}...`,
+                  isThinking: true
+                }
+              ])
+              const visionResponse = await fetchAI(
+                [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'text', text: promptText },
+                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                    ]
+                  }
+                ],
+                false,
+                { signal: currentSignal, isSmallTask: true }
+              )
+              const textContent =
+                typeof visionResponse === 'object' && visionResponse.content
+                  ? visionResponse.content
+                  : String(visionResponse)
+              resultString = `[Vision AI - read-image] Analisis berkas '${res.filename || 'gambar'}':\n${textContent}`
+            } catch (vErr) {
+              resultString = `Berkas gambar '${res.filename || 'gambar'}' berhasil dibaca. (Analisis teks awal dilewati: ${vErr.message}). Gambar visual diteruskan ke observasi.`
+            }
+          }
+
+          // Analisis visual untuk browser-screenshot jika query disertakan
+          if (tool === 'browser-screenshot' && res.dataUrl && (rawArgs?.query || res.query)) {
+            const promptText =
+              (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
+              res.query ||
+              'Jelaskan tampilan visual halaman web ini.'
+            try {
+              targetSetChatData((prev) => [
+                ...prev.filter((item) => !item.isThinking),
+                { role: 'ai', content: 'Menganalisis tampilan web...', isThinking: true }
+              ])
+              const visionResponse = await fetchAI(
+                [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'text', text: promptText },
+                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                    ]
+                  }
+                ],
+                false,
+                { signal: currentSignal, isSmallTask: true }
+              )
+              const textContent =
+                typeof visionResponse === 'object' && visionResponse.content
+                  ? visionResponse.content
+                  : String(visionResponse)
+              resultString = `[Vision AI - browser-screenshot] ${res.message || 'Screenshot berhasil diambil.'}\nHasil analisis:\n${textContent}`
+            } catch (vErr) {
+              resultString = `${res.message || 'Screenshot berhasil diambil.'} (Analisis teks awal dilewati: ${vErr.message}). Gambar visual diteruskan ke observasi.`
+            }
+          }
         } else {
           resultString = `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
         }
+
+        const toolImageUrls = res?.dataUrl ? [res.dataUrl] : null
+        const toolPreviewUrl = res?.dataUrl || null
 
         return {
           res,
           success: Boolean(res?.success),
           resultString,
           rejected: false,
+          imageUrls: toolImageUrls,
+          previewUrl: toolPreviewUrl,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
           loadedGroup: res?.loaded_group || null,
           durableTask: executionResult?.durableTask || null,
@@ -646,18 +785,18 @@ export const useMarkPlan = ({
     activeRunningSessionIdRef.current = activeSessionNum
 
     if (activeSessionsRef.current.has(activeSessionNum)) {
-      console.log(
-        `[useMarkPlan] Menolak prompt masuk untuk Sesi ${activeSessionNum} karena sedang berjalan (Lock active).`
-      )
+      handleIntervention(userInput, activeSessionNum, { displayPrompt: opts.displayPrompt })
       return
     }
 
     const sessionAbortController = new AbortController()
-    activeSessionsRef.current.set(activeSessionNum, {
+    const sessionRecord = {
       abortController: sessionAbortController,
       startTime: Date.now(),
-      prompt: userInput
-    })
+      prompt: userInput,
+      interventions: []
+    }
+    activeSessionsRef.current.set(activeSessionNum, sessionRecord)
 
     if (activeSessionNum === 1) {
       abortControllerRef.current = sessionAbortController
@@ -857,7 +996,15 @@ export const useMarkPlan = ({
     // FASE 3: PENYIAPAN HISTORY CHAT & RETRIEVAL KONTEKS
     // ------------------------------------------------------------------------
     const sourceChatData = activeSessionNum === 1 ? chatData : inMemorySessionData
-    const optimizedHistory = buildOptimizedChatSession(sourceChatData, config[0]?.context || 10)
+    const validHistory = sourceChatData.filter(
+      (m) =>
+        m &&
+        !m.isThinking &&
+        !m.isSearching &&
+        !m.isSummarizing &&
+        m.role !== 'command' &&
+        m.role !== 'system'
+    )
 
     if (!isAutonomous && !isSystem) {
       targetSetChatData((prev) => [...prev, userMessage])
@@ -874,10 +1021,11 @@ export const useMarkPlan = ({
 
       const allMemory = await getAllMemory()
       let searchQuery = userInput
-      if (optimizedHistory.length > 0) {
-        const lastMsg = optimizedHistory[optimizedHistory.length - 1]
-        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content) {
-          let lastAiText = lastMsg.content
+      if (validHistory.length > 0) {
+        const lastMsg = validHistory[validHistory.length - 1]
+        if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'ai') && lastMsg.content) {
+          let lastAiText =
+            typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)
           if (lastAiText.length > 600) {
             lastAiText = lastAiText.substring(0, 300) + ' ... ' + lastAiText.slice(-300)
           }
@@ -934,12 +1082,20 @@ export const useMarkPlan = ({
       } catch (e) {}
 
       // Susun System Prompt Mark V5
+      let systemTelemetry = null
+      try {
+        if (window.api && typeof window.api.getSystemTelemetry === 'function') {
+          systemTelemetry = await window.api.getSystemTelemetry()
+        }
+      } catch (_) {}
+
       const systemPrompt = await buildPlanningSystemPrompt(
         userInput,
         {
           ...opts,
           tgContext,
           currentMusicTrack,
+          systemTelemetry,
           activeTaskObjective: activeTaskObjectiveRef.current,
           existingSubagents
         },
@@ -1049,23 +1205,63 @@ export const useMarkPlan = ({
       // ------------------------------------------------------------------------
       // FASE 4: AGENTIC REACT LOOP (Native Function Calling + SSE Token Stream)
       // ------------------------------------------------------------------------
-      const fallbackOptimizedHistory = buildOptimizedChatSession(
-        effectiveSourceMessages.slice(0, -1),
-        config[0]?.context || 10
-      )
-      const loopMessages =
-        !isInternalTurn &&
-        (activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block)
-          ? assembleCompactedPayload({
-              messages: effectiveSourceMessages,
-              sessionCompact: activeSessionCompact,
-              systemPrompt
-            })
-          : [
-              { role: 'system', content: systemPrompt },
-              ...fallbackOptimizedHistory.map((m) => ({ role: m.role, content: m.content })),
-              { role: 'user', content: payloadContent }
-            ]
+      let loopMessages = []
+
+      if (isSystem) {
+        // GREETING BOOT SEQUENCE: Sapaan awal startup hanya butuh systemPrompt + 1-2 pesan terakhir
+        // Mencegah ledakan 1M+ token dari akumulasi ratusan riwayat masa lalu di database.
+        const recentHistory = sourceChatData
+          .filter(
+            (m) =>
+              m &&
+              !m.isThinking &&
+              !m.isSearching &&
+              !m.isSummarizing &&
+              m.role !== 'command' &&
+              m.role !== 'system'
+          )
+          .slice(-2)
+
+        loopMessages = [
+          { role: 'system', content: systemPrompt },
+          ...recentHistory.map((m) => ({
+            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
+            content: m.content || ''
+          })),
+          { role: 'user', content: payloadContent }
+        ]
+      } else if (isAutonomous) {
+        // AWARENESS PROAKTIF: Cukup 3-4 pesan riwayat obrolan terkini
+        const recentHistory = sourceChatData
+          .filter(
+            (m) =>
+              m &&
+              !m.isThinking &&
+              !m.isSearching &&
+              !m.isSummarizing &&
+              m.role !== 'command' &&
+              m.role !== 'system'
+          )
+          .slice(-4)
+
+        loopMessages = [
+          { role: 'system', content: systemPrompt },
+          ...recentHistory.map((m) => ({
+            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
+            content: m.content || ''
+          })),
+          { role: 'user', content: payloadContent }
+        ]
+      } else {
+        // TURN CHAT/CODING NORMAL:
+        // Seluruh riwayat pesan & log tool dikirim 100% UTUH tanpa batasan turn (maxTurns)
+        // selama masih berada dalam kapasitas 525.000 karakter (MAX_CONTEXT_CHARS).
+        loopMessages = assembleCompactedPayload({
+          messages: effectiveSourceMessages,
+          sessionCompact: activeSessionCompact,
+          systemPrompt
+        })
+      }
 
       let isDone = false
       let stepCount = 0
@@ -1102,15 +1298,26 @@ export const useMarkPlan = ({
         }
 
         // Cek Intervensi User di tengah jalan
-        if (interventionBufferRef.current.length > 0) {
-          const interventions = interventionBufferRef.current.join('\n')
+        if (sessionRecord.interventions?.length > 0) {
+          const interventions = sessionRecord.interventions.splice(0).join('\n')
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
-          interventionBufferRef.current = []
 
-          targetSetChatData((prev) => [
-            ...prev.filter((item) => !item.isThinking),
-            { role: 'user', content: interventions }
-          ])
+          targetSetChatData((prev) => {
+            const alreadyPresent = prev.some(
+              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
+            )
+            if (alreadyPresent) return prev
+            const thinkingItem = prev.find((m) => m.isThinking)
+            const filtered = prev.filter((m) => !m.isThinking)
+            const item = {
+              role: 'user',
+              content: interventions,
+              timestamp: getCurrentTimeInfo(),
+              created_at: Date.now(),
+              isIntervention: true
+            }
+            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+          })
 
           execSteps.push({ task: `Intervensi User: ${interventions}` })
           targetPushProcess({
@@ -1164,6 +1371,10 @@ export const useMarkPlan = ({
         let currentTurnReasoning = ''
         let currentTurnContent = ''
         let sentenceBuffer = ''
+
+        // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai 525K,
+        // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 525K.
+        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_CHARS)
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
@@ -1318,6 +1529,7 @@ export const useMarkPlan = ({
             tool_calls: effectiveToolCalls
           }
           loopMessages.push(assistantMsg)
+          const turnVisualUrls = []
 
           for (const tc of effectiveToolCalls) {
             const toolName = tc.function?.name
@@ -1428,6 +1640,7 @@ export const useMarkPlan = ({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
               status: executionSucceeded ? 'done' : 'failed',
+              preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
               fullResult:
                 typeof execResult.resultString === 'string'
                   ? execResult.resultString.slice(0, 4000)
@@ -1437,6 +1650,14 @@ export const useMarkPlan = ({
                   ? execResult.resultString.slice(0, 250) + '...'
                   : execResult.resultString
             })
+
+            if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
+              for (const u of execResult.imageUrls) {
+                if (u && !turnVisualUrls.includes(u)) {
+                  turnVisualUrls.push(u)
+                }
+              }
+            }
 
             let obsStr = execResult.resultString
             if (
@@ -1461,6 +1682,23 @@ export const useMarkPlan = ({
               tool_call_id: tc.id,
               name: toolName,
               content: JSON.stringify(toolObservation)
+            })
+          }
+
+          // Jika ada tool yang menghasilkan gambar visual, sertakan observasi multimodal
+          if (turnVisualUrls.length > 0) {
+            loopMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: '[Visual Observation]: Berikut adalah gambar visual aktual beresolusi penuh dari eksekusi tool di atas untuk kamu analisis secara langsung:'
+                },
+                ...turnVisualUrls.map((url) => ({
+                  type: 'image_url',
+                  image_url: { url }
+                }))
+              ]
             })
           }
 
@@ -1553,7 +1791,8 @@ export const useMarkPlan = ({
                       ...s,
                       status: checkpointCompleted ? 'completed' : 'failed',
                       output: turnAnswer.slice(0, 1000),
-                      artifactPath: currentStep.artifactPath
+                      artifactPath: currentStep.artifactPath,
+                      executedTools: [...(s.executedTools || []), ...executedToolsList]
                     }
                   }
 
@@ -1639,6 +1878,46 @@ export const useMarkPlan = ({
               }
             })
           )
+        }
+
+        // Cek apakah ada intervensi user yang masuk saat streaming giliran ini
+        if (sessionRecord.interventions?.length > 0) {
+          const interventions = sessionRecord.interventions.splice(0).join('\n')
+          if (turnAnswer && turnAnswer.trim()) {
+            loopMessages.push({ role: 'assistant', content: turnAnswer })
+          }
+          loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
+
+          targetSetChatData((prev) => {
+            const alreadyPresent = prev.some(
+              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
+            )
+            if (alreadyPresent) return prev
+            const thinkingItem = prev.find((m) => m.isThinking)
+            const filtered = prev.filter((m) => !m.isThinking)
+            const item = {
+              role: 'user',
+              content: interventions,
+              timestamp: getCurrentTimeInfo(),
+              created_at: Date.now(),
+              isIntervention: true
+            }
+            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+          })
+
+          execSteps.push({ task: `Intervensi User: ${interventions}` })
+          targetPushProcess({
+            id: agenticProcessId,
+            type: 'planning',
+            status: 'active',
+            data: {
+              steps: [...execSteps],
+              currentStep: execSteps.length - 1,
+              reasoning: 'Menerima arahan baru dari user saat penyelesaian giliran.'
+            }
+          })
+
+          continue
         }
 
         isDone = true

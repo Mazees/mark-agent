@@ -12,7 +12,8 @@ import {
   YoutubeSearchBubble,
   FollowUp,
   Elicitation,
-  ElicitationsGroup
+  ElicitationsGroup,
+  ApprovalBubble
 } from './Chat'
 import { parseUserContent, parseAiContent, parseSubagentReport } from '../utils/chatContentParser'
 
@@ -52,7 +53,12 @@ const ChatList = ({
   sender = null,
   onStop = null,
   activeLiveTools = null,
-  activeThinkingContent = null
+  activeThinkingContent = null,
+  isApproval = false,
+  approvalId = null,
+  approvalTool = '',
+  approvalQuery = null,
+  approvalStatus = 'pending'
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
@@ -108,21 +114,46 @@ const ChatList = ({
     window.dispatchEvent(new CustomEvent('trigger-quick-prompt', { detail: { prompt: queryText } }))
   }
 
-  if (isPlanSteps && plan && plan.length > 0) {
+  if (isApproval) {
     return (
-      <div className="w-full my-4 group animate-[response-fade-in_0.2s_ease-out_forwards]">
+      <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-2 px-1 text-[11px] font-semibold opacity-75">
-          <Bot className="w-4 h-4 text-primary" />
-          <span className="text-white/90">Mark</span>
-          <span className="badge badge-xs bg-primary/10 text-primary border border-primary/20 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
-            Task Workflow
+        <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
+          <Bot className="w-4 h-4 text-warning" />
+          <span className="font-semibold text-white/90">Mark</span>
+          <span className="badge badge-xs bg-warning/20 text-warning border-warning/30 font-mono text-[9px] px-1.5 py-0.5">
+            Security Gate
           </span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
         </div>
 
-        {/* Flat Task Container */}
-        <div className="w-full p-4 rounded-2xl bg-base-200/80 border border-white/10 shadow-sm backdrop-blur-md">
+        {/* Approval Bubble */}
+        <div className="w-full max-w-3xl">
+          <ApprovalBubble
+            approvalId={approvalId}
+            tool={approvalTool}
+            message={content}
+            query={approvalQuery}
+            status={approvalStatus}
+            timestamp={timestamp}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  if (isPlanSteps && plan && plan.length > 0) {
+    return (
+      <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
+          <Bot className="w-4 h-4 text-primary" />
+          <span className="font-semibold text-white/90">Mark</span>
+          {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
+        </div>
+
+        {/* Normal Bubble Content Flow */}
+        <div className="w-full text-base-content leading-relaxed">
           <DurableTaskBubble
             plan={plan}
             resolvedCurrentStep={resolvedCurrentStep}

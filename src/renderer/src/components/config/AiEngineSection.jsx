@@ -26,13 +26,9 @@ export const AiEngineSection = ({ config, setConfig }) => {
   const handleTemperatureChange = (e) =>
     setConfig((prev) => ({ ...prev, temperature: e.target.value }))
 
-  const handleContextChange = (e) => setConfig((prev) => ({ ...prev, context: e.target.value }))
-
   return (
     <section className="space-y-5">
-      <h2 className="text-base font-bold uppercase tracking-wider opacity-70">
-        AI Engine & Tools
-      </h2>
+      <h2 className="text-base font-bold uppercase tracking-wider opacity-70">AI Engine & Tools</h2>
 
       {/* AI Provider Selector */}
       <div id="tour-ai-provider" className="space-y-1.5">
@@ -57,7 +53,9 @@ export const AiEngineSection = ({ config, setConfig }) => {
             <div>
               <p className="font-semibold text-warning">Peringatan Risiko:</p>
               <p className="text-white/80 mt-0.5">
-                Provider ini menggunakan sesi web/OAuth yang tidak dilisensikan secara resmi untuk penggunaan proxy/router pihak ketiga. Akun dapat dibatasi atau diblokir (banned) sementara oleh DeepSeek. Gunakan atas risiko sendiri.
+                Provider ini menggunakan sesi web/OAuth yang tidak dilisensikan secara resmi untuk
+                penggunaan proxy/router pihak ketiga. Akun dapat dibatasi atau diblokir (banned)
+                sementara oleh DeepSeek. Gunakan atas risiko sendiri.
               </p>
             </div>
           </div>
@@ -150,17 +148,21 @@ export const AiEngineSection = ({ config, setConfig }) => {
                   di browser.
                 </li>
                 <li>
-                  Tekan tombol keyboard <strong>F12</strong> (atau klik kanan &gt; Inspect) lalu buka tab{' '}
-                  <strong>Console</strong>.
+                  Tekan tombol keyboard <strong>F12</strong> (atau klik kanan &gt; Inspect) lalu
+                  buka tab <strong>Console</strong>.
                 </li>
                 <li>Copy dan paste baris kode berikut ke dalam Console lalu tekan Enter:</li>
               </ol>
               <div className="flex items-center justify-between bg-black/50 p-2 rounded-lg border border-white/10 font-mono text-[11px] text-success">
-                <code className="truncate mr-2">JSON.parse(localStorage.getItem('userToken')).value</code>
+                <code className="truncate mr-2">
+                  JSON.parse(localStorage.getItem('userToken')).value
+                </code>
                 <button
                   type="button"
                   onClick={() =>
-                    navigator.clipboard.writeText("JSON.parse(localStorage.getItem('userToken')).value")
+                    navigator.clipboard.writeText(
+                      "JSON.parse(localStorage.getItem('userToken')).value"
+                    )
                   }
                   className="btn btn-xs btn-ghost text-white/50 hover:text-white shrink-0"
                   title="Salin snippet"
@@ -169,8 +171,8 @@ export const AiEngineSection = ({ config, setConfig }) => {
                 </button>
               </div>
               <p className="text-[11px] text-white/40">
-                Salin nilai token yang muncul (tanpa tanda kutip), lalu tempelkan ke kolom input di atas.
-                Token ini otomatis memecahkan challenge anti-bot WASM DeepSeek secara lokal!
+                Salin nilai token yang muncul (tanpa tanda kutip), lalu tempelkan ke kolom input di
+                atas. Token ini otomatis memecahkan challenge anti-bot WASM DeepSeek secara lokal!
               </p>
             </div>
           </div>
@@ -182,9 +184,7 @@ export const AiEngineSection = ({ config, setConfig }) => {
             <select
               className="select select-bordered w-full"
               value={config.geminiWebModel || 'gemini-3.6-flash'}
-              onChange={(e) =>
-                setConfig((prev) => ({ ...prev, geminiWebModel: e.target.value }))
-              }
+              onChange={(e) => setConfig((prev) => ({ ...prev, geminiWebModel: e.target.value }))}
             >
               <option value="gemini-3.6-flash">gemini-3.6-flash (Model Utama Terbaru)</option>
               <option value="gemini-3.5-flash">gemini-3.5-flash (Stabil & Seimbang)</option>
@@ -232,9 +232,7 @@ export const AiEngineSection = ({ config, setConfig }) => {
               placeholder="Contoh: gpt-4o-mini"
               className="input input-bordered w-full"
               value={config.customModel || ''}
-              onChange={(e) =>
-                setConfig((prev) => ({ ...prev, customModel: e.target.value }))
-              }
+              onChange={(e) => setConfig((prev) => ({ ...prev, customModel: e.target.value }))}
             />
           </div>
           <div className="space-y-1.5">
@@ -312,8 +310,8 @@ export const AiEngineSection = ({ config, setConfig }) => {
           <div>
             <p className="text-sm font-semibold">Awareness Engine</p>
             <p className="text-xs opacity-50 mt-1">
-              Mengizinkan Mark membaca log sistem/aktivitas dan memulai obrolan secara proaktif di latar
-              belakang.
+              Mengizinkan Mark membaca log sistem/aktivitas dan memulai obrolan secara proaktif di
+              latar belakang.
             </p>
           </div>
           <input
@@ -340,9 +338,7 @@ export const AiEngineSection = ({ config, setConfig }) => {
       <div id="tour-temperature" className="space-y-2 p-2 -mx-2 rounded-lg">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Temperature</p>
-          <span className="font-mono text-sm text-primary font-bold">
-            {config.temperature}
-          </span>
+          <span className="font-mono text-sm text-primary font-bold">{config.temperature}</span>
         </div>
         <input
           type="range"
@@ -360,31 +356,6 @@ export const AiEngineSection = ({ config, setConfig }) => {
           <span>0.6</span>
           <span>0.8</span>
           <span>1.0</span>
-        </div>
-      </div>
-
-      {/* Context Window */}
-      <div id="tour-context" className="space-y-2 p-2 -mx-2 rounded-lg">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">Context Window</p>
-          <span className="font-mono text-sm text-primary font-bold">{config.context}</span>
-        </div>
-        <input
-          type="range"
-          min="2"
-          max="22"
-          step="2"
-          value={config.context}
-          className="range range-primary range-xs w-full"
-          onChange={handleContextChange}
-        />
-        <div className="flex justify-between mt-2 text-xs">
-          <span>2</span>
-          <span>6</span>
-          <span>10</span>
-          <span>14</span>
-          <span>18</span>
-          <span>22</span>
         </div>
       </div>
     </section>

@@ -174,6 +174,12 @@ export default function AgentSidebar({
                         <span className="font-semibold text-xs text-base-content/95 truncate">
                           {agent.name}
                         </span>
+                        {(agent.role?.toLowerCase().includes('curiosity') ||
+                          agent.name.toLowerCase().includes('sideproject')) && (
+                          <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 uppercase tracking-tight shrink-0">
+                            Curiosity
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] text-base-content/50 truncate font-mono">
                         {agent.role || 'Technical Specialist'}
