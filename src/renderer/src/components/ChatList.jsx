@@ -110,19 +110,16 @@ const ChatList = ({
 
   if (isPlanSteps && plan && plan.length > 0) {
     return (
-      <div className="w-full my-4 group animate-[response-fade-in_0.2s_ease-out_forwards]">
+      <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-2 px-1 text-[11px] font-semibold opacity-75">
+        <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
           <Bot className="w-4 h-4 text-primary" />
-          <span className="text-white/90">Mark</span>
-          <span className="badge badge-xs bg-primary/10 text-primary border border-primary/20 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
-            Task Workflow
-          </span>
+          <span className="font-semibold text-white/90">Mark</span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
         </div>
 
-        {/* Flat Task Container */}
-        <div className="w-full p-4 rounded-2xl bg-base-200/80 border border-white/10 shadow-sm backdrop-blur-md">
+        {/* Normal Bubble Content Flow */}
+        <div className="w-full text-base-content leading-relaxed">
           <DurableTaskBubble
             plan={plan}
             resolvedCurrentStep={resolvedCurrentStep}

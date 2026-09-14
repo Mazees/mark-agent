@@ -27,7 +27,8 @@ import {
   MAX_CONTEXT_CHARS,
   calculateSessionChars,
   executeSessionCompaction,
-  assembleCompactedPayload
+  assembleCompactedPayload,
+  pruneInFlightMessages
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
@@ -1213,6 +1214,10 @@ export const useMarkPlan = ({
         let currentTurnContent = ''
         let sentenceBuffer = ''
 
+        // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai 525K,
+        // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 525K.
+        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_CHARS)
+
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
           tools: activeTools,
@@ -1601,7 +1606,8 @@ export const useMarkPlan = ({
                       ...s,
                       status: checkpointCompleted ? 'completed' : 'failed',
                       output: turnAnswer.slice(0, 1000),
-                      artifactPath: currentStep.artifactPath
+                      artifactPath: currentStep.artifactPath,
+                      executedTools: [...(s.executedTools || []), ...executedToolsList]
                     }
                   }
 
