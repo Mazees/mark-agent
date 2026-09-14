@@ -777,6 +777,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                           hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
                         }
                         onStop={handleStopSession}
+                        isApproval={msg.isApproval}
+                        approvalId={msg.approvalId}
+                        approvalTool={msg.tool}
+                        approvalQuery={msg.query}
+                        approvalStatus={msg.status}
                       />
                     )
                   })

@@ -78,7 +78,12 @@ const GlobalListener = () => {
       const actualCode = e.code.toUpperCase()
 
       if (expectedKey === 'SPACE' && (actualKey === ' ' || actualCode === 'SPACE')) return true
-      if (actualKey === expectedKey || actualCode === `KEY${expectedKey}` || actualCode === expectedKey) return true
+      if (
+        actualKey === expectedKey ||
+        actualCode === `KEY${expectedKey}` ||
+        actualCode === expectedKey
+      )
+        return true
 
       return false
     }
@@ -282,10 +287,10 @@ function App() {
   const isStandalone = window.location.hash.includes('telegram-bot')
 
   return (
-    <ApprovalProvider>
-      <YoutubeMusicProvider>
-        <ChatProvider>
-          <HashRouter>
+    <HashRouter>
+      <ApprovalProvider>
+        <YoutubeMusicProvider>
+          <ChatProvider>
             <GlobalListener />
             <MainLayout />
             <div style={{ display: isStandalone ? 'none' : 'block' }}>
@@ -298,10 +303,10 @@ function App() {
               useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
               style={{ display: 'none' }}
             />
-          </HashRouter>
-        </ChatProvider>
-      </YoutubeMusicProvider>
-    </ApprovalProvider>
+          </ChatProvider>
+        </YoutubeMusicProvider>
+      </ApprovalProvider>
+    </HashRouter>
   )
 }
 

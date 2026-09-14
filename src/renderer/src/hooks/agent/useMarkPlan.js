@@ -537,7 +537,10 @@ export const useMarkPlan = ({
         const approvalCheck = await window.api.checkToolApproval(tool, rawArgs)
 
         if (approvalCheck.needsApproval && requestApproval) {
-          const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs)
+          const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs, {
+            sessionId: activeSessionNum,
+            targetSetChatData
+          })
           if (!userApproved) {
             resultString = `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
             return {

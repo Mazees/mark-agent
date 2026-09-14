@@ -12,7 +12,8 @@ import {
   YoutubeSearchBubble,
   FollowUp,
   Elicitation,
-  ElicitationsGroup
+  ElicitationsGroup,
+  ApprovalBubble
 } from './Chat'
 import { parseUserContent, parseAiContent, parseSubagentReport } from '../utils/chatContentParser'
 
@@ -52,7 +53,12 @@ const ChatList = ({
   sender = null,
   onStop = null,
   activeLiveTools = null,
-  activeThinkingContent = null
+  activeThinkingContent = null,
+  isApproval = false,
+  approvalId = null,
+  approvalTool = '',
+  approvalQuery = null,
+  approvalStatus = 'pending'
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
@@ -106,6 +112,34 @@ const ChatList = ({
   const handleChipClick = (queryText) => {
     if (!queryText) return
     window.dispatchEvent(new CustomEvent('trigger-quick-prompt', { detail: { prompt: queryText } }))
+  }
+
+  if (isApproval) {
+    return (
+      <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
+          <Bot className="w-4 h-4 text-warning" />
+          <span className="font-semibold text-white/90">Mark</span>
+          <span className="badge badge-xs bg-warning/20 text-warning border-warning/30 font-mono text-[9px] px-1.5 py-0.5">
+            Security Gate
+          </span>
+          {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
+        </div>
+
+        {/* Approval Bubble */}
+        <div className="w-full max-w-3xl">
+          <ApprovalBubble
+            approvalId={approvalId}
+            tool={approvalTool}
+            message={content}
+            query={approvalQuery}
+            status={approvalStatus}
+            timestamp={timestamp}
+          />
+        </div>
+      </div>
+    )
   }
 
   if (isPlanSteps && plan && plan.length > 0) {

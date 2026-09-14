@@ -1,27 +1,44 @@
 import React, { createContext, useState, useContext, useCallback, useRef, useEffect } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { ShieldAlert, Terminal, FileCode } from 'lucide-react'
 import { getAlwaysAllowedPaths, addAlwaysAllowedPath } from '../api/db'
 
 const ApprovalContext = createContext()
 
-function getPathFromQuery(query) {
-  if (!query) return ''
-  if (typeof query === 'object' && query !== null) {
-    const rawPath = query.path || query.filePath || query.cwd || ''
-    return rawPath.replace(/^["']|["']$/g, '').replace(/[\\/]+/g, '/').toLowerCase()
+export function extractToolTarget(tool, query) {
+  if (!query) return { type: 'unknown', value: '' }
+
+  if (tool === 'run-powershell') {
+    const cmd =
+      typeof query === 'object' && query !== null
+        ? query.command || query.cmd || ''
+        : String(query || '')
+    return { type: 'command', value: String(cmd).trim() }
   }
-  if (typeof query !== 'string') return ''
-  const firstPart = query.split('||')[0].trim()
-  return firstPart.replace(/^["']|["']$/g, '').replace(/[\\/]+/g, '/').toLowerCase()
+
+  let rawPath = ''
+  if (typeof query === 'object' && query !== null) {
+    rawPath = query.path || query.filePath || query.cwd || query.target || ''
+  } else if (typeof query === 'string') {
+    rawPath = query.split('||')[0].trim()
+  }
+
+  return {
+    type: 'path',
+    value: String(rawPath)
+      .replace(/^["']|["']$/g, '')
+      .trim()
+  }
 }
 
-function getFolderFromPath(filePath) {
+export function getFolderFromPath(filePath) {
   if (!filePath) return ''
-  const lastSlash = filePath.lastIndexOf('/')
+  const normalized = filePath.replace(/[\\/]+/g, '/')
+  const lastSlash = normalized.lastIndexOf('/')
   if (lastSlash !== -1) {
-    return filePath.substring(0, lastSlash)
+    return normalized.substring(0, lastSlash)
   }
-  return filePath
+  return normalized
 }
 
 export const ApprovalProvider = ({ children }) => {
@@ -29,12 +46,17 @@ export const ApprovalProvider = ({ children }) => {
   const approvalRef = useRef(null)
   const [alwaysAllowedPaths, setAlwaysAllowedPaths] = useState([])
 
+  const location = useLocation()
+  const isChatStudio =
+    location?.pathname === '/chat' ||
+    (typeof window !== 'undefined' && window.location.hash.includes('/chat'))
+
   const alwaysAllowedPathsRef = useRef(alwaysAllowedPaths)
   useEffect(() => {
     alwaysAllowedPathsRef.current = alwaysAllowedPaths
   }, [alwaysAllowedPaths])
 
-  // Muat data alwaysAllowedPaths dari Dexie DB saat startup
+  // Muat data alwaysAllowedPaths dari SQLite database saat startup
   useEffect(() => {
     getAlwaysAllowedPaths().then((paths) => {
       if (Array.isArray(paths)) {
@@ -51,72 +73,105 @@ export const ApprovalProvider = ({ children }) => {
     return () => window.removeEventListener('config-updated', handleConfigUpdated)
   }, [])
 
-  // Pastikan ref selalu sinkron dengan state saat ini
+  // Pastikan ref selalu sinkron dengan state
   useEffect(() => {
     approvalRef.current = approvalData
   }, [approvalData])
 
-  const handleApproveAlwaysInternal = useCallback(async (targetQuery) => {
-    const rawPath = getPathFromQuery(targetQuery)
-    const folderPath = getFolderFromPath(rawPath)
-    const pathToAdd = folderPath || rawPath
+  const handleApproveAlwaysInternal = useCallback(async (tool, targetQuery) => {
+    const target = extractToolTarget(tool, targetQuery)
+    let identifierToAdd = ''
 
-    if (pathToAdd) {
-      const updated = await addAlwaysAllowedPath(pathToAdd)
+    if (target.type === 'command') {
+      identifierToAdd = `cmd:${target.value.toLowerCase()}`
+    } else if (target.type === 'path' && target.value) {
+      const normalizedPath = target.value.replace(/[\\/]+/g, '/').toLowerCase()
+      const folder = getFolderFromPath(normalizedPath)
+      identifierToAdd = folder || normalizedPath
+    }
+
+    if (identifierToAdd) {
+      const updated = await addAlwaysAllowedPath(identifierToAdd)
       if (Array.isArray(updated)) {
         setAlwaysAllowedPaths(updated)
       }
     }
   }, [])
 
-  const handleRemoteDecision = useCallback((decisionType, chatId) => {
-    // decisionType: 'approve_once' | 'approve_always' | 'reject'
-    const current = approvalRef.current
-    if (current) {
+  const resolveApproval = useCallback(
+    (approvalId, decisionType) => {
+      // decisionType: 'approve_once' | 'approve_always' | 'reject'
+      const current = approvalRef.current
+      if (!current) return
+      if (approvalId && current.id !== approvalId) return
+
       approvalRef.current = null
       setApprovalData(null)
 
       if (decisionType === 'approve_always') {
-        handleApproveAlwaysInternal(current.query, current)
+        handleApproveAlwaysInternal(current.tool, current.query)
       }
 
       const isApproved = decisionType === 'approve_once' || decisionType === 'approve_always'
+
+      // Update bubble state in chat feed if targetSetChatData exists
+      if (typeof current.meta?.targetSetChatData === 'function') {
+        current.meta.targetSetChatData((prev) =>
+          (prev || []).map((msg) =>
+            msg.id === current.id || msg.approvalId === current.id
+              ? { ...msg, status: decisionType }
+              : msg
+          )
+        )
+      }
+
       if (typeof current.resolve === 'function') {
         current.resolve(isApproved)
       }
+    },
+    [handleApproveAlwaysInternal]
+  )
 
-      if (chatId && window.api?.tgSendMessage) {
-        let msg = '[INFO]: Permintaan persetujuan telah ditolak.'
-        if (decisionType === 'approve_always') {
-          msg = '[INFO]: Permintaan persetujuan diizinkan SELAMANYA untuk path folder ini.'
-        } else if (decisionType === 'approve_once') {
-          msg = '[INFO]: Permintaan persetujuan telah diizinkan sekali.'
+  const handleRemoteDecision = useCallback(
+    (decisionType, chatId) => {
+      const current = approvalRef.current
+      if (current) {
+        resolveApproval(current.id, decisionType)
+
+        if (chatId && window.api?.tgSendMessage) {
+          let msg = '[INFO]: Permintaan persetujuan telah ditolak.'
+          if (decisionType === 'approve_always') {
+            msg = '[INFO]: Permintaan persetujuan diizinkan SELAMANYA.'
+          } else if (decisionType === 'approve_once') {
+            msg = '[INFO]: Permintaan persetujuan telah diizinkan sekali.'
+          }
+          window.api.tgSendMessage(chatId, msg)
         }
-        window.api.tgSendMessage(chatId, msg)
+      } else {
+        if (chatId && window.api?.tgSendMessage) {
+          window.api.tgSendMessage(
+            chatId,
+            '[INFO]: Tidak ada permintaan persetujuan yang sedang menunggu.'
+          )
+        }
       }
-    } else {
-      if (chatId && window.api?.tgSendMessage) {
-        window.api.tgSendMessage(chatId, '[INFO]: Tidak ada permintaan persetujuan yang sedang menunggu.')
-      }
-    }
-  }, [handleApproveAlwaysInternal])
+    },
+    [resolveApproval]
+  )
 
   useEffect(() => {
-    // 1. Jalur Dedicated Command Accept
     const unsubAccept = window.api?.onTgCommandAccept
       ? window.api.onTgCommandAccept((data) => {
           handleRemoteDecision('approve_once', data?.chatId)
         })
       : null
 
-    // 2. Jalur Dedicated Command Always
     const unsubAlways = window.api?.onTgCommandAlways
       ? window.api.onTgCommandAlways((data) => {
           handleRemoteDecision('approve_always', data?.chatId)
         })
       : null
 
-    // 3. Jalur Dedicated Command Reject
     const unsubReject = window.api?.onTgCommandReject
       ? window.api.onTgCommandReject((data) => {
           handleRemoteDecision('reject', data?.chatId)
@@ -130,93 +185,159 @@ export const ApprovalProvider = ({ children }) => {
     }
   }, [handleRemoteDecision])
 
-  const requestApproval = useCallback((message, tool, query) => {
-    // Cek apakah query/path sudah diizinkan selamanya
-    const targetPath = getPathFromQuery(query)
-    const targetFolder = getFolderFromPath(targetPath)
-    const currentAllowed = alwaysAllowedPathsRef.current || []
+  const checkIsAlwaysAllowed = useCallback((tool, query) => {
+    const target = extractToolTarget(tool, query)
+    const allowedList = alwaysAllowedPathsRef.current || []
 
-    const isAlwaysAllowed = currentAllowed.some((allowed) => {
-      const normAllowed = (allowed || '').toLowerCase().replace(/[\\/]+/g, '/')
-      if (!normAllowed) return false
-      return (
-        targetPath === normAllowed ||
-        targetFolder === normAllowed ||
-        targetPath.startsWith(normAllowed.endsWith('/') ? normAllowed : normAllowed + '/')
-      )
-    })
-
-    if (isAlwaysAllowed) {
-      return Promise.resolve(true)
+    if (target.type === 'command') {
+      const cmdKey = `cmd:${target.value.toLowerCase()}`
+      return allowedList.some((item) => (item || '').toLowerCase() === cmdKey)
     }
 
-    if (window.api?.tgBroadcastToAdmins) {
-      window.api.tgBroadcastToAdmins(
-        `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\nKetik /accept untuk mengizinkan sekali, /always untuk mengizinkan selamanya, atau /reject untuk menolak.`
-      )
+    if (target.type === 'path' && target.value) {
+      const normTarget = target.value.replace(/[\\/]+/g, '/').toLowerCase()
+      const targetFolder = getFolderFromPath(normTarget)
+
+      return allowedList.some((item) => {
+        const normAllowed = (item || '').toLowerCase().replace(/[\\/]+/g, '/')
+        if (!normAllowed || normAllowed.startsWith('cmd:')) return false
+        return (
+          normTarget === normAllowed ||
+          targetFolder === normAllowed ||
+          normTarget.startsWith(normAllowed.endsWith('/') ? normAllowed : normAllowed + '/')
+        )
+      })
     }
 
-    return new Promise((resolve) => {
-      const dataObj = { message, tool, query, resolve }
-      approvalRef.current = dataObj
-      setApprovalData(dataObj)
-    })
+    return false
   }, [])
 
-  const handleApproveOnce = () => {
-    const current = approvalRef.current || approvalData
-    approvalRef.current = null
-    setApprovalData(null)
-    if (current && typeof current.resolve === 'function') {
-      current.resolve(true)
-    }
-  }
-
-  const handleApproveAlways = () => {
-    const current = approvalRef.current || approvalData
-    approvalRef.current = null
-    setApprovalData(null)
-    if (current) {
-      handleApproveAlwaysInternal(current.query, current)
-      if (typeof current.resolve === 'function') {
-        current.resolve(true)
+  const requestApproval = useCallback(
+    (message, tool, query, meta = {}) => {
+      if (checkIsAlwaysAllowed(tool, query)) {
+        return Promise.resolve(true)
       }
-    }
-  }
 
-  const handleReject = () => {
-    const current = approvalRef.current || approvalData
-    approvalRef.current = null
-    setApprovalData(null)
-    if (current && typeof current.resolve === 'function') {
-      current.resolve(false)
-    }
-  }
+      if (window.api?.tgBroadcastToAdmins) {
+        window.api.tgBroadcastToAdmins(
+          `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\nKetik /accept untuk mengizinkan sekali, /always untuk mengizinkan selamanya, atau /reject untuk menolak.`
+        )
+      }
+
+      const approvalId = `approval_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
+      return new Promise((resolve) => {
+        const dataObj = {
+          id: approvalId,
+          message,
+          tool,
+          query,
+          meta,
+          status: 'pending',
+          resolve
+        }
+        approvalRef.current = dataObj
+        setApprovalData(dataObj)
+
+        // Jika dipanggil dari sesi percakapan, tambahkan ApprovalBubble ke riwayat chat
+        if (typeof meta.targetSetChatData === 'function') {
+          const approvalMsg = {
+            id: approvalId,
+            role: 'ai',
+            isApproval: true,
+            approvalId,
+            tool,
+            content: message,
+            message,
+            query,
+            status: 'pending',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+          meta.targetSetChatData((prev) => [...(prev || []), approvalMsg])
+        }
+      })
+    },
+    [checkIsAlwaysAllowed]
+  )
+
+  const activeTargetInfo = approvalData
+    ? extractToolTarget(approvalData.tool, approvalData.query)
+    : null
 
   return (
-    <ApprovalContext.Provider value={{ requestApproval, alwaysAllowedPaths, setAlwaysAllowedPaths }}>
+    <ApprovalContext.Provider
+      value={{
+        requestApproval,
+        resolveApproval,
+        activeApproval: approvalData,
+        alwaysAllowedPaths,
+        setAlwaysAllowedPaths
+      }}
+    >
       {children}
-      {approvalData && (
+
+      {/* Floating Dialog: Hanya ditampilkan di MarkHome atau halaman non-ChatStudio */}
+      {approvalData && !isChatStudio && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-[response-fade-in_0.15s_ease-out_forwards]">
-          <div className="bg-base-200 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-lg w-full">
-            <h3 className="text-lg font-bold text-error mb-2 flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-error" /> Mark Meminta Izin
-            </h3>
+          <div className="bg-base-200 border border-warning/30 p-6 rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h3 className="text-base font-bold text-warning flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-warning" /> Mark Meminta Izin
+              </h3>
+              {approvalData.tool && (
+                <span className="badge badge-sm font-mono bg-warning/15 text-warning border-warning/30 font-semibold">
+                  {approvalData.tool}
+                </span>
+              )}
+            </div>
+
             <p className="mb-3 text-xs text-base-content/70">
               Mark membutuhkan persetujuan Anda untuk mengeksekusi aksi berikut.
             </p>
-            <div className="whitespace-pre-wrap font-mono text-xs bg-base-300 p-3.5 rounded-xl overflow-x-auto max-h-56 overflow-y-auto shadow-inner border border-white/5 mb-4 text-base-content/90">
-              {approvalData.message}
+
+            <div className="bg-base-300 p-3.5 rounded-xl overflow-x-auto max-h-56 overflow-y-auto shadow-inner border border-white/5 mb-4 text-xs font-mono text-base-content/90 custom-scrollbar">
+              {activeTargetInfo?.value ? (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase font-bold text-warning/80 flex items-center gap-1.5 select-none">
+                    {activeTargetInfo.type === 'command' ? (
+                      <>
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span>Perintah Shell:</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileCode className="w-3.5 h-3.5" />
+                        <span>Target Berkas:</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-white whitespace-pre-wrap break-all">
+                    {activeTargetInfo.value}
+                  </div>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap break-all">{approvalData.message}</div>
+              )}
             </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2.5 mt-4">
-              <button className="btn btn-ghost btn-sm" onClick={handleReject}>
+              <button
+                className="btn btn-ghost btn-sm text-error hover:bg-error/10 border border-error/20 cursor-pointer"
+                onClick={() => resolveApproval(approvalData.id, 'reject')}
+              >
                 Tolak
               </button>
               <div className="flex items-center gap-2">
-                <button className="btn btn-outline btn-sm" onClick={handleApproveOnce}>
+                <button
+                  className="btn btn-outline btn-warning btn-sm cursor-pointer"
+                  onClick={() => resolveApproval(approvalData.id, 'approve_once')}
+                >
                   Izinkan Sekali
                 </button>
-                <button className="btn btn-error btn-sm shadow-md" onClick={handleApproveAlways}>
+                <button
+                  className="btn btn-error btn-sm shadow-md cursor-pointer font-semibold"
+                  onClick={() => resolveApproval(approvalData.id, 'approve_always')}
+                >
                   Izinkan Selamanya
                 </button>
               </div>
