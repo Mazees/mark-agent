@@ -44,6 +44,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     chatData: mainChatData,
     setChatData: setMainChatData,
     handlePlanningCommand,
+    handleIntervention,
     isLoading: isMainLoading,
     isAgentBusy,
     runningSessionId,
@@ -208,6 +209,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       newTitle = rawDisplay.slice(0, 30) + (rawDisplay.length > 30 ? '...' : '')
       await renameSession(activeSessionId, newTitle)
       await loadAllSessions()
+    }
+
+    if (isCurrentLoading && typeof handleIntervention === 'function') {
+      handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
+      return
     }
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'

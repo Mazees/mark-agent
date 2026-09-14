@@ -149,7 +149,6 @@ export const useMarkPlan = ({
   }, [setChatData])
 
   const activeTaskObjectiveRef = useRef(null)
-  const interventionBufferRef = useRef([])
   const lastUserPromptRef = useRef('')
   const activeRunningSessionIdRef = useRef(1)
 
@@ -163,8 +162,36 @@ export const useMarkPlan = ({
   }
 
   // Menampung arahan/intervensi user saat ReAct loop sedang berjalan
-  const handleIntervention = (msg) => {
-    interventionBufferRef.current.push(msg)
+  const handleIntervention = (msg, targetSessionId = null, opts = {}) => {
+    if (!msg || (typeof msg === 'string' && !msg.trim())) return
+    const textMsg = typeof msg === 'string' ? msg.trim() : String(msg)
+    const displayMsg = opts.displayPrompt || textMsg
+    const sId =
+      targetSessionId !== null && targetSessionId !== undefined
+        ? Number(targetSessionId)
+        : activeRunningSessionIdRef.current || 1
+
+    const session = activeSessionsRef.current.get(sId)
+    if (session) {
+      if (!session.interventions) session.interventions = []
+      session.interventions.push(textMsg)
+    }
+
+    const updater = activeSessionUpdatersRef.current.get(sId) || (sId === 1 ? setChatData : null)
+    if (updater) {
+      updater((prev) => {
+        const thinkingItem = prev.find((item) => item.isThinking)
+        const filtered = prev.filter((item) => !item.isThinking)
+        const item = {
+          role: 'user',
+          content: displayMsg,
+          timestamp: getCurrentTimeInfo(),
+          created_at: Date.now(),
+          isIntervention: true
+        }
+        return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+      })
+    }
   }
 
   // Penghentian tugas per-sesi secara independen
@@ -383,7 +410,7 @@ export const useMarkPlan = ({
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               (typeof rawArgs === 'string' ? rawArgs : '') ||
               'Jelaskan apa yang kamu lihat di layar ini secara ringkas.'
-              'Jelaskan apa yang kamu lihat di layar ini secara ringkas, fokus pada jendela aplikasi, teks, dan status UI.'
+            ;('Jelaskan apa yang kamu lihat di layar ini secara ringkas, fokus pada jendela aplikasi, teks, dan status UI.')
 
             const contentArray = [
               {
@@ -398,10 +425,14 @@ export const useMarkPlan = ({
 
             let textContent = ''
             try {
-              const visionResponse = await fetchAI([{ role: 'user', content: contentArray }], false, {
-                signal: currentSignal,
-                isSmallTask: true
-              })
+              const visionResponse = await fetchAI(
+                [{ role: 'user', content: contentArray }],
+                false,
+                {
+                  signal: currentSignal,
+                  isSmallTask: true
+                }
+              )
               textContent =
                 typeof visionResponse === 'object' && visionResponse.content
                   ? visionResponse.content
@@ -574,7 +605,11 @@ export const useMarkPlan = ({
             try {
               targetSetChatData((prev) => [
                 ...prev.filter((item) => !item.isThinking),
-                { role: 'ai', content: `Menganalisis gambar ${res.filename || ''}...`, isThinking: true }
+                {
+                  role: 'ai',
+                  content: `Menganalisis gambar ${res.filename || ''}...`,
+                  isThinking: true
+                }
               ])
               const visionResponse = await fetchAI(
                 [
@@ -747,18 +782,18 @@ export const useMarkPlan = ({
     activeRunningSessionIdRef.current = activeSessionNum
 
     if (activeSessionsRef.current.has(activeSessionNum)) {
-      console.log(
-        `[useMarkPlan] Menolak prompt masuk untuk Sesi ${activeSessionNum} karena sedang berjalan (Lock active).`
-      )
+      handleIntervention(userInput, activeSessionNum, { displayPrompt: opts.displayPrompt })
       return
     }
 
     const sessionAbortController = new AbortController()
-    activeSessionsRef.current.set(activeSessionNum, {
+    const sessionRecord = {
       abortController: sessionAbortController,
       startTime: Date.now(),
-      prompt: userInput
-    })
+      prompt: userInput,
+      interventions: []
+    }
+    activeSessionsRef.current.set(activeSessionNum, sessionRecord)
 
     if (activeSessionNum === 1) {
       abortControllerRef.current = sessionAbortController
@@ -1260,15 +1295,26 @@ export const useMarkPlan = ({
         }
 
         // Cek Intervensi User di tengah jalan
-        if (interventionBufferRef.current.length > 0) {
-          const interventions = interventionBufferRef.current.join('\n')
+        if (sessionRecord.interventions?.length > 0) {
+          const interventions = sessionRecord.interventions.splice(0).join('\n')
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
-          interventionBufferRef.current = []
 
-          targetSetChatData((prev) => [
-            ...prev.filter((item) => !item.isThinking),
-            { role: 'user', content: interventions }
-          ])
+          targetSetChatData((prev) => {
+            const alreadyPresent = prev.some(
+              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
+            )
+            if (alreadyPresent) return prev
+            const thinkingItem = prev.find((m) => m.isThinking)
+            const filtered = prev.filter((m) => !m.isThinking)
+            const item = {
+              role: 'user',
+              content: interventions,
+              timestamp: getCurrentTimeInfo(),
+              created_at: Date.now(),
+              isIntervention: true
+            }
+            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+          })
 
           execSteps.push({ task: `Intervensi User: ${interventions}` })
           targetPushProcess({
@@ -1829,6 +1875,46 @@ export const useMarkPlan = ({
               }
             })
           )
+        }
+
+        // Cek apakah ada intervensi user yang masuk saat streaming giliran ini
+        if (sessionRecord.interventions?.length > 0) {
+          const interventions = sessionRecord.interventions.splice(0).join('\n')
+          if (turnAnswer && turnAnswer.trim()) {
+            loopMessages.push({ role: 'assistant', content: turnAnswer })
+          }
+          loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
+
+          targetSetChatData((prev) => {
+            const alreadyPresent = prev.some(
+              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
+            )
+            if (alreadyPresent) return prev
+            const thinkingItem = prev.find((m) => m.isThinking)
+            const filtered = prev.filter((m) => !m.isThinking)
+            const item = {
+              role: 'user',
+              content: interventions,
+              timestamp: getCurrentTimeInfo(),
+              created_at: Date.now(),
+              isIntervention: true
+            }
+            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+          })
+
+          execSteps.push({ task: `Intervensi User: ${interventions}` })
+          targetPushProcess({
+            id: agenticProcessId,
+            type: 'planning',
+            status: 'active',
+            data: {
+              steps: [...execSteps],
+              currentStep: execSteps.length - 1,
+              reasoning: 'Menerima arahan baru dari user saat penyelesaian giliran.'
+            }
+          })
+
+          continue
         }
 
         isDone = true
