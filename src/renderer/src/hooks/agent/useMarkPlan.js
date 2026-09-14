@@ -943,12 +943,20 @@ export const useMarkPlan = ({
       } catch (e) {}
 
       // Susun System Prompt Mark V5
+      let systemTelemetry = null
+      try {
+        if (window.api && typeof window.api.getSystemTelemetry === 'function') {
+          systemTelemetry = await window.api.getSystemTelemetry()
+        }
+      } catch (_) {}
+
       const systemPrompt = await buildPlanningSystemPrompt(
         userInput,
         {
           ...opts,
           tgContext,
           currentMusicTrack,
+          systemTelemetry,
           activeTaskObjective: activeTaskObjectiveRef.current,
           existingSubagents
         },

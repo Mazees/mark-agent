@@ -52,6 +52,18 @@ const MarkHome = () => {
   const [ttsIntensity, setTtsIntensity] = useState(0)
   const [workspaceRoot, setWorkspaceRoot] = useState(null)
   const [bgOverlayOpacity, setBgOverlayOpacity] = useState(65)
+  const [thought, setThought] = useState('')
+
+  // Listener untuk event batin Thought Ticker dari Awareness Engine
+  useEffect(() => {
+    const handleThoughtEvent = (e) => {
+      if (e.detail?.thought) {
+        setThought(e.detail.thought)
+      }
+    }
+    window.addEventListener('mark:thought', handleThoughtEvent)
+    return () => window.removeEventListener('mark:thought', handleThoughtEvent)
+  }, [])
 
   // Pastikan sesi aktif MarkHome selalu Main Thread (Sesi 1)
   useEffect(() => {
@@ -399,25 +411,35 @@ const MarkHome = () => {
         </div>
       </aside>
 
-      {/* ── 7. BOTTOM DOCKED INPUT BAR ── */}
-      <footer className="absolute inset-x-0 bottom-0 z-40 pointer-events-auto">
-        <InputBar
-          sessionId="1"
-          onSubmit={(prompt, sendOptions = {}) => {
-            setIsSpeak(false)
-            handleSubmit(null, prompt, sendOptions)
-          }}
-          isLoading={isLoading || isAgentBusy}
-          isRecording={isRecording}
-          isProcessing={isProcessing}
-          audioIntensity={audioIntensity}
-          onStartRecord={startRecording}
-          onStopRecord={stopRecording}
-          onStop={handleStop}
-          source={inputSource}
-          workspaceRoot={workspaceRoot}
-          onSelectWorkspace={handleSelectWorkspace}
-        />
+      {/* ── 7. BOTTOM DOCKED INPUT BAR & SIMPLE THOUGHT TICKER ── */}
+      <footer className="absolute inset-x-0 bottom-0 z-40 pointer-events-auto flex flex-col items-center">
+        {thought && (
+          <div className="w-full max-w-2xl px-4 pb-1 flex items-center justify-center gap-2 pointer-events-none select-none transition-opacity duration-500 animate-[fade-in_0.3s_ease-out]">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse shrink-0" />
+            <span className="text-[11px] font-mono italic text-white/45 truncate max-w-lg">
+              {thought}
+            </span>
+          </div>
+        )}
+        <div className="w-full">
+          <InputBar
+            sessionId="1"
+            onSubmit={(prompt, sendOptions = {}) => {
+              setIsSpeak(false)
+              handleSubmit(null, prompt, sendOptions)
+            }}
+            isLoading={isLoading || isAgentBusy}
+            isRecording={isRecording}
+            isProcessing={isProcessing}
+            audioIntensity={audioIntensity}
+            onStartRecord={startRecording}
+            onStopRecord={stopRecording}
+            onStop={handleStop}
+            source={inputSource}
+            workspaceRoot={workspaceRoot}
+            onSelectWorkspace={handleSelectWorkspace}
+          />
+        </div>
       </footer>
     </div>
   )

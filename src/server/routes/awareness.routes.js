@@ -2,14 +2,29 @@ import { Router } from 'express'
 import {
   getActivityBuffer,
   clearActivityBuffer,
-  getSystemIdleSeconds
+  getSystemIdleSeconds,
+  getSystemTelemetry
 } from '../tools/awareness-tracker.js'
 import { captureDesktopScreenshotsBase64 } from '../tools/screen-service.js'
 
 export const awarenessRouter = Router()
 
-awarenessRouter.get('/awareness/activity-buffer', (_req, res) => {
-  res.json({ success: true, data: getActivityBuffer() })
+awarenessRouter.get('/awareness/activity-buffer', async (_req, res) => {
+  try {
+    const telemetry = await getSystemTelemetry()
+    res.json({ success: true, data: getActivityBuffer(), telemetry })
+  } catch {
+    res.json({ success: true, data: getActivityBuffer(), telemetry: null })
+  }
+})
+
+awarenessRouter.get('/awareness/telemetry', async (_req, res) => {
+  try {
+    const telemetry = await getSystemTelemetry()
+    res.json({ success: true, telemetry })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 awarenessRouter.post('/awareness/clear-buffer', (_req, res) => {
@@ -21,7 +36,7 @@ awarenessRouter.get('/awareness/idle-time', async (_req, res) => {
   try {
     const idleSeconds = await getSystemIdleSeconds()
     res.json({ success: true, idleSeconds })
-  } catch (_) {
+  } catch {
     res.json({ success: true, idleSeconds: 0 })
   }
 })

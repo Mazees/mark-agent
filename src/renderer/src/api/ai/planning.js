@@ -94,6 +94,8 @@ Kamu adalah Mark (Metacognitive Artificial Relational Knowledge), sebuah entitas
 
 ${await getPersonaPrompt(userId, conf.personality)}
 ${options.currentMusicTrack ? `\n# STATUS PLAYER MUSIK (REAL-TIME):\nLagu yang AKTIF DIPUTAR SEKARANG: "${options.currentMusicTrack.title}" oleh ${options.currentMusicTrack.artist}.\nPENTING: Lagu di playlist bisa berganti otomatis. JANGAN TERKECUH oleh riwayat chat lama yang menyebutkan lagu sebelumnya! Untuk semua pertanyaan atau obrolan tentang musik yang sedang berjalan, HANYA gunakan data REAL-TIME ini sebagai referensi utama!` : ''}
+${options.systemTelemetry ? `\n# TELEMETRI FISIK PC (REAL-TIME):\n- Status Baterai: ${options.systemTelemetry.battery?.hasBattery ? `${options.systemTelemetry.battery.percent}% (${options.systemTelemetry.battery.isCharging ? 'Sedang Di-charge' : 'Discharging'})` : 'PC Desktop (Sumber daya AC tetap)'}\n- Beban Mesin: RAM ${options.systemTelemetry.hardware?.ramPercent || 0}%, CPU ${options.systemTelemetry.hardware?.cpuPercent || 0}%\n- Keberadaan Pengguna: ${options.systemTelemetry.isUserAFK ? 'Baru saja kembali dari AFK' : 'Aktif di depan layar'}` : ''}
+${options.latestThought ? `\n# GUMAMAN BATIN TERAKHIR:\n"${options.latestThought}"` : ''}
 ${
   userSkillsList.length > 0 || learnedSkillsList.length > 0
     ? `\n# MARK SKILLS & CAPABILITY REGISTRY (PRIORITAS TERTINGGI #1)

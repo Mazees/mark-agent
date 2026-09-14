@@ -23,7 +23,14 @@ import { ProceduralMatrixLobe } from '../components/neural-core/ProceduralMatrix
 import { ProceduralSkillModal } from '../components/neural-core/ProceduralSkillModal'
 import { NodeDissectionModal } from '../components/neural-core/NodeDissectionModal'
 import { ResetAiModal } from '../components/neural-core/ResetAiModal'
-import { FaBrain, FaNetworkWired, FaGraduationCap, FaFire, FaLayerGroup } from 'react-icons/fa'
+import {
+  FaBrain,
+  FaNetworkWired,
+  FaGraduationCap,
+  FaFire,
+  FaLayerGroup,
+  FaBookOpen
+} from 'react-icons/fa'
 
 const NeuralCore = () => {
   const navigate = useNavigate()
@@ -38,7 +45,9 @@ const NeuralCore = () => {
           ? 'personality'
           : initialTab === 'procedural' || initialTab === 'skills'
             ? 'skills'
-            : 'overview'
+            : initialTab === 'journal'
+              ? 'journal'
+              : 'overview'
   )
 
   // Data States
@@ -51,6 +60,7 @@ const NeuralCore = () => {
   const [isResettingAi, setIsResettingAi] = useState(false)
   const [isExportingDb, setIsExportingDb] = useState(false)
   const [isRestoringDb, setIsRestoringDb] = useState(false)
+  const [journalEntries, setJournalEntries] = useState([])
   const fileInputRef = useRef(null)
   const [toastMessage, setToastMessage] = useState(null)
 
@@ -76,15 +86,16 @@ const NeuralCore = () => {
     setSearchParams({ tab: tabId })
   }
 
-  // Load Seluruh Data Otak
+  // Muat Data Pusat Otak
   const loadBrainData = useCallback(async () => {
-    setLoading(true)
     try {
-      // 1. Karakter & Emosi
-      const rel = await getRelationship('owner')
-      setTraits(rel)
+      setLoading(true)
 
-      // 2. Skill Yang Di Pelajari (Learned Skills) & Custom User Skills (Disk)
+      // 1. Karakter & Status Hubungan (Owner)
+      const userTraits = await getRelationship('owner')
+      setTraits(userTraits)
+
+      // 2. Data Keahlian Hasil Belajar (Learned Skills)
       const skills = await getAllLearnedSkills()
       setLearnedSkills(skills || [])
 
@@ -101,6 +112,11 @@ const NeuralCore = () => {
       const archives = await getAllChatArchives()
       const explicitMemories = await getAllMemory()
       const documents = await getAllDocuments()
+
+      const journals = (explicitMemories || [])
+        .filter((m) => m.type === 'private_journal' || m.type === 'journal')
+        .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+      setJournalEntries(journals)
 
       const nodes = []
       const links = []
@@ -541,6 +557,17 @@ const NeuralCore = () => {
           >
             <FaGraduationCap size={11} /> Skill Yang Di Pelajari
           </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('journal')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'journal'
+                ? 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
+                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
+            }`}
+          >
+            <FaBookOpen size={11} /> Buku Harian
+          </button>
         </div>
       </header>
 
@@ -629,6 +656,75 @@ const NeuralCore = () => {
                 onDeleteSkill={handleDeleteSkill}
                 isFullView={true}
               />
+            )}
+
+            {/* MODE 5: BUKU HARIAN MARK (PRIVATE JOURNAL) */}
+            {activeTab === 'journal' && (
+              <div className="flex-1 flex flex-col min-h-0 bg-base-200/40 border border-white/5 rounded-2xl p-6 overflow-hidden">
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/5 shrink-0">
+                  <div>
+                    <h2 className="text-sm font-bold font-mono tracking-wider uppercase text-white flex items-center gap-2">
+                      <FaBookOpen className="text-primary" /> Buku Harian Refleksi Mark
+                    </h2>
+                    <p className="text-[11px] font-mono text-white/40 mt-0.5">
+                      Catatan perenungan batin dan kesan pribadi Mark mengenai hari-harinya bersama
+                      Anda.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono px-2.5 py-1 bg-white/5 rounded-lg border border-white/5 text-white/60">
+                    {journalEntries.length} Catatan
+                  </span>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                  {journalEntries.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/30 font-mono text-xs">
+                      <FaBookOpen className="w-8 h-8 mb-3 opacity-20 text-primary" />
+                      <p>Belum ada catatan refleksi batin.</p>
+                      <p className="text-[10px] text-white/20 mt-1 max-w-sm">
+                        Mark menulis buku harian secara otomatis di tengah malam atau setelah sesi
+                        kerja panjang.
+                      </p>
+                    </div>
+                  ) : (
+                    journalEntries.map((item) => {
+                      const dateStr = item.created_at
+                        ? new Date(item.created_at).toLocaleDateString('id-ID', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })
+                        : 'Waktu Tidak Tercatat'
+                      const timeStr = item.created_at
+                        ? new Date(item.created_at).toLocaleTimeString('id-ID', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })
+                        : ''
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-xl bg-base-300/60 border border-white/5 hover:border-primary/20 transition-all flex flex-col gap-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono font-bold text-primary tracking-wide">
+                              {dateStr} {timeStr ? `• ${timeStr}` : ''}
+                            </span>
+                            <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">
+                              {item.summary || 'Refleksi Harian'}
+                            </span>
+                          </div>
+                          <p className="text-xs font-mono italic text-white/80 leading-relaxed whitespace-pre-wrap">
+                            &ldquo;{item.memory}&rdquo;
+                          </p>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
             )}
           </>
         )}
