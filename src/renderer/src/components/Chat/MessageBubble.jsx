@@ -235,6 +235,19 @@ export const MessageBubble = React.memo(
                               <div className="text-white/80">{textResult}</div>
                             </div>
                           )}
+                          {t.preview && (
+                            <div className="mt-2 pt-1 border-t border-white/10">
+                              <div className="text-primary/70 font-semibold mb-1">Pratinjau Visual:</div>
+                              <div className="relative group/preview rounded-lg overflow-hidden border border-white/20 bg-black/40 max-w-sm">
+                                <img
+                                  src={t.preview}
+                                  alt="Tool Visual Output"
+                                  className="max-h-48 w-auto object-contain cursor-pointer transition-transform duration-200 group-hover/preview:scale-105"
+                                  onClick={() => window.open(t.preview, '_blank')}
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </details>
                     )

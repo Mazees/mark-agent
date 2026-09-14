@@ -922,6 +922,15 @@ export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'd
   const outPath = path.isAbsolute(filename) ? filename : path.join(os.homedir(), 'Desktop', filename)
   await session.page.screenshot({ path: outPath, fullPage: false })
   return `Screenshot berhasil disimpan ke ${outPath}`
+  const buffer = await session.page.screenshot({ path: outPath, fullPage: false })
+  const base64 = buffer ? buffer.toString('base64') : ''
+  const dataUrl = base64 ? `data:image/png;base64,${base64}` : null
+  return {
+    success: true,
+    message: `Screenshot berhasil disimpan ke ${outPath}`,
+    path: outPath,
+    dataUrl
+  }
 }
 
 export async function downloadFile(url, filename, sessionId = 'default') {

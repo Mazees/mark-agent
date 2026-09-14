@@ -158,6 +158,66 @@ export const fileTools = {
     }
   },
 
+  'read-image': {
+    needsApproval: false,
+    handler: async (args, config) => {
+      try {
+        let filePath = ''
+        let query = null
+        if (typeof args === 'object' && args !== null) {
+          filePath = (args.file_path || args.path || '').trim()
+          query = args.query ? String(args.query).trim() : null
+        } else {
+          filePath = String(args || '').trim()
+        }
+
+        if (!filePath) {
+          return { success: false, message: 'Path berkas gambar wajib diisi.' }
+        }
+
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        if (!path.isAbsolute(filePath)) {
+          filePath = path.join(activeRoot, filePath)
+        }
+
+        if (!fs.existsSync(filePath)) {
+          return { success: false, message: `Berkas gambar tidak ditemukan di path: ${filePath}` }
+        }
+
+        const ext = path.extname(filePath).toLowerCase()
+        const mimeMap = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.webp': 'image/webp',
+          '.gif': 'image/gif',
+          '.bmp': 'image/bmp',
+          '.svg': 'image/svg+xml'
+        }
+
+        const mimeType = mimeMap[ext] || 'image/png'
+        const fileBuffer = await fs.promises.readFile(filePath)
+        const b64 = fileBuffer.toString('base64')
+        const dataUrl = `data:${mimeType};base64,${b64}`
+        const fileName = path.basename(filePath)
+
+        return {
+          success: true,
+          isImage: true,
+          path: filePath,
+          filename: fileName,
+          query,
+          dataUrl,
+          data: `File gambar '${fileName}' berhasil dibaca. Siap dianalisis secara visual.`,
+          message: `File gambar '${fileName}' berhasil dibaca.`
+        }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
   'file-outline': {
     needsApproval: false,
     handler: async (args, config) => {

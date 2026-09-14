@@ -380,8 +380,10 @@ export const useMarkPlan = ({
 
             const promptText =
               (typeof rawArgs === 'object' && rawArgs?.prompt) ||
+              (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               (typeof rawArgs === 'string' ? rawArgs : '') ||
               'Jelaskan apa yang kamu lihat di layar ini secara ringkas.'
+              'Jelaskan apa yang kamu lihat di layar ini secara ringkas, fokus pada jendela aplikasi, teks, dan status UI.'
 
             const contentArray = [
               {
@@ -394,20 +396,33 @@ export const useMarkPlan = ({
               }))
             ]
 
-            const visionResponse = await fetchAI([{ role: 'user', content: contentArray }], false, {
-              signal: currentSignal,
-              isSmallTask: true
-            })
-            const textContent =
-              typeof visionResponse === 'object' && visionResponse.content
-                ? visionResponse.content
-                : String(visionResponse)
+            let textContent = ''
+            try {
+              const visionResponse = await fetchAI([{ role: 'user', content: contentArray }], false, {
+                signal: currentSignal,
+                isSmallTask: true
+              })
+              textContent =
+                typeof visionResponse === 'object' && visionResponse.content
+                  ? visionResponse.content
+                  : String(visionResponse)
+            } catch (vErr) {
+              textContent = `(Analisis teks awal dilewati: ${vErr.message})`
+            }
 
             console.log(
               `[Vision AI - analyze-screen] Hasil analisis (${screenArray.length} monitor):`,
               textContent
             )
             resultString = `Hasil Analisis Layar (${screenArray.length} monitor):\n${textContent}`
+            return {
+              success: true,
+              resultString,
+              rejected: false,
+              imageUrls: screenArray,
+              previewUrl: screenArray[0],
+              toolExecution: { action: tool, query: stringQuery, result: resultString }
+            }
           } else {
             resultString = 'Gagal mengambil screenshot layar untuk analisis.'
           }
@@ -441,7 +456,7 @@ export const useMarkPlan = ({
               ])
 
               const promptText =
-                (typeof rawArgs === 'object' && rawArgs?.prompt) ||
+                (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
                 (typeof rawArgs === 'string' ? rawArgs : '') ||
                 'Jelaskan dengan detail apa yang terlihat dari kamera ini.'
 
@@ -453,18 +468,31 @@ export const useMarkPlan = ({
                 { type: 'image_url', image_url: { url: cameraFrame } }
               ]
 
-              const visionResponse = await fetchAI(
-                [{ role: 'user', content: contentArray }],
-                false,
-                { signal: currentSignal, isSmallTask: true }
-              )
-              const textContent =
-                typeof visionResponse === 'object' && visionResponse.content
-                  ? visionResponse.content
-                  : String(visionResponse)
+              let textContent = ''
+              try {
+                const visionResponse = await fetchAI(
+                  [{ role: 'user', content: contentArray }],
+                  false,
+                  { signal: currentSignal, isSmallTask: true }
+                )
+                textContent =
+                  typeof visionResponse === 'object' && visionResponse.content
+                    ? visionResponse.content
+                    : String(visionResponse)
+              } catch (vErr) {
+                textContent = `(Analisis teks awal dilewati: ${vErr.message})`
+              }
 
               console.log(`[Vision AI - camera-look] Hasil analisis:`, textContent)
               resultString = `Hasil Analisis Kamera:\n${textContent}`
+              return {
+                success: true,
+                resultString,
+                rejected: false,
+                imageUrls: [cameraFrame],
+                previewUrl: cameraFrame,
+                toolExecution: { action: tool, query: stringQuery, result: resultString }
+              }
             } else {
               resultString = 'Gagal mengambil gambar dari kamera.'
             }
@@ -536,15 +564,88 @@ export const useMarkPlan = ({
               resultString = `${fullText.slice(0, 2500)}\n\n[DOKUMEN DIPOTONG (Total: ${fullText.length} karakter). Gunakan read-document dengan keyword untuk pencarian spesifik]`
             }
           }
+
+          // Analisis visual untuk read-image
+          if (tool === 'read-image' && res.dataUrl) {
+            const promptText =
+              (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
+              (typeof rawArgs === 'string' ? rawArgs : '') ||
+              'Jelaskan apa yang kamu lihat pada gambar ini secara rinci.'
+            try {
+              targetSetChatData((prev) => [
+                ...prev.filter((item) => !item.isThinking),
+                { role: 'ai', content: `Menganalisis gambar ${res.filename || ''}...`, isThinking: true }
+              ])
+              const visionResponse = await fetchAI(
+                [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'text', text: promptText },
+                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                    ]
+                  }
+                ],
+                false,
+                { signal: currentSignal, isSmallTask: true }
+              )
+              const textContent =
+                typeof visionResponse === 'object' && visionResponse.content
+                  ? visionResponse.content
+                  : String(visionResponse)
+              resultString = `[Vision AI - read-image] Analisis berkas '${res.filename || 'gambar'}':\n${textContent}`
+            } catch (vErr) {
+              resultString = `Berkas gambar '${res.filename || 'gambar'}' berhasil dibaca. (Analisis teks awal dilewati: ${vErr.message}). Gambar visual diteruskan ke observasi.`
+            }
+          }
+
+          // Analisis visual untuk browser-screenshot jika query disertakan
+          if (tool === 'browser-screenshot' && res.dataUrl && (rawArgs?.query || res.query)) {
+            const promptText =
+              (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
+              res.query ||
+              'Jelaskan tampilan visual halaman web ini.'
+            try {
+              targetSetChatData((prev) => [
+                ...prev.filter((item) => !item.isThinking),
+                { role: 'ai', content: 'Menganalisis tampilan web...', isThinking: true }
+              ])
+              const visionResponse = await fetchAI(
+                [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'text', text: promptText },
+                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                    ]
+                  }
+                ],
+                false,
+                { signal: currentSignal, isSmallTask: true }
+              )
+              const textContent =
+                typeof visionResponse === 'object' && visionResponse.content
+                  ? visionResponse.content
+                  : String(visionResponse)
+              resultString = `[Vision AI - browser-screenshot] ${res.message || 'Screenshot berhasil diambil.'}\nHasil analisis:\n${textContent}`
+            } catch (vErr) {
+              resultString = `${res.message || 'Screenshot berhasil diambil.'} (Analisis teks awal dilewati: ${vErr.message}). Gambar visual diteruskan ke observasi.`
+            }
+          }
         } else {
           resultString = `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
         }
+
+        const toolImageUrls = res?.dataUrl ? [res.dataUrl] : null
+        const toolPreviewUrl = res?.dataUrl || null
 
         return {
           res,
           success: Boolean(res?.success),
           resultString,
           rejected: false,
+          imageUrls: toolImageUrls,
+          previewUrl: toolPreviewUrl,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
           loadedGroup: res?.loaded_group || null,
           durableTask: executionResult?.durableTask || null,
@@ -1379,6 +1480,7 @@ export const useMarkPlan = ({
             tool_calls: effectiveToolCalls
           }
           loopMessages.push(assistantMsg)
+          const turnVisualUrls = []
 
           for (const tc of effectiveToolCalls) {
             const toolName = tc.function?.name
@@ -1489,6 +1591,7 @@ export const useMarkPlan = ({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
               status: executionSucceeded ? 'done' : 'failed',
+              preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
               fullResult:
                 typeof execResult.resultString === 'string'
                   ? execResult.resultString.slice(0, 4000)
@@ -1498,6 +1601,14 @@ export const useMarkPlan = ({
                   ? execResult.resultString.slice(0, 250) + '...'
                   : execResult.resultString
             })
+
+            if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
+              for (const u of execResult.imageUrls) {
+                if (u && !turnVisualUrls.includes(u)) {
+                  turnVisualUrls.push(u)
+                }
+              }
+            }
 
             let obsStr = execResult.resultString
             if (
@@ -1522,6 +1633,23 @@ export const useMarkPlan = ({
               tool_call_id: tc.id,
               name: toolName,
               content: JSON.stringify(toolObservation)
+            })
+          }
+
+          // Jika ada tool yang menghasilkan gambar visual, sertakan observasi multimodal
+          if (turnVisualUrls.length > 0) {
+            loopMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: '[Visual Observation]: Berikut adalah gambar visual aktual beresolusi penuh dari eksekusi tool di atas untuk kamu analisis secara langsung:'
+                },
+                ...turnVisualUrls.map((url) => ({
+                  type: 'image_url',
+                  image_url: { url }
+                }))
+              ]
             })
           }
 

@@ -16,7 +16,11 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const searchQuery = (typeof args === 'object' && args !== null ? args.query || args.keyword : String(args || '')).trim()
+        const searchQuery = (
+          typeof args === 'object' && args !== null
+            ? args.query || args.keyword
+            : String(args || '')
+        ).trim()
         if (!searchQuery) return { success: false, message: 'Query pencarian kosong.' }
 
         let results = []
@@ -106,7 +110,11 @@ export const browserTools = {
                 const inner = a[2] || ''
                 if (href.includes('bing.com/ck/') || href.startsWith('http')) {
                   if (!realUrl) realUrl = decodeBingUrl(href)
-                  if (!rawTitle && !inner.includes('class="tpic"') && !inner.includes('class="wr_fav"')) {
+                  if (
+                    !rawTitle &&
+                    !inner.includes('class="tpic"') &&
+                    !inner.includes('class="wr_fav"')
+                  ) {
                     rawTitle = inner
                   }
                 }
@@ -116,7 +124,12 @@ export const browserTools = {
                 li.match(/<div class="b_caption"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i) ||
                 li.match(/<p[^>]*>([\s\S]*?)<\/p>/i)
 
-              if (realUrl && !realUrl.includes('bing.com/search') && !realUrl.endsWith('.css') && !realUrl.endsWith('.js')) {
+              if (
+                realUrl &&
+                !realUrl.includes('bing.com/search') &&
+                !realUrl.endsWith('.css') &&
+                !realUrl.endsWith('.js')
+              ) {
                 const title = clean(rawTitle.includes('›') ? rawTitle.split('›').pop() : rawTitle)
                 const snippet = clean(snippetMatch ? snippetMatch[1] : '')
                 if (title && !results.some((r) => r.url === realUrl)) {
@@ -183,8 +196,11 @@ export const browserTools = {
   'browser-fetch': {
     needsApproval: false,
     handler: async (args) => {
-      let targetUrl = (typeof args === 'object' && args !== null ? args.url : String(args || '')).trim()
-      const maxChars = typeof args === 'object' && args !== null ? (parseInt(args.max_chars, 10) || 4000) : 4000
+      let targetUrl = (
+        typeof args === 'object' && args !== null ? args.url : String(args || '')
+      ).trim()
+      const maxChars =
+        typeof args === 'object' && args !== null ? parseInt(args.max_chars, 10) || 4000 : 4000
       if (!targetUrl) return { success: false, message: 'URL tujuan tidak boleh kosong.' }
 
       if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
@@ -197,14 +213,15 @@ export const browserTools = {
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
           },
           timeout: 12000,
           maxRedirects: 5
         })
 
-        const html = typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+        const html =
+          typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
 
         // Bersihkan tag script, style, svg, noscript, nav, footer, header
         let cleanText = html
@@ -230,7 +247,9 @@ export const browserTools = {
           .trim()
 
         if (cleanText.length > maxChars) {
-          cleanText = cleanText.slice(0, maxChars) + `\n\n[...KONTEN DIPOTONG KARENA MELEBIHI ${maxChars} KARAKTER...]`
+          cleanText =
+            cleanText.slice(0, maxChars) +
+            `\n\n[...KONTEN DIPOTONG KARENA MELEBIHI ${maxChars} KARAKTER...]`
         }
 
         return {
@@ -268,7 +287,11 @@ export const browserTools = {
   'browser-close': {
     handler: async (args, config) => {
       try {
-        const sessionId = config?.sessionId || (typeof args === 'object' && args !== null ? (args.session_id || 'default') : String(args || '').trim() || 'default')
+        const sessionId =
+          config?.sessionId ||
+          (typeof args === 'object' && args !== null
+            ? args.session_id || 'default'
+            : String(args || '').trim() || 'default')
         const result = await closeBrowser(sessionId)
         return { success: true, data: result }
       } catch (e) {
@@ -281,7 +304,11 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const sessionId = config?.sessionId || (typeof args === 'object' && args !== null ? (args.session_id || 'default') : String(args || '').trim() || 'default')
+        const sessionId =
+          config?.sessionId ||
+          (typeof args === 'object' && args !== null
+            ? args.session_id || 'default'
+            : String(args || '').trim() || 'default')
         const result = await showBrowserWindow(sessionId)
         return { success: true, data: result }
       } catch (e) {
@@ -294,7 +321,11 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const sessionId = config?.sessionId || (typeof args === 'object' && args !== null ? (args.session_id || 'default') : String(args || '').trim() || 'default')
+        const sessionId =
+          config?.sessionId ||
+          (typeof args === 'object' && args !== null
+            ? args.session_id || 'default'
+            : String(args || '').trim() || 'default')
         const result = await hideBrowserWindow(sessionId)
         return { success: true, data: result }
       } catch (e) {
@@ -364,7 +395,11 @@ export const browserTools = {
   'browser-scroll': {
     needsApproval: false,
     handler: async (args, config) => {
-      const direction = (typeof args === 'object' && args !== null ? args.direction : String(args || '')).trim().toLowerCase()
+      const direction = (
+        typeof args === 'object' && args !== null ? args.direction : String(args || '')
+      )
+        .trim()
+        .toLowerCase()
       if (direction !== 'up' && direction !== 'down') {
         return { success: false, error: "Gunakan 'up' atau 'down'." }
       }
@@ -382,7 +417,8 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const prompt = typeof args === 'object' && args !== null ? (args.prompt || '') : String(args || '')
+        const prompt =
+          typeof args === 'object' && args !== null ? args.prompt || '' : String(args || '')
         const sessionId = config?.sessionId || 'default'
         const result = await executeAction({ action: 'unblock', value: prompt }, sessionId)
         return { success: true, data: result }
@@ -396,7 +432,8 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const script = typeof args === 'object' && args !== null ? (args.script || '') : String(args || '')
+        const script =
+          typeof args === 'object' && args !== null ? args.script || '' : String(args || '')
         const sessionId = config?.sessionId || 'default'
         const result = await executeScript(script, sessionId)
         return { success: true, data: result }
@@ -410,7 +447,8 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const selector = typeof args === 'object' && args !== null ? (args.selector || '') : String(args || '')
+        const selector =
+          typeof args === 'object' && args !== null ? args.selector || '' : String(args || '')
         const sessionId = config?.sessionId || 'default'
         const result = await extractData(selector, sessionId)
         return { success: true, data: result }
@@ -424,10 +462,21 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const filename = typeof args === 'object' && args !== null ? (args.filename || 'screenshot.png') : String(args || 'screenshot.png')
+        const filename =
+          typeof args === 'object' && args !== null
+            ? args.filename || 'screenshot.png'
+            : String(args || 'screenshot.png')
+        const query = typeof args === 'object' && args !== null ? args.query || null : null
         const sessionId = config?.sessionId || 'default'
         const result = await takeScreenshot(filename, sessionId)
-        return { success: true, data: result }
+        return {
+          success: true,
+          data: result.message || `Screenshot berhasil disimpan ke ${result.path}`,
+          message: result.message,
+          path: result.path,
+          dataUrl: result.dataUrl,
+          query
+        }
       } catch (e) {
         return { success: false, error: e.message }
       }
@@ -437,7 +486,10 @@ export const browserTools = {
   'browser-download': {
     needsApproval: true,
     approvalMessage: (args) => {
-      const url = typeof args === 'object' && args !== null ? `${args.url} -> ${args.filename}` : String(args || '')
+      const url =
+        typeof args === 'object' && args !== null
+          ? `${args.url} -> ${args.filename}`
+          : String(args || '')
       return `Mark ingin mendownload file dari browser:\n\n${url}`
     },
     handler: async (args, config) => {
