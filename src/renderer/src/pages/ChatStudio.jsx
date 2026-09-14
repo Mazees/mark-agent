@@ -67,6 +67,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     if (typeof setCurrentActiveSessionId === 'function') {
       setCurrentActiveSessionId(String(activeSessionId))
     }
+    return () => {
+      if (typeof setCurrentActiveSessionId === 'function') {
+        setCurrentActiveSessionId('1')
+      }
+    }
   }, [activeSessionId, setCurrentActiveSessionId])
 
   useEffect(() => {
@@ -779,6 +784,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
             <div className="max-w-6xl mx-auto w-full">
               <InputBar
+                sessionId={String(activeSessionId)}
                 inline={true}
                 onSubmit={handleSendMessage}
                 isLoading={isCurrentLoading}

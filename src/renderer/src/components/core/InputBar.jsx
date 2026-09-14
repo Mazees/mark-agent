@@ -53,6 +53,7 @@ const getFileIcon = (fileName = '') => {
 }
 
 const InputBar = ({
+  sessionId = '1',
   onSubmit,
   isLoading,
   isRecording,
@@ -106,9 +107,46 @@ const InputBar = ({
     }
   }, [showContextPopover])
 
+  // Muat status konteks awal sesi saat mount atau saat sessionId berganti
+  useEffect(() => {
+    let isCancelled = false
+    const loadInitialContext = async () => {
+      try {
+        const { calculateSessionChars, MAX_CONTEXT_CHARS } =
+          await import('../../api/ai/contextManager')
+        const { getChatData, getSessionCompact } = await import('../../api/db')
+        const [messages, compact] = await Promise.all([
+          getChatData(sessionId),
+          getSessionCompact(String(sessionId))
+        ])
+        if (isCancelled) return
+        const chars = calculateSessionChars(
+          messages || [],
+          compact?.summaryBlock || compact?.summary_block || '',
+          compact?.lastCompactedMessageId || compact?.last_compacted_message_id || null
+        )
+        setContextTracker({
+          currentChars: chars,
+          maxChars: MAX_CONTEXT_CHARS,
+          percentage: Math.min(100, (chars / MAX_CONTEXT_CHARS) * 100),
+          lastCompactedAt: compact?.lastCompactedAt || null
+        })
+      } catch {
+        // ignore
+      }
+    }
+    loadInitialContext()
+    return () => {
+      isCancelled = true
+    }
+  }, [sessionId])
+
   useEffect(() => {
     const handleTrackerUpdate = (e) => {
       if (e.detail) {
+        if (e.detail.sessionId && String(e.detail.sessionId) !== String(sessionId)) {
+          return
+        }
         setContextTracker({
           currentChars: Number(e.detail.currentChars || 0),
           maxChars: Number(e.detail.maxChars || 525000),
@@ -122,7 +160,7 @@ const InputBar = ({
     return () => {
       window.removeEventListener('context-tracker-updated', handleTrackerUpdate)
     }
-  }, [])
+  }, [sessionId])
 
   const reloadSkills = async () => {
     if (window.api && window.api.getSkills) {
