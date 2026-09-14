@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import {
   FaMicrophone,
   FaStop,
@@ -15,6 +15,8 @@ import {
 } from 'react-icons/fa'
 import ConfirmModal from './ConfirmModal'
 import { NATIVE_SKILLS } from './native-skills'
+import { calculateSessionChars, MAX_CONTEXT_CHARS } from '../../api/ai/contextManager'
+import { getChatData, getSessionCompact } from '../../api/db'
 
 const EMOJIS = [
   '😂',
@@ -112,9 +114,6 @@ const InputBar = ({
     let isCancelled = false
     const loadInitialContext = async () => {
       try {
-        const { calculateSessionChars, MAX_CONTEXT_CHARS } =
-          await import('../../api/ai/contextManager')
-        const { getChatData, getSessionCompact } = await import('../../api/db')
         const [messages, compact] = await Promise.all([
           getChatData(sessionId),
           getSessionCompact(String(sessionId))
