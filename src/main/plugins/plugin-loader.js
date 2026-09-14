@@ -44,7 +44,6 @@ export async function loadAllPlugins() {
 
           if (manifest.isEnabled !== false && Array.isArray(manifest.actions)) {
             for (const act of manifest.actions) {
-              const actHandler = handlerInstance[act.name] || (typeof handlerInstance === 'function' ? handlerInstance : null)
               const actHandler =
                 handlerInstance[act.name] ||
                 (typeof handlerInstance === 'function' ? handlerInstance : null)
@@ -90,7 +89,6 @@ export async function loadAllPlugins() {
                 const rawCode = indexContent.substring(startIdx + matchedPatternLen, i)
                 act.code = rawCode
                   .split('\n')
-                  .map((l) => (l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l))
                   .map((l) =>
                     l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l
                   )
@@ -123,7 +121,6 @@ export function normalizePluginQuery(rawQuery) {
   if (typeof rawQuery === 'number' || typeof rawQuery === 'boolean') return String(rawQuery)
   if (typeof rawQuery === 'object') {
     if (rawQuery.query !== undefined) {
-      return typeof rawQuery.query === 'object' ? JSON.stringify(rawQuery.query) : String(rawQuery.query)
       return typeof rawQuery.query === 'object'
         ? JSON.stringify(rawQuery.query)
         : String(rawQuery.query)
@@ -143,28 +140,18 @@ export function normalizePluginQuery(rawQuery) {
   return String(rawQuery)
 }
 
-export async function executePluginAction(actionName, query) {
 function findRegisteredAction(actionName) {
   let registered = pluginActionHandlers.get(actionName)
-
-  // Fallback: Jika actionName berformat plugin-<pluginName>-<actionName> atau memiliki prefix plugin-
   if (!registered && typeof actionName === 'string') {
-    // 1. Cek exact match jika disimpan dengan prefix
     const lowerName = actionName.toLowerCase()
     for (const [key, value] of pluginActionHandlers.entries()) {
       const fullKey = `plugin-${value.pluginName}-${value.actionName}`.toLowerCase()
       if (
-        key.toLowerCase() === actionName.toLowerCase() ||
-        fullKey === actionName.toLowerCase() ||
-        actionName.toLowerCase().endsWith(`-${key.toLowerCase()}`) ||
-        actionName.toLowerCase().endsWith(`_${key.toLowerCase()}`)
         key.toLowerCase() === lowerName ||
         fullKey === lowerName ||
         lowerName.endsWith(`-${key.toLowerCase()}`) ||
         lowerName.endsWith(`_${key.toLowerCase()}`)
       ) {
-        registered = value
-        break
         return value
       }
     }
@@ -182,7 +169,6 @@ export async function executePluginAction(actionName, query) {
   }
 
   if (!registered) {
-    return { success: false, error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.` }
     return {
       success: false,
       error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.`
@@ -211,7 +197,6 @@ export async function executePluginAction(actionName, query) {
 }
 
 export async function savePluginDefinition(payload) {
-  const { name, displayName, description, actions = [], dependencies = [], isEdit = false } = payload
   const {
     name,
     displayName,
@@ -239,7 +224,6 @@ export async function savePluginDefinition(payload) {
   const depsList = Array.isArray(dependencies)
     ? dependencies
     : typeof dependencies === 'string'
-      ? dependencies.split(',').map((d) => d.trim()).filter(Boolean)
       ? dependencies
           .split(',')
           .map((d) => d.trim())
@@ -274,7 +258,6 @@ export async function savePluginDefinition(payload) {
   })
   jsCode += `};\n`
 
-  await fs.promises.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify(manifest, null, 2), 'utf-8')
   await fs.promises.writeFile(
     path.join(pluginDir, 'plugin.json'),
     JSON.stringify(manifest, null, 2),
