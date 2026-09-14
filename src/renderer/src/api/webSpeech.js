@@ -3,6 +3,7 @@
 export const DEFAULT_LANGUAGE = 'id-ID'
 
 let currentRecognition = null
+let currentSessionId = 0
 let isListening = false
 let isStarting = false
 
@@ -10,7 +11,10 @@ let isStarting = false
  * Memeriksa apakah browser / Webview mendukung Web Speech API
  */
 export function isWebSpeechSupported() {
-  return typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+  return (
+    typeof window !== 'undefined' &&
+    Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+  )
 }
 
 /**
@@ -24,6 +28,7 @@ export function getSpeechRecognitionClass() {
 /**
  * Memulai pengenalan suara menggunakan Web Speech API
  * @param {Object} options
+ * @param {Function} options.onStart - Callback saat perekaman benar-benar aktif
  * @param {Function} options.onResult - Callback saat hasil final diterima (transcript: string)
  * @param {Function} options.onInterim - Callback saat hasil sementara (interim) diterima (transcript: string)
  * @param {Function} options.onError - Callback saat error (error: Error)
@@ -32,6 +37,7 @@ export function getSpeechRecognitionClass() {
  * @param {string} options.lang - Bahasa rekognisi (default: 'id-ID')
  */
 export async function startWebSpeechRecognition({
+  onStart,
   onResult,
   onInterim,
   onError,
@@ -51,10 +57,11 @@ export async function startWebSpeechRecognition({
   // Hentikan instance sebelumnya jika ada
   if (currentRecognition) {
     stopWebSpeechRecognition()
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
   isStarting = true
+  const sessionId = ++currentSessionId
 
   try {
     const recognition = new SpeechRec()
@@ -63,11 +70,18 @@ export async function startWebSpeechRecognition({
     recognition.interimResults = true
     recognition.maxAlternatives = 1
 
+    recognition.onstart = () => {
+      if (sessionId !== currentSessionId) return
+      isListening = true
+      if (onStart) onStart()
+    }
+
     recognition.onresult = (event) => {
+      if (sessionId !== currentSessionId) return
       let finalTranscript = ''
       let interimTranscript = ''
 
-      for (let i = 0; i < event.results.length; ++i) {
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
         const item = event.results[i]
         const transcriptPart = item[0]?.transcript || ''
         if (item.isFinal) {
@@ -86,15 +100,17 @@ export async function startWebSpeechRecognition({
     }
 
     recognition.onerror = (event) => {
+      if (sessionId !== currentSessionId) return
       // Abaikan error umum seperti 'no-speech' atau 'aborted'
       if (event.error === 'no-speech' || event.error === 'aborted') {
         return
       }
-      console.warn('[WebSpeech] Recognition Error:', event.error)
+      console.error('[WebSpeech] Recognition Error:', event.error)
       if (onError) onError(new Error(event.error))
     }
 
     recognition.onend = () => {
+      if (sessionId !== currentSessionId) return
       isListening = false
       if (currentRecognition === recognition) {
         currentRecognition = null
@@ -109,8 +125,10 @@ export async function startWebSpeechRecognition({
       recognition.start()
     } catch (startErr) {
       if (startErr.name === 'InvalidStateError') {
-        await new Promise((resolve) => setTimeout(resolve, 200))
-        recognition.start()
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        if (sessionId === currentSessionId) {
+          recognition.start()
+        }
       } else {
         throw startErr
       }
@@ -118,9 +136,11 @@ export async function startWebSpeechRecognition({
 
     return recognition
   } catch (err) {
-    isListening = false
-    currentRecognition = null
-    if (onError) onError(err)
+    if (sessionId === currentSessionId) {
+      isListening = false
+      currentRecognition = null
+      if (onError) onError(err)
+    }
     return null
   } finally {
     isStarting = false
