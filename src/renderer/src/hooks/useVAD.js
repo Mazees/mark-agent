@@ -355,7 +355,7 @@ export const useVAD = ({
         !isWebSpeechSupported()
       ) {
         if (isWakeListeningRef.current) {
-          console.log('[WakeWord] ⏸️ Menjeda deteksi wake word latar belakang...')
+          console.log('[WakeWord] Menjeda deteksi wake word latar belakang...')
           isWakeListeningRef.current = false
           stopWebSpeechRecognition()
           wakeRecognitionRef.current = null
@@ -367,31 +367,33 @@ export const useVAD = ({
       if (isWakeListeningRef.current) return
 
       isStartingWake = true
-      isWakeListeningRef.current = true
 
       const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
       const customWakeWords = currentConfigRef.current?.customWakeWords || ''
-
-      console.log('[WakeWord] 🎙️ Standby mendengarkan kata pemicu ("Hey Mark" / "Mark")...', {
-        lang,
-        customWakeWords
-      })
 
       try {
         const rec = await startWebSpeechRecognition({
           lang,
           continuous: true,
+          onStart: () => {
+            if (!isMounted) return
+            isWakeListeningRef.current = true
+            console.log('[WakeWord] Standby mendengarkan kata pemicu ("Hey Mark" / "Mark")...', {
+              lang,
+              customWakeWords
+            })
+          },
           onInterim: (interim) => {
             if (!interim || window.isMarkSpeaking || isRecordingRef.current) return
             console.log('[WakeWord] Hearing (interim):', interim)
             const check = detectWakeWord(interim, customWakeWords)
             if (check.detected) {
-              console.log('[WakeWord] ⚡ Wake word terdeteksi pada interim!', check)
+              console.log('[WakeWord] Wake word terdeteksi pada interim:', check)
               if (check.command) {
                 stopWebSpeechRecognition()
                 isWakeListeningRef.current = false
                 playWakeChime()
-                console.log('[WakeWord] 🚀 Menjalankan perintah suara langsung:', check.command)
+                console.log('[WakeWord] Menjalankan perintah suara langsung:', check.command)
                 onTranscriptRef.current(check.command, {
                   isWakeWord: true,
                   wakePhrase: check.wakePhrase || 'Mark'
@@ -404,36 +406,44 @@ export const useVAD = ({
             console.log('[WakeWord] Heard (final):', finalText)
             const check = detectWakeWord(finalText, customWakeWords)
             if (check.detected) {
-              console.log('[WakeWord] ⚡ Wake word terdeteksi pada final text!', check)
+              console.log('[WakeWord] Wake word terdeteksi pada final text:', check)
               stopWebSpeechRecognition()
               isWakeListeningRef.current = false
               playWakeChime()
               if (check.command) {
-                console.log('[WakeWord] 🚀 Menjalankan perintah suara langsung:', check.command)
+                console.log('[WakeWord] Menjalankan perintah suara langsung:', check.command)
                 onTranscriptRef.current(check.command, {
                   isWakeWord: true,
                   wakePhrase: check.wakePhrase || 'Mark'
                 })
               } else {
                 console.log(
-                  '[WakeWord] 🔔 Nama dipanggil tanpa perintah, otomatis menyalakan mic manual...'
+                  '[WakeWord] Nama dipanggil tanpa perintah, otomatis menyalakan mic manual...'
                 )
                 startManualRecording()
               }
             }
           },
           onError: (err) => {
-            console.warn('[WakeWord] Session warning:', err?.message || err)
+            console.error('[WakeWord] Session error:', err?.message || err)
             isWakeListeningRef.current = false
+            wakeRecognitionRef.current = null
           },
           onEnd: () => {
             isWakeListeningRef.current = false
             wakeRecognitionRef.current = null
+            if (isMounted) {
+              setTimeout(() => {
+                if (isMounted) {
+                  checkAndEnsureWakeListener()
+                }
+              }, 300)
+            }
           }
         })
         wakeRecognitionRef.current = rec
       } catch (err) {
-        console.warn('[WakeWord] Gagal mengaktifkan session:', err?.message || err)
+        console.error('[WakeWord] Gagal mengaktifkan session:', err?.message || err)
         isWakeListeningRef.current = false
         wakeRecognitionRef.current = null
       } finally {
@@ -441,10 +451,10 @@ export const useVAD = ({
       }
     }
 
-    // Polling Watchdog: memeriksa kondisi setiap 1000ms
+    // Polling Watchdog santai: fail-safe setiap 3000ms
     const watchdogInterval = setInterval(() => {
       checkAndEnsureWakeListener()
-    }, 1000)
+    }, 3000)
 
     // Panggil langsung pada start
     checkAndEnsureWakeListener()

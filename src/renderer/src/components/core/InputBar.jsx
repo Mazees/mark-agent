@@ -819,7 +819,7 @@ const InputBar = ({
             onClick={handleToggleAutoMode}
             className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
               isAutoMode
-                ? 'bg-warning/20 text-warning border border-warning/40 shadow-[0_0_10px_rgba(234,179,8,0.2)] font-semibold'
+                ? 'bg-warning/20 text-warning border border-warning/40 font-semibold'
                 : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
             }`}
             title={
@@ -828,7 +828,7 @@ const InputBar = ({
                 : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
             }
           >
-            <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-warning text-warning' : ''}`} />
+            <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-white text-white' : ''}`} />
           </button>
 
           {/* Ring Gauge Context Indicator (~30px) */}
