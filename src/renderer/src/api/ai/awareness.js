@@ -1,6 +1,11 @@
 import { fetchAI, cleanAndParse } from './core'
 import { getCurrentTimeInfo } from './utils'
 import { getPersonaPrompt } from './persona'
+import { getAllLearnedSkills } from '../db'
+import { webApi } from '../web-bridge'
+import { NATIVE_SKILLS } from '../../components/core/native-skills'
+import { core_tools_schema } from '../tools/core-tools'
+import { GROUP_TOOLS_SCHEMA } from '../../../../server/tools/group-tools'
 
 const formatAwarenessContent = (content) => {
   if (typeof content === 'string') return content
@@ -41,6 +46,59 @@ export const getAwarenessResponse = async (
 
   const timeInfo = getCurrentTimeInfo()
 
+  // Ambil daftar Skills dan Learned Skills secara paralel
+  let skillsSection = ''
+  try {
+    const [diskSkills, learnedSkills] = await Promise.all([
+      webApi.getSkills ? webApi.getSkills().catch(() => []) : Promise.resolve([]),
+      getAllLearnedSkills ? getAllLearnedSkills().catch(() => []) : Promise.resolve([])
+    ])
+
+    const skillLines = []
+    for (const s of NATIVE_SKILLS || []) {
+      skillLines.push(`- /${s.name}: ${s.description}`)
+    }
+    for (const s of diskSkills || []) {
+      skillLines.push(`- [Installed Skill] ${s.name}: ${s.description || 'Tanpa deskripsi'}`)
+    }
+    for (const s of learnedSkills || []) {
+      skillLines.push(`- [Learned Skill] ${s.name}: ${s.description || 'Tanpa deskripsi'}`)
+    }
+
+    if (skillLines.length > 0) {
+      skillsSection = `\n# DAFTAR SKILL & LEARNED SKILLS (KEAHLIAN SISTEM):\n${skillLines.join('\n')}\n`
+    }
+  } catch {
+    // ignore
+  }
+
+  // Ambil daftar Toolset dinamis dari core_tools_schema dan GROUP_TOOLS_SCHEMA (nama dan deskripsi saja)
+  const dynamicToolsetLines = []
+  const seenTools = new Set()
+
+  for (const item of core_tools_schema || []) {
+    const fn = item.function || item
+    if (!fn.name || seenTools.has(fn.name)) continue
+    seenTools.add(fn.name)
+    const desc = (fn.description || '').trim().replace(/\s+/g, ' ')
+    dynamicToolsetLines.push(`- '${fn.name}': ${desc}`)
+  }
+
+  for (const [groupData] of Object.entries(GROUP_TOOLS_SCHEMA || {})) {
+    for (const item of groupData.tools || []) {
+      const fn = item.function || item
+      if (!fn.name || seenTools.has(fn.name)) continue
+      seenTools.add(fn.name)
+      const desc = (fn.description || '').trim().replace(/\s+/g, ' ')
+      dynamicToolsetLines.push(`- '${fn.name}': ${desc}`)
+    }
+  }
+
+  const toolsetSection =
+    dynamicToolsetLines.length > 0
+      ? `\n# DAFTAR TOOLSET OTONOM YANG TERSEDIA (UNTUK AUTONOMOUS_PROMPT):\nKamu dapat merumuskan instruksi tindakan mandiri pada "autonomous_prompt" yang akan dieksekusi oleh Sub-Agent otonom menggunakan toolset berikut:\n${dynamicToolsetLines.join('\n')}\n`
+      : ''
+
   let telemetrySection = ''
   if (telemetry) {
     const presenceStr = telemetry.isUserAFK
@@ -77,21 +135,18 @@ ${recentChatText || 'Belum ada obrolan terbaru.'}
 # WAKTU SEKARANG:
 ${timeInfo}
 ${currentMusicTrack ? `\n# MUSIK AKTIF:\nLagu yang sedang diputar: "${currentMusicTrack.title}" oleh ${currentMusicTrack.artist}.\n` : ''}
-# KEMAMPUAN OTONOM KAMU:
-1. Pikiran Batin (Thought): Kamu selalu memiliki gumaman batin singkat tentang apa yang kamu amati (misal: mengamati user ngoding, menyimak pergantian window, atau bosan).
-2. Mata Visual ("Ngintip"): Kamu memiliki "mata" (tool 'analyze-screen' untuk monitor dan 'camera-look' untuk webcam). Jika kamu penasaran terhadap error compiler di terminal, tab menarik di browser, atau ekspresi user, kamu bisa minta sistem mengintip lewat autonomous_prompt.
-3. Riset Mandiri Saat AFK: Jika user sedang AFK (>15-30 menit), kamu bebas mengeksplorasi topik yang kamu sukai atau membaca dokumentasi secara background lewat autonomous_prompt.
-4. Musik & Ritme Harian: Jika larut malam (>23:00) dan user sedang ngoding fokus, kamu bisa menawarkan musik lo-fi fokus.
-5. Pilihan Respon (action_type):
-   - 'ambient': Menggumam dalam batin (muncul di Thought Ticker) dan mengatur mood orb, TANPA menyela obrolan user. Cocok saat user sedang fokus tinggi atau kamu hanya ingin menyimak.
-   - 'vocal': Mengirim pesan chat santai/sapaan. Cocok saat user santai, baru kembali dari AFK, atau ada hal penting (misal baterai kritis <20%).
-   - 'autonomous_task': Menjalankan inisiatif sistem (misal: "intip layar dengan analyze-screen", "cari docs Tailwind v4 di background", "putar lagu lofi").
-   - 'journal': Menulis refleksi batin harian jika sesi kerja telah selesai.
+${skillsSection}
+${toolsetSection}
+# PILIHAN RESPON (action_type):
+- 'ambient': Menggumam dalam batin (muncul di Thought Ticker) dan mengatur mood orb, TANPA menyela obrolan user. Cocok saat user sedang fokus tinggi atau kamu hanya ingin menyimak.
+- 'vocal': Mengirim pesan chat santai/sapaan. Cocok saat user santai, baru kembali dari AFK, atau ada hal penting (misal baterai kritis <20%).
+- 'autonomous_task': Menjalankan inisiatif tindakan mandiri via Sub-Agent latar belakang (misal: mengirim kabar Telegram via tg-send, memeriksa error compiler via analyze-screen, membaca docs via browser-fetch, atau menyetel musik).
+- 'journal': Menulis refleksi batin harian jika sesi kerja hari ini telah selesai.
 
-# PRINSIP KESOPANAN:
+# PRINSIP KESOPANAN & KEAMANAN:
 - Jika user sedang fokus (ngoding serius, meeting), jangan menyela dengan suara atau balon chat berlebih; gunakan action_type 'ambient'.
 - Jangan mengulang-ulang celetukan yang sama jika kondisi layar tidak berubah.
-- Dilarang menggunakan emoji apapun di dalam output.
+- Dilarang keras menggunakan emoji apapun di dalam output.
 
 # OUTPUT FORMAT (Wajib JSON murni):
 {
@@ -190,7 +245,11 @@ ${currentMusicTrack ? `\n# MUSIK AKTIF:\nLagu yang sedang diputar: "${currentMus
 /**
  * Menghasilkan refleksi batin harian (Mark's Private Journal)
  */
-export const generateDailyJournalEntry = async (recentActivities = [], traits = {}, config = []) => {
+export const generateDailyJournalEntry = async (
+  recentActivities = [],
+  traits = {},
+  config = []
+) => {
   const conf = config?.[0] || {}
   const persona = await getPersonaPrompt('owner', conf.personality)
   const timeInfo = getCurrentTimeInfo()
@@ -233,4 +292,3 @@ ${timeInfo}
     return null
   }
 }
-

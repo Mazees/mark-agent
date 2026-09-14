@@ -286,6 +286,76 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               const { executeMemorySearch } = await import('../vectorMemory.js')
               const formatted = await executeMemorySearch(parsedArgs.query || '')
               res = { success: true, data: formatted }
+            } else if (toolName === 'analyze-screen') {
+              try {
+                const screens = await window.api?.takeScreenshot?.()
+                const screenArray = Array.isArray(screens) ? screens : screens ? [screens] : []
+                if (screenArray.length > 0) {
+                  const promptText =
+                    parsedArgs?.query ||
+                    parsedArgs?.prompt ||
+                    'Jelaskan apa yang kamu lihat di monitor ini secara ringkas, fokus pada teks, editor kode, atau pesan error.'
+                  const contentArray = [
+                    { type: 'text', text: promptText },
+                    ...screenArray.map((scr) => ({ type: 'image_url', image_url: { url: scr } }))
+                  ]
+                  const visionResponse = await fetchAI(
+                    [{ role: 'user', content: contentArray }],
+                    false,
+                    {
+                      isSmallTask: true
+                    }
+                  )
+                  const textContent =
+                    typeof visionResponse === 'object' && visionResponse.content
+                      ? visionResponse.content
+                      : String(visionResponse)
+                  res = {
+                    success: true,
+                    data: `[Vision AI - analyze-screen]:\n${textContent}`
+                  }
+                } else {
+                  res = { success: false, error: 'Gagal mengambil tangkapan layar untuk analisis.' }
+                }
+              } catch (scrErr) {
+                res = { success: false, error: `Error analyze-screen: ${scrErr.message}` }
+              }
+            } else if (toolName === 'camera-look') {
+              try {
+                const cameraFrame = await window.api?.captureCameraFrame?.()
+                if (cameraFrame) {
+                  const promptText =
+                    parsedArgs?.query ||
+                    parsedArgs?.prompt ||
+                    'Jelaskan apa yang terlihat di depan kamera secara ringkas.'
+                  const contentArray = [
+                    { type: 'text', text: promptText },
+                    { type: 'image_url', image_url: { url: cameraFrame } }
+                  ]
+                  const visionResponse = await fetchAI(
+                    [{ role: 'user', content: contentArray }],
+                    false,
+                    {
+                      isSmallTask: true
+                    }
+                  )
+                  const textContent =
+                    typeof visionResponse === 'object' && visionResponse.content
+                      ? visionResponse.content
+                      : String(visionResponse)
+                  res = {
+                    success: true,
+                    data: `[Vision AI - camera-look]:\n${textContent}`
+                  }
+                } else {
+                  res = {
+                    success: false,
+                    error: 'Kamera tidak aktif atau tidak dapat mengambil frame.'
+                  }
+                }
+              } catch (camErr) {
+                res = { success: false, error: `Error camera-look: ${camErr.message}` }
+              }
             } else if (window.api && window.api.executeNativeTool) {
               res = await window.api.executeNativeTool(toolName, parsedArgs, {
                 sessionId: subagentId

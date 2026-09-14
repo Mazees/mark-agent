@@ -69,9 +69,8 @@ export const useAwareness = ({
   const isAgentBusyRef = useRef(isAgentBusy)
   const lastCheckInRef = useRef(0)
 
-  // State Pelacak AFK & Tethering
+  // State Pelacak AFK
   const wasAfkRef = useRef(false)
-  const sentTelegramAfkRef = useRef(false)
   const lastJournalDateRef = useRef('')
 
   useEffect(() => {
@@ -145,34 +144,24 @@ export const useAwareness = ({
           }
         }
 
-        // 2. Aksi: Autonomous Task (Riset Mandiri AFK / Peeking)
+        // 2. Aksi: Autonomous Task (Riset Mandiri AFK / Peeking / Telegram via Sub-Agent)
         if (result.autonomous_prompt) {
-          if (telemetry?.isUserAFK) {
-            // User sedang AFK: delegasikan ke Sub-Agent senyap tanpa mengunci Main Thread
-            try {
-              const subAgent = await subagentStore.createSubagent({
-                name: 'Mark-SideProject',
-                role: 'Autonomous Curiosity Researcher',
-                goal: result.autonomous_prompt,
-                parentSessionId: '1',
-                parentSessionTitle: 'Main Thread'
+          try {
+            const isAfk = Boolean(telemetry?.isUserAFK)
+            const subAgent = await subagentStore.createSubagent({
+              name: isAfk ? 'Mark-SideProject' : 'Mark-Autonomous',
+              role: isAfk ? 'Autonomous Curiosity Researcher' : 'Autonomous Background Specialist',
+              goal: result.autonomous_prompt,
+              parentSessionId: 'awareness',
+              parentSessionTitle: 'Awareness Engine'
+            })
+            if (subAgent?.id) {
+              runSubagentTurn(subAgent.id, result.autonomous_prompt, 'mark').catch((subErr) => {
+                console.warn('[useAwareness] Subagent run error:', subErr)
               })
-              if (subAgent?.id) {
-                runSubagentTurn(subAgent.id, result.autonomous_prompt, 'mark')
-              }
-            } catch (subErr) {
-              console.warn('[useAwareness] Gagal spawn silent subagent:', subErr)
             }
-          } else if (handlePlanningCommandRef.current) {
-            // User aktif di depan layar: jalankan inisiatif via flow utama
-            handlePlanningCommandRef.current(
-              result.autonomous_prompt,
-              null,
-              true,
-              result.message || 'Melakukan inisiatif otonom...',
-              { disableTools: false },
-              true
-            )
+          } catch (subErr) {
+            console.warn('[useAwareness] Gagal spawn autonomous subagent:', subErr)
           }
         }
 
@@ -224,20 +213,9 @@ export const useAwareness = ({
           window.dispatchEvent(new CustomEvent('mark:sleeping', { detail: { isSleeping: true } }))
         }
 
-        // Deteksi Cross-Device Telegram Tethering (idle > 1 jam)
-        if (idleSec >= 3600 && !sentTelegramAfkRef.current) {
-          sentTelegramAfkRef.current = true
-          if (window.api?.tgBroadcastToAdmins) {
-            window.api.tgBroadcastToAdmins(
-              'Laptop aman di ruangan, sistem Mark tetap aktif standby.'
-            )
-          }
-        }
-
         // Deteksi Return from AFK (user kembali menyentuh mouse/keyboard)
         if (!isAFK && wasAfkRef.current) {
           wasAfkRef.current = false
-          sentTelegramAfkRef.current = false
           // Trigger wake-up pulse pada orb
           window.dispatchEvent(
             new CustomEvent('mark:sleeping', {
