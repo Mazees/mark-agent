@@ -120,6 +120,11 @@ aiRouter.get('/tools/groups', (_req, res) => {
 aiRouter.post('/tools/execute', async (req, res) => {
   const { tool, query, config } = req.body || {}
   try {
+    if (typeof tool === 'string' && tool.startsWith('plugin-')) {
+      const { executePluginAction } = await import('../../main/plugins/plugin-loader.js')
+      const result = await executePluginAction(tool, query)
+      return res.json(result)
+    }
     const { NATIVE_TOOLS } = await import('../../main/node-tools.js')
     const nativeTool = NATIVE_TOOLS[tool]
     if (!nativeTool) {

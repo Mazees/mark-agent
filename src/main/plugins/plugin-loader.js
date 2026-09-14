@@ -45,6 +45,9 @@ export async function loadAllPlugins() {
           if (manifest.isEnabled !== false && Array.isArray(manifest.actions)) {
             for (const act of manifest.actions) {
               const actHandler = handlerInstance[act.name] || (typeof handlerInstance === 'function' ? handlerInstance : null)
+              const actHandler =
+                handlerInstance[act.name] ||
+                (typeof handlerInstance === 'function' ? handlerInstance : null)
               if (typeof actHandler === 'function') {
                 pluginActionHandlers.set(act.name, {
                   handler: actHandler,
@@ -88,6 +91,9 @@ export async function loadAllPlugins() {
                 act.code = rawCode
                   .split('\n')
                   .map((l) => (l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l))
+                  .map((l) =>
+                    l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l
+                  )
                   .join('\n')
                   .trim()
               }
@@ -118,6 +124,9 @@ export function normalizePluginQuery(rawQuery) {
   if (typeof rawQuery === 'object') {
     if (rawQuery.query !== undefined) {
       return typeof rawQuery.query === 'object' ? JSON.stringify(rawQuery.query) : String(rawQuery.query)
+      return typeof rawQuery.query === 'object'
+        ? JSON.stringify(rawQuery.query)
+        : String(rawQuery.query)
     }
     if (rawQuery.value !== undefined) return String(rawQuery.value)
     if (rawQuery.volume !== undefined) return String(rawQuery.volume)
@@ -135,11 +144,13 @@ export function normalizePluginQuery(rawQuery) {
 }
 
 export async function executePluginAction(actionName, query) {
+function findRegisteredAction(actionName) {
   let registered = pluginActionHandlers.get(actionName)
 
   // Fallback: Jika actionName berformat plugin-<pluginName>-<actionName> atau memiliki prefix plugin-
   if (!registered && typeof actionName === 'string') {
     // 1. Cek exact match jika disimpan dengan prefix
+    const lowerName = actionName.toLowerCase()
     for (const [key, value] of pluginActionHandlers.entries()) {
       const fullKey = `plugin-${value.pluginName}-${value.actionName}`.toLowerCase()
       if (
@@ -147,15 +158,35 @@ export async function executePluginAction(actionName, query) {
         fullKey === actionName.toLowerCase() ||
         actionName.toLowerCase().endsWith(`-${key.toLowerCase()}`) ||
         actionName.toLowerCase().endsWith(`_${key.toLowerCase()}`)
+        key.toLowerCase() === lowerName ||
+        fullKey === lowerName ||
+        lowerName.endsWith(`-${key.toLowerCase()}`) ||
+        lowerName.endsWith(`_${key.toLowerCase()}`)
       ) {
         registered = value
         break
+        return value
       }
     }
+  }
+  return registered
+}
+
+export async function executePluginAction(actionName, query) {
+  let registered = findRegisteredAction(actionName)
+
+  // Lazy reload on cache miss jika plugin baru ditambah ke disk saat runtime
+  if (!registered) {
+    await loadAllPlugins()
+    registered = findRegisteredAction(actionName)
   }
 
   if (!registered) {
     return { success: false, error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.` }
+    return {
+      success: false,
+      error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.`
+    }
   }
 
   try {
@@ -181,6 +212,14 @@ export async function executePluginAction(actionName, query) {
 
 export async function savePluginDefinition(payload) {
   const { name, displayName, description, actions = [], dependencies = [], isEdit = false } = payload
+  const {
+    name,
+    displayName,
+    description,
+    actions = [],
+    dependencies = [],
+    isEdit = false
+  } = payload
   const cleanName = (name || '').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()
   if (!cleanName) {
     throw new Error('Nama plugin wajib diisi.')
@@ -201,6 +240,10 @@ export async function savePluginDefinition(payload) {
     ? dependencies
     : typeof dependencies === 'string'
       ? dependencies.split(',').map((d) => d.trim()).filter(Boolean)
+      ? dependencies
+          .split(',')
+          .map((d) => d.trim())
+          .filter(Boolean)
       : []
 
   const manifestActions = actions.map((act) => ({
@@ -232,6 +275,11 @@ export async function savePluginDefinition(payload) {
   jsCode += `};\n`
 
   await fs.promises.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify(manifest, null, 2), 'utf-8')
+  await fs.promises.writeFile(
+    path.join(pluginDir, 'plugin.json'),
+    JSON.stringify(manifest, null, 2),
+    'utf-8'
+  )
   await fs.promises.writeFile(path.join(pluginDir, 'index.js'), jsCode, 'utf-8')
 
   if (depsList.length > 0) {
