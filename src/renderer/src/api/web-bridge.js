@@ -699,6 +699,10 @@ export const webApi = {
     addWebListener('tg:command-reject', cb)
     return () => removeWebListener('tg:command-reject', cb)
   },
+  onTgCommandSession: (cb) => {
+    addWebListener('tg:command-session', cb)
+    return () => removeWebListener('tg:command-session', cb)
+  },
   onTgConnection: (cb) => {
     addWebListener('tg:connection', cb)
     return () => removeWebListener('tg:connection', cb)

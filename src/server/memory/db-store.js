@@ -46,6 +46,7 @@ sqlite.exec(`
     data TEXT,
     workspace TEXT,
     workspace_root TEXT,
+    is_auto_mode INTEGER DEFAULT 0,
     timestamp INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER
@@ -217,7 +218,8 @@ function ensureTableColumns(tableName, requiredColumns) {
 
 ensureTableColumns('sessions', {
   workspace: 'TEXT',
-  workspace_root: 'TEXT'
+  workspace_root: 'TEXT',
+  is_auto_mode: 'INTEGER DEFAULT 0'
 })
 
 ensureTableColumns('chat_turns', {

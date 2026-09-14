@@ -438,6 +438,39 @@ export async function renameSession(id, title) {
   }
 }
 
+export async function setSessionAutoMode(id, isAutoMode) {
+  try {
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const existing = await db.sessions.get(cleanId)
+    const updated = {
+      ...(existing || { id: cleanId, title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru' }),
+      id: cleanId,
+      is_auto_mode: isAutoMode ? 1 : 0,
+      timestamp: Date.now()
+    }
+    await db.sessions.put(updated)
+    window.dispatchEvent(
+      new CustomEvent('session-auto-mode-updated', {
+        detail: { sessionId: cleanId, isAutoMode: Boolean(isAutoMode) }
+      })
+    )
+    return updated
+  } catch (error) {
+    console.error(`Error setSessionAutoMode ${id}:`, error)
+    return null
+  }
+}
+
+export async function getSessionAutoMode(id) {
+  try {
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const session = await db.sessions.get(cleanId)
+    return Boolean(session?.is_auto_mode || session?.isAutoMode)
+  } catch (_) {
+    return false
+  }
+}
+
 export async function getChatData(sessionId = 1) {
   try {
     const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId

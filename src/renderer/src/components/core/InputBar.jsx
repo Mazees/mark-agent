@@ -13,10 +13,16 @@ import {
   FaLock,
   FaFolder
 } from 'react-icons/fa'
+import { Zap } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import { NATIVE_SKILLS } from './native-skills'
 import { calculateSessionChars, MAX_CONTEXT_CHARS } from '../../api/ai/contextManager'
-import { getChatData, getSessionCompact } from '../../api/db'
+import {
+  getChatData,
+  getSessionCompact,
+  getSessionAutoMode,
+  setSessionAutoMode
+} from '../../api/db'
 
 const EMOJIS = [
   '😂',
@@ -94,6 +100,33 @@ const InputBar = ({
     percentage: 0,
     lastCompactedAt: null
   })
+
+  const [isAutoMode, setIsAutoMode] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+    getSessionAutoMode(sessionId).then((val) => {
+      if (isMounted) setIsAutoMode(Boolean(val))
+    })
+
+    const handleAutoModeUpdate = (e) => {
+      if (String(e.detail?.sessionId) === String(sessionId)) {
+        setIsAutoMode(Boolean(e.detail?.isAutoMode))
+      }
+    }
+
+    window.addEventListener('session-auto-mode-updated', handleAutoModeUpdate)
+    return () => {
+      isMounted = false
+      window.removeEventListener('session-auto-mode-updated', handleAutoModeUpdate)
+    }
+  }, [sessionId])
+
+  const handleToggleAutoMode = async () => {
+    const next = !isAutoMode
+    setIsAutoMode(next)
+    await setSessionAutoMode(sessionId, next)
+  }
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -780,6 +813,24 @@ const InputBar = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Auto Mode Toggle Button */}
+          <button
+            type="button"
+            onClick={handleToggleAutoMode}
+            className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
+              isAutoMode
+                ? 'bg-warning/20 text-warning border border-warning/40 shadow-[0_0_10px_rgba(234,179,8,0.2)] font-semibold'
+                : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
+            }`}
+            title={
+              isAutoMode
+                ? 'Auto Mode: AKTIF. Semua persetujuan tool otomatis diizinkan untuk sesi ini.'
+                : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
+            }
+          >
+            <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-warning text-warning' : ''}`} />
+          </button>
+
           {/* Ring Gauge Context Indicator (~30px) */}
           {(() => {
             const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))

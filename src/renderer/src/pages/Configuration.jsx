@@ -10,7 +10,8 @@ import {
   CameraSection,
   VisualSection,
   ShortcutSection,
-  VoiceSection
+  VoiceSection,
+  PermissionsSection
 } from '../components/config'
 
 const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
@@ -322,7 +323,12 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
             handleTestVoice={handleTestVoice}
           />
 
-          {/* 6. Save Bar */}
+          <div className="divider"></div>
+
+          {/* 6. Security & Whitelist Permissions */}
+          <PermissionsSection />
+
+          {/* 7. Save Bar */}
           <div className="flex flex-col items-end pt-2">
             {isDownloadingModel && (
               <div className="w-full max-w-xs mb-4">

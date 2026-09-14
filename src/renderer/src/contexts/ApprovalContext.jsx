@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useCallback, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ShieldAlert, Terminal, FileCode } from 'lucide-react'
-import { getAlwaysAllowedPaths, addAlwaysAllowedPath } from '../api/db'
+import { getAlwaysAllowedPaths, addAlwaysAllowedPath, getSessionAutoMode } from '../api/db'
 
 const ApprovalContext = createContext()
 
@@ -45,6 +45,7 @@ export const ApprovalProvider = ({ children }) => {
   const [approvalData, setApprovalData] = useState(null)
   const approvalRef = useRef(null)
   const [alwaysAllowedPaths, setAlwaysAllowedPaths] = useState([])
+  const sessionAllowedMapRef = useRef(new Map())
 
   const location = useLocation()
   const isChatStudio =
@@ -100,7 +101,7 @@ export const ApprovalProvider = ({ children }) => {
 
   const resolveApproval = useCallback(
     (approvalId, decisionType) => {
-      // decisionType: 'approve_once' | 'approve_always' | 'reject'
+      // decisionType: 'approve_once' | 'approve_session' | 'approve_always' | 'reject'
       const current = approvalRef.current
       if (!current) return
       if (approvalId && current.id !== approvalId) return
@@ -108,11 +109,32 @@ export const ApprovalProvider = ({ children }) => {
       approvalRef.current = null
       setApprovalData(null)
 
+      const sid = current.meta?.sessionId ? String(current.meta.sessionId) : '1'
+
       if (decisionType === 'approve_always') {
         handleApproveAlwaysInternal(current.tool, current.query)
+      } else if (decisionType === 'approve_session') {
+        if (!sessionAllowedMapRef.current.has(sid)) {
+          sessionAllowedMapRef.current.set(sid, new Set())
+        }
+        const target = extractToolTarget(current.tool, current.query)
+        const targetKey =
+          target.type === 'command'
+            ? `cmd:${target.value.toLowerCase()}`
+            : target.value
+              ? target.value.replace(/[\\/]+/g, '/').toLowerCase()
+              : current.tool
+        sessionAllowedMapRef.current.get(sid).add(targetKey)
+        if (target.type === 'path' && target.value) {
+          const folder = getFolderFromPath(target.value.replace(/[\\/]+/g, '/').toLowerCase())
+          if (folder) sessionAllowedMapRef.current.get(sid).add(folder)
+        }
       }
 
-      const isApproved = decisionType === 'approve_once' || decisionType === 'approve_always'
+      const isApproved =
+        decisionType === 'approve_once' ||
+        decisionType === 'approve_session' ||
+        decisionType === 'approve_always'
 
       // Update bubble state in chat feed if targetSetChatData exists
       if (typeof current.meta?.targetSetChatData === 'function') {
@@ -142,6 +164,8 @@ export const ApprovalProvider = ({ children }) => {
           let msg = '[INFO]: Permintaan persetujuan telah ditolak.'
           if (decisionType === 'approve_always') {
             msg = '[INFO]: Permintaan persetujuan diizinkan SELAMANYA.'
+          } else if (decisionType === 'approve_session') {
+            msg = '[INFO]: Permintaan persetujuan telah diizinkan untuk sesi ini.'
           } else if (decisionType === 'approve_once') {
             msg = '[INFO]: Permintaan persetujuan telah diizinkan sekali.'
           }
@@ -166,6 +190,12 @@ export const ApprovalProvider = ({ children }) => {
         })
       : null
 
+    const unsubSession = window.api?.onTgCommandSession
+      ? window.api.onTgCommandSession((data) => {
+          handleRemoteDecision('approve_session', data?.chatId)
+        })
+      : null
+
     const unsubAlways = window.api?.onTgCommandAlways
       ? window.api.onTgCommandAlways((data) => {
           handleRemoteDecision('approve_always', data?.chatId)
@@ -180,6 +210,7 @@ export const ApprovalProvider = ({ children }) => {
 
     return () => {
       if (typeof unsubAccept === 'function') unsubAccept()
+      if (typeof unsubSession === 'function') unsubSession()
       if (typeof unsubAlways === 'function') unsubAlways()
       if (typeof unsubReject === 'function') unsubReject()
     }
@@ -212,15 +243,46 @@ export const ApprovalProvider = ({ children }) => {
     return false
   }, [])
 
+  const checkIsSessionAllowed = useCallback((sessionId, tool, query) => {
+    const sid = sessionId ? String(sessionId) : '1'
+    const sessionSet = sessionAllowedMapRef.current.get(sid)
+    if (!sessionSet) return false
+
+    const target = extractToolTarget(tool, query)
+    const targetKey =
+      target.type === 'command'
+        ? `cmd:${target.value.toLowerCase()}`
+        : target.value
+          ? target.value.replace(/[\\/]+/g, '/').toLowerCase()
+          : tool
+    const folder = target.type === 'path' ? getFolderFromPath(targetKey) : ''
+
+    return sessionSet.has(targetKey) || (folder && sessionSet.has(folder))
+  }, [])
+
   const requestApproval = useCallback(
-    (message, tool, query, meta = {}) => {
+    async (message, tool, query, meta = {}) => {
+      const sid = meta.sessionId ? String(meta.sessionId) : '1'
+
+      // 1. Bypass otomatis jika is_auto_mode aktif pada sesi ini di database
+      const isAuto = await getSessionAutoMode(sid)
+      if (isAuto) {
+        return true
+      }
+
+      // 2. Bypass jika sudah diizinkan selamanya (whitelist permanen)
       if (checkIsAlwaysAllowed(tool, query)) {
-        return Promise.resolve(true)
+        return true
+      }
+
+      // 3. Bypass jika sudah diizinkan untuk sesi ini (in-memory)
+      if (checkIsSessionAllowed(sid, tool, query)) {
+        return true
       }
 
       if (window.api?.tgBroadcastToAdmins) {
         window.api.tgBroadcastToAdmins(
-          `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\nKetik /accept untuk mengizinkan sekali, /always untuk mengizinkan selamanya, atau /reject untuk menolak.`
+          `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\nKetik /accept untuk sekali, /session untuk sesi ini, /always untuk selamanya, atau /reject untuk menolak.`
         )
       }
 
@@ -257,7 +319,7 @@ export const ApprovalProvider = ({ children }) => {
         }
       })
     },
-    [checkIsAlwaysAllowed]
+    [checkIsAlwaysAllowed, checkIsSessionAllowed]
   )
 
   const activeTargetInfo = approvalData
@@ -320,19 +382,25 @@ export const ApprovalProvider = ({ children }) => {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2.5 mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
               <button
                 className="btn btn-ghost btn-sm text-error hover:bg-error/10 border border-error/20 cursor-pointer"
                 onClick={() => resolveApproval(approvalData.id, 'reject')}
               >
                 Tolak
               </button>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  className="btn btn-outline btn-warning btn-sm cursor-pointer"
+                  className="btn btn-outline btn-sm cursor-pointer"
                   onClick={() => resolveApproval(approvalData.id, 'approve_once')}
                 >
                   Izinkan Sekali
+                </button>
+                <button
+                  className="btn btn-outline btn-warning btn-sm cursor-pointer"
+                  onClick={() => resolveApproval(approvalData.id, 'approve_session')}
+                >
+                  Izinkan Sesi Ini
                 </button>
                 <button
                   className="btn btn-error btn-sm shadow-md cursor-pointer font-semibold"

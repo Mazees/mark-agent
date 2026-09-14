@@ -55,9 +55,7 @@ export const ApprovalBubble = ({
                   </>
                 )}
               </div>
-              <div className="text-white whitespace-pre-wrap break-all">
-                {targetInfo.value}
-              </div>
+              <div className="text-white whitespace-pre-wrap break-all">{targetInfo.value}</div>
             </div>
           ) : (
             <div className="whitespace-pre-wrap break-all">
@@ -77,18 +75,25 @@ export const ApprovalBubble = ({
               >
                 Tolak
               </button>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => resolveApproval(approvalId, 'approve_once')}
-                  className="btn btn-outline btn-warning btn-xs rounded-lg px-3 cursor-pointer"
+                  className="btn btn-outline btn-xs rounded-lg px-2.5 cursor-pointer text-white/80 hover:text-white"
                 >
                   Izinkan Sekali
                 </button>
                 <button
                   type="button"
+                  onClick={() => resolveApproval(approvalId, 'approve_session')}
+                  className="btn btn-outline btn-warning btn-xs rounded-lg px-2.5 cursor-pointer"
+                >
+                  Izinkan Sesi Ini
+                </button>
+                <button
+                  type="button"
                   onClick={() => resolveApproval(approvalId, 'approve_always')}
-                  className="btn btn-error btn-xs shadow-md rounded-lg px-3 font-semibold cursor-pointer"
+                  className="btn btn-error btn-xs shadow-md rounded-lg px-2.5 font-semibold cursor-pointer"
                 >
                   Izinkan Selamanya
                 </button>
@@ -98,9 +103,15 @@ export const ApprovalBubble = ({
             <div className="w-full flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 {status === 'approved_once' && (
+                  <span className="badge badge-sm bg-white/10 text-white/90 border-white/20 gap-1.5 text-[10px] font-medium py-1 px-2.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-white/70" />
+                    Diizinkan Sekali
+                  </span>
+                )}
+                {status === 'approved_session' && (
                   <span className="badge badge-sm bg-warning/15 text-warning border-warning/30 gap-1.5 text-[10px] font-medium py-1 px-2.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-warning" />
-                    Diizinkan Sekali
+                    Diizinkan Sesi Ini
                   </span>
                 )}
                 {status === 'approved_always' && (
@@ -117,9 +128,7 @@ export const ApprovalBubble = ({
                 )}
               </div>
               {timestamp && (
-                <span className="text-[10px] text-white/40 font-normal">
-                  {timestamp}
-                </span>
+                <span className="text-[10px] text-white/40 font-normal">{timestamp}</span>
               )}
             </div>
           )}
@@ -130,4 +139,3 @@ export const ApprovalBubble = ({
 }
 
 export default ApprovalBubble
-
