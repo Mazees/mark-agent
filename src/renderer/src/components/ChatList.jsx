@@ -119,11 +119,8 @@ const ChatList = ({
       <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
         {/* Header */}
         <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
-          <Bot className="w-4 h-4 text-warning" />
+          <Bot className="w-4 h-4 text-primary" />
           <span className="font-semibold text-white/90">Mark</span>
-          <span className="badge badge-xs bg-warning/20 text-warning border-warning/30 font-mono text-[9px] px-1.5 py-0.5">
-            Security Gate
-          </span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
         </div>
 

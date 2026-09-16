@@ -46,6 +46,7 @@ export const ApprovalProvider = ({ children }) => {
   const approvalRef = useRef(null)
   const [alwaysAllowedPaths, setAlwaysAllowedPaths] = useState([])
   const sessionAllowedMapRef = useRef(new Map())
+  const autoModeSessionsRef = useRef(new Set())
 
   const location = useLocation()
   const isChatStudio =
@@ -216,6 +217,23 @@ export const ApprovalProvider = ({ children }) => {
     }
   }, [handleRemoteDecision])
 
+  useEffect(() => {
+    const handleAutoModeUpdate = (e) => {
+      const sid = String(e.detail?.sessionId || '1')
+      if (e.detail?.isAutoMode) {
+        autoModeSessionsRef.current.add(sid)
+        const current = approvalRef.current
+        if (current && String(current.meta?.sessionId || '1') === sid) {
+          resolveApproval(current.id, 'approve_session')
+        }
+      } else {
+        autoModeSessionsRef.current.delete(sid)
+      }
+    }
+    window.addEventListener('session-auto-mode-updated', handleAutoModeUpdate)
+    return () => window.removeEventListener('session-auto-mode-updated', handleAutoModeUpdate)
+  }, [resolveApproval])
+
   const checkIsAlwaysAllowed = useCallback((tool, query) => {
     const target = extractToolTarget(tool, query)
     const allowedList = alwaysAllowedPathsRef.current || []
@@ -264,9 +282,13 @@ export const ApprovalProvider = ({ children }) => {
     async (message, tool, query, meta = {}) => {
       const sid = meta.sessionId ? String(meta.sessionId) : '1'
 
-      // 1. Bypass otomatis jika is_auto_mode aktif pada sesi ini di database
+      // 1. Bypass otomatis jika is_auto_mode aktif pada sesi ini (in-memory ref ATAU database)
+      if (autoModeSessionsRef.current.has(sid)) {
+        return true
+      }
       const isAuto = await getSessionAutoMode(sid)
       if (isAuto) {
+        autoModeSessionsRef.current.add(sid)
         return true
       }
 
