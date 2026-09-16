@@ -16,9 +16,9 @@ export const ApprovalBubble = ({
   const targetInfo = extractToolTarget(tool, query)
 
   return (
-    <div className="w-full rounded-2xl bg-base-200/90 border border-warning/30 shadow-lg backdrop-blur-md overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
+    <div className="w-full rounded-2xl">
       {/* Top Banner */}
-      <div className="flex items-center justify-between px-4 py-3 bg-warning/10 border-b border-warning/20">
+      <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
           <ShieldAlert className="w-4 h-4 text-warning shrink-0" />
           <span className="text-xs font-bold text-white tracking-wide">
