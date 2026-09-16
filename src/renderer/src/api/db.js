@@ -440,12 +440,14 @@ export async function renameSession(id, title) {
 
 export async function setSessionAutoMode(id, isAutoMode) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? '1' : String(id)
     const existing = await db.sessions.get(cleanId)
+    const val = isAutoMode ? 1 : 0
     const updated = {
-      ...(existing || { id: cleanId, title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru' }),
+      ...(existing || { id: cleanId, title: cleanId === '1' ? 'Main Thread' : 'Percakapan Baru' }),
       id: cleanId,
-      is_auto_mode: isAutoMode ? 1 : 0,
+      is_auto_mode: val,
+      isAutoMode: val,
       timestamp: Date.now()
     }
     await db.sessions.put(updated)
@@ -463,7 +465,7 @@ export async function setSessionAutoMode(id, isAutoMode) {
 
 export async function getSessionAutoMode(id) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const cleanId = String(id) === '1' || String(id) === '1.0' ? '1' : String(id)
     const session = await db.sessions.get(cleanId)
     return Boolean(session?.is_auto_mode || session?.isAutoMode)
   } catch (_) {

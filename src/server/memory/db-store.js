@@ -400,6 +400,7 @@ class SqliteTable {
     }
 
     const record = {
+      timestamp: raw.timestamp || raw.createdAt || Date.now(),
       createdAt: raw.createdAt || raw.timestamp || Date.now(),
       updatedAt: raw.updatedAt || Date.now(),
       ...raw,
@@ -418,6 +419,9 @@ class SqliteTable {
     for (const [k, v] of Object.entries(serialized)) {
       const col = this._toSnake(k)
       if (tableCols.includes(col)) {
+        if (colMap.has(col) && k !== col && serialized[col] !== undefined) {
+          continue
+        }
         colMap.set(col, v)
       }
     }
