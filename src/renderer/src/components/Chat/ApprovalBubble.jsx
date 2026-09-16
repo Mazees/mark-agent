@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import React from 'react'
-import { ShieldAlert, CheckCircle2, XCircle, Terminal, FileCode } from 'lucide-react'
+import { CheckCircle2, XCircle, Terminal, FileCode } from 'lucide-react'
 import { useApproval, extractToolTarget } from '../../contexts/ApprovalContext'
 
 export const ApprovalBubble = ({
@@ -20,7 +20,6 @@ export const ApprovalBubble = ({
       {/* Top Banner */}
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
-          <ShieldAlert className="w-4 h-4 text-warning shrink-0" />
           <span className="text-xs font-bold text-white tracking-wide">
             Persetujuan Eksekusi Tool
           </span>
