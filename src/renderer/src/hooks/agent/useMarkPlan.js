@@ -1416,8 +1416,8 @@ export const useMarkPlan = ({
             if (finalIsSpeak) {
               sentenceBuffer += token
               // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
-              const sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/)
-              if (sentenceEndMatch) {
+              let sentenceEndMatch
+              while ((sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/))) {
                 const completeSentence = sentenceEndMatch[1].trim()
                 sentenceBuffer = sentenceEndMatch[2] || ''
                 if (completeSentence) {
@@ -1523,6 +1523,8 @@ export const useMarkPlan = ({
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+          sentenceBuffer = ''
+          speechQueue.reset()
           const assistantMsg = {
             role: 'assistant',
             content: streamResult.content || null,

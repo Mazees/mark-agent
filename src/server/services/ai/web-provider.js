@@ -1,6 +1,11 @@
 import { generateGeminiResponse } from '../gemini-web.js'
 import { generateDeepSeekResponse } from '../deepseek-web.js'
-import { cleanAndParse, checkCloudThrottle, getSystemSignature } from './ai-utils.js'
+import {
+  cleanAndParse,
+  checkCloudThrottle,
+  getSystemSignature,
+  createMoodStreamFilter
+} from './ai-utils.js'
 import { getActiveConfig, loadConfig } from '../../config-manager.js'
 import { GROUP_TOOLS_SCHEMA } from '../../tools/group-tools.js'
 import { loadAllPlugins } from '../../../main/plugins/plugin-loader.js'
@@ -21,6 +26,22 @@ export async function executeWebProvider({
   const activeConf = getActiveConfig() || {}
   const conf = { ...activeConf, ...(config || {}) }
   const isGemini = conf.aiProvider === 'gemini-web'
+  const hasTools = Array.isArray(tools) && tools.length > 0
+  const shouldStreamContent = stream && !hasTools && !jsonSchema
+
+  let streamedAnyToken = false
+  const moodFilter =
+    shouldStreamContent && onToken
+      ? createMoodStreamFilter(
+          (token) => {
+            streamedAnyToken = true
+            onToken(token)
+          },
+          (mood) => {
+            onMood?.(mood)
+          }
+        )
+      : null
 
   await checkCloudThrottle(isSmallTask, onStatus)
 
@@ -199,16 +220,23 @@ ${toolSections.join('\n\n')}
     const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken, {
       onDelta: (payload) => {
         if (!stream) return
-        if (typeof payload === 'string') {
-          onToken?.(payload)
-        } else if (payload?.type === 'content' && payload.delta) {
-          onToken?.(payload.delta)
-        } else if (payload?.type === 'thinking' && payload.delta) {
+        if (payload?.type === 'thinking' && payload.delta) {
           onReasoning?.(payload.delta)
+        } else if (shouldStreamContent) {
+          const delta = typeof payload === 'string' ? payload : payload?.delta
+          if (delta) {
+            if (moodFilter) {
+              moodFilter(delta)
+            } else {
+              streamedAnyToken = true
+              onToken?.(delta)
+            }
+          }
         }
       },
       onStatus
     })
+    moodFilter?.flush()
     answer = dsRes.text || ''
     reasoning = dsRes.thinking || null
   }
@@ -381,7 +409,9 @@ ${toolSections.join('\n\n')}
       onMood?.(moodMatch[1].toLowerCase())
     }
     cleanContent = cleanContent.replace(/(?:<|\[)mood:[a-zA-Z_]+(?:>|\])/gi, '').trim()
-    onToken?.(cleanContent)
+    if (!streamedAnyToken) {
+      onToken?.(cleanContent)
+    }
   }
 
   return {
