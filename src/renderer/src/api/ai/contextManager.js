@@ -745,14 +745,19 @@ export async function checkAndCompressInLoop({
 
   const triggerLimit = maxChars * thresholdRatio
   let totalChars = 0
+  let sessionChars = 0
   for (const m of loopMessages) {
-    totalChars += calculateMessageChars(m)
+    const chars = calculateMessageChars(m)
+    totalChars += chars
+    if (m.role !== 'system') {
+      sessionChars += chars
+    }
   }
 
   // Jika masih di bawah ambang batas (50% dari maxChars) dan jumlah pesan belum terlalu panjang (< 24),
   // tidak memerlukan kompresi
   if (totalChars < triggerLimit && loopMessages.length < 24) {
-    return { compressed: false, loopMessages, totalChars }
+    return { compressed: false, loopMessages, totalChars: sessionChars }
   }
 
   if (typeof onProgress === 'function') {
@@ -762,17 +767,23 @@ export async function checkAndCompressInLoop({
   // FASE 1: Zero-cost O(n) Tool Pruning
   const prunedMessages = pruneOldToolResultsInLoop(loopMessages, protectLastN)
   let prunedChars = 0
+  let prunedSessionChars = 0
   for (const m of prunedMessages) {
-    prunedChars += calculateMessageChars(m)
+    const chars = calculateMessageChars(m)
+    prunedChars += chars
+    if (m.role !== 'system') {
+      prunedSessionChars += chars
+    }
   }
 
   // Jika Fase 1 saja sudah cukup membawa konteks di bawah ambang batas 50%:
   if (prunedChars < triggerLimit) {
+    const didPrune = prunedChars < totalChars
     return {
-      compressed: true,
+      compressed: didPrune,
       prunedOnly: true,
       loopMessages: prunedMessages,
-      totalChars: prunedChars
+      totalChars: prunedSessionChars
     }
   }
 
@@ -834,16 +845,18 @@ export async function checkAndCompressInLoop({
   ]
 
   const sanitized = cleanOrphanToolPairs(assembled)
-  let finalChars = 0
+  let finalSessionChars = 0
   for (const m of sanitized) {
-    finalChars += calculateMessageChars(m)
+    if (m.role !== 'system') {
+      finalSessionChars += calculateMessageChars(m)
+    }
   }
 
   return {
     compressed: true,
     prunedOnly: false,
     loopMessages: sanitized,
-    totalChars: finalChars,
+    totalChars: finalSessionChars,
     newSummaryBlock: newSummary
   }
 }

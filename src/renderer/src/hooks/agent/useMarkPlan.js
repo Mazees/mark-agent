@@ -1285,6 +1285,7 @@ export const useMarkPlan = ({
       accumulatedThoughts = []
       let currentActiveMood = 'neutral'
       let finalContentAccumulator = ''
+      let savedTurnAiMsg = null
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
       let consecutiveErrors = 0
@@ -2045,6 +2046,7 @@ export const useMarkPlan = ({
             source: tgContext ? 'telegram' : 'pc'
           }
 
+          savedTurnAiMsg = aiMsg
           return [...filtered, aiMsg]
         })
 
@@ -2133,8 +2135,16 @@ export const useMarkPlan = ({
 
       // Post-Turn Context Sync: Hitung total karakter terkini dan trigger event ke UI
       try {
-        const latestSessionData =
+        let latestSessionData =
           activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
+        if (savedTurnAiMsg) {
+          const hasAi = (latestSessionData || []).some(
+            (m) => m.created_at === savedTurnAiMsg.created_at
+          )
+          if (!hasAi) {
+            latestSessionData = [...(latestSessionData || []), savedTurnAiMsg]
+          }
+        }
         const latestChars = calculateSessionChars(
           latestSessionData,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',

@@ -186,7 +186,7 @@ export async function executeOpenAIProvider({
           if (delta.reasoning_content || delta.reasoning) {
             const rToken = delta.reasoning_content || delta.reasoning
             accumulatedReasoning += rToken
-            extractMood(rToken)
+            extractMood(accumulatedReasoning)
             onReasoning?.(rToken)
           }
 
@@ -285,9 +285,21 @@ export async function executeOpenAIProvider({
         onToolCall?.(toolCallsList)
       }
 
+      let finalMood = null
+      const fullText = (accumulatedReasoning + '\n' + accumulatedContent).trim()
+      const endMoodMatch = fullText.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/i)
+      if (endMoodMatch) {
+        finalMood = endMoodMatch[1].toLowerCase()
+        if (!moodExtracted) {
+          onMood?.(finalMood)
+          moodExtracted = true
+        }
+      }
+
       return {
         content: accumulatedContent,
         reasoning: accumulatedReasoning,
+        mood: finalMood,
         toolCalls: toolCallsList.length > 0 ? toolCallsList : null,
         finishReason
       }
