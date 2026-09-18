@@ -4,6 +4,7 @@ import { getRelevantMemory } from '../api/vectorMemory'
 import { getAwarenessResponse, generateDailyJournalEntry } from '../api/ai/awareness'
 import { subagentStore } from '../api/subagent/subagentStore'
 import { runSubagentTurn } from '../api/subagent/subagentExecutor'
+import { getCurrentTimeInfo } from '../api/ai/utils'
 
 const CHECKIN_POLL_INTERVAL = 20 * 1000 // Polling telemetri setiap 20 detik
 const MIN_CHECKIN_GAP = 3 * 60 * 1000 // Minimal 3 menit antar evaluasi normal
@@ -179,14 +180,18 @@ export const useAwareness = ({
               window.api.showNotification('Mark', cleanMessage)
             }
 
+            const now = Date.now()
             setChatData((prev) => [
               ...prev,
               {
+                id: `awareness_${now}`,
                 role: 'ai',
                 content: cleanMessage,
                 isProactive: true,
                 mood: result.mood,
-                isReturnFromAFK
+                isReturnFromAFK,
+                timestamp: getCurrentTimeInfo(),
+                created_at: now
               }
             ])
 

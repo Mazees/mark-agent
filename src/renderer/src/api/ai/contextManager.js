@@ -20,7 +20,7 @@ export const MAX_CONTEXT_CHARS = 525000
  */
 export function getMessageId(msg, fallbackIndex = 0) {
   if (!msg) return `msg-${fallbackIndex}`
-  return String(msg.id || msg.timestamp || `msg-${fallbackIndex}`)
+  return String(msg.id || msg.created_at || msg.timestamp || `msg-${fallbackIndex}`)
 }
 
 /**
@@ -81,10 +81,8 @@ export function calculateSessionChars(
   summaryBlock = '',
   lastCompactedMessageId = null
 ) {
-  if (!Array.isArray(messages)) return 0
-  let total = typeof summaryBlock === 'string' ? summaryBlock.length : 0
-
   let startIndex = 0
+  let isBoundaryFound = false
   if (lastCompactedMessageId) {
     const targetId = String(lastCompactedMessageId)
     for (let i = 0; i < messages.length; i++) {
@@ -92,13 +90,18 @@ export function calculateSessionChars(
       if (
         getMessageId(msg, i) === targetId ||
         String(msg?.id) === targetId ||
-        String(msg?.timestamp) === targetId
+        String(msg?.timestamp) === targetId ||
+        String(msg?.created_at) === targetId
       ) {
         startIndex = i + 1
+        isBoundaryFound = true
         break
       }
     }
   }
+
+  // Hanya hitung panjang summaryBlock jika batas pesan lama benar-benar ditemukan
+  let total = isBoundaryFound && typeof summaryBlock === 'string' ? summaryBlock.length : 0
 
   for (let i = startIndex; i < messages.length; i++) {
     const msg = messages[i]
@@ -429,6 +432,10 @@ export async function executeSessionCompaction({
 
   if (messagesToSummarize.length > 0) {
     const lastCompactedMsg = messagesToSummarize[messagesToSummarize.length - 1]
+    if (!lastCompactedMsg.id && !lastCompactedMsg.timestamp && !lastCompactedMsg.created_at) {
+      lastCompactedMsg.created_at = Date.now()
+      lastCompactedMsg.id = `msg_${lastCompactedMsg.created_at}`
+    }
     lastCompactedMessageId = getMessageId(lastCompactedMsg, effectiveTailIndex - 1)
 
     newSummaryBlock = await summarizeMiddle(messagesToSummarize, existingSummaryBlock, activeConfig)
@@ -528,39 +535,54 @@ export function assembleCompactedPayload({
     // Cari index dari pesan dengan id lastCompactedId
     let cutIndex = -1
     for (let i = 0; i < messages.length; i++) {
-      if (getMessageId(messages[i], i) === String(lastCompactedId)) {
+      const msg = messages[i]
+      if (
+        getMessageId(msg, i) === String(lastCompactedId) ||
+        String(msg?.id) === String(lastCompactedId) ||
+        String(msg?.timestamp) === String(lastCompactedId) ||
+        String(msg?.created_at) === String(lastCompactedId)
+      ) {
         cutIndex = i
         break
       }
     }
 
-    // Jika pesan batas ditemukan, ambil pesan setelah cutIndex
-    const activeSlice = cutIndex !== -1 ? messages.slice(cutIndex + 1) : messages.slice(-1)
+    if (cutIndex !== -1) {
+      // Jika pesan batas ditemukan, ambil pesan setelah cutIndex
+      const activeSlice = messages.slice(cutIndex + 1)
 
-    // Sisipkan summary block sebagai pesan user pembuka konteks
-    payload.push({
-      role: 'user',
-      content: `[ COMPACTED MESSAGE SUMMARY ] ${summaryBlock}`
-    })
-
-    // Masukkan pesan-pesan tail terkini dengan log tool utuh
-    for (const msg of activeSlice) {
-      if (
-        !msg ||
-        msg.isThinking ||
-        msg.isSearching ||
-        msg.isSummarizing ||
-        msg.role === 'command'
-      ) {
-        continue
-      }
+      // Sisipkan summary block sebagai pesan user pembuka konteks
       payload.push({
-        role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
-        content: formatMessageWithToolLogs(msg)
+        role: 'user',
+        content: `[ COMPACTED MESSAGE SUMMARY ] ${summaryBlock}`
       })
+
+      // Masukkan pesan-pesan tail terkini dengan log tool utuh
+      for (const msg of activeSlice) {
+        if (
+          !msg ||
+          msg.isThinking ||
+          msg.isSearching ||
+          msg.isSummarizing ||
+          msg.role === 'command'
+        ) {
+          continue
+        }
+        payload.push({
+          role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
+          content: formatMessageWithToolLogs(msg)
+        })
+      }
+
+      return cleanOrphanToolPairs(payload)
     }
 
-    return cleanOrphanToolPairs(payload)
+    // Jika cutIndex === -1 (ID batas tidak ditemukan di riwayat aktif),
+    // artinya pointer kompaksi sudah kadaluarsa. JANGAN sisipkan ringkasan basi
+    // dan JANGAN memenggal pesan ke slice(-1)! Alirkan seluruh riwayat pesan utuh.
+    console.warn(
+      `[contextManager] Pointer lastCompactedId "${lastCompactedId}" tidak ditemukan di array pesan aktif. Mengabaikan ringkasan basi dan mengirim seluruh riwayat pesan utuh.`
+    )
   }
 
   // Jika belum ada summary (konteks < 525K), susun SELURUH pesan dan log tool 100% UTUH
@@ -603,7 +625,9 @@ export function pruneInFlightMessages(messages = [], maxChars = MAX_CONTEXT_CHAR
       let parsed = null
       try {
         parsed = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
-      } catch (_) {}
+      } catch (err) {
+        void err
+      }
 
       if (parsed && (parsed.data || parsed.output)) {
         const prunedText = '[Output dipangkas: kapasitas sesi mencapai 525K]'

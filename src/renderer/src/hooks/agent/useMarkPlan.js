@@ -110,6 +110,11 @@ export const useMarkPlan = ({
   requestApproval,
   requestCameraCapture
 }) => {
+  const chatDataRef = useRef(chatData)
+  useEffect(() => {
+    chatDataRef.current = chatData
+  }, [chatData])
+
   // Map menyimpan sesi yang sedang berjalan: key = sessionId, value = { abortController, startTime, prompt }
   const activeSessionsRef = useRef(new Map())
   // Map menyimpan updater fungsi setChatData per sesi untuk IPC status AI
@@ -986,7 +991,11 @@ export const useMarkPlan = ({
           })
         )
       } else {
-        setChatData(updater)
+        setChatData((prev) => {
+          const next = typeof updater === 'function' ? updater(prev) : updater
+          chatDataRef.current = next
+          return next
+        })
       }
     }
 
@@ -995,7 +1004,8 @@ export const useMarkPlan = ({
     // ------------------------------------------------------------------------
     // FASE 3: PENYIAPAN HISTORY CHAT & RETRIEVAL KONTEKS
     // ------------------------------------------------------------------------
-    const sourceChatData = activeSessionNum === 1 ? chatData : inMemorySessionData
+    const sourceChatData =
+      activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
     const validHistory = sourceChatData.filter(
       (m) =>
         m &&
@@ -2083,7 +2093,8 @@ export const useMarkPlan = ({
 
       // Post-Turn Context Sync: Hitung total karakter terkini dan trigger event ke UI
       try {
-        const latestSessionData = activeSessionNum === 1 ? chatData : inMemorySessionData
+        const latestSessionData =
+          activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
         const latestChars = calculateSessionChars(
           latestSessionData,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',

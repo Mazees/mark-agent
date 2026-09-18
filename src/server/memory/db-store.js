@@ -282,6 +282,23 @@ ensureTableColumns('session_compact', {
 })
 
 /**
+ * Normalisasi ID SQLite: Memastikan ID selalu berupa string bersih tanpa pecahan desimal (.0).
+ * Menstandarkan seluruh ID (primary key, foreign key, session_id) ke format string tunggal yang seragam.
+ */
+export function normalizeSqliteId(id) {
+  if (id === null || id === undefined) return ''
+  let clean = String(id).trim()
+  if (clean.endsWith('.0')) {
+    clean = clean.slice(0, -2)
+  }
+  clean = clean.replace(/^(\d+)\.0+$/, '$1')
+  if (clean === '1' || clean === '1.0' || clean === '1.00') {
+    clean = '1'
+  }
+  return clean
+}
+
+/**
  * Generic Table Helper untuk menyediakan API CRUD fleksibel
  */
 class SqliteTable {
@@ -321,7 +338,9 @@ class SqliteTable {
         ) {
           try {
             res[key] = JSON.parse(str)
-          } catch (_) {}
+          } catch (err) {
+            void err
+          }
         }
       }
     }
@@ -344,9 +363,10 @@ class SqliteTable {
   }
 
   getById(id) {
+    const cleanId = normalizeSqliteId(id)
     const row = sqlite
       .prepare(`SELECT * FROM ${this.tableName} WHERE ${this.idCol} = ?`)
-      .get(String(id))
+      .get(cleanId)
     return this._parseJsonFields(row)
   }
 
@@ -364,27 +384,18 @@ class SqliteTable {
             raw.session_id ||
             `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
-    let cleanId = String(id).trim()
-    if (cleanId.endsWith('.0')) {
-      cleanId = cleanId.slice(0, -2)
-    }
-    if (cleanId === '1' || cleanId === '1.0' || cleanId === '1.00') {
-      cleanId = '1'
-    }
+    const cleanId = normalizeSqliteId(id)
 
     if (this.idCol !== 'id') {
       delete raw.id
     }
     delete raw.pairId // Hapus key lama agar tidak mencoba insert ke kolom yang tidak ada
 
-    if (
-      raw.sessionId === 1 ||
-      raw.sessionId === 1.0 ||
-      raw.sessionId === '1' ||
-      raw.sessionId === '1.0' ||
-      raw.sessionId === '1.00'
-    ) {
-      raw.sessionId = '1'
+    if (raw.sessionId !== undefined && raw.sessionId !== null) {
+      raw.sessionId = normalizeSqliteId(raw.sessionId)
+    }
+    if (raw.session_id !== undefined && raw.session_id !== null) {
+      raw.session_id = normalizeSqliteId(raw.session_id)
     }
 
     // Penanganan khusus untuk tabel config jika item berupa objek key-value langsung (bukan { id, data })
@@ -464,9 +475,10 @@ class SqliteTable {
   }
 
   delete(id) {
+    const cleanId = normalizeSqliteId(id)
     const info = sqlite
       .prepare(`DELETE FROM ${this.tableName} WHERE ${this.idCol} = ?`)
-      .run(String(id))
+      .run(cleanId)
     return info.changes > 0
   }
 
@@ -602,7 +614,9 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
           : confObj
         const cfgPath = path.join(CONFIG_DIR, 'config.json')
         fs.writeFileSync(cfgPath, JSON.stringify(finalConf, null, 2), 'utf-8')
-      } catch (_) {}
+      } catch (err) {
+        void err
+      }
     }
   })
 

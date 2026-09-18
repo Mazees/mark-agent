@@ -70,6 +70,41 @@ async function apiDelete(path) {
 }
 
 /**
+ * Normalisasi ID SQLite / DB: Memastikan seluruh ID bertipe string bersih tanpa pecahan desimal (.0).
+ * Menstandarkan format ID di seluruh lapisan frontend dan komunikasi REST API.
+ */
+export function normalizeDbId(id) {
+  if (id === null || id === undefined) return ''
+  let clean = String(id).trim()
+  if (clean.endsWith('.0')) {
+    clean = clean.slice(0, -2)
+  }
+  clean = clean.replace(/^(\d+)\.0+$/, '$1')
+  if (clean === '1' || clean === '1.0' || clean === '1.00') {
+    clean = '1'
+  }
+  return clean
+}
+
+export function normalizeItemIds(item, idField = 'id') {
+  if (!item || typeof item !== 'object') return item
+  const res = { ...item }
+  if (res[idField] !== undefined && res[idField] !== null) {
+    res[idField] = normalizeDbId(res[idField])
+  }
+  if (res.id !== undefined && res.id !== null) {
+    res.id = normalizeDbId(res.id)
+  }
+  if (res.sessionId !== undefined && res.sessionId !== null) {
+    res.sessionId = normalizeDbId(res.sessionId)
+  }
+  if (res.session_id !== undefined && res.session_id !== null) {
+    res.session_id = normalizeDbId(res.session_id)
+  }
+  return res
+}
+
+/**
  * Collection Proxy untuk chaining Dexie-like queries:
  * where().equals(), anyOf(), filter(), sortBy(), limit(), reverse(), toArray(), delete(), first()
  */
@@ -94,15 +129,38 @@ class CollectionProxy {
     )
   }
 
-  async sortBy(field) {
-    const proxy = new CollectionProxy(
+  where(field) {
+    return {
+      equals: (val) => {
+        return new CollectionProxy(
+          this.tableProxy,
+          (item) => item[field] === val,
+          this.sortField,
+          this.isReverse,
+          this.limitCount
+        )
+      },
+      anyOf: (arr) => {
+        const set = new Set(arr)
+        return new CollectionProxy(
+          this.tableProxy,
+          (item) => set.has(item[field]),
+          this.sortField,
+          this.isReverse,
+          this.limitCount
+        )
+      }
+    }
+  }
+
+  sortBy(field) {
+    return new CollectionProxy(
       this.tableProxy,
       this.filterFn,
       field,
       this.isReverse,
       this.limitCount
     )
-    return await proxy.toArray()
   }
 
   reverse() {
@@ -185,33 +243,40 @@ class TableProxy {
   }
 
   async get(id) {
-    const item = await apiGet(`${this.endpoint}/${id}`)
+    const cleanId = normalizeDbId(id)
+    const item = await apiGet(`${this.endpoint}/${cleanId}`)
     return item || null
   }
 
   async add(item) {
-    const res = await apiPost(this.endpoint, item)
+    const normalized = normalizeItemIds(item, this.idField)
+    const res = await apiPost(this.endpoint, normalized)
     return res?.[this.idField] || res?.id
   }
 
   async put(item) {
-    return await apiPost(this.endpoint, item)
+    const normalized = normalizeItemIds(item, this.idField)
+    return await apiPost(this.endpoint, normalized)
   }
 
   async bulkAdd(items) {
-    return await apiPost(`${this.endpoint}/batch`, items)
+    const normalized = (items || []).map((it) => normalizeItemIds(it, this.idField))
+    return await apiPost(`${this.endpoint}/batch`, normalized)
   }
 
   async bulkPut(items) {
-    return await apiPost(`${this.endpoint}/batch`, items)
+    const normalized = (items || []).map((it) => normalizeItemIds(it, this.idField))
+    return await apiPost(`${this.endpoint}/batch`, normalized)
   }
 
   async delete(id) {
-    return await apiDelete(`${this.endpoint}/${id}`)
+    const cleanId = normalizeDbId(id)
+    return await apiDelete(`${this.endpoint}/${cleanId}`)
   }
 
   async update(id, updates) {
-    const existing = await this.get(id)
+    const cleanId = normalizeDbId(id)
+    const existing = await this.get(cleanId)
     if (!existing) return null
     return await this.put({ ...existing, ...updates })
   }
@@ -341,28 +406,11 @@ export async function insertMemory(data) {
 }
 
 export async function saveMainThread(data) {
-  try {
-    const existing = await db.sessions.get(1)
-    await db.sessions.put({
-      ...(existing || {}),
-      id: 1,
-      title: existing?.title || 'Main Thread',
-      data: data,
-      timestamp: Date.now()
-    })
-  } catch (error) {
-    console.error('Error saving main thread:', error)
-  }
+  return await saveSession('1', data, 'Main Thread')
 }
 
 export async function getMainThread() {
-  try {
-    const thread = await db.sessions.get(1)
-    return thread ? thread.data : []
-  } catch (error) {
-    console.error('Error fetching main thread:', error)
-    return []
-  }
+  return await getChatData('1')
 }
 
 // --- SESSIONS & CHAT DATA HELPERS ---
@@ -377,7 +425,7 @@ export async function getAllSessions() {
 
 export async function getSession(id) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const cleanId = normalizeDbId(id)
     return await db.sessions.get(cleanId)
   } catch (error) {
     console.error(`Error getSession ${id}:`, error)
@@ -387,7 +435,7 @@ export async function getSession(id) {
 
 export async function createSession(title = 'Percakapan Baru') {
   try {
-    const id = Date.now()
+    const id = String(Date.now())
     const session = { id, title, data: [], timestamp: Date.now() }
     await db.sessions.put(session)
     return session
@@ -399,10 +447,10 @@ export async function createSession(title = 'Percakapan Baru') {
 
 export async function saveSession(id, data, title = null) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const cleanId = normalizeDbId(id)
     const existing = await db.sessions.get(cleanId)
     const session = {
-      ...(existing || { id: cleanId, title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru' }),
+      ...(existing || { id: cleanId, title: cleanId === '1' ? 'Main Thread' : 'Percakapan Baru' }),
       id: cleanId,
       data: Array.isArray(data) ? data : [],
       ...(title ? { title } : {}),
@@ -417,7 +465,7 @@ export async function saveSession(id, data, title = null) {
 
 export async function deleteSession(id) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const cleanId = normalizeDbId(id)
     await db.sessions.delete(cleanId)
     return { success: true }
   } catch (error) {
@@ -428,7 +476,7 @@ export async function deleteSession(id) {
 
 export async function renameSession(id, title) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? 1 : id
+    const cleanId = normalizeDbId(id)
     const existing = await db.sessions.get(cleanId)
     if (existing) {
       await db.sessions.put({ ...existing, id: cleanId, title, timestamp: Date.now() })
@@ -440,7 +488,7 @@ export async function renameSession(id, title) {
 
 export async function setSessionAutoMode(id, isAutoMode) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? '1' : String(id)
+    const cleanId = normalizeDbId(id)
     const existing = await db.sessions.get(cleanId)
     const val = isAutoMode ? 1 : 0
     const updated = {
@@ -465,17 +513,17 @@ export async function setSessionAutoMode(id, isAutoMode) {
 
 export async function getSessionAutoMode(id) {
   try {
-    const cleanId = String(id) === '1' || String(id) === '1.0' ? '1' : String(id)
+    const cleanId = normalizeDbId(id)
     const session = await db.sessions.get(cleanId)
     return Boolean(session?.is_auto_mode || session?.isAutoMode)
-  } catch (_) {
+  } catch {
     return false
   }
 }
 
-export async function getChatData(sessionId = 1) {
+export async function getChatData(sessionId = '1') {
   try {
-    const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
+    const cleanId = normalizeDbId(sessionId)
     const session = await db.sessions.get(cleanId)
     return session && Array.isArray(session.data) ? session.data : []
   } catch (error) {
@@ -486,12 +534,12 @@ export async function getChatData(sessionId = 1) {
 
 export async function setSessionWorkspace(sessionId, workspace) {
   try {
-    const cleanId = String(sessionId) === '1' || String(sessionId) === '1.0' ? 1 : sessionId
+    const cleanId = normalizeDbId(sessionId)
     const existing = await db.sessions.get(cleanId)
     await db.sessions.put({
       ...(existing || {
         id: cleanId,
-        title: cleanId === 1 ? 'Main Thread' : 'Percakapan Baru',
+        title: cleanId === '1' ? 'Main Thread' : 'Percakapan Baru',
         data: []
       }),
       id: cleanId,
@@ -501,6 +549,17 @@ export async function setSessionWorkspace(sessionId, workspace) {
     })
   } catch (error) {
     console.error(`Error setSessionWorkspace ${sessionId}:`, error)
+  }
+}
+
+export async function getSessionWorkspace(sessionId) {
+  try {
+    const cleanId = normalizeDbId(sessionId)
+    const session = await db.sessions.get(cleanId)
+    return session?.workspaceRoot || session?.workspace || null
+  } catch (error) {
+    console.error(`Error getSessionWorkspace ${sessionId}:`, error)
+    return null
   }
 }
 
@@ -895,7 +954,8 @@ export async function restoreDatabaseDump(dumpData, overwrite = true) {
 // --- SESSION COMPACT HELPERS ---
 export async function getSessionCompact(sessionId) {
   try {
-    const res = await apiGet(`/api/session-compact/${sessionId}`)
+    const cleanId = normalizeDbId(sessionId)
+    const res = await apiGet(`/api/session-compact/${cleanId}`)
     return res || null
   } catch (err) {
     console.error('[DB Proxy] Error getSessionCompact:', err)
@@ -905,8 +965,9 @@ export async function getSessionCompact(sessionId) {
 
 export async function saveSessionCompact(sessionId, data) {
   try {
+    const cleanId = normalizeDbId(sessionId)
     const payload = {
-      sessionId: String(sessionId),
+      sessionId: cleanId,
       ...data,
       lastCompactedAt: data.lastCompactedAt || Date.now()
     }
@@ -920,7 +981,8 @@ export async function saveSessionCompact(sessionId, data) {
 
 export async function deleteSessionCompact(sessionId) {
   try {
-    return await apiDelete(`/api/session-compact/${sessionId}`)
+    const cleanId = normalizeDbId(sessionId)
+    return await apiDelete(`/api/session-compact/${cleanId}`)
   } catch (err) {
     console.error('[DB Proxy] Error deleteSessionCompact:', err)
     return false
