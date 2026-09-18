@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, memo } from 'react'
 import {
   FaMicrophone,
   FaStop,
@@ -725,7 +725,7 @@ const InputBar = ({
         >
           {isRecording && !isProcessing && (
             <div
-              className="absolute inset-0 rounded-full bg-error/30 -z-10 transition-transform duration-75"
+              className="absolute inset-0 rounded-full bg-error/30 -z-10"
               style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
             />
           )}
@@ -975,4 +975,4 @@ const InputBar = ({
   )
 }
 
-export default InputBar
+export default memo(InputBar)

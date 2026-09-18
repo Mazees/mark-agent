@@ -43,7 +43,10 @@ const ResponseArea = ({ currentResponse }) => {
       return !inline ? (
         <CodeBlock match={match} children={children} />
       ) : (
-        <code className={`px-1.5 py-0.5 rounded bg-white/10 text-primary font-mono text-xs ${className || ''}`} {...props}>
+        <code
+          className={`px-1.5 py-0.5 rounded bg-white/10 text-primary font-mono text-xs ${className || ''}`}
+          {...props}
+        >
           {children}
         </code>
       )
@@ -75,7 +78,10 @@ const ResponseArea = ({ currentResponse }) => {
           <div className="p-4 rounded-xl bg-white/[0.03] text-left text-xs md:text-sm font-mono leading-relaxed text-white/90">
             <div className="flex flex-col items-center justify-center gap-3 py-3">
               <div className="relative w-8 h-8 flex items-center justify-center text-primary">
-                <svg viewBox="0 0 50 50" className="w-full h-full animate-[spin_3s_linear_infinite]">
+                <svg
+                  viewBox="0 0 50 50"
+                  className="w-full h-full animate-[spin_3s_linear_infinite]"
+                >
                   <circle
                     cx="25"
                     cy="25"
@@ -101,7 +107,9 @@ const ResponseArea = ({ currentResponse }) => {
                 <FaLightbulb className="absolute animate-pulse text-primary" size={10} />
               </div>
               <div className="text-[10px] uppercase tracking-widest text-primary/80 font-mono">
-                {text !== 'Bentar, mikir dlu...' && text !== 'Memproses...' ? text : 'PROCESSING DATA...'}
+                {text !== 'Bentar, mikir dlu...' && text !== 'Memproses...'
+                  ? text
+                  : 'PROCESSING DATA...'}
               </div>
             </div>
           </div>
@@ -138,4 +146,4 @@ const ResponseArea = ({ currentResponse }) => {
   )
 }
 
-export default ResponseArea
+export default React.memo(ResponseArea)

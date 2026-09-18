@@ -82,9 +82,12 @@ export const useMarkState = () => {
   }
 
   useEffect(() => {
-    // Save to DB on every change if not initial empty array
+    // Debounce simpan ke DB agar tidak membanjiri SQLite REST endpoint saat streaming token
     if (chatData !== undefined && isChatLoaded) {
-      saveMainThread(chatData)
+      const timer = setTimeout(() => {
+        saveMainThread(chatData)
+      }, 800)
+      return () => clearTimeout(timer)
     }
   }, [chatData, isChatLoaded])
 

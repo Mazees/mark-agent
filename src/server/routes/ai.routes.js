@@ -169,6 +169,7 @@ aiRouter.get('/tts/stream', async (req, res) => {
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Transfer-Encoding', 'chunked')
     res.setHeader('Cache-Control', 'no-cache, no-store')
+    res.setHeader('Access-Control-Allow-Origin', '*')
 
     req.on('close', () => {
       if (!audioStream.destroyed) {
@@ -200,6 +201,7 @@ aiRouter.post('/tts/stream', async (req, res) => {
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Transfer-Encoding', 'chunked')
     res.setHeader('Cache-Control', 'no-cache, no-store')
+    res.setHeader('Access-Control-Allow-Origin', '*')
 
     req.on('close', () => {
       if (!audioStream.destroyed) {

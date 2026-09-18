@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, memo } from 'react'
 
 /**
  * Mapping warna terpadu berdasarkan Mood & Status AI Mark
@@ -110,7 +110,6 @@ const Avatar = ({
     isSeeingDesktop: false,
     desktopTimeout: null
   })
-
 
   // Render face eyes and mouth SVG based on state
   const renderFace = useCallback(() => {
@@ -428,9 +427,21 @@ const Avatar = ({
     if (thrusterRef.current) {
       thrusterRef.current.style.backgroundColor = moodColor
     }
-    const fills = document.querySelectorAll('.avatar-mood-fill')
-    fills.forEach((el) => el.setAttribute('fill', moodColor))
-  }, [status, mood, intensity])
+    const rootEl = robotRootRef.current
+    if (rootEl) {
+      const fills = rootEl.querySelectorAll('.avatar-mood-fill')
+      fills.forEach((el) => el.setAttribute('fill', moodColor))
+    }
+  }, [status, mood])
+
+  // Direct high-speed intensity listener (avoids parent React re-renders)
+  useEffect(() => {
+    const handleIntensityEvent = (e) => {
+      stateRef.current.intensity = typeof e.detail === 'number' ? e.detail : 0
+    }
+    window.addEventListener('mark-intensity', handleIntensityEvent)
+    return () => window.removeEventListener('mark-intensity', handleIntensityEvent)
+  }, [])
 
   // Listen for sleep state from useAwareness
   useEffect(() => {
@@ -823,14 +834,11 @@ const Avatar = ({
       `}</style>
 
       {/* Robot Root Pivot (Handles organic breathing, floating, & poke bounce) */}
-      <div
-        ref={robotRootRef}
-        className="relative w-full h-full avatar-preserve-3d cursor-pointer"
-      >
+      <div ref={robotRootRef} className="relative w-full h-full avatar-preserve-3d cursor-pointer">
         {/* ── 1. UNIFIED 3D HEAD ASSEMBLY (Throat pivot joint 130px 165px) ── */}
         <div
           ref={robotHeadRef}
-          className="absolute left-[30px] top-[18px] w-[260px] h-[180px] avatar-preserve-3d will-change-transform"
+          className="absolute left-[30px] top-[18px] w-[260px] h-[180px] avatar-preserve-3d"
           style={{ transformOrigin: '130px 165px' }}
         >
           {/* Background Helmet Shell & Antennas (Single unified SVG with 3D gradients) */}
@@ -978,10 +986,7 @@ const Avatar = ({
               style={{ transform: 'translateZ(10px)' }}
             >
               {/* Eyes Container */}
-              <div
-                ref={eyesContainerRef}
-                className="flex items-center justify-center gap-7 will-change-transform"
-              >
+              <div ref={eyesContainerRef} className="flex items-center justify-center gap-7">
                 <div
                   ref={leftEyeRef}
                   className="w-10 h-10 flex items-center justify-center avatar-eye-mesh"
@@ -993,10 +998,7 @@ const Avatar = ({
               </div>
 
               {/* Mouth Container */}
-              <div
-                ref={mouthRef}
-                className="h-5 flex items-center justify-center mt-1 transition-all duration-75"
-              />
+              <div ref={mouthRef} className="h-5 flex items-center justify-center mt-1" />
             </div>
           </div>
         </div>
@@ -1004,7 +1006,7 @@ const Avatar = ({
         {/* ── 2. BODY CHASSIS & INTEGRATED NECK COLLAR (Centered: X: 95px, Y: 172px) ── */}
         <div
           ref={robotBodyRef}
-          className="absolute left-[95px] top-[172px] w-[130px] h-[126px] avatar-preserve-3d will-change-transform"
+          className="absolute left-[95px] top-[172px] w-[130px] h-[126px] avatar-preserve-3d"
           style={{ transformOrigin: '65px 12px', transform: 'translateZ(-5px)' }}
         >
           <svg
@@ -1106,7 +1108,7 @@ const Avatar = ({
         {/* ── 3. FLOATING HANDS ── */}
         <div
           ref={handLeftRef}
-          className="absolute left-[36px] top-[215px] w-[44px] h-[52px] avatar-preserve-3d will-change-transform"
+          className="absolute left-[36px] top-[215px] w-[44px] h-[52px] avatar-preserve-3d"
           style={{ transform: 'translateZ(18px)' }}
         >
           <svg
@@ -1132,7 +1134,7 @@ const Avatar = ({
 
         <div
           ref={handRightRef}
-          className="absolute left-[240px] top-[215px] w-[44px] h-[52px] avatar-preserve-3d will-change-transform"
+          className="absolute left-[240px] top-[215px] w-[44px] h-[52px] avatar-preserve-3d"
           style={{ transform: 'translateZ(18px)' }}
         >
           <svg
@@ -1172,4 +1174,4 @@ const Avatar = ({
   )
 }
 
-export default Avatar
+export default memo(Avatar)

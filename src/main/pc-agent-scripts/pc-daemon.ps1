@@ -231,6 +231,25 @@ public class MarkWin32 {
         }
         return "{\"status\":\"success\",\"action\":\"type\",\"text\":\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n") + "\"}";
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LASTINPUTINFO {
+        public uint cbSize;
+        public uint dwTime;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    public static int GetIdleSeconds() {
+        LASTINPUTINFO lii = new LASTINPUTINFO();
+        lii.cbSize = (uint)Marshal.SizeOf(lii);
+        if (GetLastInputInfo(ref lii)) {
+            uint idleMs = (uint)Environment.TickCount - lii.dwTime;
+            return (int)(idleMs / 1000);
+        }
+        return 0;
+    }
 }
 "@
 Add-Type -TypeDefinition $code -Language CSharp
@@ -270,6 +289,27 @@ while ($true) {
         if ($cmd -eq "exit") { break }
 
         switch ($cmd) {
+            "get-idle" {
+                $idle = [MarkWin32]::GetIdleSeconds()
+                Write-Output (@{ status="success"; idleSeconds=$idle } | ConvertTo-Json -Compress)
+            }
+            "get-active-window" {
+                $hwnd = [MarkWin32]::GetForegroundWindow()
+                $titleBuilder = New-Object System.Text.StringBuilder 512
+                [MarkWin32]::GetWindowText($hwnd, $titleBuilder, $titleBuilder.Capacity) | Out-Null
+                $windowTitle = $titleBuilder.ToString()
+                
+                $processId = 0
+                [MarkWin32]::GetWindowThreadProcessId($hwnd, [ref]$processId) | Out-Null
+                $procName = "Windows App"
+                if ($processId -gt 0) {
+                    try {
+                        $p = Get-Process -Id $processId -ErrorAction SilentlyContinue
+                        if ($p) { $procName = $p.ProcessName }
+                    } catch {}
+                }
+                Write-Output (@{ status="success"; title=$windowTitle; process=$procName } | ConvertTo-Json -Compress)
+            }
             "read-focus" {
                 $global:ElementCache.Clear()
                 $hwnd = [MarkWin32]::GetForegroundWindow()

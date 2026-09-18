@@ -168,10 +168,12 @@ export const useVAD = ({
 
       const bufferLength = analyser.frequencyBinCount
       const dataArray = new Uint8Array(bufferLength)
+      let lastThrottleTime = 0
 
       const updateIntensity = () => {
         if (!isRecordingRef.current || !analyserRef.current) {
           setAudioIntensity(0)
+          window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
           return
         }
 
@@ -183,7 +185,16 @@ export const useVAD = ({
         const avg = sum / bufferLength
         // Normalisasi 0 - 255 menjadi 0.0 - 1.0 dengan kurva sensitif untuk percakapan
         const normalized = Math.min(1, Math.max(0, (avg - 8) / 60))
-        setAudioIntensity(normalized)
+
+        // Dispatch mark-intensity langsung ke window (didengar oleh Avatar & LiveWaveform tanpa re-render React)
+        window.dispatchEvent(new CustomEvent('mark-intensity', { detail: normalized }))
+
+        // Batasi setAudioIntensity pada ~15 FPS untuk komponen UI yang bergantung pada prop React
+        const now = performance.now()
+        if (now - lastThrottleTime >= 65) {
+          lastThrottleTime = now
+          setAudioIntensity(normalized)
+        }
 
         animFrameRef.current = requestAnimationFrame(updateIntensity)
       }

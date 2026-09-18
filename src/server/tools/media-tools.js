@@ -1,4 +1,5 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
+import { Readable } from 'stream'
 import ytSearch from 'yt-search'
 import { YoutubeTranscript } from 'youtube-transcript-plus'
 import path from 'path'
@@ -30,33 +31,54 @@ if (!MsEdgeTTS.__mark_patched) {
     }
   }
 
-  // Override _rawSSMLRequest to catch internal _send().then() rejections
-  const originalRawSSMLRequest = MsEdgeTTS.prototype._rawSSMLRequest
+  // Override _rawSSMLRequest with explicit catch handler on _send() to eliminate UnhandledPromiseRejection
   MsEdgeTTS.prototype._rawSSMLRequest = function (requestSSML) {
-    const result = originalRawSSMLRequest.apply(this, arguments)
-    // Tangkap error jika _send() gagal tersambung ke server Microsoft
-    if (this._lastSendPromise && typeof this._lastSendPromise.catch === 'function') {
-      this._lastSendPromise.catch((err) => {
-        if (result?.audioStream && !result.audioStream.destroyed) {
-          result.audioStream.destroy(new Error(typeof err === 'string' ? err : err?.message || 'TTS connection failed'))
-        }
-      })
-    }
-    return result
-  }
+    this._metadataCheck()
+    const requestId = MsEdgeTTS.randomHex(16)
+    const request =
+      `X-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n` +
+      requestSSML.trim()
+    const self = this
+    const audioStream = new Readable({
+      read() {},
+      destroy(error, callback) {
+        delete self._streams[requestId]
+        if (typeof callback === 'function') callback(error)
+      }
+    })
+    const metadataStream = this._hasMetadataBoundaries()
+      ? new Readable({
+          read() {},
+          destroy(error, callback) {
+            delete self._streams[requestId]
+            if (typeof callback === 'function') callback(error)
+          }
+        })
+      : null
 
-  // Patch _send to store promise and avoid dangling unhandled rejection
-  const originalSend = MsEdgeTTS.prototype._send
-  MsEdgeTTS.prototype._send = async function (message) {
-    try {
-      const p = originalSend.apply(this, arguments)
-      this._lastSendPromise = p
-      return await p
-    } catch (err) {
-      // Catch connection errors cleanly so Node does not trigger UnhandledPromiseRejection
-      console.warn('[Edge-TTS] _send connection warning:', typeof err === 'string' ? err : err?.message || err)
-      throw err
+    audioStream.on('error', () => {
+      audioStream.destroy()
+      metadataStream?.destroy()
+    })
+    audioStream.once('close', () => {
+      audioStream.destroy()
+      metadataStream?.destroy()
+    })
+
+    this._streams[requestId] = {
+      audio: audioStream,
+      metadata: metadataStream
     }
+
+    // Attach catch handler directly to eliminate UnhandledPromiseRejection and pipe error to audioStream
+    this._send(request).catch((err) => {
+      const errMsg = typeof err === 'string' ? err : err?.message || 'TTS connection failed'
+      if (!audioStream.destroyed) {
+        audioStream.destroy(new Error(errMsg))
+      }
+    })
+
+    return { audioStream, metadataStream, requestId }
   }
 
   const originalInitClient = MsEdgeTTS.prototype._initClient
@@ -90,16 +112,12 @@ if (!MsEdgeTTS.__mark_patched) {
             // Ignore unparseable or orphaned socket packets
           }
         }
-
-        this._ws.onerror = (error) => {
-          // Prevent unhandled WebSocket error from crashing the process
-          console.warn('[Edge-TTS] WebSocket connection error:', error?.message || error)
-        }
       }
       return res
     } catch (connectErr) {
-      console.warn('[Edge-TTS] _initClient error:', typeof connectErr === 'string' ? connectErr : connectErr?.message || connectErr)
-      throw connectErr
+      const msg =
+        typeof connectErr === 'string' ? connectErr : connectErr?.message || 'TTS connection failed'
+      throw new Error(msg)
     }
   }
 }
@@ -109,25 +127,10 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true })
 }
 
-let persistentTTSInstance = null
-let currentConfiguredVoice = null
-
 /**
- * Mendapatkan instance MsEdgeTTS persistent dengan voice yang sudah ter-setup
- * @param {string} voice
- */
-async function getOrCreateTTSInstance(voice = 'id-ID-ArdiNeural') {
-  if (!persistentTTSInstance || currentConfiguredVoice !== voice) {
-    const tts = new MsEdgeTTS()
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
-    persistentTTSInstance = tts
-    currentConfiguredVoice = voice
-  }
-  return persistentTTSInstance
-}
-
-/**
- * Menghasilkan readable stream audio langsung untuk HTTP response streaming
+ * Menghasilkan readable stream audio langsung untuk HTTP response streaming.
+ * Menggunakan instance terisolasi per permintaan dengan penutupan socket otomatis
+ * agar tahan terhadap idle timeout dan permintaan kalimat paralel.
  * @param {string} text
  * @param {string} [voice='id-ID-ArdiNeural']
  * @param {number|string} [rate=0]
@@ -146,24 +149,21 @@ export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitc
   const rateStr = numRate >= 0 ? `+${numRate}%` : `${numRate}%`
   const pitchStr = numPitch >= 0 ? `+${numPitch}Hz` : `${numPitch}Hz`
 
-  try {
-    const tts = await getOrCreateTTSInstance(selectedVoice)
-    const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
-    return streamObj.audioStream
-  } catch (err) {
-    // Retry sekali dengan membuat koneksi baru jika socket sebelumnya terputus/stale
-    console.warn('[Edge-TTS] Re-initializing stale TTS instance after error:', err?.message || err)
-    persistentTTSInstance = null
-    currentConfiguredVoice = null
+  const tts = new MsEdgeTTS()
+  await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+  const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
+
+  const cleanup = () => {
     try {
-      const tts = await getOrCreateTTSInstance(selectedVoice)
-      const streamObj = tts.toStream(text, { rate: rateStr, pitch: pitchStr })
-      return streamObj.audioStream
-    } catch (retryErr) {
-      console.error('[Edge-TTS] Failed to stream TTS on retry:', retryErr?.message || retryErr)
-      throw retryErr
-    }
+      tts.close()
+    } catch (_) {}
   }
+
+  streamObj.audioStream.once('end', cleanup)
+  streamObj.audioStream.once('close', cleanup)
+  streamObj.audioStream.once('error', cleanup)
+
+  return streamObj.audioStream
 }
 
 /**
@@ -238,4 +238,3 @@ export async function getTranscript(url, lang = 'id') {
     return `Gagal mengambil transkrip video: ${err?.message || 'Video tidak memiliki transkrip atau dibatasi'}`
   }
 }
-

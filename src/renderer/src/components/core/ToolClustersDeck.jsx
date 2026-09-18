@@ -207,4 +207,4 @@ const ToolClustersDeck = ({ activeProcesses = [], dismissProcess, className = ''
   )
 }
 
-export default ToolClustersDeck
+export default React.memo(ToolClustersDeck)

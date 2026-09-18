@@ -129,7 +129,25 @@ export function recordActivityEntry(winData) {
 }
 
 async function getActiveWindowFallback() {
-  // 1. Coba activeWin native binding
+  // 1. Coba persistent Win32 PC-Daemon tercepat jika aktif (<1ms, tanpa spawn proses)
+  if (process.platform === 'win32' && isDaemonAlive()) {
+    try {
+      const raw = await sendCommand({ cmd: 'get-active-window' })
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (parsed && parsed.title && parsed.title.trim()) {
+        return {
+          title: parsed.title.trim(),
+          owner: { name: parsed.process || 'Windows App' },
+          app: parsed.process || 'Windows App',
+          url: null
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Coba activeWin native binding sebagai fallback (macOS / Linux / jika tersedia)
   try {
     const win = await activeWin()
     if (win && win.title && win.title.trim()) {
@@ -144,23 +162,9 @@ async function getActiveWindowFallback() {
     // ignore
   }
 
-  // 2. Coba persistent Win32 PC-Daemon jika aktif
-  try {
-    if (isDaemonAlive()) {
-      const raw = await sendCommand({ cmd: 'read-focus' })
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-      if (parsed && parsed.window && parsed.window.trim()) {
-        return {
-          title: parsed.window.trim(),
-          owner: { name: parsed.process || 'Windows App' },
-          app: parsed.process || 'Windows App'
-        }
-      }
-    } else if (process.platform === 'win32') {
-      startDaemon().catch(() => {})
-    }
-  } catch {
-    // ignore
+  // 3. Jika di Windows dan daemon belum aktif, jalankan daemon di background
+  if (process.platform === 'win32' && !isDaemonAlive()) {
+    startDaemon().catch(() => {})
   }
 
   return null
@@ -168,6 +172,23 @@ async function getActiveWindowFallback() {
 
 export async function getSystemIdleSeconds() {
   if (process.platform !== 'win32') return 0
+
+  // 1. Prioritaskan Win32 PC-Daemon instan (<0.1ms tanpa spawn PowerShell atau csc.exe)
+  if (isDaemonAlive()) {
+    try {
+      const raw = await sendCommand({ cmd: 'get-idle' })
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (parsed && typeof parsed.idleSeconds === 'number') {
+        return parsed.idleSeconds
+      }
+    } catch {
+      // fallback jika daemon sibuk
+    }
+  }
+
+  // 2. Fallback jika daemon belum siap (jalankan daemon untuk panggilan berikutnya)
+  startDaemon().catch(() => {})
+
   try {
     const psScript = `
       $signature = @'
