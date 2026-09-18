@@ -14,6 +14,10 @@ import { getSessionCompact, saveSessionCompact, saveSession } from '../db.js'
 import { compactCodeBlocks } from './contextCompactor.js'
 
 export const MAX_CONTEXT_CHARS = 525000
+export const GATEWAY_HYGIENE_THRESHOLD = 0.85 // Jaring pengaman pra-turn (85% kapasitas)
+export const IN_LOOP_COMPACT_THRESHOLD = 0.5 // Ambang pemicu in-loop ReAct (50% kapasitas)
+export const OLD_TOOL_PRUNE_CHAR_LIMIT = 200 // Batas karakter output tool lama untuk dipangkas
+export const CLEARED_TOOL_PLACEHOLDER = '[Old tool output cleared to save context space]'
 
 /**
  * Mendapatkan ID unik dari sebuah objek pesan
@@ -115,70 +119,116 @@ export function calculateSessionChars(
 }
 
 /**
- * Tahap 1: Pruning output tool lama di memori (tanpa mengubah tabel database langsung)
- * Memangkas executedTools besar dan blok kode panjang di giliran lama.
+ * Fase 1 Hermes: Prune Old Tool Results (murah, O(n), tanpa panggilan LLM)
+ * Mengganti output tool lama (> 200 karakter) di luar tail dengan placeholder:
+ * "[Old tool output cleared to save context space]"
  */
-export function pruneOldToolResultsInMemory(messages = [], preserveRecentTurns = 4) {
+export function pruneOldToolResultsInLoop(messages = [], protectLastN = 6) {
   if (!Array.isArray(messages) || messages.length === 0) return []
 
-  const cloned = messages.map((m) => ({ ...m }))
-  const totalValid = cloned.filter(
-    (m) => m && !m.isThinking && !m.isSearching && !m.isSummarizing && m.role !== 'command'
-  ).length
-
-  let validIndex = 0
-  for (let i = 0; i < cloned.length; i++) {
-    const item = cloned[i]
-    if (
-      !item ||
-      item.isThinking ||
-      item.isSearching ||
-      item.isSummarizing ||
-      item.role === 'command'
-    ) {
-      continue
+  const cloned = messages.map((m) => {
+    if (!m) return m
+    return {
+      ...m,
+      executedTools: Array.isArray(m.executedTools)
+        ? m.executedTools.map((t) => ({ ...t }))
+        : m.executedTools
     }
-    validIndex++
+  })
 
-    // Pertahankan N giliran terbaru tanpa pemangkasan penuh
-    const isRecent = validIndex > totalValid - preserveRecentTurns
-    if (isRecent) {
-      // Pangkas fullResult raksasa pada tool yang sudah selesai di giliran non-aktif
-      if (
-        validIndex < totalValid &&
-        Array.isArray(item.executedTools) &&
-        item.executedTools.length > 0
-      ) {
-        item.executedTools = item.executedTools.map((t) => {
-          if (typeof t.fullResult === 'string' && t.fullResult.length > 500) {
-            return {
-              ...t,
-              fullResult: t.resultSummary || t.fullResult.slice(0, 250) + '... [output dipangkas]'
-            }
+  // Tentukan batas ekor (tail) yang dilindungi 100%
+  const tailBoundary = Math.max(0, cloned.length - protectLastN)
+
+  for (let i = 0; i < tailBoundary; i++) {
+    const msg = cloned[i]
+    if (!msg) continue
+
+    // 1. Pesan role: 'tool' (Format native OpenAI/ReAct)
+    if (msg.role === 'tool') {
+      let shouldPrune = false
+      let parsed = null
+
+      if (typeof msg.content === 'string') {
+        if (msg.content.length > OLD_TOOL_PRUNE_CHAR_LIMIT) {
+          shouldPrune = true
+          try {
+            parsed = JSON.parse(msg.content)
+          } catch {
+            parsed = null
           }
-          return t
-        })
+        }
+      } else if (typeof msg.content === 'object' && msg.content !== null) {
+        shouldPrune = true
+        parsed = msg.content
       }
-      continue
+
+      if (shouldPrune) {
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.data || parsed.output || parsed.result) {
+            parsed.data = CLEARED_TOOL_PLACEHOLDER
+            if (parsed.output) parsed.output = CLEARED_TOOL_PLACEHOLDER
+            if (parsed.result) parsed.result = CLEARED_TOOL_PLACEHOLDER
+            msg.content = JSON.stringify(parsed)
+          } else {
+            msg.content = CLEARED_TOOL_PLACEHOLDER
+          }
+        } else {
+          msg.content = CLEARED_TOOL_PLACEHOLDER
+        }
+      }
     }
 
-    // Pangkas executedTools pada giliran lama
-    if (Array.isArray(item.executedTools) && item.executedTools.length > 0) {
-      item.executedTools = item.executedTools.map((t) => ({
-        tool: t.tool || 'unknown_tool',
-        query: t.query ? String(t.query).slice(0, 100) : '',
-        resultSummary: t.resultSummary || `[tool result dipangkas: ${t.tool || 'tool'}]`,
-        fullResult: `[tool result dipangkas: ${t.tool || 'tool'}]`
-      }))
+    // 2. Pesan dengan executedTools (Format historis chat MARK)
+    if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
+      msg.executedTools = msg.executedTools.map((t) => {
+        if (typeof t.fullResult === 'string' && t.fullResult.length > OLD_TOOL_PRUNE_CHAR_LIMIT) {
+          return {
+            ...t,
+            fullResult: t.resultSummary || CLEARED_TOOL_PLACEHOLDER
+          }
+        }
+        return t
+      })
     }
 
-    // Kompaksi blok kode panjang di teks lama jika > 300 char
-    if (typeof item.content === 'string' && item.content.length > 300) {
-      item.content = compactCodeBlocks(item.content)
+    // 3. Kompaksi blok kode panjang di teks lama jika > 500 char
+    if (typeof msg.content === 'string' && msg.content.length > 500) {
+      msg.content = compactCodeBlocks(msg.content)
     }
   }
 
   return cloned
+}
+
+/**
+ * Kompatibilitas mundur: Pruning output tool lama di memori
+ */
+export function pruneOldToolResultsInMemory(messages = [], preserveRecentTurns = 4) {
+  return pruneOldToolResultsInLoop(messages, preserveRecentTurns * 2)
+}
+
+/**
+ * Fase 2 Hermes: Penyelarasan batas mundur (Boundary Backward Alignment)
+ * Menjaga agar pasangan tool_calls pada role assistant dan tool_result pada role tool
+ * tidak pernah terputus/terbelah di antara batas potongan konteks.
+ */
+export function alignBoundaryBackward(messages = [], splitIndex = 0) {
+  if (splitIndex <= 0 || splitIndex >= messages.length) return splitIndex
+
+  let idx = splitIndex
+
+  // Jika elemen di splitIndex adalah role: 'tool', mundur hingga ke role assistant pemanggilnya
+  while (idx > 0 && messages[idx]?.role === 'tool') {
+    idx--
+  }
+
+  // Jika elemen sebelumnya adalah assistant dengan tool_calls yang hasilnya berada di/setelah splitIndex,
+  // mundur agar assistant ini berada di blok yang sama dengan hasil tool-nya
+  if (idx > 0 && messages[idx]?.role === 'assistant' && Array.isArray(messages[idx]?.tool_calls)) {
+    return idx
+  }
+
+  return idx
 }
 
 /**
@@ -239,21 +289,44 @@ export async function summarizeMiddle(
     messagesText = messagesText.slice(-90000)
   }
 
-  const systemPrompt = `Kamu adalah sistem internal Mark untuk context compaction.
-Tugasmu: Buat SATU ringkasan padat dan komprehensif yang memperbarui ringkasan lama dengan percakapan baru.
+  const systemPrompt = `Kamu adalah Context Compressor untuk MARK AI OS (Handover Engine).
+Tugasmu: Hasilkan DOKUMEN SERAH-TERIMA TEKNIS yang padat, terstruktur, dan akurat dengan format markdown berikut:
 
-Aturan Ringkasan:
-1. Pertahankan semua keputusan penting dan kesepakatan pengguna.
-2. Pertahankan berkas atau kode yang dibuat atau dimodifikasi.
-3. Pertahankan status task yang sedang berjalan atau telah selesai.
-4. Buang basa-basi, salam, dan log intermediate yang tidak lagi relevan.
-5. Gunakan bahasa Indonesia ringkas, padat, dan faktual.
-6. HANYA OUTPUT TEKS RANGKUMAN tanpa kalimat pembuka atau penutup.`
+## Goal
+[Apa yang ingin dicapai pengguna dalam tugas atau percakapan ini]
 
-  const userPrompt = `[RINGKASAN KOMPAKSI SEBELUMNYA]:
-${existingSummaryBlock ? existingSummaryBlock.trim() : '(Belum ada ringkasan sebelumnya / kompaksi pertama kali)'}
+## Constraints & Preferences
+[Aturan teknis, batasan pengguna, preferensi gaya koding atau arsitektur]
 
-[PERCAKAPAN BARU YANG HARUS DIRANGKUM]:
+## Progress
+### Done
+[Pekerjaan yang telah selesai dilakukan: berkas yang diedit/dibuat, perintah shell, status verifikasi]
+### In Progress
+[Pekerjaan atau sub-langkah yang sedang berjalan saat ini]
+### Blocked
+[Hambatan, bug, atau kendala jika ada]
+
+## Key Decisions
+[Keputusan arsitektural/teknis penting dan alasannya]
+
+## Relevant Files
+[Daftar berkas yang dibaca, dimodifikasi, atau dibuat beserta catatan singkat 1 baris mengenai fungsinya]
+
+## Next Steps
+[Langkah kerja konkret berikutnya yang harus dilanjutkan]
+
+## Critical Context
+[Nilai konfigurasi, port, nama variabel, ID penting, atau pesan error mentah yang esensial]
+
+Aturan Mutlak:
+1. Jika terdapat [RINGKASAN SERAH-TERIMA SEBELUMNYA], PERBARUI dokumen tersebut: pindahkan item dari "In Progress" ke "Done", tambahkan berkas baru ke "Relevant Files", perbarui "Next Steps", dan singkirkan detail usang.
+2. Pertahankan akurasi path berkas, nama fungsi, dan detail teknis tanpa halusinasi.
+3. HANYA cetak dokumen markdown serah-terima di atas secara langsung tanpa kalimat pembuka atau penutup basa-basi.`
+
+  const userPrompt = `[RINGKASAN SERAH-TERIMA SEBELUMNYA]:
+${existingSummaryBlock ? existingSummaryBlock.trim() : '(Belum ada ringkasan sebelumnya / inisiasi pertama kali)'}
+
+[PERCAKAPAN BARU YANG HARUS DIRANGKUM KE DOKUMEN SERAH-TERIMA]:
 ${messagesText}`
 
   const promptPayload = [
@@ -644,4 +717,133 @@ export function pruneInFlightMessages(messages = [], maxChars = MAX_CONTEXT_CHAR
   }
 
   return messages
+}
+
+/**
+ * In-Loop Context Guard untuk ReAct loop (Lead Agent & Sub-Agent).
+ * Dipanggil di setiap iterasi ReAct loop sebelum mengirim prompt ke LLM.
+ *
+ * Mengimplementasikan 4 Fase Hermes secara in-place:
+ * - Fase 1: Zero-cost O(n) pruning pada tool output lama di luar tail (>200 karakter)
+ * - Fase 2: Backward boundary alignment untuk menjaga pasangan tool_calls dan tool_result
+ * - Fase 3: Structured Handover Summary dengan update iteratif
+ * - Fase 4: Perakitan pesan in-place stabil pada session ID yang sama
+ */
+export async function checkAndCompressInLoop({
+  loopMessages = [],
+  sessionId = '1',
+  maxChars = MAX_CONTEXT_CHARS,
+  thresholdRatio = IN_LOOP_COMPACT_THRESHOLD,
+  protectLastN = 6,
+  protectFirstN = 2,
+  activeConfig = {},
+  onProgress = null
+}) {
+  if (!Array.isArray(loopMessages) || loopMessages.length <= protectLastN + protectFirstN) {
+    return { compressed: false, loopMessages }
+  }
+
+  const triggerLimit = maxChars * thresholdRatio
+  let totalChars = 0
+  for (const m of loopMessages) {
+    totalChars += calculateMessageChars(m)
+  }
+
+  // Jika masih di bawah ambang batas (50% dari maxChars) dan jumlah pesan belum terlalu panjang (< 24),
+  // tidak memerlukan kompresi
+  if (totalChars < triggerLimit && loopMessages.length < 24) {
+    return { compressed: false, loopMessages, totalChars }
+  }
+
+  if (typeof onProgress === 'function') {
+    onProgress({ stage: 'pruning', text: 'In-loop: Memangkas log tool lama...' })
+  }
+
+  // FASE 1: Zero-cost O(n) Tool Pruning
+  const prunedMessages = pruneOldToolResultsInLoop(loopMessages, protectLastN)
+  let prunedChars = 0
+  for (const m of prunedMessages) {
+    prunedChars += calculateMessageChars(m)
+  }
+
+  // Jika Fase 1 saja sudah cukup membawa konteks di bawah ambang batas 50%:
+  if (prunedChars < triggerLimit) {
+    return {
+      compressed: true,
+      prunedOnly: true,
+      loopMessages: prunedMessages,
+      totalChars: prunedChars
+    }
+  }
+
+  // FASE 2: Tentukan Batas Head, Middle, dan Tail dengan Backward Alignment
+  if (typeof onProgress === 'function') {
+    onProgress({ stage: 'summarizing', text: 'In-loop: Merangkum serah-terima teknis...' })
+  }
+
+  const head = prunedMessages.slice(0, Math.min(protectFirstN, prunedMessages.length))
+  const rawTailStart = Math.max(head.length, prunedMessages.length - protectLastN)
+  const alignedTailStart = alignBoundaryBackward(prunedMessages, rawTailStart)
+  const middle = prunedMessages.slice(head.length, alignedTailStart)
+  const tail = prunedMessages.slice(alignedTailStart)
+
+  if (middle.length === 0) {
+    return {
+      compressed: true,
+      prunedOnly: true,
+      loopMessages: prunedMessages,
+      totalChars: prunedChars
+    }
+  }
+
+  // Ambil summary serah-terima sebelumnya jika ada
+  let existingSummary = ''
+  try {
+    const compactRec = await getSessionCompact(sessionId)
+    if (compactRec) {
+      existingSummary = compactRec.summaryBlock || compactRec.summary_block || ''
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // FASE 3: Generate Structured Handover Summary (Iteratif)
+  const newSummary = await summarizeMiddle(middle, existingSummary, activeConfig)
+
+  // Simpan ringkasan baru secara in-place ke session_compact
+  try {
+    const lastMiddleMsg = middle[middle.length - 1]
+    await saveSessionCompact(sessionId, {
+      summaryBlock: newSummary,
+      lastCompactedMessageId: getMessageId(lastMiddleMsg, alignedTailStart - 1),
+      lastCompactedAt: Date.now()
+    })
+  } catch (err) {
+    console.warn('[contextManager] In-loop saveSessionCompact gagal:', err)
+  }
+
+  // FASE 4: Perakitan Pesan In-Place [Head] + [Handover Summary] + [Tail]
+  const handoverContent = `[ CONTEXT COMPACTION (IN-LOOP HANDOVER) ]\n${newSummary}`
+  const assembled = [
+    ...head,
+    {
+      role: 'user',
+      content: handoverContent
+    },
+    ...tail
+  ]
+
+  const sanitized = cleanOrphanToolPairs(assembled)
+  let finalChars = 0
+  for (const m of sanitized) {
+    finalChars += calculateMessageChars(m)
+  }
+
+  return {
+    compressed: true,
+    prunedOnly: false,
+    loopMessages: sanitized,
+    totalChars: finalChars,
+    newSummaryBlock: newSummary
+  }
 }

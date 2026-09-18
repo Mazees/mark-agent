@@ -3,6 +3,11 @@ import { subagentStore } from './subagentStore'
 import { buildSubagentSystemPrompt } from './subagentPrompt'
 import { core_tools_schema } from '../tools/core-tools'
 import { webApi } from '../web-bridge.js'
+import {
+  MAX_CONTEXT_CHARS,
+  IN_LOOP_COMPACT_THRESHOLD,
+  checkAndCompressInLoop
+} from '../ai/contextManager'
 
 // Registry AbortController aktif per sub-agent
 const subagentAbortControllers = new Map()
@@ -106,7 +111,9 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type) {
                 textContent = parsed
               }
-            } catch (_) {}
+            } catch {
+              /* ignore */
+            }
           } else if (Array.isArray(textContent)) {
             // Sudah berbentuk array multimodal
           } else if (typeof textContent === 'object' && textContent !== null) {
@@ -148,6 +155,25 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         })
       }
 
+      // In-Loop Context Guard (Hermes 50% Threshold + O(n) Pruning untuk Sub-Agent)
+      try {
+        const inLoopResult = await checkAndCompressInLoop({
+          loopMessages: messagesPayload,
+          sessionId: `subagent_${subagentId}`,
+          maxChars: MAX_CONTEXT_CHARS,
+          thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
+          protectLastN: 6,
+          protectFirstN: 1, // Pertahankan system prompt subagent
+          activeConfig: {}
+        })
+
+        if (inLoopResult?.compressed && inLoopResult.loopMessages) {
+          messagesPayload = inLoopResult.loopMessages
+        }
+      } catch (subErr) {
+        console.warn(`[subagentExecutor:${subagentId}] In-loop compaction warning:`, subErr)
+      }
+
       let turnReasoning = ''
       let turnContent = ''
 
@@ -179,7 +205,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
           let parsedArgs = {}
           try {
             parsedArgs = JSON.parse(tc.function?.arguments || '{}')
-          } catch (_) {
+          } catch {
             parsedArgs = { raw: tc.function?.arguments || '' }
           }
 
@@ -261,7 +287,9 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                     timestamp: Date.now()
                   })
                 }
-              } catch (_) {}
+              } catch {
+                /* ignore */
+              }
 
               // Simpan record report ke subagent
               await subagentStore.updateSubagent(subagentId, {
@@ -568,7 +596,9 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
             timestamp: Date.now()
           })
         }
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
     }
 
     return {

@@ -111,6 +111,10 @@ Pada sesi percakapan yang panjang atau saat agent menjalankan banyak tool yang m
 ### Parameter & Batas Karakter:
 
 - `MAX_CONTEXT_CHARS = 525000`: Batas global (~131.000 token ekuivalen untuk model berkapasitas 128k/200k konteks).
+- `GATEWAY_HYGIENE_THRESHOLD = 0.85`: Jaring pengaman pra-turn pada 85% kapasitas untuk menangkap backlog percakapan besar sebelum pesan diproses.
+- `IN_LOOP_COMPACT_THRESHOLD = 0.50`: Ambang pemicu kompresor in-loop ReAct pada 50% kapasitas di setiap langkah eksekusi tool.
+- `OLD_TOOL_PRUNE_CHAR_LIMIT = 200`: Ambang batas karakter output tool lama yang langsung dipangkas secara $O(n)$.
+- `CLEARED_TOOL_PLACEHOLDER = '[Old tool output cleared to save context space]'`: Penanda stub pemangkasan hasil tool lama.
 
 ### Normalisasi Konten Multimodal (Pencegahan Token Blowout):
 
@@ -121,10 +125,25 @@ Gambar Base64 berukuran ratusan ribu karakter seringkali membakar habis jendela 
 
 ### 2 Tahapan Pemadatan Konteks (_Compaction Pipeline_):
 
+### Sistem Kompresi Ganda (Dual-Layer Architecture):
+
+Mengadopsi pola arsitektur dari **Hermes Agent (Nous Research)**, MARK menerapkan dua lapisan kompresor independen:
+
+1. **Layer 1: Gateway Session Hygiene (Pra-Turn - 85% Ambang Batas)**:
+   Berjalan di `useMarkPlan.js` sebelum pesan diproses oleh agen. Ini adalah jaring pengaman untuk mencegah kegagalan API ketika sesi menjadi terlalu besar di antara giliran (misalnya akumulasi percakapan ribuan pesan).
+2. **Layer 2: In-Loop Agent Context Engine (Setiap Iterasi - 50% Ambang Batas)**:
+   Berjalan di dalam perulangan ReAct `while (!isDone)` pada Lead Agent (`useMarkPlan.js`) dan `while (!abortController.signal.aborted)` pada Sub-Agent (`subagentExecutor.js`). Memastikan agen dapat menjalankan 50–500 iterasi tool tanpa mengalami pembengkakan konteks (_context ballooning_).
+
 ```mermaid
 flowchart TD
     CheckLimit{"Total Karakter > MAX_CONTEXT_CHARS?"} -->|Tidak| Pass["Kirim Pesan Utuh Tanpa Pemadatan"]
     CheckLimit -->|Ya| Stage1["Tahap 1: Pruning Output Tool (0ms Delay, Tanpa AI)"]
+    subgraph Layer1["Layer 1: Gateway Session Hygiene (Pra-Turn, 85%)"]
+        A["Pesan Masuk"] --> B{"Kapasitas Sesi >= 85%?"}
+        B -- "Ya" --> C["Jalankan Pre-Turn Hygiene Compaction"]
+        B -- "Tidak" --> D["Lanjut ke ReAct Loop"]
+        C --> D
+    end
 
     Stage1 --> PruneOld["Pangkas string hasil eksekusi tool lama di memori"]
     PruneOld --> Recheck{"Karakter Masih > Batas?"}
@@ -136,11 +155,47 @@ flowchart TD
     SliceMessages --> AISummary["Minta AI meringkas poin-poin keputusan"]
     AISummary --> SaveCompact["Simpan ke tabel session_compact di SQLite"]
     SaveCompact --> Assemble["Bentuk Prompt: [ COMPACTED MESSAGE SUMMARY ] + Sisa Pesan Baru"]
+    subgraph Layer2["Layer 2: In-Loop ReAct Engine (Per-Iterasi, 50%)"]
+        D --> E["Mulai Iterasi Tool (Lead Agent / Sub-Agent)"]
+        E --> F{"Ukuran loopMessages >= 50%?"}
+        F -- "Ya: Fase 1" --> G["Pangkas Tool Output Lama di Luar Tail (O(n), Tanpa LLM)"]
+        G --> H{"Masih >= 50%?"}
+        H -- "Ya: Fase 2 & 3" --> I["Ekstraksi Middle Section -> LLM Structured Handover Summary"]
+        I --> J["Fase 4: Rakit Pesan In-Place [Head] + [Handover] + [Tail]"]
+        H -- "Tidak" --> K["Konteks Ramping Siap"]
+        J --> K
+        F -- "Tidak" --> K
+        K --> L["Kirim Payload ke LLM & Eksekusi Tool"]
+        L --> M{"Selesai?"}
+        M -- "Tidak" --> E
+        M -- "Ya" --> N["Turn Berakhir"]
+    end
 ```
 
 ### 1. Tahap 1: In-Memory Tool Output Pruning (Nol Biaya Token)
 
+### Algoritma Kompresi 4-Fase Hermes:
+
 Memotong keluaran (_stdout/result_) dari eksekusi tool yang telah lewat lebih dari 3 giliran menjadi potongan ringkas (maksimal 300 karakter), karena AI biasanya sudah menyerap informasi tersebut pada giliran sebelumnya.
+
+1. **Fase 1: Prune Old Tool Results (Murah, O(n), Tanpa Panggilan LLM)**
+   Output dari pemanggilan tool lama (> 200 karakter) yang berada di luar zona ekor aktif (_tail_) diganti dengan stub:
+   `[Old tool output cleared to save context space]`
+   Operasi ini menghemat 70–80% memori seketika tanpa menggunakan biaya token LLM sama sekali.
+2. **Fase 2: Penyelarasan Batas Mundur (Boundary Backward Alignment)**
+   Fungsi `alignBoundaryBackward` memastikan bahwa pasangan `tool_calls` pada asisten dan `tool_result` pada role tool tidak pernah terputus atau terpisah di antara batas potongan ringkasan dan ekor aktif.
+3. **Fase 3: Dokumen Serah-Terima Teknis (Structured Handover Document)**
+   Bagian tengah yang dipadatkan dirangkum menggunakan template serah-terima teknis terstruktur:
+   - `## Goal` (Tujuan spesifik pengguna)
+   - `## Constraints & Preferences` (Aturan & preferensi teknis)
+   - `## Progress` (`### Done`, `### In Progress`, `### Blocked`)
+   - `## Key Decisions` (Keputusan teknis kunci dan alasannya)
+   - `## Relevant Files` (Daftar berkas yang dibaca/diedit/dibuat dengan catatan fungsi)
+   - `## Next Steps` (Langkah konkret berikutnya)
+   - `## Critical Context` (Nilai port, variabel, error mentah, konfigurasi)
+     _Iterative Re-compression_: Jika ringkasan sebelumnya sudah ada, model memperbarui ringkasan lama daripada memulai dari awal.
+4. **Fase 4: Perakitan In-Place & Sanitasi Pasangan Tool Yatim**
+   Pesan dirakit kembali pada **ID sesi stabil yang sama (`in_place: true`)** tanpa memecah atau merotasi ID sesi. Fungsi `cleanOrphanToolPairs` membuang tool result yang kehilangan induk asistennya untuk mencegah penolakan API (HTTP 400).
 
 ### 2. Tahap 2: Inkremental AI Summarization
 
@@ -157,6 +212,9 @@ Persentase kapasitas konteks aktif dipantau secara visual di samping tombol inpu
 - Hijau: Kapasitas < 75%
 - Kuning/Amber: Kapasitas 75% - 89%
 - Merah: Kapasitas >= 90% (pemadatan otomatis aktif)
+- Hijau: Kapasitas < 50% (Beban Optimal)
+- Kuning/Amber: Kapasitas 50% - 84% (In-Loop Compressor Aktif)
+- Merah/Rose: Kapasitas >= 85% (Gateway Session Hygiene Aktif)
 
 ---
 

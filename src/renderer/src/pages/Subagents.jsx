@@ -210,7 +210,7 @@ export default function Subagents() {
           </div>
         ) : (
           <div className="flex-1 flex w-full h-full overflow-hidden">
-            {/* 1. Left Sidebar: Agent Roster */}
+            {/* 1. Left Sidebar */}
             <AgentSidebar
               subagents={subagents}
               selectedId={selectedSubagentId}
@@ -219,7 +219,7 @@ export default function Subagents() {
               onDeleteAgent={handleDeleteSubagent}
             />
 
-            {/* 2. Center Panel: Hermes Agent Chat Feed & Execution Log */}
+            {/* 2. Center Panel */}
             {selectedSubagentId ? (
               <AgentChatFeed
                 subagentId={selectedSubagentId}

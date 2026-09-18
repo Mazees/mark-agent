@@ -25,10 +25,13 @@ import { getUnifiedContext, generateVector, executeMemorySearch } from '../../ap
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import {
   MAX_CONTEXT_CHARS,
+  GATEWAY_HYGIENE_THRESHOLD,
+  IN_LOOP_COMPACT_THRESHOLD,
   calculateSessionChars,
   executeSessionCompaction,
   assembleCompactedPayload,
-  pruneInFlightMessages
+  pruneInFlightMessages,
+  checkAndCompressInLoop
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
@@ -1142,7 +1145,9 @@ export const useMarkPlan = ({
         isSystem || isAutonomous || opts.skipCompaction || opts.disableTools
       )
 
-      if (!isInternalTurn && currentEstimatedChars >= MAX_CONTEXT_CHARS) {
+      // Layer 1: Gateway Session Hygiene (Hermes 85% safety net)
+      const gatewayHygieneTriggerChars = MAX_CONTEXT_CHARS * GATEWAY_HYGIENE_THRESHOLD
+      if (!isInternalTurn && currentEstimatedChars >= gatewayHygieneTriggerChars) {
         const compactBannerId = `compact-banner-${Date.now()}`
         targetSetChatData((prev) => [
           ...prev,
@@ -1384,6 +1389,41 @@ export const useMarkPlan = ({
 
         // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai 525K,
         // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 525K.
+        // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
+        // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
+        // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
+        try {
+          const inLoopResult = await checkAndCompressInLoop({
+            loopMessages,
+            sessionId: String(activeSessionNum || 1),
+            maxChars: MAX_CONTEXT_CHARS,
+            thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
+            protectLastN: 6,
+            protectFirstN: 2,
+            activeConfig: config[0] || {}
+          })
+
+          if (inLoopResult?.compressed && inLoopResult.loopMessages) {
+            loopMessages = inLoopResult.loopMessages
+            if (inLoopResult.totalChars) {
+              window.dispatchEvent(
+                new CustomEvent('context-tracker-updated', {
+                  detail: {
+                    sessionId: String(activeSessionNum || 1),
+                    currentChars: inLoopResult.totalChars,
+                    maxChars: MAX_CONTEXT_CHARS,
+                    percentage: Math.min(100, (inLoopResult.totalChars / MAX_CONTEXT_CHARS) * 100),
+                    lastCompactedAt: Date.now()
+                  }
+                })
+              )
+            }
+          }
+        } catch (inLoopErr) {
+          console.warn('[useMarkPlan] In-loop compaction warning:', inLoopErr)
+        }
+
+        // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_CHARS)
 
         // Request streaming ke Backend AI Bridge
@@ -2113,13 +2153,17 @@ export const useMarkPlan = ({
             }
           })
         )
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
 
       try {
         if (window.api && window.api.executeNativeTool) {
           window.api.executeNativeTool('os-control-close').catch(() => {})
         }
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
     } catch (error) {
       const isAbort =
         error.name === 'AbortError' ||
