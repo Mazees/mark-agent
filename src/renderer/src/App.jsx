@@ -26,6 +26,7 @@ const GlobalListener = () => {
 
   useEffect(() => {
     let currentShortcut = 'CommandOrControl+Alt+M'
+    let unsubTg = null
 
     const updateConfig = async () => {
       try {
