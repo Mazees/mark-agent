@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, memo } from 'react'
 import {
   FaMicrophone,
   FaStop,
@@ -725,7 +725,7 @@ const InputBar = ({
         >
           {isRecording && !isProcessing && (
             <div
-              className="absolute inset-0 rounded-full bg-error/30 -z-10 transition-transform duration-75"
+              className="absolute inset-0 rounded-full bg-error/30 -z-10"
               style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
             />
           )}
@@ -841,6 +841,7 @@ const InputBar = ({
             const strokeDashoffset = circumference - (pct / 100) * circumference
             const colorClass =
               pct >= 90 ? 'stroke-rose-500' : pct >= 75 ? 'stroke-amber-400' : 'stroke-emerald-400'
+            pct >= 85 ? 'stroke-rose-500' : pct >= 50 ? 'stroke-amber-400' : 'stroke-emerald-400'
 
             return (
               <div className="relative flex items-center justify-center px-1 select-none">
@@ -853,7 +854,7 @@ const InputBar = ({
                     if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
                   }}
                   className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
-                  title="Context Window Info"
+                  title="Context Window Info (Dual-Layer Hermes Compressor)"
                 >
                   <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                     <circle
@@ -889,6 +890,12 @@ const InputBar = ({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="text-[11px] font-medium text-white/40 mb-0.5">Session Info</div>
+                    <div className="flex items-center justify-between text-[11px] font-medium text-white/40 mb-0.5">
+                      <span>Session Info</span>
+                      <span className="text-[9px] uppercase tracking-wider text-primary/80">
+                        In-Place
+                      </span>
+                    </div>
                     <div className="text-xs font-bold text-white mb-2.5">Context Window</div>
 
                     <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
@@ -902,11 +909,19 @@ const InputBar = ({
                     </div>
 
                     {/* Progress Bar */}
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
                       <div
-                        className={`h-full ${pct >= 90 ? 'bg-rose-500' : pct >= 75 ? 'bg-amber-400' : 'bg-emerald-400'} transition-all duration-300 rounded-full`}
+                        className={`h-full ${pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'} transition-all duration-300 rounded-full`}
                         style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
                       />
+                    </div>
+
+                    <div className="text-[10px] text-white/40 mb-2 font-mono">
+                      {pct >= 85
+                        ? 'Gateway Hygiene Active (>=85%)'
+                        : pct >= 50
+                          ? 'In-Loop Compressor Guard (>=50%)'
+                          : 'Optimal Context Load'}
                     </div>
 
                     {/* Compact Conversation Button */}
@@ -975,4 +990,4 @@ const InputBar = ({
   )
 }
 
-export default InputBar
+export default memo(InputBar)

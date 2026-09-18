@@ -98,9 +98,7 @@ export async function executeOpenAIProvider({
   }
 
   const model =
-    conf.aiProvider === 'custom'
-      ? conf.customModel || 'default-model'
-      : conf.model || 'local-model'
+    conf.aiProvider === 'custom' ? conf.customModel || 'default-model' : conf.model || 'local-model'
 
   // ==========================================
   // 1. STREAMING MODE (Agent ReAct Gateway)
@@ -131,7 +129,7 @@ export async function executeOpenAIProvider({
     let moodExtracted = false
     const extractMood = (text) => {
       if (!moodExtracted && text && onMood) {
-        const match = text.match(/\[mood:([a-zA-Z_]+)\]/)
+        const match = text.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
         if (match) {
           onMood(match[1].toLowerCase())
           moodExtracted = true
@@ -188,7 +186,7 @@ export async function executeOpenAIProvider({
           if (delta.reasoning_content || delta.reasoning) {
             const rToken = delta.reasoning_content || delta.reasoning
             accumulatedReasoning += rToken
-            extractMood(rToken)
+            extractMood(accumulatedReasoning)
             onReasoning?.(rToken)
           }
 
@@ -225,7 +223,8 @@ export async function executeOpenAIProvider({
           const decoder = new TextDecoder()
           let lineBuffer = ''
           for await (const chunk of response.body) {
-            lineBuffer += typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
+            lineBuffer +=
+              typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
             const lines = lineBuffer.split('\n')
             lineBuffer = lines.pop() || ''
             for (const line of lines) {
@@ -245,7 +244,8 @@ export async function executeOpenAIProvider({
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
-            lineBuffer += typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+            lineBuffer +=
+              typeof value === 'string' ? value : decoder.decode(value, { stream: true })
             const lines = lineBuffer.split('\n')
             lineBuffer = lines.pop() || ''
             for (const line of lines) {
@@ -266,7 +266,8 @@ export async function executeOpenAIProvider({
         const choice = parsed.choices?.[0]
         if (choice) {
           accumulatedContent = choice.message?.content || ''
-          accumulatedReasoning = choice.message?.reasoning || choice.message?.reasoning_content || ''
+          accumulatedReasoning =
+            choice.message?.reasoning || choice.message?.reasoning_content || ''
           if (choice.message?.tool_calls) {
             choice.message.tool_calls.forEach((tc, i) => {
               accumulatedToolCalls[i] = tc
@@ -284,9 +285,21 @@ export async function executeOpenAIProvider({
         onToolCall?.(toolCallsList)
       }
 
+      let finalMood = null
+      const fullText = (accumulatedReasoning + '\n' + accumulatedContent).trim()
+      const endMoodMatch = fullText.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/i)
+      if (endMoodMatch) {
+        finalMood = endMoodMatch[1].toLowerCase()
+        if (!moodExtracted) {
+          onMood?.(finalMood)
+          moodExtracted = true
+        }
+      }
+
       return {
         content: accumulatedContent,
         reasoning: accumulatedReasoning,
+        mood: finalMood,
         toolCalls: toolCallsList.length > 0 ? toolCallsList : null,
         finishReason
       }
@@ -694,4 +707,3 @@ export async function executeOpenAIProvider({
     activeAbortControllers.delete(parentAbortController)
   }
 }
-

@@ -1,18 +1,58 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, memo } from 'react'
 import { useChat } from '../contexts/ChatContext'
-import OrbVisualizer, { getMoodColor } from '../components/core/OrbVisualizer'
+import Avatar from '../components/core/Avatar'
 import InputBar from '../components/core/InputBar'
 import ResponseArea from '../components/core/ResponseArea'
 import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
-import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
-import { MessageSquare, Sparkles, Terminal, Brain } from 'lucide-react'
+import { MessageSquare, Sparkles, Terminal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
 import { db, setSessionWorkspace, getAllConfig } from '../api/db'
+
+/**
+ * Komponen waveform bar terisolasi (direct ref style update)
+ * Tidak pernah memicu re-render pada MarkHome induk saat ada event intensitas audio
+ */
+const LiveWaveformBars = memo(() => {
+  const barsRef = useRef([])
+
+  useEffect(() => {
+    const handleIntensity = (e) => {
+      const intensity = typeof e.detail === 'number' ? e.detail : 0
+      const bars = barsRef.current
+      if (!bars || bars.length === 0) return
+
+      for (let i = 0; i < 6; i++) {
+        const el = bars[i]
+        if (!el) continue
+        const mult = i % 2 === 0 ? 7 : 4
+        const height = Math.max(2, Math.min(10, intensity * mult + 2))
+        el.style.height = `${height}px`
+      }
+    }
+
+    window.addEventListener('mark-intensity', handleIntensity)
+    return () => window.removeEventListener('mark-intensity', handleIntensity)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-0.5 h-2.5">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <span
+          key={i}
+          ref={(el) => (barsRef.current[i] = el)}
+          className="w-0.5 bg-primary/70 rounded-full"
+          style={{ height: '2px' }}
+        />
+      ))}
+    </div>
+  )
+})
+LiveWaveformBars.displayName = 'LiveWaveformBars'
 
 const MarkHome = () => {
   const navigate = useNavigate()
@@ -20,7 +60,6 @@ const MarkHome = () => {
   const {
     chatData,
     message,
-    setMessage,
     isLoading,
     isAgentBusy,
     isSpeak,
@@ -34,7 +73,6 @@ const MarkHome = () => {
     inputSource,
     handleStop,
     isBooting,
-    requestCameraCaptureRef,
     isRecording,
     isProcessing,
     audioIntensity,
@@ -44,12 +82,11 @@ const MarkHome = () => {
     setCurrentActiveSessionId
   } = chatContext
   const { isPlaying, currentTrack } = useYoutubeMusic()
-  useMemoryGroomer(true)
+  useMemoryGroomer(false)
 
   const [currentResponse, setCurrentResponse] = useState(null)
   const [showMusicWidget, setShowMusicWidget] = useState(false)
   const [isMusicAnimatingOut, setIsMusicAnimatingOut] = useState(false)
-  const [ttsIntensity, setTtsIntensity] = useState(0)
   const [workspaceRoot, setWorkspaceRoot] = useState(null)
   const [bgOverlayOpacity, setBgOverlayOpacity] = useState(65)
   const [thought, setThought] = useState('')
@@ -109,12 +146,12 @@ const MarkHome = () => {
   }
 
   useEffect(() => {
-    const handleTtsIntensity = (e) => {
-      setTtsIntensity(e.detail || 0)
-      if (window.isMarkSpeaking) {
-        setOrbStatus('speaking')
-      } else {
-        setOrbStatus((prev) => (prev === 'speaking' ? 'idle' : prev))
+    let lastSpeaking = false
+    const handleTtsIntensity = () => {
+      const isSpeaking = Boolean(window.isMarkSpeaking)
+      if (isSpeaking !== lastSpeaking) {
+        lastSpeaking = isSpeaking
+        setOrbStatus(isSpeaking ? 'speaking' : 'idle')
       }
     }
     window.addEventListener('mark-intensity', handleTtsIntensity)
@@ -143,20 +180,9 @@ const MarkHome = () => {
   useEffect(() => {
     if (isRecording) {
       setOrbStatus('listening')
-    } else if (isProcessing) {
+    } else if (isProcessing || isLoading) {
       setOrbStatus('thinking')
-    } else if (isLoading) {
-      const lastMsg = chatData[chatData.length - 1]
-      if (
-        lastMsg?.isThinking ||
-        lastMsg?.isSearching ||
-        (lastMsg?.role === 'ai' && lastMsg?.content?.includes('Mengeksekusi plugin'))
-      ) {
-        setOrbStatus('thinking')
-      } else {
-        setOrbStatus('listening')
-      }
-    } else {
+    } else if (!window.isMarkSpeaking) {
       setOrbStatus('idle')
     }
   }, [isLoading, chatData, isRecording, isProcessing, setOrbStatus])
@@ -221,23 +247,22 @@ const MarkHome = () => {
   }
 
   const mood = currentResponse?.mood || 'neutral'
-  const { hex: bgGlowColor } = getMoodColor(mood, orbStatus)
+
+  const handleAvatarClick = () => {
+    if (orbStatus === 'idle' && !isRecording && !isProcessing && !isLoading) {
+      startRecording()
+    } else if (isRecording) {
+      stopRecording()
+    }
+  }
 
   return (
     <div className="h-screen w-screen text-white overflow-hidden relative bg-[#060a08]">
-      {/* ── 1. LAYER 1: Deep Cosmos Solar System Canvas (Pusat di width/2, height/2) ── */}
-      <div className="absolute inset-0 w-full h-full z-0 pointer-events-none">
-        <SolarSystemCanvas
-          processes={activeProcesses}
-          moodColor={bgGlowColor}
-          orbStatus={orbStatus}
-          className="w-full h-full"
-        />
-      </div>
+      {/* ── 1. BACKGROUND: Clean Minimalist Deep Dark (#060a08) ── */}
 
       {/* ── 2. LAYER 2: Dynamic Background Overlay Tint ── */}
       <div
-        className="absolute inset-0 z-5 pointer-events-none transition-colors duration-300 backdrop-blur-[1px]"
+        className="absolute inset-0 z-5 pointer-events-none transition-colors duration-300"
         style={{
           backgroundColor: `rgba(6, 10, 8, ${bgOverlayOpacity / 100})`
         }}
@@ -277,14 +302,14 @@ const MarkHome = () => {
         </div>
       )}
 
-      {/* ── 4. CENTER AVATAR (Diletakkan Tepat di Pusat 50% Layar = Pusat Sun Tata Surya) ── */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
-        {/* Orb Visualizer (Compact and centered) */}
-        <div className="scale-75 md:scale-80 lg:scale-85 pointer-events-auto cursor-pointer transition-transform duration-300">
-          <OrbVisualizer
-            status={orbStatus}
-            intensity={orbStatus === 'speaking' ? ttsIntensity : 0}
+      {/* ── 4. CENTER AVATAR (2.5D Cyber-Droid Companion) ── */}
+      <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
+        <div className="scale-115 md:scale-140 lg:scale-165 xl:scale-180 pointer-events-auto cursor-pointer transition-transform duration-300">
+          <Avatar
+            status={isRecording ? 'listening' : orbStatus}
+            isRecording={isRecording}
             mood={mood}
+            onClick={handleAvatarClick}
           />
         </div>
       </div>
@@ -309,7 +334,7 @@ const MarkHome = () => {
               </span>
             </div>
 
-            {/* Live Audio / Intent Telemetry Bar */}
+            {/* Voice / Intent Telemetry Bar */}
             <div className="flex items-center justify-between bg-black/40 border border-white/5 px-2.5 py-1 rounded-lg">
               <div className="flex items-center gap-2">
                 <span
@@ -335,23 +360,7 @@ const MarkHome = () => {
               </div>
 
               {/* Audio Waveform */}
-              <div className="flex items-center gap-0.5 h-2.5">
-                {Array.from({ length: 6 }).map((_, i) => {
-                  const val =
-                    orbStatus === 'speaking'
-                      ? Math.sin(Date.now() * 0.01 + i) * ttsIntensity * 8
-                      : isRecording
-                        ? audioIntensity * (i % 2 === 0 ? 8 : 4)
-                        : 1.5
-                  return (
-                    <span
-                      key={i}
-                      className="w-0.5 bg-primary/70 rounded-full transition-all duration-75"
-                      style={{ height: `${Math.max(2, Math.min(10, val + 2))}px` }}
-                    />
-                  )
-                })}
-              </div>
+              <LiveWaveformBars />
             </div>
           </div>
 

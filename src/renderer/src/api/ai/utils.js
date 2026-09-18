@@ -14,17 +14,15 @@ export const getCurrentTimeInfo = (dateObj = new Date()) => {
   return dateObj.toLocaleDateString('id-ID', options)
 }
 
-
-
-
 let ttsAudioContext = null
 let currentAudioElement = null
 
-// Bersihkan tag [mood:xxx], format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
+// Bersihkan tag <mood:xxx> / [mood:xxx], tag <mic> / (Mikrofon), format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
 export const cleanTextForTTS = (text) => {
   if (!text || typeof text !== 'string') return ''
   return text
-    .replace(/\[mood:[a-zA-Z_]+\]/gi, '')
+    .replace(/(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi, '')
+    .replace(/(?:<mic>|\(Mikrofon\))/gi, '')
     .replace(/```[\s\S]*?```/g, '') // Hapus blok kode
     .replace(/`([^`]+)`/g, '$1') // Bersihkan inline code
     .replace(/\*\*([^*]+)\*\*/g, '$1') // Bersihkan bold
@@ -87,8 +85,8 @@ class SpeechQueueManager {
     item.audioPromise = (async () => {
       try {
         const config = await getAllConfig()
-        const rate = config[0]?.ttsRate ?? 0
-        const pitch = config[0]?.ttsPitch ?? 0
+        const rate = config[0]?.ttsRate ?? 10
+        const pitch = config[0]?.ttsPitch ?? 55
 
         const audioSrc = await window.api.textToSpeech(item.text, rate, pitch)
         if (!audioSrc || item.sessionId !== this.activeSessionId) return null
@@ -253,8 +251,8 @@ export const playVoice = async (text, onStart, onEnd) => {
     }
 
     const config = await getAllConfig()
-    const rate = config[0]?.ttsRate ?? 0
-    const pitch = config[0]?.ttsPitch ?? 0
+    const rate = config[0]?.ttsRate ?? 10
+    const pitch = config[0]?.ttsPitch ?? 55
 
     // 1. Minta stream URL audio ke backend
     const audioSrc = await window.api.textToSpeech(cleanText, rate, pitch)

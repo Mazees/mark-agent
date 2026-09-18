@@ -50,6 +50,20 @@ export function parseUserContent(content) {
     })
   }
 
+  if (typeof displayUserContent === 'string') {
+    displayUserContent = displayUserContent.replace(/(?:<mic>|\(Mikrofon\))\s*/gi, '').trim()
+  } else if (Array.isArray(displayUserContent)) {
+    displayUserContent = displayUserContent.map((item) => {
+      if (item && item.type === 'text' && typeof item.text === 'string') {
+        return {
+          ...item,
+          text: item.text.replace(/(?:<mic>|\(Mikrofon\))\s*/gi, '').trim()
+        }
+      }
+      return item
+    })
+  }
+
   return { displayUserContent, extractedSkillTag }
 }
 
@@ -72,6 +86,12 @@ export function parseAiContent(content) {
     codeBlocks.push(match)
     return `__CODE_BLOCK_${codeBlocks.length - 1}__`
   })
+
+  // Bersihkan tag mood (<mood:value> atau fallback riwayat [mood:value])
+  maskedContent = maskedContent.replace(
+    /(?:<mood:[a-zA-Z0-9_-]+>|\[mood:[a-zA-Z0-9_-]+\])\s*/gi,
+    ''
+  )
 
   let elicitationGroup = null
 

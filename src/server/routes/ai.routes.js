@@ -162,13 +162,14 @@ aiRouter.post('/tools/needs-approval', async (req, res) => {
 
 // 4. Edge-TTS Speech Synthesis API
 aiRouter.get('/tts/stream', async (req, res) => {
-  const { text, voice, rate = 0, pitch = 0 } = req.query || {}
+  const { text, voice, rate = 10, pitch = 55 } = req.query || {}
   try {
     const { streamTTS } = await import('../tools/media-tools.js')
     const audioStream = await streamTTS(text, voice, rate, pitch)
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Transfer-Encoding', 'chunked')
     res.setHeader('Cache-Control', 'no-cache, no-store')
+    res.setHeader('Access-Control-Allow-Origin', '*')
 
     req.on('close', () => {
       if (!audioStream.destroyed) {
@@ -200,6 +201,7 @@ aiRouter.post('/tts/stream', async (req, res) => {
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Transfer-Encoding', 'chunked')
     res.setHeader('Cache-Control', 'no-cache, no-store')
+    res.setHeader('Access-Control-Allow-Origin', '*')
 
     req.on('close', () => {
       if (!audioStream.destroyed) {

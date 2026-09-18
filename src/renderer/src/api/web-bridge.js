@@ -179,18 +179,18 @@ export const webApi = {
     return () => removeWebListener('ai:abort', callback)
   },
 
-  // 3. Audio & Voice
-  textToSpeech: async (text, rate = 0, pitch = 0, voice = 'id-ID-ArdiNeural') => {
+  // 3. Audio & Voice (Default imut seperti robot kecil: rate +10%, pitch +55Hz)
+  textToSpeech: async (text, rate = 10, pitch = 55, voice = 'id-ID-ArdiNeural') => {
     // Normalisasi jika pemanggil mempassing (text, voice) atau (text, rate, pitch, voice)
     let finalVoice = 'id-ID-ArdiNeural'
-    let finalRate = 0
-    let finalPitch = 0
+    let finalRate = 10
+    let finalPitch = 55
 
     if (typeof rate === 'string' && !/^-?\d+$/.test(rate.trim())) {
       finalVoice = rate
     } else {
-      finalRate = rate || 0
-      finalPitch = pitch || 0
+      finalRate = rate !== undefined && rate !== null && rate !== 0 ? rate : 10
+      finalPitch = pitch !== undefined && pitch !== null && pitch !== 0 ? pitch : 55
       if (typeof voice === 'string' && voice.trim()) {
         finalVoice = voice
       }

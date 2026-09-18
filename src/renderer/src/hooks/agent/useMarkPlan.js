@@ -25,10 +25,13 @@ import { getUnifiedContext, generateVector, executeMemorySearch } from '../../ap
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import {
   MAX_CONTEXT_CHARS,
+  GATEWAY_HYGIENE_THRESHOLD,
+  IN_LOOP_COMPACT_THRESHOLD,
   calculateSessionChars,
   executeSessionCompaction,
   assembleCompactedPayload,
-  pruneInFlightMessages
+  pruneInFlightMessages,
+  checkAndCompressInLoop
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
@@ -110,6 +113,11 @@ export const useMarkPlan = ({
   requestApproval,
   requestCameraCapture
 }) => {
+  const chatDataRef = useRef(chatData)
+  useEffect(() => {
+    chatDataRef.current = chatData
+  }, [chatData])
+
   // Map menyimpan sesi yang sedang berjalan: key = sessionId, value = { abortController, startTime, prompt }
   const activeSessionsRef = useRef(new Map())
   // Map menyimpan updater fungsi setChatData per sesi untuk IPC status AI
@@ -807,7 +815,7 @@ export const useMarkPlan = ({
 
     let finalIsSpeak = opts.forceSpeak !== undefined ? opts.forceSpeak : isSpeak
     if (userInput && typeof userInput === 'string') {
-      if (userInput.startsWith('(Mikrofon)')) {
+      if (userInput.startsWith('<mic>') || userInput.startsWith('(Mikrofon)')) {
         finalIsSpeak = true
       } else if (!isAutonomous && !isSystem) {
         finalIsSpeak = false
@@ -986,7 +994,11 @@ export const useMarkPlan = ({
           })
         )
       } else {
-        setChatData(updater)
+        setChatData((prev) => {
+          const next = typeof updater === 'function' ? updater(prev) : updater
+          chatDataRef.current = next
+          return next
+        })
       }
     }
 
@@ -995,7 +1007,8 @@ export const useMarkPlan = ({
     // ------------------------------------------------------------------------
     // FASE 3: PENYIAPAN HISTORY CHAT & RETRIEVAL KONTEKS
     // ------------------------------------------------------------------------
-    const sourceChatData = activeSessionNum === 1 ? chatData : inMemorySessionData
+    const sourceChatData =
+      activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
     const validHistory = sourceChatData.filter(
       (m) =>
         m &&
@@ -1132,7 +1145,9 @@ export const useMarkPlan = ({
         isSystem || isAutonomous || opts.skipCompaction || opts.disableTools
       )
 
-      if (!isInternalTurn && currentEstimatedChars >= MAX_CONTEXT_CHARS) {
+      // Layer 1: Gateway Session Hygiene (Hermes 85% safety net)
+      const gatewayHygieneTriggerChars = MAX_CONTEXT_CHARS * GATEWAY_HYGIENE_THRESHOLD
+      if (!isInternalTurn && currentEstimatedChars >= gatewayHygieneTriggerChars) {
         const compactBannerId = `compact-banner-${Date.now()}`
         targetSetChatData((prev) => [
           ...prev,
@@ -1270,6 +1285,7 @@ export const useMarkPlan = ({
       accumulatedThoughts = []
       let currentActiveMood = 'neutral'
       let finalContentAccumulator = ''
+      let savedTurnAiMsg = null
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
       let consecutiveErrors = 0
@@ -1374,6 +1390,41 @@ export const useMarkPlan = ({
 
         // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai 525K,
         // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 525K.
+        // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
+        // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
+        // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
+        try {
+          const inLoopResult = await checkAndCompressInLoop({
+            loopMessages,
+            sessionId: String(activeSessionNum || 1),
+            maxChars: MAX_CONTEXT_CHARS,
+            thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
+            protectLastN: 6,
+            protectFirstN: 2,
+            activeConfig: config[0] || {}
+          })
+
+          if (inLoopResult?.compressed && inLoopResult.loopMessages) {
+            loopMessages = inLoopResult.loopMessages
+            if (inLoopResult.totalChars) {
+              window.dispatchEvent(
+                new CustomEvent('context-tracker-updated', {
+                  detail: {
+                    sessionId: String(activeSessionNum || 1),
+                    currentChars: inLoopResult.totalChars,
+                    maxChars: MAX_CONTEXT_CHARS,
+                    percentage: Math.min(100, (inLoopResult.totalChars / MAX_CONTEXT_CHARS) * 100),
+                    lastCompactedAt: Date.now()
+                  }
+                })
+              )
+            }
+          }
+        } catch (inLoopErr) {
+          console.warn('[useMarkPlan] In-loop compaction warning:', inLoopErr)
+        }
+
+        // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_CHARS)
 
         // Request streaming ke Backend AI Bridge
@@ -1416,8 +1467,8 @@ export const useMarkPlan = ({
             if (finalIsSpeak) {
               sentenceBuffer += token
               // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
-              const sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/)
-              if (sentenceEndMatch) {
+              let sentenceEndMatch
+              while ((sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/))) {
                 const completeSentence = sentenceEndMatch[1].trim()
                 sentenceBuffer = sentenceEndMatch[2] || ''
                 if (completeSentence) {
@@ -1523,6 +1574,8 @@ export const useMarkPlan = ({
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+          sentenceBuffer = ''
+          speechQueue.reset()
           const assistantMsg = {
             role: 'assistant',
             content: streamResult.content || null,
@@ -1965,7 +2018,7 @@ export const useMarkPlan = ({
           })
 
           let finalOutput = (finalContentAccumulator || '')
-            .replace(/^\[mood:[a-zA-Z_]+\]\s*/i, '')
+            .replace(/^(?:<|\[)mood:[a-zA-Z_]+(?:>|\])\s*/i, '')
             .trim()
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
@@ -1993,6 +2046,7 @@ export const useMarkPlan = ({
             source: tgContext ? 'telegram' : 'pc'
           }
 
+          savedTurnAiMsg = aiMsg
           return [...filtered, aiMsg]
         })
 
@@ -2081,7 +2135,16 @@ export const useMarkPlan = ({
 
       // Post-Turn Context Sync: Hitung total karakter terkini dan trigger event ke UI
       try {
-        const latestSessionData = activeSessionNum === 1 ? chatData : inMemorySessionData
+        let latestSessionData =
+          activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
+        if (savedTurnAiMsg) {
+          const hasAi = (latestSessionData || []).some(
+            (m) => m.created_at === savedTurnAiMsg.created_at
+          )
+          if (!hasAi) {
+            latestSessionData = [...(latestSessionData || []), savedTurnAiMsg]
+          }
+        }
         const latestChars = calculateSessionChars(
           latestSessionData,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
@@ -2100,13 +2163,17 @@ export const useMarkPlan = ({
             }
           })
         )
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
 
       try {
         if (window.api && window.api.executeNativeTool) {
           window.api.executeNativeTool('os-control-close').catch(() => {})
         }
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
     } catch (error) {
       const isAbort =
         error.name === 'AbortError' ||
