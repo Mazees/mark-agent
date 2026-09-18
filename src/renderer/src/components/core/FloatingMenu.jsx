@@ -6,7 +6,6 @@ import {
   FaTimes,
   FaCog,
   FaPuzzlePiece,
-  FaMicrophoneAlt,
   FaTelegram,
   FaDatabase,
   FaBook,
@@ -107,21 +106,6 @@ const FloatingMenu = () => {
                 <div className="flex items-center gap-3">
                   <FaCommentAlt className="text-primary text-sm" />
                   <span>Chat Studio</span>
-                </div>
-                <FaChevronRight
-                  size={10}
-                  className="text-base-content/30 group-hover:text-white/60 group-hover:translate-x-0.5 transition-all"
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleNav('/live-audio')}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-white/5 text-base-content/80 hover:text-white text-xs font-medium font-mono transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-3">
-                  <FaMicrophoneAlt className="text-primary text-sm" />
-                  <span>Live Audio & VAD</span>
                 </div>
                 <FaChevronRight
                   size={10}

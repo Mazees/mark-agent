@@ -334,7 +334,7 @@ const MarkHome = () => {
               </span>
             </div>
 
-            {/* Live Audio / Intent Telemetry Bar */}
+            {/* Voice / Intent Telemetry Bar */}
             <div className="flex items-center justify-between bg-black/40 border border-white/5 px-2.5 py-1 rounded-lg">
               <div className="flex items-center gap-2">
                 <span

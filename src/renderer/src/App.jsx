@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import MarkHome from './pages/MarkHome'
 import Configuration from './pages/Configuration'
-import LiveAudio from './pages/LiveAudio'
 import TelegramBot from './pages/TelegramBot'
 import Plugins from './pages/Plugins'
 import Skills from './pages/Skills'
@@ -101,11 +100,6 @@ const GlobalListener = () => {
 
     window.addEventListener('keydown', handleKeyDown, true)
 
-    let unsubTg = null
-    if (window.api?.onLiveAudioShortcut) {
-      window.api.onLiveAudioShortcut(triggerMicShortcut)
-    }
-
     if (window.api?.onTgRequestAgentExecution) {
       unsubTg = window.api.onTgRequestAgentExecution((data) => {
         window.dispatchEvent(new CustomEvent('tg-admin-message', { detail: data }))
@@ -117,9 +111,6 @@ const GlobalListener = () => {
       window.removeEventListener('keydown', handleKeyDown, true)
       if (typeof unsubTg === 'function') {
         unsubTg()
-      }
-      if (window.api?.removeLiveAudioShortcut) {
-        window.api.removeLiveAudioShortcut()
       }
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.removeAllListeners('route-to-config')
@@ -152,7 +143,6 @@ const MainLayout = () => {
               <Route path="/plugins" element={<Plugins />} />
               <Route path="/skills" element={<Skills />} />
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
-              <Route path="/live-audio" element={<LiveAudio />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />
               <Route path="/google-workspace" element={<GoogleWorkspace />} />
               <Route path="/knowledge" element={<Knowledge />} />

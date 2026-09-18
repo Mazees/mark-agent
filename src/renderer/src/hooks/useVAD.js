@@ -357,12 +357,11 @@ export const useVAD = ({
 
       const wakeEnabled = currentConfigRef.current?.wakeWordEnabled !== false
 
-      // Jangan jalankan jika: fitur dimatikan, sedang manual recording, Mark sedang bicara TTS, LiveAudio aktif, atau tidak didukung
+      // Jangan jalankan jika: fitur dimatikan, sedang manual recording, Mark sedang bicara TTS, atau tidak didukung
       if (
         !wakeEnabled ||
         isRecordingRef.current ||
         window.isMarkSpeaking ||
-        window.isLiveAudioActive ||
         !isWebSpeechSupported()
       ) {
         if (isWakeListeningRef.current) {
