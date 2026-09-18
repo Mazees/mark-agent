@@ -204,8 +204,8 @@ const LiveAudio = () => {
       window.isMarkSpeaking = true
 
       const configList = await getAllConfig()
-      const rate = configList[0]?.ttsRate ?? 0
-      const pitch = configList[0]?.ttsPitch ?? 0
+      const rate = configList[0]?.ttsRate ?? 10
+      const pitch = configList[0]?.ttsPitch ?? 55
       const voice = configList[0]?.ttsVoice || 'id-ID-ArdiNeural'
 
       const audioSrc = await webApi.textToSpeech(text, rate, pitch, voice)

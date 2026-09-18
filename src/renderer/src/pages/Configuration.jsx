@@ -8,7 +8,6 @@ import { useChat } from '../contexts/ChatContext'
 import {
   AiEngineSection,
   CameraSection,
-  VisualSection,
   ShortcutSection,
   VoiceSection,
   PermissionsSection
@@ -20,8 +19,8 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     model: 'local-model',
     customModel: 'default-model',
     temperature: 0,
-    ttsRate: 0,
-    ttsPitch: 0,
+    ttsRate: 10,
+    ttsPitch: 55,
     aiProvider: 'gemini-web',
     geminiWebModel: 'gemini-3.6-flash',
     deepseekWebModel: 'deepseek-chat',
@@ -37,31 +36,10 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     bgOverlayOpacity: 65
   })
   const [videoDevices, setVideoDevices] = useState([])
-  const [playingTest, setPlayingTest] = useState(false)
   const [isDownloadingModel, setIsDownloadingModel] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(0)
   const { ModalComponent } = useConfirm()
   const chatContext = useChat()
-
-  const handleTestVoice = async () => {
-    setPlayingTest(true)
-    const testText =
-      'Halo bro! Gue Mark, asisten pribadi lo. Gimana suara gue sekarang? Udah mantap belum?'
-    try {
-      const audioSrc = await window.api.textToSpeech(testText, config.ttsRate, config.ttsPitch)
-      if (audioSrc) {
-        const audio = new Audio(audioSrc)
-        audio.onended = () => setPlayingTest(false)
-        audio.onerror = () => setPlayingTest(false)
-        await audio.play()
-      } else {
-        setPlayingTest(false)
-      }
-    } catch (error) {
-      console.error('Gagal test suara:', error)
-      setPlayingTest(false)
-    }
-  }
 
   useEffect(() => {
     loadConfig()
@@ -303,25 +281,13 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
           {/* 2. Camera Settings */}
           <CameraSection config={config} setConfig={setConfig} videoDevices={videoDevices} />
 
-          <div className="divider"></div>
-
-          {/* 3. Visual & Background Cosmos */}
-          <VisualSection config={config} setConfig={setConfig} />
-
-          <div className="divider"></div>
-
-          {/* 4. Global Shortcut Settings */}
+          {/* 3. Global Shortcut Settings */}
           <ShortcutSection config={config} setConfig={setConfig} />
 
           <div className="divider"></div>
 
-          {/* 5. Voice & Wake Word Settings */}
-          <VoiceSection
-            config={config}
-            setConfig={setConfig}
-            playingTest={playingTest}
-            handleTestVoice={handleTestVoice}
-          />
+          {/* 4. Voice & Wake Word Settings */}
+          <VoiceSection config={config} setConfig={setConfig} />
 
           <div className="divider"></div>
 

@@ -127,16 +127,20 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true })
 }
 
+export const CUTE_ROBOT_PITCH = 55
+export const CUTE_ROBOT_RATE = 10
+
 /**
  * Menghasilkan readable stream audio langsung untuk HTTP response streaming.
  * Menggunakan instance terisolasi per permintaan dengan penutupan socket otomatis
  * agar tahan terhadap idle timeout dan permintaan kalimat paralel.
+ * Default pitch +55Hz dan rate +10% menghasilkan nada suara robot kecil yang imut & ekspresif.
  * @param {string} text
  * @param {string} [voice='id-ID-ArdiNeural']
- * @param {number|string} [rate=0]
- * @param {number|string} [pitch=0]
+ * @param {number|string} [rate=10]
+ * @param {number|string} [pitch=55]
  */
-export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitch = 0) {
+export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 10, pitch = 55) {
   if (!text || !text.trim()) throw new Error('Teks kosong untuk TTS')
 
   let selectedVoice = 'id-ID-ArdiNeural'
@@ -144,8 +148,8 @@ export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitc
     selectedVoice = voice.trim()
   }
 
-  const numRate = typeof rate === 'number' ? rate : parseInt(rate, 10) || 0
-  const numPitch = typeof pitch === 'number' ? pitch : parseInt(pitch, 10) || 0
+  const numRate = typeof rate === 'number' ? rate : (rate !== undefined && rate !== '' ? parseInt(rate, 10) : CUTE_ROBOT_RATE) || CUTE_ROBOT_RATE
+  const numPitch = typeof pitch === 'number' ? pitch : (pitch !== undefined && pitch !== '' ? parseInt(pitch, 10) : CUTE_ROBOT_PITCH) || CUTE_ROBOT_PITCH
   const rateStr = numRate >= 0 ? `+${numRate}%` : `${numRate}%`
   const pitchStr = numPitch >= 0 ? `+${numPitch}Hz` : `${numPitch}Hz`
 
@@ -170,11 +174,11 @@ export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitc
  * Sintesis suara menggunakan Microsoft Edge TTS (Buffer RAM langsung tanpa disk write)
  * @param {string} text
  * @param {string} [voice='id-ID-ArdiNeural']
- * @param {number|string} [rate=0]
- * @param {number|string} [pitch=0]
+ * @param {number|string} [rate=10]
+ * @param {number|string} [pitch=55]
  * @returns {Promise<{ filePath: string, audioBase64: string }>}
  */
-export async function synthesizeTTS(text, voice = 'id-ID-ArdiNeural', rate = 0, pitch = 0) {
+export async function synthesizeTTS(text, voice = 'id-ID-ArdiNeural', rate = 10, pitch = 55) {
   if (!text || !text.trim()) throw new Error('Teks kosong untuk TTS')
 
   let selectedVoice = 'id-ID-ArdiNeural'

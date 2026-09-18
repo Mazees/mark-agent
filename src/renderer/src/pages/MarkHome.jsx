@@ -180,20 +180,9 @@ const MarkHome = () => {
   useEffect(() => {
     if (isRecording) {
       setOrbStatus('listening')
-    } else if (isProcessing) {
+    } else if (isProcessing || isLoading) {
       setOrbStatus('thinking')
-    } else if (isLoading) {
-      const lastMsg = chatData[chatData.length - 1]
-      if (
-        lastMsg?.isThinking ||
-        lastMsg?.isSearching ||
-        (lastMsg?.role === 'ai' && lastMsg?.content?.includes('Mengeksekusi plugin'))
-      ) {
-        setOrbStatus('thinking')
-      } else {
-        setOrbStatus('listening')
-      }
-    } else {
+    } else if (!window.isMarkSpeaking) {
       setOrbStatus('idle')
     }
   }, [isLoading, chatData, isRecording, isProcessing, setOrbStatus])
@@ -316,7 +305,12 @@ const MarkHome = () => {
       {/* ── 4. CENTER AVATAR (2.5D Cyber-Droid Companion) ── */}
       <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
         <div className="scale-115 md:scale-140 lg:scale-165 xl:scale-180 pointer-events-auto cursor-pointer transition-transform duration-300">
-          <Avatar status={orbStatus} mood={mood} onClick={handleAvatarClick} />
+          <Avatar
+            status={isRecording ? 'listening' : orbStatus}
+            isRecording={isRecording}
+            mood={mood}
+            onClick={handleAvatarClick}
+          />
         </div>
       </div>
 

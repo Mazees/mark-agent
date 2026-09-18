@@ -87,8 +87,8 @@ class SpeechQueueManager {
     item.audioPromise = (async () => {
       try {
         const config = await getAllConfig()
-        const rate = config[0]?.ttsRate ?? 0
-        const pitch = config[0]?.ttsPitch ?? 0
+        const rate = config[0]?.ttsRate ?? 10
+        const pitch = config[0]?.ttsPitch ?? 55
 
         const audioSrc = await window.api.textToSpeech(item.text, rate, pitch)
         if (!audioSrc || item.sessionId !== this.activeSessionId) return null
@@ -253,8 +253,8 @@ export const playVoice = async (text, onStart, onEnd) => {
     }
 
     const config = await getAllConfig()
-    const rate = config[0]?.ttsRate ?? 0
-    const pitch = config[0]?.ttsPitch ?? 0
+    const rate = config[0]?.ttsRate ?? 10
+    const pitch = config[0]?.ttsPitch ?? 55
 
     // 1. Minta stream URL audio ke backend
     const audioSrc = await window.api.textToSpeech(cleanText, rate, pitch)

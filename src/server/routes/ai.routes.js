@@ -162,7 +162,7 @@ aiRouter.post('/tools/needs-approval', async (req, res) => {
 
 // 4. Edge-TTS Speech Synthesis API
 aiRouter.get('/tts/stream', async (req, res) => {
-  const { text, voice, rate = 0, pitch = 0 } = req.query || {}
+  const { text, voice, rate = 10, pitch = 55 } = req.query || {}
   try {
     const { streamTTS } = await import('../tools/media-tools.js')
     const audioStream = await streamTTS(text, voice, rate, pitch)
