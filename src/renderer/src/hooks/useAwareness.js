@@ -207,7 +207,7 @@ export const useAwareness = ({
         const idleSec = await (window.api?.getSystemIdleSeconds?.() || Promise.resolve(0))
         const isAFK = idleSec >= 900 // 15 menit idle
 
-        // Deteksi Sleep State untuk OrbVisualizer
+        // Deteksi Sleep State untuk Avatar
         if (isAFK && !wasAfkRef.current) {
           wasAfkRef.current = true
           window.dispatchEvent(new CustomEvent('mark:sleeping', { detail: { isSleeping: true } }))

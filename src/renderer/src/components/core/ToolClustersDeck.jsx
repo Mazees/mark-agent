@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Layers, Activity, Puzzle, ChevronRight, CheckCircle2 } from 'lucide-react'
 import ProcessPanel from './ProcessPanel'
-import { buildCompleteToolClusters } from './SolarSystemCanvas'
+import { buildCompleteToolClusters } from '../../utils/toolClusters'
 import { webApi } from '../../api/web-bridge'
 
 /**

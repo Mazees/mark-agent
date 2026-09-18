@@ -1,13 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useChat } from '../contexts/ChatContext'
-import OrbVisualizer, { getMoodColor } from '../components/core/OrbVisualizer'
+import Avatar from '../components/core/Avatar'
 import InputBar from '../components/core/InputBar'
 import ResponseArea from '../components/core/ResponseArea'
 import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
-import { SolarSystemCanvas } from '../components/core/SolarSystemCanvas'
-import { MessageSquare, Sparkles, Terminal, Brain } from 'lucide-react'
+import { MessageSquare, Sparkles, Terminal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
@@ -20,7 +19,6 @@ const MarkHome = () => {
   const {
     chatData,
     message,
-    setMessage,
     isLoading,
     isAgentBusy,
     isSpeak,
@@ -34,7 +32,6 @@ const MarkHome = () => {
     inputSource,
     handleStop,
     isBooting,
-    requestCameraCaptureRef,
     isRecording,
     isProcessing,
     audioIntensity,
@@ -221,19 +218,18 @@ const MarkHome = () => {
   }
 
   const mood = currentResponse?.mood || 'neutral'
-  const { hex: bgGlowColor } = getMoodColor(mood, orbStatus)
+
+  const handleAvatarClick = () => {
+    if (orbStatus === 'idle' && !isRecording && !isProcessing && !isLoading) {
+      startRecording()
+    } else if (isRecording) {
+      stopRecording()
+    }
+  }
 
   return (
     <div className="h-screen w-screen text-white overflow-hidden relative bg-[#060a08]">
-      {/* ── 1. LAYER 1: Deep Cosmos Solar System Canvas (Pusat di width/2, height/2) ── */}
-      <div className="absolute inset-0 w-full h-full z-0 pointer-events-none">
-        <SolarSystemCanvas
-          processes={activeProcesses}
-          moodColor={bgGlowColor}
-          orbStatus={orbStatus}
-          className="w-full h-full"
-        />
-      </div>
+      {/* ── 1. BACKGROUND: Clean Minimalist Deep Dark (#060a08) ── */}
 
       {/* ── 2. LAYER 2: Dynamic Background Overlay Tint ── */}
       <div
@@ -277,14 +273,14 @@ const MarkHome = () => {
         </div>
       )}
 
-      {/* ── 4. CENTER AVATAR (Diletakkan Tepat di Pusat 50% Layar = Pusat Sun Tata Surya) ── */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
-        {/* Orb Visualizer (Compact and centered) */}
-        <div className="scale-75 md:scale-80 lg:scale-85 pointer-events-auto cursor-pointer transition-transform duration-300">
-          <OrbVisualizer
+      {/* ── 4. CENTER AVATAR (2.5D Cyber-Droid Companion) ── */}
+      <div className="absolute top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
+        <div className="scale-85 md:scale-95 lg:scale-200 pointer-events-auto cursor-pointer transition-transform duration-300">
+          <Avatar
             status={orbStatus}
-            intensity={orbStatus === 'speaking' ? ttsIntensity : 0}
+            intensity={orbStatus === 'speaking' ? ttsIntensity : audioIntensity || 0}
             mood={mood}
+            onClick={handleAvatarClick}
           />
         </div>
       </div>
@@ -339,7 +335,7 @@ const MarkHome = () => {
                 {Array.from({ length: 6 }).map((_, i) => {
                   const val =
                     orbStatus === 'speaking'
-                      ? Math.sin(Date.now() * 0.01 + i) * ttsIntensity * 8
+                      ? ttsIntensity * (i % 2 === 0 ? 7 : 4)
                       : isRecording
                         ? audioIntensity * (i % 2 === 0 ? 8 : 4)
                         : 1.5
