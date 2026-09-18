@@ -12,7 +12,8 @@ export const getSystemSignature = () => {
   return Buffer.from(secretKey, 'base64').toString('utf-8')
 }
 
-export const LM_STUDIO_OFFLINE_MESSAGE = 'LM Studio mati atau belum jalan. Nyalakan dulu di port 1234.'
+export const LM_STUDIO_OFFLINE_MESSAGE =
+  'LM Studio mati atau belum jalan. Nyalakan dulu di port 1234.'
 
 export const createLMStudioOfflineError = (cause) => {
   const error = new Error(LM_STUDIO_OFFLINE_MESSAGE)
@@ -120,17 +121,21 @@ export function createMoodStreamFilter(onToken, onMood) {
     buffer += chunk
 
     const trimmed = buffer.trimStart()
-    if (!trimmed.startsWith('[')) {
+    const isAngle = trimmed.startsWith('<')
+    const isBracket = trimmed.startsWith('[')
+
+    if (!isAngle && !isBracket) {
       isBuffering = false
       if (buffer) onToken?.(buffer)
       buffer = ''
       return
     }
 
-    const closeIdx = buffer.indexOf(']')
+    const closeChar = isAngle ? '>' : ']'
+    const closeIdx = buffer.indexOf(closeChar)
     if (closeIdx !== -1) {
       const tag = buffer.substring(0, closeIdx + 1).trim()
-      const match = tag.match(/^\[mood:([a-zA-Z_]+)\]$/i)
+      const match = tag.match(/^(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])$/i)
       if (match) {
         if (!moodEmitted) {
           onMood?.(match[1].toLowerCase())
@@ -191,4 +196,3 @@ export const cleanAndParse = (rawResponse) => {
     }
   }
 }
-

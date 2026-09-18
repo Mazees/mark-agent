@@ -36,6 +36,45 @@ import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import { useConfirm } from '../hooks/useConfirm'
 
+/**
+ * Ekstraksi dan filter semua prefix/meta-tag (seperti <mic>, <mood:value>)
+ * serta fallback riwayat lama ((Mikrofon), [mood:...]) agar pesan tampil bersih di ChatStudio.
+ *
+ * @param {string|Array} content
+ * @returns {{ cleanContent: string|Array, prefixes: string[] }}
+ */
+export function filterMessagePrefixes(content) {
+  if (!content) return { cleanContent: '', prefixes: [] }
+  if (typeof content !== 'string') {
+    if (Array.isArray(content)) {
+      const allPrefixes = []
+      const cleanArray = content.map((item) => {
+        if (item && item.type === 'text' && typeof item.text === 'string') {
+          const res = filterMessagePrefixes(item.text)
+          allPrefixes.push(...res.prefixes)
+          return { ...item, text: res.cleanContent }
+        }
+        return item
+      })
+      return { cleanContent: cleanArray, prefixes: allPrefixes }
+    }
+    return { cleanContent: content, prefixes: [] }
+  }
+
+  const prefixes = []
+  const cleanContent = content
+    .replace(
+      /(?:<(?:mic|mood:[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+)>|\(Mikrofon\)|\[mood:[a-zA-Z0-9_-]+\])/gi,
+      (match) => {
+        prefixes.push(match)
+        return ''
+      }
+    )
+    .trim()
+
+  return { cleanContent, prefixes }
+}
+
 export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) => {
   const navigate = useNavigate()
   const contextChat = useChat()
@@ -735,6 +774,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                     if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
                       return null
                     }
+                    const { cleanContent } = filterMessagePrefixes(msg.content)
                     return (
                       <ChatList
                         key={
@@ -747,7 +787,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                         isCompacting={msg.isCompacting}
                         compactProgress={msg.compactProgress}
                         role={msg.role}
-                        content={msg.content}
+                        content={cleanContent}
                         reasoning={msg.reasoning}
                         isThinking={msg.isThinking}
                         isSearching={msg.isSearching}

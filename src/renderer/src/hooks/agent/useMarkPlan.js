@@ -807,7 +807,7 @@ export const useMarkPlan = ({
 
     let finalIsSpeak = opts.forceSpeak !== undefined ? opts.forceSpeak : isSpeak
     if (userInput && typeof userInput === 'string') {
-      if (userInput.startsWith('(Mikrofon)')) {
+      if (userInput.startsWith('<mic>') || userInput.startsWith('(Mikrofon)')) {
         finalIsSpeak = true
       } else if (!isAutonomous && !isSystem) {
         finalIsSpeak = false
@@ -1965,7 +1965,7 @@ export const useMarkPlan = ({
           })
 
           let finalOutput = (finalContentAccumulator || '')
-            .replace(/^\[mood:[a-zA-Z_]+\]\s*/i, '')
+            .replace(/^(?:<|\[)mood:[a-zA-Z_]+(?:>|\])\s*/i, '')
             .trim()
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`

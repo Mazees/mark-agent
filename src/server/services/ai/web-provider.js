@@ -251,11 +251,11 @@ ${toolSections.join('\n\n')}
   let cleanReasoning = reasoning || ''
 
   if (cleanReasoning) {
-    const moodMatch = cleanReasoning.match(/\[mood:([a-zA-Z_]+)\]/)
+    const moodMatch = cleanReasoning.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
     if (moodMatch) {
       onMood?.(moodMatch[1].toLowerCase())
     }
-    cleanReasoning = cleanReasoning.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+    cleanReasoning = cleanReasoning.replace(/(?:<|\[)mood:[a-zA-Z_]+(?:>|\])/gi, '').trim()
     onReasoning?.(cleanReasoning)
   }
 
@@ -274,7 +274,8 @@ ${toolSections.join('\n\n')}
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     const prelude = candidateStr.substring(0, firstBrace)
     const moodMatch =
-      prelude.match(/\[mood:([a-zA-Z_]+)\]/) || cleanContent.match(/\[mood:([a-zA-Z_]+)\]/)
+      prelude.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/) ||
+      cleanContent.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
     if (moodMatch) {
       onMood?.(moodMatch[1].toLowerCase())
     }
@@ -375,11 +376,11 @@ ${toolSections.join('\n\n')}
     cleanContent = cleanContent
       .replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '')
       .trim()
-    const moodMatch = cleanContent.match(/\[mood:([a-zA-Z_]+)\]/)
+    const moodMatch = cleanContent.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
     if (moodMatch) {
       onMood?.(moodMatch[1].toLowerCase())
     }
-    cleanContent = cleanContent.replace(/\[mood:[a-zA-Z_]+\]/gi, '').trim()
+    cleanContent = cleanContent.replace(/(?:<|\[)mood:[a-zA-Z_]+(?:>|\])/gi, '').trim()
     onToken?.(cleanContent)
   }
 

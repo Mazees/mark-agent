@@ -7,7 +7,7 @@ import { getActiveToolsSchema, getGroupTools } from '../tools/index'
 
 /**
  * Menyusun System Prompt dinamis untuk MARK V5 (Native Function Calling & SSE Architecture).
- * Menghilangkan prompt-injected JSON schema 11-field dan memanfaatkan native tools serta tag [mood:emoji].
+ * Menghilangkan prompt-injected JSON schema 11-field dan memanfaatkan native tools serta tag <mood:nama_mood>.
  */
 export const buildPlanningSystemPrompt = async (
   userInput = '',
@@ -212,8 +212,8 @@ Kamu bertindak sebagai LEAD AGENT / ORCHESTRATOR yang memimpin tim Sub-Agent spe
 3. Langsung jawab pertanyaan user atau rencanakan tindakan berikutnya berdasarkan analisis visual yang telah kamu amati.
 
 # ATURAN EKSPRESI EMOSI (MOOD TAGGING REAL-TIME):
-Kamu wajib menyisipkan tag emosi [mood:nama_mood] di awal pemikiran (reasoning) atau teks jawabanmu untuk mengubah visual avatar Mark seketika.
-Daftar mood yang didukung: [mood:joy], [mood:sadness], [mood:fear], [mood:anger], [mood:disgust], [mood:anxiety], [mood:envy], [mood:embarrassment], [mood:ennui], [mood:neutral].
+Kamu wajib menyisipkan tag emosi <mood:nama_mood> di awal pemikiran (reasoning) atau teks jawabanmu untuk mengubah visual avatar Mark seketika.
+Daftar mood yang didukung: <mood:joy>, <mood:sadness>, <mood:fear>, <mood:anger>, <mood:disgust>, <mood:anxiety>, <mood:envy>, <mood:embarrassment>, <mood:ennui>, <mood:neutral>.
 
 # ATURAN KOMUNIKASI & ADAPTASI NADA
 1. ADAPTASI MODE TUGAS vs MODE OBROLAN:

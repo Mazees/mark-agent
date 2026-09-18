@@ -395,7 +395,7 @@ export const useMarkAgent = () => {
     (text, meta = {}) => {
       if (!text || !text.trim()) return
       const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
-      const prefixedText = `(Mikrofon) ${wakePrefix}${text}`.trim()
+      const prefixedText = `<mic> ${wakePrefix}${text}`.trim()
       setMessage(prefixedText)
       setIsSpeak(true)
       handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })

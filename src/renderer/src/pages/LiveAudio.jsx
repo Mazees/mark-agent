@@ -9,15 +9,16 @@ import {
   isWebSpeechSupported
 } from '../api/webSpeech'
 import { detectWakeWord, cleanSpokenCommand } from '../api/wakeWord'
-import { FaChevronLeft, FaMicrophone, FaStop, FaExclamationTriangle, FaHandPaper } from 'react-icons/fa'
+import {
+  FaChevronLeft,
+  FaMicrophone,
+  FaStop,
+  FaExclamationTriangle,
+  FaHandPaper
+} from 'react-icons/fa'
 
 const LiveAudio = () => {
-  const {
-    chatData,
-    setIsSpeak,
-    setMessage,
-    handlePlanningCommand
-  } = useChat()
+  const { chatData, setIsSpeak, setMessage, handlePlanningCommand } = useChat()
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -126,7 +127,7 @@ const LiveAudio = () => {
             setStatus('thinking')
             stopWebSpeechRecognition()
             recognitionRef.current = null
-            const fullMessage = `(Mikrofon) ${wakePrefix}${commandToRun}`.trim()
+            const fullMessage = `<mic> ${wakePrefix}${commandToRun}`.trim()
             setMessage(fullMessage)
             handlePlanningCommand(fullMessage)
           }
@@ -194,30 +195,51 @@ const LiveAudio = () => {
     }
   }, [location.state, isActive, navigate, handleMicToggle])
 
-  const playAIResponse = useCallback(async (text) => {
-    try {
-      // Stop Web Speech selama Mark berbicara agar suara speaker tidak masuk ke mic
-      stopWebSpeechRecognition()
-      recognitionRef.current = null
+  const playAIResponse = useCallback(
+    async (text) => {
+      try {
+        // Stop Web Speech selama Mark berbicara agar suara speaker tidak masuk ke mic
+        stopWebSpeechRecognition()
+        recognitionRef.current = null
 
-      setStatus('speaking')
-      window.isMarkSpeaking = true
+        setStatus('speaking')
+        window.isMarkSpeaking = true
 
-      const configList = await getAllConfig()
-      const rate = configList[0]?.ttsRate ?? 10
-      const pitch = configList[0]?.ttsPitch ?? 55
-      const voice = configList[0]?.ttsVoice || 'id-ID-ArdiNeural'
+        const configList = await getAllConfig()
+        const rate = configList[0]?.ttsRate ?? 10
+        const pitch = configList[0]?.ttsPitch ?? 55
+        const voice = configList[0]?.ttsVoice || 'id-ID-ArdiNeural'
 
-      const audioSrc = await webApi.textToSpeech(text, rate, pitch, voice)
-      if (audioSrc) {
-        const audio = new Audio(audioSrc)
-        audio.crossOrigin = 'anonymous'
-        audioRef.current = audio
+        const audioSrc = await webApi.textToSpeech(text, rate, pitch, voice)
+        if (audioSrc) {
+          const audio = new Audio(audioSrc)
+          audio.crossOrigin = 'anonymous'
+          audioRef.current = audio
 
-        audio.onended = () => {
-          audioRef.current = null
+          audio.onended = () => {
+            audioRef.current = null
+            window.isMarkSpeaking = false
+            // Begitu Mark selesai bicara, otomatis aktifkan mic kembali (Auto-loop)
+            if (isActiveRef.current) {
+              setStatus('listening')
+              startListeningSession()
+            } else {
+              setStatus('idle')
+            }
+          }
+          audio.onerror = () => {
+            audioRef.current = null
+            window.isMarkSpeaking = false
+            if (isActiveRef.current) {
+              setStatus('listening')
+              startListeningSession()
+            } else {
+              setStatus('idle')
+            }
+          }
+          await audio.play()
+        } else {
           window.isMarkSpeaking = false
-          // Begitu Mark selesai bicara, otomatis aktifkan mic kembali (Auto-loop)
           if (isActiveRef.current) {
             setStatus('listening')
             startListeningSession()
@@ -225,18 +247,8 @@ const LiveAudio = () => {
             setStatus('idle')
           }
         }
-        audio.onerror = () => {
-          audioRef.current = null
-          window.isMarkSpeaking = false
-          if (isActiveRef.current) {
-            setStatus('listening')
-            startListeningSession()
-          } else {
-            setStatus('idle')
-          }
-        }
-        await audio.play()
-      } else {
+      } catch (e) {
+        console.error('[LiveAudio] TTS Error:', e)
         window.isMarkSpeaking = false
         if (isActiveRef.current) {
           setStatus('listening')
@@ -245,17 +257,9 @@ const LiveAudio = () => {
           setStatus('idle')
         }
       }
-    } catch (e) {
-      console.error('[LiveAudio] TTS Error:', e)
-      window.isMarkSpeaking = false
-      if (isActiveRef.current) {
-        setStatus('listening')
-        startListeningSession()
-      } else {
-        setStatus('idle')
-      }
-    }
-  }, [startListeningSession])
+    },
+    [startListeningSession]
+  )
 
   // Memantau chatData untuk auto-play respons TTS
   useEffect(() => {
@@ -451,7 +455,13 @@ const LiveAudio = () => {
                 ? 'bg-error shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:bg-error/90 text-white'
                 : 'bg-primary shadow-[0_0_20px_rgba(31,184,84,0.4)] hover:bg-primary/90 text-white'
           }`}
-          title={status === 'speaking' ? 'Tap untuk menyela' : isActive ? 'Hentikan percakapan' : 'Mulai bicara'}
+          title={
+            status === 'speaking'
+              ? 'Tap untuk menyela'
+              : isActive
+                ? 'Hentikan percakapan'
+                : 'Mulai bicara'
+          }
         >
           {status === 'speaking' ? (
             <FaHandPaper size={22} className="animate-pulse" />
