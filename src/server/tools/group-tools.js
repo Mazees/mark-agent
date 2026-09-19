@@ -874,18 +874,33 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'tg-send',
-          description: 'Mengirim pesan teks atau file ke chat Telegram.',
+          description:
+            'Mengirim pesan teks, gambar/foto, atau berkas ke chat Telegram. Jika chat_id tidak diisi atau bernilai "admin", otomatis dikirim ke akun Telegram admin pemilik MARK.',
           parameters: {
             type: 'object',
             properties: {
-              chat_id: { type: 'string', description: 'ID Chat Telegram tujuan' },
-              type: { type: 'string', enum: ['text', 'file'], description: 'Tipe kiriman' },
+              chat_id: {
+                type: 'string',
+                description:
+                  'ID Chat Telegram tujuan. Bersifat opsional; jika dikosongkan atau diisi "admin", otomatis dikirim ke akun Telegram admin pemilik MARK.'
+              },
+              type: {
+                type: 'string',
+                enum: ['auto', 'text', 'photo', 'file'],
+                description:
+                  'Tipe kiriman: "auto" (otomatis deteksi), "text" (pesan teks), "photo" (gambar/foto yang dirender langsung di chat), atau "file" (dokumen berkas)'
+              },
               content: {
                 type: 'string',
-                description: 'Isi teks pesan atau path berkas yang dikirim'
+                description:
+                  'Isi teks pesan, path berkas lokal (contoh: "C:\\Users\\...\\image.png"), atau URL berkas yang ingin dikirim.'
+              },
+              caption: {
+                type: 'string',
+                description: 'Keterangan/caption opsional jika mengirim gambar atau berkas.'
               }
             },
-            required: ['chat_id', 'type', 'content'],
+            required: ['content'],
             additionalProperties: false
           }
         }
