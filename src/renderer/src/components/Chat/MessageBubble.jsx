@@ -11,6 +11,7 @@ import {
   Activity,
   Check,
   XCircle,
+  Ban,
   Terminal
 } from 'lucide-react'
 
@@ -170,16 +171,30 @@ export const MessageBubble = React.memo(
                       typeof t.query === 'string' ? t.query : JSON.stringify(t.query, null, 2)
                     const textResult = String(t.fullResult || t.resultSummary || '')
                     const hasResult = Boolean(textResult.trim())
+                    const isStopped = t.status === 'stopped' || t.status === 'cancelled'
                     const hasError =
                       textResult.startsWith('[ERROR]') ||
                       textResult.includes(' crash:') ||
                       textResult.toLowerCase().includes(' gagal:')
+                      !isStopped &&
+                      (t.status === 'failed' ||
+                        t.status === 'error' ||
+                        textResult.startsWith('[ERROR]') ||
+                        textResult.includes(' crash:') ||
+                        textResult.toLowerCase().includes(' gagal:'))
                     const isSuccessful =
                       t.status === 'done' ||
                       t.status === 'success' ||
                       (!hasError && t.status !== 'error')
                     const StatusIcon = isSuccessful ? Check : XCircle
                     const statusClass = isSuccessful ? 'text-success' : 'text-error'
+                      !isStopped &&
+                      !hasError &&
+                      (t.status === 'done' || t.status === 'success' || t.status !== 'error')
+                      ? 'text-warning'
+                      : isSuccessful
+                        ? 'text-success'
+                        : 'text-error'
 
                     const toolLabel = t.tool || t.task || 'tool'
                     let shortSummary = ''
@@ -206,6 +221,11 @@ export const MessageBubble = React.memo(
                         >
                           <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
                           <span className="font-semibold text-white/90">{toolLabel}</span>
+                          {isStopped && (
+                            <span className="text-[10px] text-warning/80 font-normal">
+                              (dihentikan)
+                            </span>
+                          )}
                         </div>
                       )
                     }
@@ -215,6 +235,11 @@ export const MessageBubble = React.memo(
                         <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
                           <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
                           <span className="font-semibold text-white/90">{toolLabel}</span>
+                          {isStopped && (
+                            <span className="text-[10px] text-warning/80 font-normal">
+                              (dihentikan)
+                            </span>
+                          )}
                           {shortSummary && (
                             <span className="text-white/40 truncate max-w-md">
                               {String(shortSummary).slice(0, 80)}

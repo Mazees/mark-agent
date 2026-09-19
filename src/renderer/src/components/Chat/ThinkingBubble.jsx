@@ -1,7 +1,16 @@
 import React from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, Music, Brain, ChevronRight, ListOrdered, Terminal } from 'lucide-react'
+import {
+  Check,
+  XCircle,
+  Ban,
+  Music,
+  Brain,
+  ChevronRight,
+  ListOrdered,
+  Terminal
+} from 'lucide-react'
 import { FaYoutube } from 'react-icons/fa'
 
 export const ThinkingBubble = ({
@@ -97,6 +106,7 @@ export const ThinkingBubble = ({
               <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
                 {executedTools.map((step, idx) => {
                   const isRunning = step.status === 'running'
+                  const isStopped = step.status === 'stopped' || step.status === 'cancelled'
                   const hasQuery =
                     step.query !== undefined && step.query !== null && step.query !== ''
                   const hasResult =
@@ -111,6 +121,11 @@ export const ThinkingBubble = ({
                     typeof step.resultSummary === 'string'
                       ? step.resultSummary
                       : JSON.stringify(step.resultSummary, null, 2)
+                  const isFailed =
+                    step.status === 'failed' ||
+                    step.status === 'error' ||
+                    (resultString &&
+                      (resultString.startsWith('[ERROR]') || resultString.includes(' crash:')))
 
                   const toolLabel = step.tool || step.task || 'tool'
                   let shortSummary = ''
@@ -137,6 +152,10 @@ export const ThinkingBubble = ({
                       >
                         {isRunning ? (
                           <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                        ) : isStopped ? (
+                          <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                        ) : isFailed ? (
+                          <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
                         ) : (
                           <Check className="w-3.5 h-3.5 text-success shrink-0" />
                         )}
@@ -144,6 +163,11 @@ export const ThinkingBubble = ({
                         {isRunning && (
                           <span className="text-[10px] text-warning/80 animate-pulse font-normal">
                             (mengeksekusi...)
+                          </span>
+                        )}
+                        {isStopped && (
+                          <span className="text-[10px] text-warning/80 font-normal">
+                            (dihentikan)
                           </span>
                         )}
                       </div>
@@ -159,10 +183,24 @@ export const ThinkingBubble = ({
                       <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
                         {isRunning ? (
                           <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                        ) : isStopped ? (
+                          <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                        ) : isFailed ? (
+                          <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
                         ) : (
                           <Check className="w-3.5 h-3.5 text-success shrink-0" />
                         )}
                         <span className="font-semibold text-white/90">{toolLabel}</span>
+                        {isRunning && (
+                          <span className="text-[10px] text-warning/80 animate-pulse font-normal">
+                            (mengeksekusi...)
+                          </span>
+                        )}
+                        {isStopped && (
+                          <span className="text-[10px] text-warning/80 font-normal">
+                            (dihentikan)
+                          </span>
+                        )}
                         {shortSummary && (
                           <span className="text-white/40 truncate max-w-md">
                             {String(shortSummary).slice(0, 80)}
@@ -185,7 +223,9 @@ export const ThinkingBubble = ({
                         )}
                         {step.preview && (
                           <div className="mt-2 pt-1 border-t border-white/10">
-                            <div className="text-primary/70 font-semibold mb-1">Pratinjau Visual:</div>
+                            <div className="text-primary/70 font-semibold mb-1">
+                              Pratinjau Visual:
+                            </div>
                             <div className="relative group/preview rounded-lg overflow-hidden border border-white/20 bg-black/40 max-w-sm">
                               <img
                                 src={step.preview}

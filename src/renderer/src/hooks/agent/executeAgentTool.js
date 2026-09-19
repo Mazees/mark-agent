@@ -291,6 +291,7 @@ export async function executeAgentTool({
 
       while (Date.now() - startTime < maxWaitSeconds * 1000) {
         if (abortControllerRef?.current?.signal?.aborted) break
+        if (currentSignal?.aborted || abortControllerRef?.current?.signal?.aborted) break
         const agents = await Promise.all(targetIds.map((id) => subagentStore.getSubagent(id)))
         finalAgents = agents.filter(Boolean)
 

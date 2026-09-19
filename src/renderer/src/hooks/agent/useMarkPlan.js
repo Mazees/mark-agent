@@ -205,6 +205,10 @@ export const useMarkPlan = ({
 
   // Penghentian tugas per-sesi secara independen
   const handleStop = (targetSessionId = null) => {
+    try {
+      speechQueue.reset()
+    } catch (_) {}
+
     if (targetSessionId !== null && targetSessionId !== undefined) {
       const numId = Number(targetSessionId)
       const session = activeSessionsRef.current.get(numId)
@@ -1028,6 +1032,10 @@ export const useMarkPlan = ({
     let durableTaskForRecovery = null
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
     let accumulatedThoughts = []
+    let executedToolsList = []
+    let currentInFlightTool = null
+    let currentTurnReasoning = ''
+    let finalContentAccumulator = ''
 
     try {
       let durableTask = null
@@ -1281,11 +1289,11 @@ export const useMarkPlan = ({
 
       let isDone = false
       let stepCount = 0
-      let executedToolsList = []
+      executedToolsList = []
       let lastToolExecution = null
       accumulatedThoughts = []
       let currentActiveMood = 'neutral'
-      let finalContentAccumulator = ''
+      finalContentAccumulator = ''
       let savedTurnAiMsg = null
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
@@ -1339,7 +1347,7 @@ export const useMarkPlan = ({
               })
             )
           }
-          break
+          throw new Error('AbortError')
         }
 
         // Cek Intervensi User di tengah jalan
@@ -1413,7 +1421,7 @@ export const useMarkPlan = ({
           ]
         })
 
-        let currentTurnReasoning = ''
+        currentTurnReasoning = ''
         let currentTurnContent = ''
         let sentenceBuffer = ''
 
@@ -1623,7 +1631,7 @@ export const useMarkPlan = ({
             }
 
             if (!toolName) continue
-            if (sessionAbortController.signal.aborted) break
+            if (sessionAbortController.signal.aborted) throw new Error('AbortError')
 
             execSteps.push({ task: `Eksekusi ${toolName}`, query: JSON.stringify(parsedArgs) })
             targetPushProcess({
@@ -1637,10 +1645,12 @@ export const useMarkPlan = ({
               }
             })
 
-            const currentLiveTools = [
-              ...executedToolsList,
-              { tool: toolName, query: JSON.stringify(parsedArgs), status: 'running' }
-            ]
+            currentInFlightTool = {
+              tool: toolName,
+              query: JSON.stringify(parsedArgs),
+              status: 'running'
+            }
+            const currentLiveTools = [...executedToolsList, currentInFlightTool]
 
             const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
               .map((t) => (typeof t === 'string' ? t.trim() : ''))
@@ -1732,6 +1742,7 @@ export const useMarkPlan = ({
                   ? execResult.resultString.slice(0, 250) + '...'
                   : execResult.resultString
             })
+            currentInFlightTool = null
 
             if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
               for (const u of execResult.imageUrls) {
@@ -1785,6 +1796,9 @@ export const useMarkPlan = ({
           }
 
           // Lanjut ke giliran berikutnya untuk membiarkan model menganalisis observasi tool
+          if (sessionAbortController.signal.aborted) {
+            throw new Error('AbortError')
+          }
           continue
         }
 
@@ -2108,6 +2122,10 @@ export const useMarkPlan = ({
         break
       }
 
+      if (sessionAbortController.signal.aborted) {
+        throw new Error('AbortError')
+      }
+
       // Pastikan sisa thinking indicator selalu dibersihkan jika loop selesai
       targetSetChatData((prev) => {
         const hasThinking = prev.some((item) => item.isThinking)
@@ -2239,6 +2257,9 @@ export const useMarkPlan = ({
         }
       } else {
         dismissProcess(agenticProcessId)
+        try {
+          speechQueue.reset()
+        } catch (_) {}
         if (durableTaskForRecovery) {
           transitionAgentTask(
             durableTaskForRecovery.id,
@@ -2249,7 +2270,9 @@ export const useMarkPlan = ({
       }
 
       targetSetChatData((prev) => {
+        const thinkingItem = prev.find((item) => item.isThinking)
         let updated = prev.filter((item) => !item.isThinking)
+
         if (isAbort && durableTaskForRecovery) {
           updated = updated.map((msg) => {
             if (!msg.isPlanSteps || msg.taskId !== durableTaskForRecovery.id) return msg
@@ -2263,18 +2286,80 @@ export const useMarkPlan = ({
             }
           })
         }
-        return [
+
+        // Ambil riwayat tool yang sempat dieksekusi sebelum di-abort
+        let rawExecutedTools =
+          thinkingItem?.executedTools && thinkingItem.executedTools.length > 0
+            ? [...thinkingItem.executedTools]
+            : [...(executedToolsList || [])]
+
+        // Pastikan in-flight tool yang sedang dieksekusi saat abort tidak hilang
+        if (
+          currentInFlightTool &&
+          !rawExecutedTools.some(
+            (t) =>
+              t.tool === currentInFlightTool.tool &&
+              (t.status === 'running' || t.status === 'stopped')
+          )
+        ) {
+          rawExecutedTools.push(currentInFlightTool)
+        }
+
+        // Tandai tool yang sedang 'running' saat abort menjadi 'stopped'
+        const preservedExecutedTools = rawExecutedTools.map((t) => ({
+          ...t,
+          status: t.status === 'running' ? 'stopped' : t.status
+        }))
+
+        // Ambil riwayat pemikiran (reasoning) yang sempat digenerate
+        const allAccumulated = [...accumulatedThoughts, currentTurnReasoning]
+          .map((t) => (typeof t === 'string' ? t.trim() : ''))
+          .filter(Boolean)
+        const fallbackReasoning =
+          allAccumulated.length > 0
+            ? Array.from(new Set(allAccumulated)).join('\n\n---\n\n')
+            : undefined
+        const preservedReasoning = thinkingItem?.reasoning || fallbackReasoning
+
+        // Ambil konten parsial yang sempat digenerate
+        const rawContent =
+          finalContentAccumulator ||
+          (thinkingItem?.content && !thinkingItem.content.startsWith('Mengeksekusi [')
+            ? thinkingItem.content
+            : '')
+        const partialContent = typeof rawContent === 'string' ? rawContent.trim() : ''
+
+        let abortContent = ''
+        if (isAbort) {
+          abortContent = partialContent
+            ? `${partialContent}\n\n[Eksekusi dihentikan oleh pengguna]`
+            : 'Eksekusi dibatalkan atas permintaan pengguna.'
+        } else {
+          abortContent = partialContent
+            ? `${partialContent}\n\n[Terjadi kendala saat memproses: ${error.message}]`
+            : `Terjadi kendala saat memproses: ${error.message}`
+        }
+
+        const finalUpdated = [
           ...updated,
           {
             role: 'ai',
-            content: isAbort
-              ? 'Eksekusi dibatalkan atas permintaan pengguna.'
-              : `Terjadi kendala saat memproses: ${error.message}`,
+            content: abortContent,
+            reasoning: preservedReasoning,
+            executedTools: preservedExecutedTools.length > 0 ? preservedExecutedTools : undefined,
             mood: isAbort ? 'neutral' : 'sadness',
             timestamp: getCurrentTimeInfo(),
             created_at: Date.now()
           }
         ]
+
+        if (activeSessionNum === 1) {
+          saveSession('1', finalUpdated).catch((err) => {
+            console.warn('[useMarkPlan] Gagal auto-save abort main thread session 1:', err)
+          })
+        }
+
+        return finalUpdated
       })
     } finally {
       activeSessionsRef.current.delete(activeSessionNum)
