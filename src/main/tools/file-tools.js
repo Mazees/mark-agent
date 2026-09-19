@@ -98,8 +98,14 @@ export const fileTools = {
           filePath = path.join(activeRoot, filePath)
         }
 
-        if (!fs.existsSync(filePath))
+        const isRaw = typeof args === 'object' && args !== null && Boolean(args.raw)
+
+        if (!fs.existsSync(filePath)) {
+          if (isRaw) {
+            return { success: true, content: '', isNewFile: true, exists: false }
+          }
           return { success: false, message: `File tidak ditemukan di path: ${filePath}` }
+        }
 
         const ext = path.extname(filePath).toLowerCase()
         const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
@@ -117,6 +123,16 @@ export const fileTools = {
         }
 
         const content = await fs.promises.readFile(filePath, 'utf8')
+
+        if (isRaw) {
+          return {
+            success: true,
+            content,
+            totalLines: content.split('\n').length,
+            exists: true
+          }
+        }
+
         const lines = content.split('\n')
         const totalLines = lines.length
 
@@ -745,7 +761,7 @@ export const fileTools = {
     handler: async (args, config) => {
       try {
         let targetDir = (
-          typeof args === 'object' && args !== null ? (args.path || '') : String(args || '')
+          typeof args === 'object' && args !== null ? args.path || '' : String(args || '')
         ).trim()
         const activeRoot =
           config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')

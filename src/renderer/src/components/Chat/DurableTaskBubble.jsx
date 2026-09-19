@@ -1,16 +1,8 @@
 /* eslint-disable react/prop-types */
-import React, { useState } from 'react'
-import {
-  Check,
-  CheckCircle2,
-  Loader2,
-  FolderOpen,
-  FileText,
-  AlertTriangle,
-  Square,
-  ChevronRight,
-  XCircle
-} from 'lucide-react'
+import { useState } from 'react'
+import { Check, Loader2, FolderOpen, FileText, Square, ChevronRight, XCircle } from 'lucide-react'
+import { useApproval } from '../../contexts/ApprovalContext'
+import { ApprovalBubble } from './ApprovalBubble'
 
 export const DurableTaskBubble = ({
   plan = [],
@@ -22,6 +14,7 @@ export const DurableTaskBubble = ({
   activeThinkingContent = null
 }) => {
   const [openSteps, setOpenSteps] = useState({})
+  const { activeApproval } = useApproval() || {}
 
   const totalSteps = plan.length
   const completedCount = plan.filter(
@@ -98,10 +91,17 @@ export const DurableTaskBubble = ({
       textResult.includes(' crash:') ||
       textResult.toLowerCase().includes(' gagal:')
     const isToolRunning = t.status === 'running'
+    const toolLabel = t.tool || t.task || 'tool'
+    const isPendingApproval = Boolean(
+      activeApproval &&
+      activeApproval.status === 'pending' &&
+      isToolRunning &&
+      (activeApproval.tool === toolLabel || activeApproval.tool === t.tool || !t.tool)
+    )
     const isSuccessful =
       t.status === 'done' ||
       t.status === 'success' ||
-      (!hasError && t.status !== 'error' && !isToolRunning)
+      (!hasError && t.status !== 'error' && !isToolRunning && !isPendingApproval)
 
     const StatusIcon = isToolRunning ? Loader2 : isSuccessful ? Check : XCircle
     const statusClass = isToolRunning
@@ -110,7 +110,6 @@ export const DurableTaskBubble = ({
         ? 'text-primary'
         : 'text-rose-400'
 
-    const toolLabel = t.tool || t.task || 'tool'
     let shortSummary = ''
     if (hasQuery) {
       try {
@@ -123,50 +122,91 @@ export const DurableTaskBubble = ({
           parsed.prompt ||
           parsed.skill_name ||
           queryString
-      } catch (_) {
+      } catch {
         shortSummary = queryString
       }
     }
 
     if (!hasQuery && !hasResult) {
       return (
-        <div
-          key={idx}
-          className="flex items-center gap-2 text-[11px] font-mono text-white/70 py-0.5"
-        >
-          <StatusIcon className={`w-3 h-3 ${statusClass} shrink-0`} />
-          <span className="font-semibold text-primary/90">[{toolLabel}]</span>
+        <div key={idx} className="flex flex-col py-0.5">
+          <div className="flex items-center gap-2 text-[11px] font-mono text-white/70 py-0.5">
+            {isPendingApproval ? (
+              <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+            ) : (
+              <StatusIcon className={`w-3 h-3 ${statusClass} shrink-0`} />
+            )}
+            <span className="font-semibold text-primary/90">[{toolLabel}]</span>
+            {isPendingApproval && (
+              <span className="text-[10px] text-warning font-normal animate-pulse">
+                (menunggu persetujuan...)
+              </span>
+            )}
+          </div>
+          {isPendingApproval && (
+            <div className="pl-3 pr-1 my-1">
+              <ApprovalBubble
+                approvalId={activeApproval.id}
+                tool={activeApproval.tool}
+                query={activeApproval.query}
+                message={activeApproval.message}
+                status={activeApproval.status}
+              />
+            </div>
+          )}
         </div>
       )
     }
 
     return (
-      <details key={idx} className="group/toolitem outline-none text-[11px] font-mono">
-        <summary className="list-none flex items-center gap-1.5 cursor-pointer text-white/70 hover:text-white select-none py-0.5 transition-colors">
-          <StatusIcon className={`w-3 h-3 ${statusClass} shrink-0`} />
-          <span className="font-semibold text-primary/90">[{toolLabel}]</span>
-          {shortSummary && (
-            <span className="text-white/40 truncate max-w-[200px] md:max-w-md">
-              {String(shortSummary).slice(0, 80)}
-            </span>
-          )}
-          <ChevronRight className="w-2.5 h-2.5 text-white/30 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
-        </summary>
-        <div className="mt-1 pl-2.5 my-1 text-[10.5px] font-mono border-l-2 border-white/10 text-white/80 whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar bg-base-300/40 p-2 rounded-lg space-y-1 select-text">
-          {hasQuery && (
-            <div>
-              <div className="text-primary/70 font-semibold text-[9.5px]">Input:</div>
-              <div className="text-white/90">{queryString}</div>
-            </div>
-          )}
-          {hasResult && (
-            <div>
-              <div className="text-primary/80 font-semibold text-[9.5px]">Output:</div>
-              <div className="text-white/80">{textResult}</div>
-            </div>
-          )}
-        </div>
-      </details>
+      <div key={idx} className="flex flex-col py-0.5">
+        <details className="group/toolitem outline-none text-[11px] font-mono" open={isToolRunning}>
+          <summary className="list-none flex items-center gap-1.5 cursor-pointer text-white/70 hover:text-white select-none py-0.5 transition-colors">
+            {isPendingApproval ? (
+              <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+            ) : (
+              <StatusIcon className={`w-3 h-3 ${statusClass} shrink-0`} />
+            )}
+            <span className="font-semibold text-primary/90">[{toolLabel}]</span>
+            {isPendingApproval ? (
+              <span className="text-[10px] text-warning font-normal animate-pulse">
+                (menunggu persetujuan...)
+              </span>
+            ) : null}
+            {shortSummary && (
+              <span className="text-white/40 truncate max-w-[200px] md:max-w-md">
+                {String(shortSummary).slice(0, 80)}
+              </span>
+            )}
+            <ChevronRight className="w-2.5 h-2.5 text-white/30 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
+          </summary>
+          <div className="mt-1 pl-2.5 my-1 text-[10.5px] font-mono border-l-2 border-white/10 text-white/80 whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar bg-base-300/40 p-2 rounded-lg space-y-1 select-text">
+            {hasQuery && (
+              <div>
+                <div className="text-primary/70 font-semibold text-[9.5px]">Input:</div>
+                <div className="text-white/90">{queryString}</div>
+              </div>
+            )}
+            {hasResult && (
+              <div>
+                <div className="text-primary/80 font-semibold text-[9.5px]">Output:</div>
+                <div className="text-white/80">{textResult}</div>
+              </div>
+            )}
+          </div>
+        </details>
+        {isPendingApproval && (
+          <div className="pl-3 pr-1 my-1">
+            <ApprovalBubble
+              approvalId={activeApproval.id}
+              tool={activeApproval.tool}
+              query={activeApproval.query}
+              message={activeApproval.message}
+              status={activeApproval.status}
+            />
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -229,7 +269,9 @@ export const DurableTaskBubble = ({
           const isCurrent = stepStatus === 'running' && !isAllDone && !isStopped && !isFailed
 
           const stepKey = step.id || `step-${idx}`
-          const isOpen = isStepOpen(stepKey, isCurrent)
+          const isOpen =
+            isStepOpen(stepKey, isCurrent) ||
+            (isCurrent && Boolean(activeApproval && activeApproval.status === 'pending'))
 
           let title = typeof step === 'string' ? step : step.title || step.task || ''
           if (!title || /^((langkah|tahap|step)\s*\d+[:.-]?\s*)$/i.test(title.trim())) {
@@ -241,6 +283,18 @@ export const DurableTaskBubble = ({
           const liveTools =
             isCurrent && activeLiveTools && activeLiveTools.length > 0 ? activeLiveTools : []
           const displayTools = isCurrent && liveTools.length > 0 ? liveTools : pastTools
+
+          const stepHasPendingTool =
+            isCurrent &&
+            Boolean(activeApproval && activeApproval.status === 'pending') &&
+            displayTools.some((t) => {
+              const isToolRunning = t.status === 'running'
+              const toolLabel = t.tool || t.task || 'tool'
+              return (
+                isToolRunning &&
+                (activeApproval.tool === toolLabel || activeApproval.tool === t.tool || !t.tool)
+              )
+            })
 
           return (
             <div key={stepKey} className="py-0.5">
@@ -315,6 +369,22 @@ export const DurableTaskBubble = ({
                       {isDone ? 'Tahap telah diselesaikan.' : 'Menunggu eksekusi tahapan...'}
                     </div>
                   )}
+
+                  {/* Fallback jika ada approval pending di step ini tapi belum tertangkap di salah satu item tool */}
+                  {isCurrent &&
+                    activeApproval &&
+                    activeApproval.status === 'pending' &&
+                    !stepHasPendingTool && (
+                      <div className="pl-1 pr-1 my-1">
+                        <ApprovalBubble
+                          approvalId={activeApproval.id}
+                          tool={activeApproval.tool}
+                          query={activeApproval.query}
+                          message={activeApproval.message}
+                          status={activeApproval.status}
+                        />
+                      </div>
+                    )}
                 </div>
               )}
             </div>

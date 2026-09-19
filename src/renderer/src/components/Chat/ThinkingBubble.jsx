@@ -1,27 +1,19 @@
-import React from 'react'
+/* eslint-disable react/prop-types */
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import {
-  Check,
-  XCircle,
-  Ban,
-  Music,
-  Brain,
-  ChevronRight,
-  ListOrdered,
-  Terminal
-} from 'lucide-react'
+import { Check, XCircle, Ban, Music, Brain, ChevronRight, Terminal } from 'lucide-react'
 import { FaYoutube } from 'react-icons/fa'
+import { useApproval } from '../../contexts/ApprovalContext'
+import { ApprovalBubble } from './ApprovalBubble'
 
 export const ThinkingBubble = ({
-  isThinking = false,
   isSummarizing = false,
   isSearchingMusic = false,
   content = '',
-  youtubeLink = '',
   reasoning = null,
   executedTools = []
 }) => {
+  const { activeApproval } = useApproval()
   const executingToolCount = executedTools ? executedTools.length : 0
 
   return (
@@ -107,6 +99,12 @@ export const ThinkingBubble = ({
                 {executedTools.map((step, idx) => {
                   const isRunning = step.status === 'running'
                   const isStopped = step.status === 'stopped' || step.status === 'cancelled'
+                  const isPendingApproval = Boolean(
+                    activeApproval &&
+                    activeApproval.status === 'pending' &&
+                    isRunning &&
+                    (activeApproval.tool === step.tool || !step.tool)
+                  )
                   const hasQuery =
                     step.query !== undefined && step.query !== null && step.query !== ''
                   const hasResult =
@@ -139,105 +137,137 @@ export const ThinkingBubble = ({
                         parsed.prompt ||
                         parsed.skill_name ||
                         queryString
-                    } catch (_) {
+                    } catch {
                       shortSummary = queryString
                     }
                   }
 
                   if (!hasQuery && !hasResult) {
                     return (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 text-xs font-mono text-white/60 py-0.5"
-                      >
-                        {isRunning ? (
-                          <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
-                        ) : isStopped ? (
-                          <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
-                        ) : isFailed ? (
-                          <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5 text-success shrink-0" />
-                        )}
-                        <span className="font-semibold text-white/90">{toolLabel}</span>
-                        {isRunning && (
-                          <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                            (mengeksekusi...)
-                          </span>
-                        )}
-                        {isStopped && (
-                          <span className="text-[10px] text-warning/80 font-normal">
-                            (dihentikan)
-                          </span>
+                      <div key={idx} className="flex flex-col py-0.5">
+                        <div className="flex items-center gap-2 text-xs font-mono text-white/60">
+                          {isPendingApproval ? (
+                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                          ) : isRunning ? (
+                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                          ) : isStopped ? (
+                            <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                          ) : isFailed ? (
+                            <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5 text-success shrink-0" />
+                          )}
+                          <span className="font-semibold text-white/90">{toolLabel}</span>
+                          {isPendingApproval ? (
+                            <span className="text-[10px] text-warning font-normal animate-pulse">
+                              (menunggu persetujuan...)
+                            </span>
+                          ) : isRunning ? (
+                            <span className="text-[10px] text-warning/80 animate-pulse font-normal">
+                              (mengeksekusi...)
+                            </span>
+                          ) : isStopped ? (
+                            <span className="text-[10px] text-warning/80 font-normal">
+                              (dihentikan)
+                            </span>
+                          ) : null}
+                        </div>
+                        {isPendingApproval && (
+                          <div className="pl-3 pr-1">
+                            <ApprovalBubble
+                              approvalId={activeApproval.id}
+                              tool={activeApproval.tool}
+                              query={activeApproval.query}
+                              message={activeApproval.message}
+                              status={activeApproval.status}
+                            />
+                          </div>
                         )}
                       </div>
                     )
                   }
 
                   return (
-                    <details
-                      key={idx}
-                      className="group/livetool outline-none text-xs font-mono"
-                      open={isRunning}
-                    >
-                      <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
-                        {isRunning ? (
-                          <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
-                        ) : isStopped ? (
-                          <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
-                        ) : isFailed ? (
-                          <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5 text-success shrink-0" />
-                        )}
-                        <span className="font-semibold text-white/90">{toolLabel}</span>
-                        {isRunning && (
-                          <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                            (mengeksekusi...)
-                          </span>
-                        )}
-                        {isStopped && (
-                          <span className="text-[10px] text-warning/80 font-normal">
-                            (dihentikan)
-                          </span>
-                        )}
-                        {shortSummary && (
-                          <span className="text-white/40 truncate max-w-md">
-                            {String(shortSummary).slice(0, 80)}
-                          </span>
-                        )}
-                        <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/livetool:rotate-90 ml-auto shrink-0" />
-                      </summary>
-                      <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
-                        {hasQuery && (
-                          <div>
-                            <div className="text-primary/70 font-semibold mb-0.5">Input:</div>
-                            <div className="text-white/90">{queryString}</div>
-                          </div>
-                        )}
-                        {hasResult && (
-                          <div>
-                            <div className="text-success/70 font-semibold mb-0.5">Output:</div>
-                            <div className="text-white/80">{resultString}</div>
-                          </div>
-                        )}
-                        {step.preview && (
-                          <div className="mt-2 pt-1 border-t border-white/10">
-                            <div className="text-primary/70 font-semibold mb-1">
-                              Pratinjau Visual:
+                    <div key={idx} className="flex flex-col py-0.5">
+                      <details
+                        className="group/livetool outline-none text-xs font-mono"
+                        open={isRunning}
+                      >
+                        <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
+                          {isPendingApproval ? (
+                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                          ) : isRunning ? (
+                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                          ) : isStopped ? (
+                            <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                          ) : isFailed ? (
+                            <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5 text-success shrink-0" />
+                          )}
+                          <span className="font-semibold text-white/90">{toolLabel}</span>
+                          {isPendingApproval ? (
+                            <span className="text-[10px] text-warning font-normal animate-pulse">
+                              (menunggu persetujuan...)
+                            </span>
+                          ) : isRunning ? (
+                            <span className="text-[10px] text-warning/80 animate-pulse font-normal">
+                              (mengeksekusi...)
+                            </span>
+                          ) : isStopped ? (
+                            <span className="text-[10px] text-warning/80 font-normal">
+                              (dihentikan)
+                            </span>
+                          ) : null}
+                          {shortSummary && (
+                            <span className="text-white/40 truncate max-w-md">
+                              {String(shortSummary).slice(0, 80)}
+                            </span>
+                          )}
+                          <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/livetool:rotate-90 ml-auto shrink-0" />
+                        </summary>
+                        <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
+                          {hasQuery && (
+                            <div>
+                              <div className="text-primary/70 font-semibold mb-0.5">Input:</div>
+                              <div className="text-white/90">{queryString}</div>
                             </div>
-                            <div className="relative group/preview rounded-lg overflow-hidden border border-white/20 bg-black/40 max-w-sm">
-                              <img
-                                src={step.preview}
-                                alt="Tool Visual Output"
-                                className="max-h-48 w-auto object-contain cursor-pointer transition-transform duration-200 group-hover/preview:scale-105"
-                                onClick={() => window.open(step.preview, '_blank')}
-                              />
+                          )}
+                          {hasResult && (
+                            <div>
+                              <div className="text-success/70 font-semibold mb-0.5">Output:</div>
+                              <div className="text-white/80">{resultString}</div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </details>
+                          )}
+                          {step.preview && (
+                            <div className="mt-2 pt-1 border-t border-white/10">
+                              <div className="text-primary/70 font-semibold mb-1">
+                                Pratinjau Visual:
+                              </div>
+                              <div className="relative group/preview rounded-lg overflow-hidden border border-white/20 bg-black/40 max-w-sm">
+                                <img
+                                  src={step.preview}
+                                  alt="Tool Visual Output"
+                                  className="max-h-48 w-auto object-contain cursor-pointer transition-transform duration-200 group-hover/preview:scale-105"
+                                  onClick={() => window.open(step.preview, '_blank')}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                      {isPendingApproval && (
+                        <div className="pl-3 pr-1">
+                          <ApprovalBubble
+                            approvalId={activeApproval.id}
+                            tool={activeApproval.tool}
+                            query={activeApproval.query}
+                            message={activeApproval.message}
+                            status={activeApproval.status}
+                          />
+                        </div>
+                      )}
+                    </div>
                   )
                 })}
               </div>

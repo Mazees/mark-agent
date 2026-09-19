@@ -23,6 +23,7 @@ const ChatList = ({
   content = '',
   reasoning = null,
   isThinking = false,
+  isIntervention = false,
   isCompacting = false,
   compactProgress = '',
   isLastCompacted = false,
@@ -229,48 +230,66 @@ const ChatList = ({
   return (
     <>
       {isUser ? (
-        <div className="max-w-[85%] md:max-w-3xl ml-auto mb-3 flex flex-col items-end group animate-[response-fade-in_0.2s_ease-out_forwards]">
-          {/* Header */}
-          <div className="text-[11px] font-semibold opacity-75 mb-1.5 flex items-center gap-2 px-1 text-white/70">
-            <User className="w-3.5 h-3.5 text-white/50" />
-            <span>{isTelegram ? sender || 'Telegram Admin' : 'You'}</span>
-            {isTelegram && (
-              <span className="badge badge-xs bg-[#229ED9]/15 text-[#229ED9] border-[#229ED9]/30 gap-1 font-mono text-[9px] py-0.5 px-1.5 flex items-center font-normal">
-                <FaTelegramPlane className="w-2.5 h-2.5" /> Telegram
-              </span>
-            )}
-            {extractedSkillTag && (
-              <span className="badge badge-xs bg-black/40 text-primary border border-primary/40 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
-                Skill: /{extractedSkillTag}
-              </span>
-            )}
-            {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
+        isIntervention ? (
+          <div className="max-w-[85%] md:max-w-2xl ml-auto mb-2 flex flex-col items-end group animate-[response-fade-in_0.2s_ease-out_forwards]">
+            <div
+              title={timestamp ? `Intervensi sela • ${timestamp}` : 'Intervensi sela'}
+              className="rounded-xl rounded-tr-sm bg-base-200/80 text-white/90 border border-white/10 px-3.5 py-1.5 text-xs shadow-sm backdrop-blur-md select-text break-words transition-all hover:border-white/20"
+            >
+              <MessageBubble
+                isUser={true}
+                content={displayUserContent}
+                reasoning={reasoning}
+                sources={sources}
+                executedTools={executedTools}
+                isPlanConclusion={isPlanConclusion}
+              />
+            </div>
           </div>
+        ) : (
+          <div className="max-w-[85%] md:max-w-3xl ml-auto mb-3 flex flex-col items-end group animate-[response-fade-in_0.2s_ease-out_forwards]">
+            {/* Header */}
+            <div className="text-[11px] font-semibold opacity-75 mb-1.5 flex items-center gap-2 px-1 text-white/70">
+              <User className="w-3.5 h-3.5 text-white/50" />
+              <span>{isTelegram ? sender || 'Telegram Admin' : 'You'}</span>
+              {isTelegram && (
+                <span className="badge badge-xs bg-[#229ED9]/15 text-[#229ED9] border-[#229ED9]/30 gap-1 font-mono text-[9px] py-0.5 px-1.5 flex items-center font-normal">
+                  <FaTelegramPlane className="w-2.5 h-2.5" /> Telegram
+                </span>
+              )}
+              {extractedSkillTag && (
+                <span className="badge badge-xs bg-black/40 text-primary border border-primary/40 font-mono text-[9px] py-0.5 px-1.5 font-semibold">
+                  Skill: /{extractedSkillTag}
+                </span>
+              )}
+              {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
+            </div>
 
-          {/* User Bubble Card */}
-          <div
-            className={`rounded-2xl rounded-tr-sm shadow-md transition-all duration-200 break-words overflow-hidden px-5 py-3.5 border ${
-              isTelegram
-                ? 'bg-gradient-to-br from-[#229ED9]/30 to-[#0088cc]/30 text-white border-[#229ED9]/40 backdrop-blur-md'
-                : 'bg-base-200/90 text-base-content border-white/10 backdrop-blur-md'
-            }`}
-          >
-            <MessageBubble
-              isUser={true}
-              content={displayUserContent}
-              reasoning={reasoning}
-              sources={sources}
-              executedTools={executedTools}
-              isPlanConclusion={isPlanConclusion}
+            {/* User Bubble Card */}
+            <div
+              className={`rounded-2xl rounded-tr-sm shadow-md transition-all duration-200 break-words overflow-hidden px-5 py-3.5 border ${
+                isTelegram
+                  ? 'bg-gradient-to-br from-[#229ED9]/30 to-[#0088cc]/30 text-white border-[#229ED9]/40 backdrop-blur-md'
+                  : 'bg-base-200/90 text-base-content border-white/10 backdrop-blur-md'
+              }`}
+            >
+              <MessageBubble
+                isUser={true}
+                content={displayUserContent}
+                reasoning={reasoning}
+                sources={sources}
+                executedTools={executedTools}
+                isPlanConclusion={isPlanConclusion}
+              />
+            </div>
+
+            <MemoryFooterBubble
+              isMemorySaved={isMemorySaved}
+              isMemoryUpdated={isMemoryUpdated}
+              isMemoryDeleted={isMemoryDeleted}
             />
           </div>
-
-          <MemoryFooterBubble
-            isMemorySaved={isMemorySaved}
-            isMemoryUpdated={isMemoryUpdated}
-            isMemoryDeleted={isMemoryDeleted}
-          />
-        </div>
+        )
       ) : (
         <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
           {/* Header & Actions */}
@@ -312,7 +331,17 @@ const ChatList = ({
 
           {/* Document Content Flow */}
           <div className="w-full text-base-content leading-relaxed">
-            {(isThinking && !content) || isSummarizing || isSearchingMusic ? (
+            {(isThinking &&
+              (!content ||
+                content.startsWith('Mengeksekusi') ||
+                content.startsWith('Sedang') ||
+                content.startsWith('Memproses') ||
+                content.startsWith('Mengakses') ||
+                content.startsWith('Menganalisis') ||
+                content.startsWith('(Sedang berbicara)') ||
+                content === 'Mark sedang menganalisis & mengeksekusi...')) ||
+            isSummarizing ||
+            isSearchingMusic ? (
               <ThinkingBubble
                 isThinking={isThinking}
                 isSummarizing={isSummarizing}
