@@ -326,6 +326,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   const handleCreateNewChat = async () => {
     try {
+      window.api?.resetAiSession?.().catch(() => {})
       const newSession = await createSession('Percakapan Baru', [])
       await loadAllSessions()
       setActiveSessionId(newSession.id)

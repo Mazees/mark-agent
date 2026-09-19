@@ -26,13 +26,15 @@ const BASE_HOST = 'chat.deepseek.com'
 
 let wasmInstanceCache = null
 const activeSessionCache = new Map()
+const utilitySessionCache = new Map()
+const sessionStateMap = new Map() // sessionId -> { lastMessageId, turnCount, createdAt, lastUsedAt }
 let lastUsedToken = null
 
 function ensureTokenSession(token) {
   // Jika token berubah, clear session cache lama
   if (lastUsedToken !== token) {
     if (lastUsedToken) {
-      activeSessionCache.delete(lastUsedToken)
+      clearDeepSeekSession(lastUsedToken)
     }
     lastUsedToken = token
   }
@@ -40,10 +42,24 @@ function ensureTokenSession(token) {
 
 export function clearDeepSeekSession(token = null) {
   if (token) {
+    const sId = activeSessionCache.get(token)
+    if (sId) sessionStateMap.delete(sId)
     activeSessionCache.delete(token)
+    const uId = utilitySessionCache.get(token)
+    if (uId) sessionStateMap.delete(uId)
+    utilitySessionCache.delete(token)
   } else {
     activeSessionCache.clear()
+    utilitySessionCache.clear()
+    sessionStateMap.clear()
   }
+}
+
+export function getSessionState(token, isSmallTask = false) {
+  const cache = isSmallTask ? utilitySessionCache : activeSessionCache
+  const sessionId = cache.get(token)
+  if (!sessionId) return null
+  return sessionStateMap.get(sessionId) || null
 }
 
 /**
@@ -188,11 +204,18 @@ function getBaseHeaders(token, userAgent = null) {
   return {
     authorization: `Bearer ${token}`,
     accept: '*/*',
+    'accept-language': 'en-US,en;q=0.9,id;q=0.8',
     'user-agent':
       userAgent ||
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
     origin: `https://${BASE_HOST}`,
     referer: `https://${BASE_HOST}/`,
+    'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
     'x-app-version': '2.0.2',
     'x-client-version': '2.0.2',
     'x-client-platform': 'web',
@@ -460,14 +483,56 @@ async function _executeSingleDeepSeekCall(
   // Auto-clear session cache jika token berubah
   ensureTokenSession(token)
 
-  const { parentMessageId = null, onDelta = null, wasmBuffer = null, refFileIds = [] } = options
+  const isSmallTask = !!options.isSmallTask
+  const targetCache = isSmallTask ? utilitySessionCache : activeSessionCache
+
+  let sessionId = options.sessionId || targetCache.get(token)
+  let sessionState = sessionId ? sessionStateMap.get(sessionId) : null
+
+  const now = Date.now()
+  const MAX_TURNS_PER_SESSION = 20
+  const MAX_IDLE_MS = 2 * 60 * 60 * 1000 // 2 jam
+
+  // Rotasi otomatis jika melebihi batas turn atau idle > 2 jam
+  if (
+    !options.sessionId &&
+    sessionId &&
+    sessionState &&
+    (sessionState.turnCount >= MAX_TURNS_PER_SESSION || now - sessionState.lastUsedAt > MAX_IDLE_MS)
+  ) {
+    console.log(
+      `[DeepSeek-Web] Merotasi sesi ${isSmallTask ? '(utility)' : '(utama)'} (turnCount: ${sessionState.turnCount}). Membuat chat session baru...`
+    )
+    targetCache.delete(token)
+    sessionStateMap.delete(sessionId)
+    sessionId = null
+    sessionState = null
+  }
 
   // Buat session baru jika tidak ada
-  let sessionId = options.sessionId || activeSessionCache.get(token)
   if (!sessionId) {
     sessionId = await createChatSession(token)
-    activeSessionCache.set(token, sessionId)
+    targetCache.set(token, sessionId)
+    sessionState = { lastMessageId: null, turnCount: 0, createdAt: now, lastUsedAt: now }
+    sessionStateMap.set(sessionId, sessionState)
+  } else if (!sessionState) {
+    sessionState = { lastMessageId: null, turnCount: 0, createdAt: now, lastUsedAt: now }
+    sessionStateMap.set(sessionId, sessionState)
   }
+
+  // Tentukan parentMessageId: prioritaskan options, jika undefined ambil dari state chaining
+  let parentMessageId = null
+  if (options.parentMessageId !== undefined) {
+    parentMessageId = options.parentMessageId
+  } else if (sessionState?.lastMessageId) {
+    parentMessageId = sessionState.lastMessageId
+  }
+
+  const { onDelta = null, wasmBuffer = null, refFileIds = [] } = options
+
+  // Jeda acak manusiawi (jitter delay 350-800ms) untuk menghindari deteksi burst
+  const jitterMs = Math.floor(Math.random() * (800 - 350 + 1)) + 350
+  await new Promise((resolve) => setTimeout(resolve, jitterMs))
 
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
   let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
@@ -536,6 +601,7 @@ async function _executeSingleDeepSeekCall(
       let reasoningContent = ''
       let activePath = null
       let lastReceivedPayload = ''
+      let responseMessageId = null
 
       const processLine = (line) => {
         const trimmed = line.trim()
@@ -554,12 +620,28 @@ async function _executeSingleDeepSeekCall(
         try {
           const obj = JSON.parse(payload)
 
+          // Tangkap message_id respon assistant
+          if (obj.v?.response?.message_id) {
+            responseMessageId = obj.v.response.message_id
+          }
+
+          // Abaikan frame status seperti response/status: "FINISHED" atau "WIP"
+          if (
+            obj.p === 'response/status' ||
+            obj.p?.includes('status') ||
+            obj.v === 'FINISHED' ||
+            obj.v === 'WIP'
+          ) {
+            return
+          }
+
           // 0. Deteksi error resmi dari server DeepSeek
           if (obj.click_behavior !== undefined || obj.auto_resume !== undefined) {
             // Jika sudah ada content, ini bukan error - akhir stream normal
             if (fullContent) return
             // Content kosong + click_behavior = session expired
-            activeSessionCache.delete(token)
+            targetCache.delete(token)
+            if (sessionId) sessionStateMap.delete(sessionId)
             reject(
               new Error(
                 'DeepSeek Web session expired atau tidak valid. Session di-clear, silakan coba lagi.'
@@ -574,7 +656,8 @@ async function _executeSingleDeepSeekCall(
               errMsg.toLowerCase().includes('too many') ||
               errMsg.toLowerCase().includes('terlalu sering')
             if (!isFrequent) {
-              activeSessionCache.delete(token)
+              targetCache.delete(token)
+              if (sessionId) sessionStateMap.delete(sessionId)
             }
             reject(new Error(`DeepSeek Server Error (${obj.code}): ${errMsg}`))
             return
@@ -589,7 +672,8 @@ async function _executeSingleDeepSeekCall(
               errMsg.toLowerCase().includes('too many') ||
               errMsg.toLowerCase().includes('terlalu sering')
             if (!isFrequent) {
-              activeSessionCache.delete(token)
+              targetCache.delete(token)
+              if (sessionId) sessionStateMap.delete(sessionId)
             }
             reject(
               new Error(
@@ -685,6 +769,11 @@ async function _executeSingleDeepSeekCall(
           processLine(buffer.trim())
         }
 
+        // Sanitasi trailing status jika ada yang lolos
+        if (fullContent) {
+          fullContent = fullContent.replace(/\s*(?:FINISHED|FINISH|DONE)\b.*$/i, '').trim()
+        }
+
         // Fallback: Jika content kosong tapi thinking terisi, gunakan thinking sebagai jawaban
         if (!fullContent && reasoningContent) {
           fullContent = reasoningContent
@@ -705,10 +794,22 @@ async function _executeSingleDeepSeekCall(
           )
           return
         }
+
+        // Simpan progress chaining sesi jika berhasil
+        if (sessionId && sessionStateMap.has(sessionId)) {
+          const state = sessionStateMap.get(sessionId)
+          if (responseMessageId) {
+            state.lastMessageId = responseMessageId
+          }
+          state.turnCount = (state.turnCount || 0) + 1
+          state.lastUsedAt = Date.now()
+        }
+
         resolve({
           text: fullContent,
           thinking: reasoningContent || null,
-          sessionId: sessionId
+          sessionId: sessionId,
+          messageId: responseMessageId || null
         })
       })
     })
@@ -766,6 +867,7 @@ export async function generateDeepSeekResponse(
         // Setiap 5 kali kegagalan berulang, reset session cache agar membuat session baru
         if (attempt % 5 === 0) {
           activeSessionCache.delete(token)
+          utilitySessionCache.delete(token)
         }
 
         console.warn(

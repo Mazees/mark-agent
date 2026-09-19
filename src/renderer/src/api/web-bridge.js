@@ -146,6 +146,15 @@ export const webApi = {
     return json
   },
 
+  resetAiSession: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/reset-session`, { method: 'POST' })
+      return await res.json()
+    } catch {
+      return { success: false }
+    }
+  },
+
   onAiToken: (callback) => {
     addWebListener('ai:token', callback)
     return () => removeWebListener('ai:token', callback)

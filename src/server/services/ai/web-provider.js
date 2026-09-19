@@ -2,7 +2,12 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { generateGeminiResponse } from '../gemini-web.js'
-import { generateDeepSeekResponse, uploadImageFile, waitForFileReady } from '../deepseek-web.js'
+import {
+  generateDeepSeekResponse,
+  uploadImageFile,
+  waitForFileReady,
+  getSessionState
+} from '../deepseek-web.js'
 import {
   cleanAndParse,
   checkCloudThrottle,
@@ -221,11 +226,38 @@ ${toolSections.join('\n\n')}
   }
 
   // 3. Susun Full Prompt Tunggal
+  // Untuk DeepSeek Web yang sudah memiliki sesi bersambung (chained session aktif),
+  // hanya kirim turn pesan aktif terbaru (setelah pesan assistant terakhir).
+  // Untuk turn pertama sesi atau Gemini, kirim semua pesan (full context).
+  const userToken =
+    conf.deepseekUserToken?.trim() ||
+    getActiveConfig()?.deepseekUserToken?.trim() ||
+    loadConfig()?.deepseekUserToken?.trim() ||
+    ''
+
+  const isDeepSeekActiveSession =
+    !isGemini && !!userToken && !!getSessionState(userToken, isSmallTask)?.lastMessageId
+
+  let messagesToPrompt = workMessages
+  if (isDeepSeekActiveSession) {
+    let lastAssistantIdx = -1
+    for (let i = workMessages.length - 1; i >= 0; i--) {
+      const role = (workMessages[i]?.role || '').toLowerCase()
+      if (role === 'assistant' || role === 'ai' || role === 'model') {
+        lastAssistantIdx = i
+        break
+      }
+    }
+    if (lastAssistantIdx >= 0 && lastAssistantIdx < workMessages.length - 1) {
+      messagesToPrompt = workMessages.slice(lastAssistantIdx + 1)
+    }
+  }
+
   let fullPrompt = isGemini
     ? '[CRITICAL INSTRUCTION: DO NOT USE GOOGLE SEARCH. DO NOT USE ANY EXTENSIONS. ANSWER IMMEDIATELY FROM YOUR KNOWLEDGE BASE TO SAVE TIME.]\n\n'
     : ''
 
-  for (const m of workMessages) {
+  for (const m of messagesToPrompt) {
     let roleName = (m.role || 'user').toUpperCase()
     if (roleName === 'TOOL') {
       roleName = 'OBSERVASI SISTEM (HASIL TOOL)'
@@ -337,6 +369,7 @@ ${toolSections.join('\n\n')}
 
     const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken, {
       refFileIds,
+      isSmallTask,
       onDelta: (payload) => {
         if (!stream) return
         if (payload?.type === 'thinking' && payload.delta) {

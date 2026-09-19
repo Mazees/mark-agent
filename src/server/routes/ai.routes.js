@@ -103,6 +103,16 @@ aiRouter.post('/ai/abort', async (req, res) => {
   }
 })
 
+aiRouter.post('/ai/reset-session', async (req, res) => {
+  try {
+    const { clearDeepSeekSession } = await import('../services/deepseek-web.js')
+    clearDeepSeekSession()
+    res.json({ success: true })
+  } catch (err) {
+    res.json({ success: false, error: err.message })
+  }
+})
+
 // 3. Group Tools Schema & Registry API
 aiRouter.get('/tools/groups', (_req, res) => {
   res.json({
