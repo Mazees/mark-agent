@@ -36,13 +36,25 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     bgOverlayOpacity: 65
   })
   const [videoDevices, setVideoDevices] = useState([])
+  const [loading, setLoading] = useState(true)
   const [isDownloadingModel, setIsDownloadingModel] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(0)
   const { ModalComponent } = useConfirm()
   const chatContext = useChat()
 
   useEffect(() => {
-    loadConfig()
+    let isMounted = true
+    const init = async () => {
+      try {
+        setLoading(true)
+        await loadConfig()
+      } catch (err) {
+        console.error('Error loading config:', err)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+    init()
 
     navigator.mediaDevices
       .getUserMedia({ video: true })
@@ -51,7 +63,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
           .enumerateDevices()
           .then((devices) => {
             const cameras = devices.filter((d) => d.kind === 'videoinput')
-            setVideoDevices(cameras)
+            if (isMounted) setVideoDevices(cameras)
           })
           .catch((err) => console.error('Error enumerating devices', err))
 
@@ -59,6 +71,10 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
         stream.getTracks().forEach((track) => track.stop())
       })
       .catch((err) => console.error('Cam permission denied', err))
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   useEffect(() => {
@@ -273,55 +289,66 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
             </div>
           </div>
 
-          {/* 1. AI Engine & Tools */}
-          <AiEngineSection config={config} setConfig={setConfig} />
+          {loading ? (
+            <div className="flex-1 min-h-[50vh] flex flex-col items-center justify-center gap-3">
+              <span className="loading loading-spinner loading-lg text-primary" />
+              <p className="font-mono text-xs text-base-content/50 tracking-widest uppercase">
+                Memuat Pengaturan Mark...
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* 1. AI Engine & Tools */}
+              <AiEngineSection config={config} setConfig={setConfig} />
 
-          <div className="divider"></div>
+              <div className="divider"></div>
 
-          {/* 2. Camera Settings */}
-          <CameraSection config={config} setConfig={setConfig} videoDevices={videoDevices} />
+              {/* 2. Camera Settings */}
+              <CameraSection config={config} setConfig={setConfig} videoDevices={videoDevices} />
 
-          {/* 3. Global Shortcut Settings */}
-          <ShortcutSection config={config} setConfig={setConfig} />
+              {/* 3. Global Shortcut Settings */}
+              <ShortcutSection config={config} setConfig={setConfig} />
 
-          <div className="divider"></div>
+              <div className="divider"></div>
 
-          {/* 4. Voice & Wake Word Settings */}
-          <VoiceSection config={config} setConfig={setConfig} />
+              {/* 4. Voice & Wake Word Settings */}
+              <VoiceSection config={config} setConfig={setConfig} />
 
-          <div className="divider"></div>
+              <div className="divider"></div>
 
-          {/* 6. Security & Whitelist Permissions */}
-          <PermissionsSection />
+              {/* 6. Security & Whitelist Permissions */}
+              <PermissionsSection />
 
-          {/* 7. Save Bar */}
-          <div className="flex flex-col items-end pt-2">
-            {isDownloadingModel && (
-              <div className="w-full max-w-xs mb-4">
-                <div className="flex justify-between text-xs mb-1">
-                  <span>Mengunduh Model Embeddings...</span>
-                  <span>{downloadProgress}%</span>
-                </div>
-                <progress
-                  className="progress progress-primary w-full"
-                  value={downloadProgress}
-                  max="100"
-                ></progress>
+              {/* 7. Save Bar */}
+              <div className="flex flex-col items-end pt-2">
+                {isDownloadingModel && (
+                  <div className="w-full max-w-xs mb-4">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>Mengunduh Model Embeddings...</span>
+                      <span>{downloadProgress}%</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={downloadProgress}
+                      max="100"
+                    ></progress>
+                  </div>
+                )}
+                <button
+                  id="tour-save-btn"
+                  onClick={handleSaveConfiguration}
+                  disabled={isDownloadingModel}
+                  className="btn btn-primary px-8 cursor-pointer"
+                >
+                  {isDownloadingModel
+                    ? 'Menyimpan...'
+                    : isFirstSetup
+                      ? 'Simpan & Mulai Gunakan Mark'
+                      : 'Simpan Pengaturan'}
+                </button>
               </div>
-            )}
-            <button
-              id="tour-save-btn"
-              onClick={handleSaveConfiguration}
-              disabled={isDownloadingModel}
-              className="btn btn-primary px-8 cursor-pointer"
-            >
-              {isDownloadingModel
-                ? 'Menyimpan...'
-                : isFirstSetup
-                  ? 'Simpan & Mulai Gunakan Mark'
-                  : 'Simpan Pengaturan'}
-            </button>
-          </div>
+            </>
+          )}
         </div>
 
         <ModalComponent />
