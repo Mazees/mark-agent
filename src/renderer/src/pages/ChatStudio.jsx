@@ -737,7 +737,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
           >
-            <div className="max-w-6xl mx-auto w-full flex flex-col space-y-8">
+            <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col space-y-8">
               {currentDisplayMessages.length > visibleMessageCount && (
                 <div className="flex justify-center py-2">
                   <button
@@ -833,7 +833,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
           {/* Bottom Input Area */}
           <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
-            <div className="max-w-6xl mx-auto w-full">
+            <div className="max-w-6xl mx-auto w-full h-full">
               <InputBar
                 sessionId={String(activeSessionId)}
                 inline={true}
