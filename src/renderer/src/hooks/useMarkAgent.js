@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useApproval } from '../contexts/ApprovalContext'
-import { fetchAI } from '../api/ai/core'
 import { saveSession, getChatData, saveMainThread, getMainThread } from '../api/db'
 import { useMarkState, useMarkYoutube, useMarkMusic, useMarkPlan } from './agent'
 import { useAwareness } from './useAwareness'
@@ -20,13 +19,10 @@ export const useMarkAgent = () => {
     setChatData,
     clearChat,
     config,
-    setConfig,
     message,
     setMessage,
     isLoading,
-    setIsLoading,
     isAgentBusy,
-    setIsAgentBusy,
     runningSessionId,
     setRunningSessionId,
     runningSessionIds,
@@ -50,9 +46,7 @@ export const useMarkAgent = () => {
     inputSource,
     setInputSource,
     activeTopic,
-    setActiveTopic,
     currentActiveSessionId,
-    setCurrentActiveSessionId,
     isChatLoaded,
     isBooting,
     setIsBooting
@@ -105,7 +99,7 @@ export const useMarkAgent = () => {
     currentMusicTrack: youtubeMusicTools.isPlaying ? youtubeMusicTools.currentTrack : null
   })
 
-  useRelationalGrowth({ chatData })
+  useRelationalGrowth({ chatData, currentActiveSessionId, isLoading })
 
   useChatArchiver({ chatData, activeTopic, config, pushNotification, isLoading })
 
