@@ -737,7 +737,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
           >
-            <div className="max-w-6xl h-full mx-auto w-full flex flex-col space-y-8">
+            <div className="max-w-6xl mx-auto w-full flex flex-col space-y-8">
               {currentDisplayMessages.length > visibleMessageCount && (
                 <div className="flex justify-center py-2">
                   <button

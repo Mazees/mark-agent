@@ -1,5 +1,8 @@
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
 import { generateGeminiResponse } from '../gemini-web.js'
-import { generateDeepSeekResponse } from '../deepseek-web.js'
+import { generateDeepSeekResponse, uploadImageFile, waitForFileReady } from '../deepseek-web.js'
 import {
   cleanAndParse,
   checkCloudThrottle,
@@ -9,6 +12,90 @@ import {
 import { getActiveConfig, loadConfig } from '../../config-manager.js'
 import { GROUP_TOOLS_SCHEMA } from '../../tools/group-tools.js'
 import { loadAllPlugins } from '../../../main/plugins/plugin-loader.js'
+
+/**
+ * Ekstraksi path / data URL berkas gambar dari array pesan chat (hanya turn aktif terbaru)
+ */
+function extractImageSources(messages) {
+  const sources = []
+  if (!Array.isArray(messages) || messages.length === 0) return sources
+
+  // Hanya periksa turn aktif terbaru (setelah pesan assistant terakhir).
+  // Mencegah gambar dari riwayat masa lalu di-upload ulang saat greeting atau pesan follow-up.
+  let lastAssistantIdx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const role = (messages[i]?.role || '').toLowerCase()
+    if (role === 'assistant' || role === 'ai' || role === 'model') {
+      lastAssistantIdx = i
+      break
+    }
+  }
+
+  const activeTurnMessages = messages.slice(lastAssistantIdx + 1)
+  if (activeTurnMessages.length === 0) return sources
+
+  const resolvePath = (val) => {
+    if (!val || typeof val !== 'string') return null
+    const trimmed = val.trim().replace(/^['"]|['"]$/g, '')
+    if (trimmed.startsWith('data:image/')) return trimmed
+    if (trimmed.startsWith('/api/chat/temp-file/')) {
+      const fn = decodeURIComponent(trimmed.replace('/api/chat/temp-file/', ''))
+      return path.join(os.homedir(), '.config', 'mark-agent', 'temp-uploads', fn)
+    }
+    if (fs.existsSync(trimmed)) return trimmed
+    if (trimmed.includes('temp-uploads')) {
+      const fn = path.basename(trimmed)
+      const testPath = path.join(os.homedir(), '.config', 'mark-agent', 'temp-uploads', fn)
+      if (fs.existsSync(testPath)) return testPath
+    }
+    return null
+  }
+
+  for (const m of activeTurnMessages) {
+    if (!m) continue
+    if (typeof m.content === 'string') {
+      if (m.content.includes('[FILE TERLAMPIR]:')) {
+        const afterTag = m.content.split(/\[FILE TERLAMPIR\]:/i)[1] || ''
+        const line = afterTag.split('\n')[0]
+        const matches = line.match(/"([^"]+)"/g)
+        if (matches) {
+          for (const raw of matches) {
+            const resolved = resolvePath(raw)
+            if (resolved) sources.push(resolved)
+          }
+        }
+      }
+      const mdRegex = /!\[.*?\]\(([^)]+)\)/gi
+      let mdMatch
+      while ((mdMatch = mdRegex.exec(m.content)) !== null) {
+        const resolved = resolvePath(mdMatch[1])
+        if (resolved) sources.push(resolved)
+      }
+    } else if (Array.isArray(m.content)) {
+      for (const item of m.content) {
+        if (!item) continue
+        if (typeof item === 'string') {
+          const resolved = resolvePath(item)
+          if (resolved) sources.push(resolved)
+        } else if (item.type === 'image_url') {
+          const url =
+            item.image_url?.url ||
+            item.url ||
+            (typeof item.image_url === 'string' ? item.image_url : null)
+          const resolved = resolvePath(url)
+          if (resolved) sources.push(resolved)
+        } else if (item.image_url || item.url) {
+          const url = item.image_url?.url || item.image_url || item.url
+          if (typeof url === 'string') {
+            const resolved = resolvePath(url)
+            if (resolved) sources.push(resolved)
+          }
+        }
+      }
+    }
+  }
+  return [...new Set(sources)]
+}
 
 export async function executeWebProvider({
   messages,
@@ -217,7 +304,39 @@ ${toolSections.join('\n\n')}
       getActiveConfig()?.deepseekWebModel ||
       loadConfig()?.deepseekWebModel ||
       'deepseek-chat'
+
+    // Pemrosesan berkas gambar untuk Vision jika ada lampiran
+    const refFileIds = []
+    const detectedImages = extractImageSources(workMessages)
+    if (detectedImages.length > 0) {
+      for (let idx = 0; idx < detectedImages.length; idx++) {
+        const imgSrc = detectedImages[idx]
+        try {
+          if (typeof onStatus === 'function') {
+            onStatus(`Mengupload gambar (${idx + 1}/${detectedImages.length}) ke DeepSeek...`)
+          }
+          const { fileId } = await uploadImageFile(userToken, imgSrc)
+          if (typeof onStatus === 'function') {
+            onStatus(
+              `Menunggu DeepSeek selesai memproses gambar (${idx + 1}/${detectedImages.length})...`
+            )
+          }
+          await waitForFileReady(userToken, fileId)
+          refFileIds.push(fileId)
+        } catch (imgErr) {
+          console.warn(
+            '[web-provider] Gagal mengunggah gambar ke DeepSeek:',
+            imgErr?.message || imgErr
+          )
+          if (typeof onStatus === 'function') {
+            onStatus(`Peringatan unggah gambar: ${imgErr?.message || imgErr}`)
+          }
+        }
+      }
+    }
+
     const dsRes = await generateDeepSeekResponse(fullPrompt, modelName, userToken, {
+      refFileIds,
       onDelta: (payload) => {
         if (!stream) return
         if (payload?.type === 'thinking' && payload.delta) {

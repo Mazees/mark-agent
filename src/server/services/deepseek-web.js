@@ -6,6 +6,7 @@ import https from 'https'
 import fs from 'fs'
 import path from 'path'
 import zlib from 'zlib'
+import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -148,6 +149,39 @@ function httpPostJson(path, headers, bodyObj) {
 }
 
 /**
+ * Utility HTTP GET JSON request
+ */
+function httpGetJson(path, headers) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: BASE_HOST,
+      port: 443,
+      path: path,
+      method: 'GET',
+      headers: {
+        ...headers
+      }
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', (chunk) => (data += chunk.toString()))
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data)
+          resolve(json)
+        } catch {
+          resolve(data)
+        }
+      })
+    })
+
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+/**
  * Header standar untuk menyerupai peramban web asli
  */
 function getBaseHeaders(token, userAgent = null) {
@@ -159,8 +193,8 @@ function getBaseHeaders(token, userAgent = null) {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
     origin: `https://${BASE_HOST}`,
     referer: `https://${BASE_HOST}/`,
-    'x-app-version': '2.0.0',
-    'x-client-version': '2.0.0',
+    'x-app-version': '2.0.2',
+    'x-client-version': '2.0.2',
     'x-client-platform': 'web',
     'x-client-locale': 'en_US',
     'x-client-bundle-id': 'com.deepseek.chat'
@@ -177,6 +211,201 @@ function unwrapBizData(resJson) {
   const biz = resJson.data?.biz_data
   if (!biz) throw new Error(`Envelope biz_data tidak ditemukan: ${JSON.stringify(resJson)}`)
   return biz
+}
+
+/**
+ * Utility HTTP POST multipart/form-data untuk upload berkas mentah.
+ */
+function httpPostMultipart(reqPath, headers, fields, fileField) {
+  return new Promise((resolve, reject) => {
+    const boundary = '----MarkAgentBoundary' + crypto.randomBytes(16).toString('hex')
+    const CRLF = '\r\n'
+    const chunks = []
+
+    for (const [key, value] of Object.entries(fields || {})) {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}${CRLF}` +
+            `Content-Disposition: form-data; name="${key}"${CRLF}${CRLF}` +
+            `${value}${CRLF}`
+        )
+      )
+    }
+
+    chunks.push(
+      Buffer.from(
+        `--${boundary}${CRLF}` +
+          `Content-Disposition: form-data; name="${fileField.fieldName}"; filename="${fileField.filename}"${CRLF}` +
+          `Content-Type: ${fileField.mimeType}${CRLF}${CRLF}`
+      )
+    )
+    chunks.push(fileField.buffer)
+    chunks.push(Buffer.from(CRLF))
+    chunks.push(Buffer.from(`--${boundary}--${CRLF}`))
+
+    const body = Buffer.concat(chunks)
+
+    const options = {
+      hostname: BASE_HOST,
+      port: 443,
+      path: reqPath,
+      method: 'POST',
+      headers: {
+        ...headers,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'content-length': body.length
+      }
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', (chunk) => (data += chunk.toString()))
+      res.on('end', () => {
+        try {
+          resolve({ statusCode: res.statusCode, json: JSON.parse(data) })
+        } catch {
+          resolve({ statusCode: res.statusCode, json: null, raw: data })
+        }
+      })
+    })
+
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+/**
+ * Upload gambar mentah ke DeepSeek Web RPC.
+ * Mendukung Buffer, Base64 data URL, atau path file lokal.
+ */
+export async function uploadImageFile(token, imagePathOrBuffer, filename = 'image.png') {
+  let buffer
+  if (Buffer.isBuffer(imagePathOrBuffer)) {
+    buffer = imagePathOrBuffer
+  } else if (typeof imagePathOrBuffer === 'string') {
+    if (imagePathOrBuffer.startsWith('data:')) {
+      const commaIdx = imagePathOrBuffer.indexOf(',')
+      const headerPart = imagePathOrBuffer.slice(0, commaIdx)
+      const base64Data = imagePathOrBuffer.slice(commaIdx + 1)
+      buffer = Buffer.from(base64Data, 'base64')
+      const matchMime = headerPart.match(/data:([^;]+)/)
+      if (matchMime) {
+        const ext = matchMime[1].split('/')[1] || 'png'
+        filename = `upload_${Date.now()}.${ext}`
+      }
+    } else {
+      buffer = fs.readFileSync(imagePathOrBuffer)
+      filename = path.basename(imagePathOrBuffer)
+    }
+  } else {
+    throw new Error(
+      'Format berkas gambar tidak valid (harus Buffer, Base64 data URL, atau file path).'
+    )
+  }
+
+  const ext = path.extname(filename).toLowerCase()
+  const mimeMap = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif'
+  }
+  const mimeType = mimeMap[ext] || 'image/png'
+  const powHeader = await generatePowHeader(token, '/api/v0/file/upload_file')
+  const headers = {
+    ...getBaseHeaders(token),
+    'x-ds-pow-response': powHeader
+  }
+
+  const { statusCode, json, raw } = await httpPostMultipart(
+    '/api/v0/file/upload_file',
+    headers,
+    {},
+    { fieldName: 'file', filename, mimeType, buffer }
+  )
+
+  if (statusCode !== 200 || !json || json.code !== 0) {
+    throw new Error(
+      `Upload gambar ke DeepSeek gagal (${statusCode}): ${JSON.stringify(json || raw)}`
+    )
+  }
+
+  const biz = unwrapBizData(json)
+  const fileId = biz.file_id || biz.id || biz.file?.id
+  if (!fileId) {
+    throw new Error(`Tidak menemukan file_id pada respon upload: ${JSON.stringify(biz)}`)
+  }
+  return { fileId, raw: biz }
+}
+
+/**
+ * Fork file ke target task 'vision' jika diperlukan oleh DeepSeek.
+ * Menggunakan fallback ke file_id awal bila endpoint fork gagal/tidak dibutuhkan.
+ */
+export async function forkFileToVision(token, fileId) {
+  const headers = getBaseHeaders(token)
+  try {
+    const res = await httpPostJson('/api/v0/file/fork_file_task', headers, {
+      file_id: fileId,
+      target_type: 'vision'
+    })
+    if (res?.code === 0 && res.data?.biz_data) {
+      const biz = res.data.biz_data
+      return biz.file_id || biz.id || fileId
+    }
+    return fileId
+  } catch (err) {
+    console.warn('[DeepSeek-Web] forkFileToVision fallback ke fileId awal:', err?.message || err)
+    return fileId
+  }
+}
+
+/**
+ * Polling status parsing/readiness file di DeepSeek Web via /api/v0/file/fetch_files.
+ */
+export async function waitForFileReady(
+  token,
+  fileId,
+  { maxAttempts = 30, intervalMs = 1000, settleMs = 1200 } = {}
+) {
+  const headers = getBaseHeaders(token)
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await httpGetJson(
+        `/api/v0/file/fetch_files?file_ids=${encodeURIComponent(fileId)}`,
+        headers
+      )
+      const biz = res?.data?.biz_data
+      let file = null
+      if (Array.isArray(biz)) {
+        file = biz.find((f) => f.id === fileId || f.file_id === fileId) || biz[0]
+      } else if (Array.isArray(biz?.files)) {
+        file = biz.files.find((f) => f.id === fileId || f.file_id === fileId) || biz.files[0]
+      } else {
+        file = biz
+      }
+
+      const status = String(file?.status || '').toUpperCase()
+      if (['SUCCESS', 'READY', 'DONE', 'COMPLETED', 'FINISHED', 'OK'].includes(status)) {
+        if (settleMs > 0) {
+          await new Promise((r) => setTimeout(r, settleMs))
+        }
+        return file
+      }
+
+      if (['FAILED', 'ERROR', 'REJECTED', 'CONTENT_EMPTY'].includes(status)) {
+        throw new Error(`Pemrosesan berkas DeepSeek gagal (status: ${status})`)
+      }
+    } catch (err) {
+      if (err.message?.includes('Pemrosesan berkas DeepSeek gagal')) {
+        throw err
+      }
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  return { id: fileId, status: 'ready_assumed' }
 }
 
 /**
@@ -231,7 +460,7 @@ async function _executeSingleDeepSeekCall(
   // Auto-clear session cache jika token berubah
   ensureTokenSession(token)
 
-  const { parentMessageId = null, onDelta = null, wasmBuffer = null } = options
+  const { parentMessageId = null, onDelta = null, wasmBuffer = null, refFileIds = [] } = options
 
   // Buat session baru jika tidak ada
   let sessionId = options.sessionId || activeSessionCache.get(token)
@@ -248,7 +477,7 @@ async function _executeSingleDeepSeekCall(
     chat_session_id: sessionId,
     parent_message_id: parentMessageId,
     prompt: prompt,
-    ref_file_ids: [],
+    ref_file_ids: Array.isArray(refFileIds) ? refFileIds : [],
     thinking_enabled: selected.thinking,
     search_enabled: selected.search,
     action: null,
@@ -521,6 +750,7 @@ export async function generateDeepSeekResponse(
       const isRetryable =
         errMsg.toLowerCase().includes('session expired') ||
         errMsg.toLowerCase().includes('tidak valid') ||
+        errMsg.toLowerCase().includes('invalid ref file id') ||
         errMsg.toLowerCase().includes('frequent') ||
         errMsg.toLowerCase().includes('too many') ||
         errMsg.toLowerCase().includes('terlalu sering') ||
@@ -552,4 +782,41 @@ export async function generateDeepSeekResponse(
       throw err
     }
   }
+}
+
+/**
+ * Fungsi tingkat tinggi Vision: upload gambar -> wait ready -> generate respons chat DeepSeek.
+ *
+ * @param {string} prompt - Pertanyaan tentang gambar
+ * @param {string|Buffer} imagePathOrBuffer - Path file gambar atau Buffer
+ * @param {string} token - DeepSeek Bearer token
+ * @param {object} options - Opsi tambahan (filename, modelName, onDelta, onStatus, dll)
+ */
+export async function generateDeepSeekVisionResponse(
+  prompt,
+  imagePathOrBuffer,
+  token,
+  options = {}
+) {
+  if (!token) {
+    throw new Error('DeepSeek User Token (Bearer) dibutuhkan.')
+  }
+
+  if (typeof options.onStatus === 'function') {
+    options.onStatus('Mengupload gambar ke DeepSeek...')
+  }
+  const { fileId } = await uploadImageFile(token, imagePathOrBuffer, options.filename)
+
+  if (typeof options.onStatus === 'function') {
+    options.onStatus('Menunggu DeepSeek selesai memproses gambar...')
+  }
+  await waitForFileReady(token, fileId)
+
+  const modelName = options.modelName || 'deepseek-chat'
+  const existingRefs = Array.isArray(options.refFileIds) ? options.refFileIds : []
+
+  return generateDeepSeekResponse(prompt, modelName, token, {
+    ...options,
+    refFileIds: [...new Set([...existingRefs, fileId])]
+  })
 }

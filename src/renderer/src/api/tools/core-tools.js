@@ -176,7 +176,7 @@ export const core_tools_schema = [
     function: {
       name: 'read-image',
       description:
-        'Membaca berkas gambar lokal (.png, .jpg, .jpeg, .webp, .gif, dll.) dari workspace atau sistem operasi dan menganalisis tampilan visualnya menggunakan AI Vision.',
+        'Membaca berkas gambar lokal (.png, .jpg, .jpeg, .webp, .gif, dll.) dari workspace atau sistem operasi di luar chat. DILARANG menggunakan tool ini jika gambar sudah dilampirkan langsung di chat (temp-uploads), karena sudah terlihat langsung di visual context.',
       parameters: {
         type: 'object',
         properties: {
