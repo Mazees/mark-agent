@@ -259,6 +259,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     const commandOpts = {
       workspaceRoot: currentSession?.workspaceRoot,
       displayPrompt: rawDisplay,
+      attachedFiles: sendOptions?.attachedFiles,
       ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
     }
 

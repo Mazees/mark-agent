@@ -36,14 +36,36 @@ export function calculateMessageChars(msg) {
 
   // Konten teks & multimodal (normalisasi bobot gambar Base64)
   if (typeof msg.content === 'string') {
-    total += msg.content.length
+    if (msg.content.includes('data:image/')) {
+      const normalized = msg.content.replace(
+        /data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g,
+        ''
+      )
+      total += normalized.length + 2000
+    } else {
+      total += msg.content.length
+    }
   } else if (Array.isArray(msg.content)) {
     for (const part of msg.content) {
       if (!part) continue
       if (typeof part === 'string') {
-        total += part.length
+        if (part.includes('data:image/')) {
+          const normalized = part.replace(/data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g, '')
+          total += normalized.length + 2000
+        } else {
+          total += part.length
+        }
       } else if (part.type === 'text') {
-        total += (part.text || '').length
+        const textStr = part.text || ''
+        if (textStr.includes('data:image/')) {
+          const normalized = textStr.replace(
+            /data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g,
+            ''
+          )
+          total += normalized.length + 2000
+        } else {
+          total += textStr.length
+        }
       } else if (part.type === 'image_url' || part.image_url || part.type === 'image') {
         // Satu gambar pada LLM bernilai ~258 s/d 500 token (~1.000 - 2.000 karakter ekuivalen),
         // BUKAN ukuran string Base64 mentah ratusan ribu karakter.
@@ -64,9 +86,15 @@ export function calculateMessageChars(msg) {
   if (typeof msg.reasoning === 'string') total += msg.reasoning.length
   if (typeof msg.thought === 'string') total += msg.thought.length
 
-  // Tool calls & executed tools
+  // Tool calls & executed tools (abaikan preview dataUrl base64 karena hanya untuk rendering UI)
   if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
-    total += JSON.stringify(msg.executedTools).length
+    const sanitizedTools = msg.executedTools.map((t) => {
+      if (!t) return t
+      const copy = { ...t }
+      delete copy.preview
+      return copy
+    })
+    total += JSON.stringify(sanitizedTools).length
   }
   if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
     total += JSON.stringify(msg.tool_calls).length
@@ -181,13 +209,15 @@ export function pruneOldToolResultsInLoop(messages = [], protectLastN = 6) {
     // 2. Pesan dengan executedTools (Format historis chat MARK)
     if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
       msg.executedTools = msg.executedTools.map((t) => {
+        const next = { ...t }
         if (typeof t.fullResult === 'string' && t.fullResult.length > OLD_TOOL_PRUNE_CHAR_LIMIT) {
-          return {
-            ...t,
-            fullResult: t.resultSummary || CLEARED_TOOL_PLACEHOLDER
-          }
+          next.fullResult = t.resultSummary || CLEARED_TOOL_PLACEHOLDER
         }
-        return t
+        // Bersihkan data URL base64 preview dari pesan lama untuk menghemat RAM dan storage
+        if (typeof next.preview === 'string' && next.preview.startsWith('data:image/')) {
+          next.preview = null
+        }
+        return next
       })
     }
 
