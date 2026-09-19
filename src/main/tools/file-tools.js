@@ -745,7 +745,7 @@ export const fileTools = {
     handler: async (args, config) => {
       try {
         let targetDir = (
-          typeof args === 'object' && args !== null ? args.path : String(args || '')
+          typeof args === 'object' && args !== null ? (args.path || '') : String(args || '')
         ).trim()
         const activeRoot =
           config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')

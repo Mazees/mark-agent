@@ -58,15 +58,33 @@ tasksRouter.get('/tasks/steps/:id', (req, res) => {
 })
 
 tasksRouter.post('/tasks/steps', (req, res) => {
-  const item = req.body
-  const record = dbStore.agentTaskSteps.insert(item)
-  res.json({ success: true, data: record })
+  try {
+    const item = req.body || {}
+    if (item.taskId && !item.task_id) item.task_id = item.taskId
+    if (item.id) {
+      const existing = dbStore.agentTaskSteps.getById(item.id)
+      if (existing) {
+        const record = dbStore.agentTaskSteps.update(item.id, item)
+        return res.json({ success: true, data: record })
+      }
+    }
+    const record = dbStore.agentTaskSteps.insert(item)
+    res.json({ success: true, data: record })
+  } catch (err) {
+    res.status(500).json({ success: false, data: null, error: err.message })
+  }
 })
 
 tasksRouter.put('/tasks/steps/:id', (req, res) => {
-  const { id } = req.params
-  const record = dbStore.agentTaskSteps.update(id, req.body)
-  res.json({ success: true, data: record })
+  try {
+    const { id } = req.params
+    const item = req.body || {}
+    if (item.taskId && !item.task_id) item.task_id = item.taskId
+    const record = dbStore.agentTaskSteps.update(id, item)
+    res.json({ success: true, data: record })
+  } catch (err) {
+    res.status(500).json({ success: false, data: null, error: err.message })
+  }
 })
 
 tasksRouter.delete('/tasks/steps/:id', (req, res) => {
@@ -94,11 +112,31 @@ tasksRouter.get('/tasks/:id', (req, res) => {
 })
 
 tasksRouter.post('/tasks', (req, res) => {
-  const item = req.body
-  const record = dbStore.agentTasks.insert(item)
-  res.json({ success: true, data: record })
+  try {
+    const item = req.body || {}
+    if (item.id) {
+      const existing = dbStore.agentTasks.getById(item.id)
+      if (existing) {
+        const record = dbStore.agentTasks.update(item.id, item)
+        return res.json({ success: true, data: record })
+      }
+    }
+    const record = dbStore.agentTasks.insert(item)
+    res.json({ success: true, data: record })
+  } catch (err) {
+    res.status(500).json({ success: false, data: null, error: err.message })
+  }
 })
 
+tasksRouter.put('/tasks/:id', (req, res) => {
+  try {
+    const { id } = req.params
+    const record = dbStore.agentTasks.update(id, req.body)
+    res.json({ success: true, data: record })
+  } catch (err) {
+    res.status(500).json({ success: false, data: null, error: err.message })
+  }
+})
 tasksRouter.delete('/tasks/:id', (req, res) => {
   const { id } = req.params
   const allSteps = dbStore.agentTaskSteps.getAll()
