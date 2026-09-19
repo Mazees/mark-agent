@@ -4,6 +4,7 @@ import { getYoutubeSummary } from '../../api/ai/tools'
 import { fetchAI } from '../../api/ai/core'
 import { playVoice, speechQueue, getCurrentTimeInfo } from '../../api/ai/utils'
 import { executeAgentTool } from './executeAgentTool.js'
+import { webApi } from '../../api/web-bridge.js'
 import {
   deleteMemory,
   getAllMemory,
@@ -1288,6 +1289,34 @@ export const useMarkPlan = ({
       let savedTurnAiMsg = null
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
+
+      // Deteksi Tool Groups yang di-mention (@group_name) di input pengguna
+      if (typeof userInput === 'string' && userInput.includes('@')) {
+        try {
+          const groupToolsData = await webApi.getGroupTools()
+          const validGroupNames = new Set(
+            groupToolsData?.names || Object.keys(groupToolsData?.schema || {})
+          )
+          const mentionMatches = userInput.match(/@([a-zA-Z0-9_-]+)/g) || []
+          const taggedGroups = []
+          for (const rawMatch of mentionMatches) {
+            const groupName = rawMatch.slice(1).toLowerCase()
+            if (validGroupNames.has(groupName)) {
+              dynamicallyLoadedToolGroups.add(groupName)
+              taggedGroups.push(groupName)
+            }
+          }
+          if (taggedGroups.length > 0) {
+            loopMessages.push({
+              role: 'system',
+              content: `[TOOL GROUPS AKTIF VIA MENTION USER]: Pengguna secara eksplisit menandai kelompok tool berikut: ${taggedGroups.map((g) => `@${g}`).join(', ')}. Seluruh kapabilitas tool dalam kelompok ini telah dibuka dan aktif. Utamakan penggunaan tool ini untuk menyelesaikan instruksi pengguna.`
+            })
+          }
+        } catch (err) {
+          console.error('[useMarkPlan] Gagal memproses mention tool group:', err)
+        }
+      }
+
       let consecutiveErrors = 0
       const maxConsecutiveErrorRetries = 50
 

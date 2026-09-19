@@ -8,6 +8,7 @@ import { awarenessRouter } from './awareness.routes.js'
 import { tasksRouter } from './tasks.routes.js'
 import { integrationsRouter } from './integrations.routes.js'
 import { aiRouter } from './ai.routes.js'
+import { workspaceRouter } from './workspace.routes.js'
 
 export function registerRoutes(app) {
   app.use('/api', configRouter)
@@ -20,6 +21,7 @@ export function registerRoutes(app) {
   app.use('/api', tasksRouter)
   app.use('/api', integrationsRouter)
   app.use('/api', aiRouter)
+  app.use('/api', workspaceRouter)
 
   // 404 handler khusus /api agar mengembalikan respons JSON bukan HTML SPA fallback
   app.all('/api/*', (req, res) => {
