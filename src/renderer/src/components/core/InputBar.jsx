@@ -1071,7 +1071,6 @@ const InputBar = ({
         {/* Mention (@) Autocomplete Dropdown */}
         {showMentionList && (mentionDisplayItems.length > 0 || isLoadingFiles) && (
           <div className="absolute bottom-full left-4 mb-2 w-[380px] max-w-[calc(100vw-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in flex flex-col">
-
             {/* Items List */}
             <div ref={mentionListRef} className="max-h-64 overflow-y-auto no-scrollbar">
               {mentionDisplayItems.length === 0 && !isLoadingFiles ? (
