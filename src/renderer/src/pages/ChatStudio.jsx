@@ -257,7 +257,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
     const commandOpts = {
-      workspaceRoot: currentSession?.workspaceRoot,
+      workspaceRoot: currentSession?.workspaceRoot || null,
       displayPrompt: rawDisplay,
       attachedFiles: sendOptions?.attachedFiles,
       ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
@@ -377,9 +377,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         await setSessionWorkspace(activeSessionId, selected)
         setSessions((prev) =>
           prev.map((s) =>
-            String(s.id) === String(activeSessionId)
-              ? { ...s, workspaceRoot: selected, workspace: selected }
-              : s
+            String(s.id) === String(activeSessionId) ? { ...s, workspaceRoot: selected } : s
           )
         )
       }
@@ -512,6 +510,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     id: '1',
     title: 'Main Thread'
   }
+  const activeSessionWorkspace = activeSessionObj?.workspaceRoot || null
 
   return (
     <>
@@ -713,15 +712,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 <h3 className="text-sm font-bold text-white truncate max-w-md">
                   {activeSessionObj.title || 'Percakapan'}
                 </h3>
-                {activeSessionObj?.workspaceRoot && (
+                {activeSessionWorkspace && (
                   <span
                     className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate inline-flex items-center gap-1"
-                    title={`Workspace: ${activeSessionObj.workspaceRoot}`}
+                    title={`Workspace: ${activeSessionWorkspace}`}
                   >
                     <Folder className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">
-                      {activeSessionObj.workspaceRoot.split(/[\\/]/).pop()}
-                    </span>
+                    <span className="truncate">{activeSessionWorkspace.split(/[\\/]/).pop()}</span>
                   </span>
                 )}
               </div>
@@ -848,7 +845,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 onStopRecord={stopRecording}
                 onStop={handleStopSession}
                 source={inputSource || 'pc'}
-                workspaceRoot={activeSessionObj?.workspaceRoot}
+                workspaceRoot={activeSessionWorkspace}
                 onSelectWorkspace={handleSelectSessionWorkspace}
                 onManualCompact={handleManualCompaction}
               />

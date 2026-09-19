@@ -131,8 +131,17 @@ const MarkHome = () => {
         setBgOverlayOpacity(Number(e.detail.bgOverlayOpacity))
       }
     }
+    const handleWorkspaceUpdated = (e) => {
+      if (String(e.detail?.sessionId) === '1') {
+        setWorkspaceRoot(e.detail?.workspaceRoot || null)
+      }
+    }
     window.addEventListener('config-updated', handleConfigUpdated)
-    return () => window.removeEventListener('config-updated', handleConfigUpdated)
+    window.addEventListener('session-workspace-updated', handleWorkspaceUpdated)
+    return () => {
+      window.removeEventListener('config-updated', handleConfigUpdated)
+      window.removeEventListener('session-workspace-updated', handleWorkspaceUpdated)
+    }
   }, [])
 
   const handleSelectWorkspace = async () => {

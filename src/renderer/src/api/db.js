@@ -532,7 +532,7 @@ export async function getChatData(sessionId = '1') {
   }
 }
 
-export async function setSessionWorkspace(sessionId, workspace) {
+export async function setSessionWorkspace(sessionId, workspaceRoot) {
   try {
     const cleanId = normalizeDbId(sessionId)
     const existing = await db.sessions.get(cleanId)
@@ -543,10 +543,16 @@ export async function setSessionWorkspace(sessionId, workspace) {
         data: []
       }),
       id: cleanId,
-      workspace,
-      workspaceRoot: workspace,
+      workspaceRoot: workspaceRoot || null,
       timestamp: Date.now()
     })
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('session-workspace-updated', {
+          detail: { sessionId: cleanId, workspaceRoot }
+        })
+      )
+    }
   } catch (error) {
     console.error(`Error setSessionWorkspace ${sessionId}:`, error)
   }
@@ -556,7 +562,7 @@ export async function getSessionWorkspace(sessionId) {
   try {
     const cleanId = normalizeDbId(sessionId)
     const session = await db.sessions.get(cleanId)
-    return session?.workspaceRoot || session?.workspace || null
+    return session?.workspaceRoot || null
   } catch (error) {
     console.error(`Error getSessionWorkspace ${sessionId}:`, error)
     return null

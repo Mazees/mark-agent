@@ -44,7 +44,6 @@ sqlite.exec(`
     id TEXT PRIMARY KEY,
     title TEXT DEFAULT 'New Session',
     data TEXT,
-    workspace TEXT,
     workspace_root TEXT,
     is_auto_mode INTEGER DEFAULT 0,
     timestamp INTEGER NOT NULL,
@@ -217,10 +216,20 @@ function ensureTableColumns(tableName, requiredColumns) {
 }
 
 ensureTableColumns('sessions', {
-  workspace: 'TEXT',
   workspace_root: 'TEXT',
   is_auto_mode: 'INTEGER DEFAULT 0'
 })
+
+// Migrasi satu kali jika ada data di kolom legacy workspace
+try {
+  sqlite.exec(`
+    UPDATE sessions 
+    SET workspace_root = workspace 
+    WHERE (workspace_root IS NULL OR workspace_root = '') AND workspace IS NOT NULL AND workspace != ''
+  `)
+} catch (err) {
+  void err
+}
 
 ensureTableColumns('chat_turns', {
   created_at: 'INTEGER',
@@ -329,6 +338,13 @@ class SqliteTable {
       }
     }
 
+    // Normalisasi khusus sessions: jadikan satu variabel workspaceRoot
+    if (this.tableName === 'sessions') {
+      res.workspaceRoot = res.workspace_root || res.workspaceRoot || null
+      delete res.workspace
+      delete res.workspace_root
+    }
+
     for (const key of Object.keys(res)) {
       if (typeof res[key] === 'string') {
         const str = res[key].trim()
@@ -410,6 +426,13 @@ class SqliteTable {
       }
     }
 
+    // Normalisasi khusus sessions: jadikan satu variabel workspaceRoot
+    if (this.tableName === 'sessions') {
+      raw.workspaceRoot = raw.workspaceRoot || null
+      delete raw.workspace
+      delete raw.workspace_root
+    }
+
     const record = {
       timestamp: raw.timestamp || raw.createdAt || Date.now(),
       createdAt: raw.createdAt || raw.timestamp || Date.now(),
@@ -430,8 +453,11 @@ class SqliteTable {
     for (const [k, v] of Object.entries(serialized)) {
       const col = this._toSnake(k)
       if (tableCols.includes(col)) {
-        if (colMap.has(col) && k !== col && serialized[col] !== undefined) {
-          continue
+        if (colMap.has(col) && k !== col) {
+          const currentVal = colMap.get(col)
+          if (currentVal !== null && currentVal !== undefined && currentVal !== '') {
+            continue
+          }
         }
         colMap.set(col, v)
       }
