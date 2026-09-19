@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState, memo } from 'react'
+/* eslint-disable react/prop-types */
+import { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react'
 import {
   FaMicrophone,
   FaStop,
@@ -13,7 +14,7 @@ import {
   FaLock,
   FaFolder
 } from 'react-icons/fa'
-import { Zap } from 'lucide-react'
+import { Zap, Folder, Wrench, ChevronLeft } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import { NATIVE_SKILLS } from './native-skills'
 import { calculateSessionChars, MAX_CONTEXT_CHARS } from '../../api/ai/contextManager'
@@ -53,7 +54,7 @@ const formatFileSize = (bytes) => {
 const getFileIcon = (fileName = '') => {
   const ext = fileName.split('.').pop().toLowerCase()
   if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext))
-    return <FaFileImage className="text-accent" />
+    return <FaFileImage className="text-primary" />
   if (['pdf'].includes(ext)) return <FaFilePdf className="text-error" />
   if (['js', 'jsx', 'ts', 'tsx', 'html', 'css', 'json', 'py', 'cpp', 'cs'].includes(ext))
     return <FaFileCode className="text-info" />
@@ -77,9 +78,13 @@ const InputBar = ({
   onSelectWorkspace = null,
   onManualCompact = null
 }) => {
+  void source
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
   const contextPopoverRef = useRef(null)
+  const gaugeRef = useRef(null)
+  const mentionListRef = useRef(null)
+  const skillListRef = useRef(null)
   const [inputText, setInputText] = useState('')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
@@ -93,6 +98,44 @@ const InputBar = ({
   const [filteredSkills, setFilteredSkills] = useState([])
   const [showSkillList, setShowSkillList] = useState(false)
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0)
+
+  // Mention (@) Autocomplete States
+  const [showMentionList, setShowMentionList] = useState(false)
+  const [mentionCategory, setMentionCategory] = useState('all') // 'all' | 'files' | 'tools'
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionCursorIndex, setMentionCursorIndex] = useState(0)
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const [workspaceFiles, setWorkspaceFiles] = useState([])
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false)
+  const [toolGroups, setToolGroups] = useState([])
+
+  const loadToolGroups = useCallback(async () => {
+    if (window.api && window.api.getGroupTools) {
+      try {
+        const data = await window.api.getGroupTools()
+        const schema = data?.schema || {}
+        const names = data?.names || Object.keys(schema)
+        const list = names.map((key) => {
+          const desc = schema[key]?.description || ''
+          const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+          return {
+            name: key,
+            label,
+            description: desc
+          }
+        })
+        setToolGroups(list)
+        return list
+      } catch (err) {
+        console.error('[InputBar] Failed to load tool groups:', err)
+      }
+    }
+    return []
+  }, [])
+
+  useEffect(() => {
+    loadToolGroups()
+  }, [loadToolGroups])
 
   const [contextTracker, setContextTracker] = useState({
     currentChars: 0,
@@ -130,7 +173,11 @@ const InputBar = ({
 
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (contextPopoverRef.current && !contextPopoverRef.current.contains(e.target)) {
+      if (
+        contextPopoverRef.current &&
+        !contextPopoverRef.current.contains(e.target) &&
+        (!gaugeRef.current || !gaugeRef.current.contains(e.target))
+      ) {
         setShowContextPopover(false)
       }
     }
@@ -232,6 +279,25 @@ const InputBar = ({
     }
   }, [isLoading])
 
+  // Auto-scroll item terpilih ke viewport saat navigasi keyboard
+  useEffect(() => {
+    if (showMentionList && mentionListRef.current) {
+      const activeEl = mentionListRef.current.children[selectedMentionIndex]
+      if (activeEl && typeof activeEl.scrollIntoView === 'function') {
+        activeEl.scrollIntoView({ block: 'nearest' })
+      }
+    }
+  }, [selectedMentionIndex, showMentionList])
+
+  useEffect(() => {
+    if (showSkillList && skillListRef.current) {
+      const activeEl = skillListRef.current.children[selectedSkillIndex]
+      if (activeEl && typeof activeEl.scrollIntoView === 'function') {
+        activeEl.scrollIntoView({ block: 'nearest' })
+      }
+    }
+  }, [selectedSkillIndex, showSkillList])
+
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || [])
     addFiles(files)
@@ -324,7 +390,9 @@ const InputBar = ({
               reader.onerror = () => res(null)
               reader.readAsDataURL(f)
             })
-          } catch (_) {}
+          } catch {
+            // ignore preview error
+          }
         }
 
         if (window.api && window.api.getPathForFile) {
@@ -510,10 +578,157 @@ const InputBar = ({
     }, 50)
   }
 
+  const fetchWorkspaceFiles = async (query = '') => {
+    if (window.api && window.api.getWorkspaceFiles) {
+      setIsLoadingFiles(true)
+      try {
+        const files = await window.api.getWorkspaceFiles(query, workspaceRoot)
+        setWorkspaceFiles(files || [])
+      } catch (err) {
+        console.error('[InputBar] getWorkspaceFiles error:', err)
+      } finally {
+        setIsLoadingFiles(false)
+      }
+    }
+  }
+
+  const mentionDisplayItems = useMemo(() => {
+    if (mentionCategory === 'all' && !mentionQuery.trim()) {
+      return [
+        {
+          type: 'category',
+          category: 'files',
+          title: 'Files',
+          subtitle: 'Cari berkas di workspace'
+        },
+        {
+          type: 'category',
+          category: 'tools',
+          title: 'Tool Groups',
+          subtitle: 'Kelompok kapabilitas tool agen'
+        }
+      ]
+    }
+
+    const q = mentionQuery.toLowerCase().trim()
+    const items = []
+
+    // 1. Tool Groups
+    if (mentionCategory === 'all' || mentionCategory === 'tools') {
+      const matchedTools = toolGroups
+        .filter(
+          (t) =>
+            !q ||
+            t.name.toLowerCase().includes(q) ||
+            t.label.toLowerCase().includes(q) ||
+            t.description.toLowerCase().includes(q)
+        )
+        .map((t) => ({
+          type: 'tool',
+          name: t.name,
+          label: t.label,
+          description: t.description
+        }))
+      items.push(...matchedTools)
+    }
+
+    // 2. Files
+    if (mentionCategory === 'all' || mentionCategory === 'files') {
+      const matchedFiles = workspaceFiles
+        .filter(
+          (f) => !q || f.name.toLowerCase().includes(q) || f.relativePath.toLowerCase().includes(q)
+        )
+        .map((f) => ({
+          type: 'file',
+          name: f.name,
+          relativePath: f.relativePath,
+          absolutePath: f.absolutePath,
+          size: f.size,
+          ext: f.ext
+        }))
+      items.push(...matchedFiles)
+    }
+
+    return items
+  }, [mentionCategory, mentionQuery, toolGroups, workspaceFiles])
+
+  const selectMentionItem = (item) => {
+    if (!item) return
+
+    if (item.type === 'category') {
+      setMentionCategory(item.category)
+      setSelectedMentionIndex(0)
+      if (item.category === 'files') {
+        fetchWorkspaceFiles('')
+      } else if (item.category === 'tools' && toolGroups.length === 0) {
+        loadToolGroups()
+      }
+      if (inputRef.current) inputRef.current.focus()
+      return
+    }
+
+    const val = inputText
+    const beforeAt = val.slice(0, mentionCursorIndex)
+    const afterMention = val.slice(mentionCursorIndex + 1 + mentionQuery.length)
+
+    if (item.type === 'file') {
+      const insertTag = `@${item.relativePath} `
+      const nextText = `${beforeAt}${insertTag}${afterMention}`
+      setInputText(nextText)
+
+      // Lampirkan otomatis ke attachedFiles
+      const newAttached = {
+        name: item.name,
+        path: item.absolutePath,
+        size: item.size,
+        type: item.ext ? `text/${item.ext.replace('.', '')}` : '',
+        previewUrl: null
+      }
+      setAttachedFiles((prev) => {
+        const exists = prev.some((f) => f.path === newAttached.path)
+        return exists ? prev : [...prev, newAttached]
+      })
+
+      setShowMentionList(false)
+      setMentionCategory('all')
+      setMentionQuery('')
+      setTimeout(() => {
+        if (inputRef.current) {
+          const newPos = beforeAt.length + insertTag.length
+          inputRef.current.focus()
+          inputRef.current.setSelectionRange(newPos, newPos)
+        }
+      }, 50)
+      return
+    }
+
+    if (item.type === 'tool') {
+      const insertTag = `@${item.name} `
+      const nextText = `${beforeAt}${insertTag}${afterMention}`
+      setInputText(nextText)
+
+      setShowMentionList(false)
+      setMentionCategory('all')
+      setMentionQuery('')
+      setTimeout(() => {
+        if (inputRef.current) {
+          const newPos = beforeAt.length + insertTag.length
+          inputRef.current.focus()
+          inputRef.current.setSelectionRange(newPos, newPos)
+        }
+      }, 50)
+      return
+    }
+  }
+
   const handleTextChange = async (e) => {
     const val = e.target.value
     setInputText(val)
 
+    const cursor = e.target.selectionStart ?? val.length
+    const textBefore = val.slice(0, cursor)
+
+    // 1. Deteksi Slash Command (/):
     if (val.startsWith('/')) {
       const currentSkills = skills && skills.length > 0 ? skills : await reloadSkills()
       const query = val.slice(1).toLowerCase()
@@ -521,9 +736,31 @@ const InputBar = ({
       setFilteredSkills(matches)
       setShowSkillList(true)
       setSelectedSkillIndex(0)
+      setShowMentionList(false)
+      return
     } else {
       setShowSkillList(false)
     }
+
+    // 2. Deteksi Mention Tag (@):
+    const atIndex = textBefore.lastIndexOf('@')
+    if (atIndex !== -1 && (atIndex === 0 || /\s/.test(textBefore[atIndex - 1]))) {
+      const afterAt = textBefore.slice(atIndex + 1)
+      if (!/\s/.test(afterAt)) {
+        if (toolGroups.length === 0) {
+          loadToolGroups()
+        }
+        setShowMentionList(true)
+        setMentionQuery(afterAt)
+        setMentionCursorIndex(atIndex)
+        setSelectedMentionIndex(0)
+        fetchWorkspaceFiles(afterAt)
+        return
+      }
+    }
+
+    setShowMentionList(false)
+    setMentionCategory('all')
   }
 
   const selectSkill = (skillObj) => {
@@ -533,6 +770,7 @@ const InputBar = ({
   }
 
   const handleKeyDown = (e) => {
+    // 1. Skill List Navigation
     if (showSkillList && filteredSkills.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -555,6 +793,43 @@ const InputBar = ({
       }
     }
 
+    // 2. Mention (@) Navigation
+    if (showMentionList && mentionDisplayItems.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedMentionIndex((prev) => (prev + 1) % mentionDisplayItems.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedMentionIndex(
+          (prev) => (prev - 1 + mentionDisplayItems.length) % mentionDisplayItems.length
+        )
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const selected = mentionDisplayItems[selectedMentionIndex]
+        if (selected) {
+          selectMentionItem(selected)
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowMentionList(false)
+        setMentionCategory('all')
+        return
+      }
+      if (e.key === 'Backspace' && mentionCategory !== 'all' && mentionQuery === '') {
+        e.preventDefault()
+        setMentionCategory('all')
+        setSelectedMentionIndex(0)
+        return
+      }
+    }
+
+    // 3. Normal Send on Enter
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (!isSendDisabled) {
@@ -770,25 +1045,89 @@ const InputBar = ({
             <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5">
               Available Skills
             </div>
-            <div className="max-h-64 overflow-y-auto no-scrollbar">
+            <div ref={skillListRef} className="max-h-64 overflow-y-auto no-scrollbar">
               {filteredSkills.map((skillObj, idx) => (
                 <div
                   key={skillObj.name}
                   onClick={() => selectSkill(skillObj)}
                   className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
                     idx === selectedSkillIndex
-                      ? 'bg-emerald-500/20 text-emerald-400'
+                      ? 'bg-primary-500/20 text-primary-400'
                       : 'hover:bg-white/10 text-gray-300'
                   }`}
                 >
                   <div className="font-semibold text-sm">/{skillObj.name}</div>
                   <div
-                    className={`text-xs ${idx === selectedSkillIndex ? 'text-emerald-400/80' : 'text-gray-400'} line-clamp-2`}
+                    className={`text-xs ${idx === selectedSkillIndex ? 'text-primary-400/80' : 'text-gray-400'} line-clamp-2`}
                   >
                     {skillObj.description}
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Mention (@) Autocomplete Dropdown */}
+        {showMentionList && (mentionDisplayItems.length > 0 || isLoadingFiles) && (
+          <div className="absolute bottom-full left-4 mb-2 w-[380px] max-w-[calc(100vw-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in flex flex-col">
+
+            {/* Items List */}
+            <div ref={mentionListRef} className="max-h-64 overflow-y-auto no-scrollbar">
+              {mentionDisplayItems.length === 0 && !isLoadingFiles ? (
+                <div className="py-3 text-center text-xs text-gray-400">Tidak ada yang cocok.</div>
+              ) : (
+                mentionDisplayItems.map((item, idx) => (
+                  <div
+                    key={
+                      item.type === 'category'
+                        ? item.category
+                        : item.type === 'file'
+                          ? item.absolutePath
+                          : item.name
+                    }
+                    onClick={() => selectMentionItem(item)}
+                    className={`px-3 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center gap-2.5 ${
+                      idx === selectedMentionIndex
+                        ? 'bg-primary/20 text-primary'
+                        : 'hover:bg-white/5 text-gray-300'
+                    }`}
+                  >
+                    {/* Inline Icon */}
+                    <div className="shrink-0 text-sm opacity-80">
+                      {item.type === 'category' ? (
+                        item.category === 'files' ? (
+                          <Folder size={15} />
+                        ) : (
+                          <Wrench size={15} />
+                        )
+                      ) : item.type === 'file' ? (
+                        getFileIcon(item.name)
+                      ) : (
+                        <Wrench size={15} />
+                      )}
+                    </div>
+
+                    {/* Text Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-xs truncate">
+                        {item.type === 'category'
+                          ? item.title
+                          : item.type === 'file'
+                            ? item.relativePath
+                            : `@${item.name}`}
+                      </div>
+                      <div className="text-[11px] text-gray-400 truncate">
+                        {item.type === 'category'
+                          ? item.subtitle
+                          : item.type === 'file'
+                            ? formatFileSize(item.size)
+                            : item.description || item.label}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -840,13 +1179,15 @@ const InputBar = ({
             const circumference = 2 * Math.PI * radius
             const strokeDashoffset = circumference - (pct / 100) * circumference
             const colorClass =
-              pct >= 90 ? 'stroke-rose-500' : pct >= 75 ? 'stroke-amber-400' : 'stroke-emerald-400'
-            pct >= 85 ? 'stroke-rose-500' : pct >= 50 ? 'stroke-amber-400' : 'stroke-emerald-400'
+              pct >= 85 ? 'stroke-rose-500' : pct >= 50 ? 'stroke-amber-400' : 'stroke-emerald-400'
+            const barColorClass =
+              pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'
 
             return (
               <div className="relative flex items-center justify-center px-1 select-none">
                 {/* Ring Gauge Trigger Button */}
                 <div
+                  ref={gaugeRef}
                   role="button"
                   tabIndex={0}
                   onClick={() => setShowContextPopover((prev) => !prev)}
@@ -865,19 +1206,21 @@ const InputBar = ({
                       strokeWidth="2.5"
                       fill="none"
                     />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r={radius}
-                      className={`${colorClass} transition-all duration-500 ease-out`}
-                      strokeWidth="2.5"
-                      strokeDasharray={circumference}
-                      strokeDashoffset={strokeDashoffset}
-                      strokeLinecap="round"
-                      fill="none"
-                    />
+                    {pct > 0 && (
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r={radius}
+                        className={`${colorClass} transition-all duration-500 ease-out`}
+                        strokeWidth="2.5"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                    )}
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/gauge:opacity-100 transition-opacity duration-150 font-mono text-[8px] font-bold text-white tracking-tight leading-none pointer-events-none">
+                  <span className="absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-white/80 group-hover/gauge:text-white tracking-tight leading-none pointer-events-none">
                     {roundedPct}%
                   </span>
                 </div>
@@ -889,10 +1232,9 @@ const InputBar = ({
                     className="absolute bottom-full right-0 mb-3.5 w-64 p-3.5 bg-base-200 border border-primary/30 rounded-xl shadow-2xl z-50 animate-fade-in text-left cursor-default"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="text-[11px] font-medium text-white/40 mb-0.5">Session Info</div>
                     <div className="flex items-center justify-between text-[11px] font-medium text-white/40 mb-0.5">
                       <span>Session Info</span>
-                      <span className="text-[9px] uppercase tracking-wider text-primary/80">
+                      <span className="text-[9px] uppercase tracking-wider text-primary font-bold">
                         In-Place
                       </span>
                     </div>
@@ -911,7 +1253,7 @@ const InputBar = ({
                     {/* Progress Bar */}
                     <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
                       <div
-                        className={`h-full ${pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'} transition-all duration-300 rounded-full`}
+                        className={`h-full ${barColorClass} transition-all duration-300 rounded-full`}
                         style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
                       />
                     </div>
@@ -942,7 +1284,7 @@ const InputBar = ({
                     </button>
 
                     {/* Caret pointing to gauge */}
-                    <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-[#13161f] border-r border-b border-white/10 rotate-45" />
+                    <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-base-200 border-r border-b border-primary/30 rotate-45" />
                   </div>
                 )}
               </div>

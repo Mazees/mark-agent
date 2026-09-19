@@ -299,6 +299,19 @@ export const webApi = {
     return { schema: {}, names: [], definition: {}, flat: {} }
   },
 
+  getWorkspaceFiles: async (query = '', root = '') => {
+    try {
+      const q = encodeURIComponent(query || '')
+      const r = encodeURIComponent(root || '')
+      const res = await fetch(`${API_BASE}/api/workspace/files?query=${q}&root=${r}`)
+      const json = await res.json()
+      return json?.data || []
+    } catch (err) {
+      console.error('[webBridge] getWorkspaceFiles error:', err)
+      return []
+    }
+  },
+
   checkToolApproval: async (tool, query) => {
     try {
       const res = await fetch(`${API_BASE}/api/tools/needs-approval`, {
