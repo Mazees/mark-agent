@@ -9,6 +9,7 @@ import {
   createFile,
   moveFile,
   copyFile,
+  shareFile,
   getDriveInfo
 } from '../google/google-drive.js'
 import { listEvents, createEvent, deleteEvent } from '../google/google-calendar.js'
@@ -38,7 +39,8 @@ export const parsePagination = (pagination) => {
 }
 
 export const getGoogleCredentials = (config) => {
-  let clientId = config?.googleClientId || (Array.isArray(config) ? config[0]?.googleClientId : null)
+  let clientId =
+    config?.googleClientId || (Array.isArray(config) ? config[0]?.googleClientId : null)
   let clientSecret =
     config?.googleClientSecret || (Array.isArray(config) ? config[0]?.googleClientSecret : null)
 
@@ -51,7 +53,9 @@ export const getGoogleCredentials = (config) => {
         clientId = clientId || parsed?.googleClientId
         clientSecret = clientSecret || parsed?.googleClientSecret
       }
-    } catch (_) {}
+    } catch {
+      // Ignore missing local config file
+    }
   }
 
   return { clientId, clientSecret }
@@ -124,7 +128,11 @@ export const googleTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const fileId = (typeof args === 'object' && args !== null ? (args.file_id || args.fileId) : String(args || '')).trim()
+        const fileId = (
+          typeof args === 'object' && args !== null
+            ? args.file_id || args.fileId
+            : String(args || '')
+        ).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await readFile(clientId, clientSecret, fileId)
         return { success: true, data: result }
@@ -137,23 +145,35 @@ export const googleTools = {
   'gdrive-upload': {
     needsApproval: true,
     approvalMessage: (args) => {
-      const name = typeof args === 'object' && args !== null ? args.name : String(args || '').split('||')[0]
-      return `Mark ingin mengunggah file ke Google Drive-mu:\n${name}`
+      let filePath = ''
+      if (typeof args === 'object' && args !== null) {
+        filePath = (args.file_path || args.filepath || '').trim()
+      } else {
+        filePath = String(args || '').trim()
+      }
+      return `Mark ingin mengunggah berkas ke Google Drive:\n${filePath}`
     },
     handler: async (args, config) => {
       try {
-        let name = ''
-        let content = ''
+        let filePath = ''
         if (typeof args === 'object' && args !== null) {
-          name = (args.name || '').trim()
-          content = args.content || ''
+          filePath = (args.file_path || args.filepath || '').trim()
         } else {
-          const parts = String(args || '').split('||')
-          name = parts[0].trim()
-          content = parts.slice(1).join('||')
+          filePath = String(args || '').trim()
         }
+
+        if (!filePath) {
+          return { success: false, error: 'Parameter file_path wajib diisi.' }
+        }
+
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        if (!path.isAbsolute(filePath)) {
+          filePath = path.join(activeRoot, filePath)
+        }
+
         const { clientId, clientSecret } = getGoogleCredentials(config)
-        const result = await uploadFile(clientId, clientSecret, name, content)
+        const result = await uploadFile(clientId, clientSecret, filePath)
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: e.message }
@@ -269,6 +289,49 @@ export const googleTools = {
     }
   },
 
+  'gdrive-share': {
+    needsApproval: true,
+    approvalMessage: (args) => {
+      let fileId = ''
+      let role = 'reader'
+      let type = 'anyone'
+      if (typeof args === 'object' && args !== null) {
+        fileId = args.file_id || args.fileId || ''
+        role = args.role || 'reader'
+        type = args.type || 'anyone'
+      } else {
+        fileId = String(args || '').trim()
+      }
+      return `Mark ingin mengubah izin akses berkas di Google Drive:\nFile ID: ${fileId}\nTipe: ${type}\nPeran: ${role}`
+    },
+    handler: async (args, config) => {
+      try {
+        let fileId = ''
+        let role = 'reader'
+        let type = 'anyone'
+        let email = null
+
+        if (typeof args === 'object' && args !== null) {
+          fileId = (args.file_id || args.fileId || '').trim()
+          role = (args.role || 'reader').trim()
+          type = (args.type || 'anyone').trim()
+          email = (args.email || args.emailAddress || '').trim() || null
+        } else {
+          fileId = String(args || '').trim()
+        }
+
+        if (!fileId) {
+          return { success: false, error: 'Parameter file_id wajib diisi.' }
+        }
+
+        const { clientId, clientSecret } = getGoogleCredentials(config)
+        const result = await shareFile(clientId, clientSecret, fileId, role, type, email)
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
   // Google Calendar
   'gcalendar-list': {
     needsApproval: false,
@@ -346,12 +409,19 @@ export const googleTools = {
   'gcalendar-delete': {
     needsApproval: true,
     approvalMessage: (args) => {
-      const id = typeof args === 'object' && args !== null ? (args.event_id || args.eventId) : String(args || '')
+      const id =
+        typeof args === 'object' && args !== null
+          ? args.event_id || args.eventId
+          : String(args || '')
       return `Mark ingin MENGHAPUS jadwal/event ini:\nEvent ID: ${id}`
     },
     handler: async (args, config) => {
       try {
-        const eventId = (typeof args === 'object' && args !== null ? (args.event_id || args.eventId) : String(args || '')).trim()
+        const eventId = (
+          typeof args === 'object' && args !== null
+            ? args.event_id || args.eventId
+            : String(args || '')
+        ).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await deleteEvent(clientId, clientSecret, eventId)
         return { success: true, data: result }
@@ -420,7 +490,11 @@ export const googleTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const messageId = (typeof args === 'object' && args !== null ? (args.message_id || args.messageId || args.id) : String(args || '')).trim()
+        const messageId = (
+          typeof args === 'object' && args !== null
+            ? args.message_id || args.messageId || args.id
+            : String(args || '')
+        ).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await readEmail(clientId, clientSecret, messageId)
         return { success: true, data: result }
@@ -476,7 +550,11 @@ export const googleTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        const messageId = (typeof args === 'object' && args !== null ? (args.message_id || args.messageId || args.id) : String(args || '')).trim()
+        const messageId = (
+          typeof args === 'object' && args !== null
+            ? args.message_id || args.messageId || args.id
+            : String(args || '')
+        ).trim()
         const { clientId, clientSecret } = getGoogleCredentials(config)
         const result = await markAsRead(clientId, clientSecret, messageId)
         return { success: true, data: result }

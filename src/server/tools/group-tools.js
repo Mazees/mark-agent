@@ -576,14 +576,18 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'gdrive-upload',
-          description: 'Mengunggah file teks baru ke Google Drive.',
+          description:
+            'Mengunggah berkas lokal (PDF, dokumen, gambar, zip, dll.) dari komputer ke Google Drive.',
           parameters: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'Nama berkas baru (misal: "laporan.txt")' },
-              content: { type: 'string', description: 'Konten teks berkas' }
+              file_path: {
+                type: 'string',
+                description:
+                  'Path absolut atau relatif berkas lokal yang akan diunggah (misal: "C:\\Users\\...\\laporan.pdf")'
+              }
             },
-            required: ['name', 'content'],
+            required: ['file_path'],
             additionalProperties: false
           }
         }
@@ -636,6 +640,40 @@ export const GROUP_TOOLS_SCHEMA = {
               new_name: { type: 'string', description: 'Nama baru berkas duplikat' }
             },
             required: ['file_id', 'new_name'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'gdrive-share',
+          description:
+            'Mengubah izin akses atau membagikan berkas di Google Drive (misal: publik siapa saja dengan tautan, atau email tertentu).',
+          parameters: {
+            type: 'object',
+            properties: {
+              file_id: {
+                type: 'string',
+                description: 'ID berkas Google Drive yang ingin dibagikan'
+              },
+              role: {
+                type: 'string',
+                enum: ['reader', 'commenter', 'writer'],
+                description: 'Peran akses pengguna (default: "reader")'
+              },
+              type: {
+                type: 'string',
+                enum: ['anyone', 'user', 'group'],
+                description:
+                  'Cakupan akses: "anyone" (publik dengan tautan), "user" (spesifik email), atau "group" (default: "anyone")'
+              },
+              email: {
+                type: 'string',
+                description: 'Alamat email pengguna jika type adalah "user" atau "group"'
+              }
+            },
+            required: ['file_id'],
             additionalProperties: false
           }
         }
