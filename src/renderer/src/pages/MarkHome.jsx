@@ -187,6 +187,7 @@ const MarkHome = () => {
 
   // Sync orb status
   useEffect(() => {
+    if (typeof setOrbStatus !== 'function') return
     if (isRecording) {
       setOrbStatus('listening')
     } else if (isProcessing || isLoading) {
@@ -242,14 +243,14 @@ const MarkHome = () => {
         type: 'short'
       })
     }
-  }, [chatData, isLoading, isSpeak, setOrbStatus])
+  }, [chatData, isLoading, isSpeak])
 
   const handleSubmit = (e, text, opts = {}) => {
-    if (chatContext.handleSubmit) {
+    if (typeof chatContext?.handleSubmit === 'function') {
       chatContext.handleSubmit(e, text, opts)
     } else {
       const sendText = typeof text === 'string' && text.trim() ? text.trim() : message.trim()
-      if (sendText) {
+      if (sendText && typeof handlePlanningCommand === 'function') {
         handlePlanningCommand(sendText, null, false, opts)
       }
     }
@@ -259,9 +260,9 @@ const MarkHome = () => {
 
   const handleAvatarClick = () => {
     if (orbStatus === 'idle' && !isRecording && !isProcessing && !isLoading) {
-      startRecording()
+      if (typeof startRecording === 'function') startRecording()
     } else if (isRecording) {
-      stopRecording()
+      if (typeof stopRecording === 'function') stopRecording()
     }
   }
 

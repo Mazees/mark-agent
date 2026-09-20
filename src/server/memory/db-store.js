@@ -336,6 +336,19 @@ class SqliteTable {
         if (res.index === undefined) res.index = res.step_index
         if (res.stepIndex === undefined) res.stepIndex = res.step_index
       }
+      if (res.task_id !== undefined && res.taskId === undefined) {
+        res.taskId = res.task_id
+      }
+    }
+
+    // Normalisasi khusus agent_tasks
+    if (this.tableName === 'agent_tasks') {
+      if (res.active_step_id !== undefined && res.activeStepId === undefined) {
+        res.activeStepId = res.active_step_id
+      }
+      if (res.current_step_index !== undefined && res.currentStepIndex === undefined) {
+        res.currentStepIndex = res.current_step_index
+      }
     }
 
     // Normalisasi khusus sessions: jadikan satu variabel workspaceRoot
@@ -544,7 +557,20 @@ class SqliteTable {
       toolCalls: 'tool_calls',
       toolCallId: 'tool_call_id',
       taskId: 'task_id',
-      stepIndex: 'step_index'
+      stepIndex: 'step_index',
+      activeStepId: 'active_step_id',
+      currentStepIndex: 'current_step_index',
+      artifactRoot: 'artifact_root',
+      contextSummary: 'context_summary',
+      retryCount: 'retry_count',
+      maxRetries: 'max_retries',
+      completedAt: 'completed_at',
+      artifactPath: 'artifact_path',
+      contentHash: 'content_hash',
+      inputSummary: 'input_summary',
+      outputSummary: 'output_summary',
+      startedAt: 'started_at',
+      acceptanceCriteria: 'acceptance_criteria'
     }
     return map[str] || str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
   }

@@ -47,6 +47,7 @@ export const useMarkAgent = () => {
     setInputSource,
     activeTopic,
     currentActiveSessionId,
+    setCurrentActiveSessionId,
     isChatLoaded,
     isBooting,
     setIsBooting
@@ -435,6 +436,8 @@ export const useMarkAgent = () => {
     handleSubmit,
     isBooting,
     requestCameraCaptureRef,
+    currentActiveSessionId,
+    setCurrentActiveSessionId,
     // VAD & Voice Engine
     isRecording: vad.isRecording,
     isProcessing: vad.isProcessing,

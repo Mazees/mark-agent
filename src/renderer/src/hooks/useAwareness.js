@@ -195,10 +195,14 @@ export const useAwareness = ({
               }
             ])
 
-            setOrbStatus('nudge')
-            setTimeout(() => {
-              setOrbStatus('idle')
-            }, 3000)
+            if (typeof setOrbStatus === 'function') {
+              setOrbStatus('nudge')
+              setTimeout(() => {
+                if (typeof setOrbStatus === 'function') {
+                  setOrbStatus('idle')
+                }
+              }, 3000)
+            }
           }
         }
       } catch (err) {
