@@ -804,9 +804,9 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                       const hasActivePlan = (currentDisplayMessages || []).some(
                         (m) => m.isPlanSteps && m.taskStatus === 'running'
                       )
-                      const activeThinkingMsg = isCurrentLoading
-                        ? [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking)
-                        : null
+                      const activeThinkingMsg =
+                        [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking) ||
+                        null
 
                       return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
                         if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
@@ -850,11 +850,21 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                             artifactRoot={msg.artifactRoot}
                             activeLiveTools={
                               hasActivePlan && msg.isPlanSteps
-                                ? activeThinkingMsg?.executedTools
+                                ? activeThinkingMsg?.executedTools || null
                                 : null
                             }
                             activeThinkingContent={
-                              hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
+                              hasActivePlan && msg.isPlanSteps
+                                ? (activeThinkingMsg?.reasoning
+                                    ? activeThinkingMsg.reasoning
+                                        .split('\n')
+                                        .map((s) => s.trim())
+                                        .filter(Boolean)
+                                        .pop()
+                                    : null) ||
+                                  activeThinkingMsg?.content ||
+                                  null
+                                : null
                             }
                             onStop={handleStopSession}
                             isApproval={msg.isApproval}

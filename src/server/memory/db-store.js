@@ -508,9 +508,17 @@ class SqliteTable {
     const existing = this.getById(id)
     if (!existing) return null
 
-    const updated = { ...existing, ...updates, updatedAt: Date.now() }
+    const normalizedUpdates = { ...updates }
+    for (const [k, v] of Object.entries(updates)) {
+      const snake = this._toSnake(k)
+      const camel = this._toCamel(k)
+      normalizedUpdates[snake] = v
+      normalizedUpdates[camel] = v
+    }
+
+    const updated = { ...existing, ...normalizedUpdates, updatedAt: Date.now() }
     this.insert(updated)
-    return updated
+    return this.getById(id)
   }
 
   delete(id) {

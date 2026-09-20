@@ -254,6 +254,7 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
             (b.stepIndex ?? b.step_index ?? b.index ?? 0)
         )[0]
       taskChanges.activeStepId = next?.id || null
+      taskChanges.active_step_id = next?.id || null
       taskChanges.currentStepIndex =
         next?.stepIndex ??
         next?.step_index ??
@@ -265,6 +266,8 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
       if (!next) {
         taskChanges.status = 'completed'
         taskChanges.completedAt = timestamp
+        taskChanges.activeStepId = null
+        taskChanges.active_step_id = null
       }
     }
     await db.agentTasks.update(taskId, taskChanges)

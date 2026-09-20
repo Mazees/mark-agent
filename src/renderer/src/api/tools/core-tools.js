@@ -562,22 +562,31 @@ export const core_tools_schema = [
     function: {
       name: 'create_agent_task',
       description:
-        'Membuat dan mengaktifkan rencana tugas multi-langkah (Durable Agent Tasks) di sistem Mission Control.',
+        'Membuat dan mengaktifkan rencana alur kerja tugas multi-tahap (Task Workflow) terstruktur dengan sasaran utama dan target deliverable per tahap.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string', description: 'Judul tugas utama' },
-          objective: { type: 'string', description: 'Tujuan akhir penyelesaian tugas' },
+          objective: {
+            type: 'string',
+            description: 'Tujuan akhir penyelesaian tugas secara menyeluruh'
+          },
           steps: {
             type: 'array',
-            description: 'Daftar langkah/tahapan pengerjaan',
+            description: 'Daftar langkah/tahapan pengerjaan terstruktur',
             items: {
               type: 'object',
               properties: {
                 id: { type: 'string', description: 'ID unik tahap (misal: "step-1")' },
                 title: { type: 'string', description: 'Nama tahapan' },
-                objective: { type: 'string', description: 'Sasaran langkah ini' },
-                deliverable: { type: 'string', description: 'Keluaran konkret hasil pengerjaan' },
+                objective: {
+                  type: 'string',
+                  description: 'Sasaran khusus yang harus dicapai pada langkah ini'
+                },
+                deliverable: {
+                  type: 'string',
+                  description: 'Keluaran konkret atau berkas bukti hasil pengerjaan tahap'
+                },
                 acceptanceCriteria: {
                   type: 'array',
                   items: { type: 'string' },
@@ -589,6 +598,66 @@ export const core_tools_schema = [
           }
         },
         required: ['title', 'objective', 'steps'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mark_done_task',
+      description:
+        'Menandai tahap aktif tugas alur kerja (Task Workflow) telah 100% selesai dan teruji secara final, menulis berkas deliverable artefak markdown (.md), dan memajukan alur kerja ke tahap berikutnya. DILARANG memanggil tool ini untuk menyimpan draf atau progress cicilan; panggil hanya TEPAT 1 KALI di akhir tahap.',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskId: {
+            type: 'string',
+            description:
+              'ID unik alur kerja yang sedang berjalan (opsional jika alur kerja sedang aktif)'
+          },
+          stepIndex: {
+            type: 'integer',
+            description:
+              'Nomor indeks tahap yang diselesaikan (1-based, misal: 1 untuk tahap 1, 2 untuk tahap 2). Wajib diisi sesuai tahap yang dituntaskan.'
+          },
+          artifactContent: {
+            type: 'string',
+            description: 'Isi konten dokumen markdown (.md) deliverable hasil pengerjaan tahap ini'
+          },
+          verificationProof: {
+            type: 'string',
+            description:
+              'Bukti verifikasi dan hasil pengujian konkret bahwa deliverable tahap ini berfungsi dan memenuhi kriteria (misal: log hasil test terminal, verifikasi isi file, atau pemeriksaan sintaks). Wajib disertakan sebelum tahap ditandai selesai.'
+          },
+          summary: {
+            type: 'string',
+            description:
+              'Ringkasan apa yang telah diselesaikan pada tahap ini. Pada tahap terakhir alur kerja, parameter ini WAJIB memuat rangkuman menyeluruh dari awal hingga akhir proyek sebagai laporan penutup final untuk pengguna.'
+          }
+        },
+        required: ['stepIndex', 'artifactContent', 'verificationProof'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_task',
+      description:
+        'Membaca status alur kerja tugas (Task Workflow) dan isi artefak markdown dari tahap-tahap yang telah diselesaikan.',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskId: { type: 'string', description: 'ID unik alur kerja yang ingin dibaca' },
+          stepIndex: {
+            type: 'integer',
+            description:
+              'Nomor indeks tahap yang ingin dibaca artefaknya (1-based, opsional. Jika kosong akan membaca seluruh ringkasan alur kerja)'
+          }
+        },
+        required: ['taskId'],
         additionalProperties: false
       }
     }

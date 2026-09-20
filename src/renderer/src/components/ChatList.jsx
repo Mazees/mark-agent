@@ -162,6 +162,7 @@ const ChatList = ({
             taskStatus={taskStatus}
             artifactRoot={artifactRoot}
             onStop={onStop}
+            executedTools={executedTools}
             activeLiveTools={activeLiveTools}
             activeThinkingContent={activeThinkingContent}
           />

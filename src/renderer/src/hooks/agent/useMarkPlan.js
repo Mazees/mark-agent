@@ -16,12 +16,7 @@ import {
   db
 } from '../../api/db'
 import { checkTools, getActiveToolsSchema } from '../../api/tools/index'
-import { buildDurableStepCheckpoint } from '../../api/taskExecutor'
-import {
-  startAgentTaskStep,
-  checkpointAgentTaskStep,
-  transitionAgentTask
-} from '../../api/taskStore'
+import { startAgentTaskStep, transitionAgentTask } from '../../api/taskStore'
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import {
@@ -204,43 +199,89 @@ export const useMarkPlan = ({
   }
 
   // Penghentian tugas per-sesi secara independen
-  const handleStop = (targetSessionId = null) => {
+  const handleStop = async (targetSessionId = null) => {
     try {
       speechQueue.reset()
     } catch (_) {}
 
-    if (targetSessionId !== null && targetSessionId !== undefined) {
-      const numId = Number(targetSessionId)
-      const session = activeSessionsRef.current.get(numId)
-      if (session && session.abortController) {
-        session.abortController.abort()
+    const numId =
+      targetSessionId !== null && targetSessionId !== undefined ? Number(targetSessionId) : null
+    const strId =
+      targetSessionId !== null && targetSessionId !== undefined ? String(targetSessionId) : null
+
+    const sessionsToAbort = []
+    if (numId !== null) {
+      const s = activeSessionsRef.current.get(numId) || activeSessionsRef.current.get(strId)
+      if (s) sessionsToAbort.push(s)
+    }
+
+    if (sessionsToAbort.length === 0) {
+      for (const s of activeSessionsRef.current.values()) {
+        sessionsToAbort.push(s)
       }
-      if (window.api && window.api.abortFetchAI) {
+    }
+
+    for (const session of sessionsToAbort) {
+      if (session.abortController) {
         try {
-          window.api.abortFetchAI()
+          session.abortController.abort()
         } catch (_) {}
       }
-      if (window.api && window.api.browserClose) {
-        window.api
-          .browserClose({ sessionId: numId === 1 ? 'main' : `workspace-${numId}` })
-          .catch(() => {})
+    }
+
+    if (abortControllerRef?.current) {
+      try {
+        abortControllerRef.current.abort()
+      } catch (_) {}
+    }
+
+    if (window.api && window.api.abortFetchAI) {
+      try {
+        window.api.abortFetchAI()
+      } catch (_) {}
+    }
+
+    if (window.api && window.api.browserClose) {
+      const closeId = numId === 1 || !numId ? 'main' : `workspace-${numId}`
+      window.api.browserClose({ sessionId: closeId }).catch(() => {})
+    }
+
+    // Fail-safe: Langsung batalkan semua agent tasks yang berstatus running di SQLite
+    try {
+      const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
+      for (const t of runningTasks) {
+        await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
       }
-    } else {
-      // Hentikan seluruh sesi yang aktif
-      for (const [id, session] of activeSessionsRef.current.entries()) {
-        if (session.abortController) session.abortController.abort()
-        if (window.api && window.api.browserClose) {
-          window.api
-            .browserClose({ sessionId: id === 1 ? 'main' : `workspace-${id}` })
-            .catch(() => {})
+    } catch (_) {}
+
+    // Fail-safe: Langsung update chatData UI agar alur kerja dan spinner berhenti seketika
+    const stopUpdater = (prev) => {
+      const filtered = prev.filter((item) => !item.isThinking)
+      return filtered.map((msg) => {
+        if (!msg.isPlanSteps || msg.taskStatus !== 'running') return msg
+        return {
+          ...msg,
+          taskStatus: 'stopped',
+          plan: (msg.plan || []).map((s) => ({
+            ...s,
+            status: s.status === 'running' ? 'stopped' : s.status
+          }))
         }
+      })
+    }
+
+    if (numId !== null && activeSessionUpdatersRef.current.has(numId)) {
+      activeSessionUpdatersRef.current.get(numId)(stopUpdater)
+    } else {
+      setChatData(stopUpdater)
+      for (const updater of activeSessionUpdatersRef.current.values()) {
+        updater(stopUpdater)
       }
-      if (abortControllerRef?.current) abortControllerRef.current.abort()
-      if (window.api && window.api.abortFetchAI) {
-        try {
-          window.api.abortFetchAI()
-        } catch (_) {}
-      }
+    }
+
+    if (numId === 1 || numId === null) {
+      setIsLoading(false)
+      setIsAgentBusy(false)
     }
   }
 
@@ -256,6 +297,7 @@ export const useMarkPlan = ({
       activeTopic = null,
       userInput = '',
       durableTask = null,
+      durableActiveStep = null,
       agenticProcessId = null,
       targetSetChatData = setChatData,
       signal
@@ -573,6 +615,7 @@ export const useMarkPlan = ({
           activeTopic,
           userInput,
           durableTask,
+          durableActiveStep,
           agenticProcessId,
           targetPushProcess,
           targetSetChatData,
@@ -699,8 +742,11 @@ export const useMarkPlan = ({
           previewUrl: toolPreviewUrl,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
           loadedGroup: res?.loaded_group || null,
-          durableTask: executionResult?.durableTask || null,
-          durableActiveStep: executionResult?.durableActiveStep || null
+          durableTask: executionResult?.durableTask || durableTask || null,
+          durableActiveStep:
+            executionResult?.durableActiveStep !== undefined
+              ? executionResult.durableActiveStep
+              : durableActiveStep || null
         }
       }
       // 12. Dynamic Plugin Execution
@@ -811,7 +857,7 @@ export const useMarkPlan = ({
     }
     activeSessionsRef.current.set(activeSessionNum, sessionRecord)
 
-    if (activeSessionNum === 1) {
+    if (abortControllerRef) {
       abortControllerRef.current = sessionAbortController
     }
 
@@ -1331,22 +1377,25 @@ export const useMarkPlan = ({
       while (!isDone && !sessionAbortController.signal.aborted) {
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
-          if (durableTask) {
-            await transitionAgentTask(durableTask.id, 'cancelled', 'user_abort').catch(() => {})
-            targetSetChatData((prev) =>
-              prev.map((msg) => {
-                if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
-                return {
-                  ...msg,
-                  taskStatus: 'stopped',
-                  plan: (msg.plan || []).map((s) => ({
-                    ...s,
-                    status: s.status === 'running' ? 'stopped' : s.status
-                  }))
-                }
-              })
-            )
-          }
+          try {
+            const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
+            for (const t of runningTasks) {
+              await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
+            }
+          } catch (_) {}
+          targetSetChatData((prev) =>
+            prev.map((msg) => {
+              if (!msg.isPlanSteps || msg.taskStatus !== 'running') return msg
+              return {
+                ...msg,
+                taskStatus: 'stopped',
+                plan: (msg.plan || []).map((s) => ({
+                  ...s,
+                  status: s.status === 'running' ? 'stopped' : s.status
+                }))
+              }
+            })
+          )
           throw new Error('AbortError')
         }
 
@@ -1387,13 +1436,25 @@ export const useMarkPlan = ({
 
         stepCount++
 
+        const isDurableTaskCompleted = Boolean(
+          durableTask &&
+          (durableTask.status === 'completed' ||
+            (durableTask.steps &&
+              durableTask.steps.length > 0 &&
+              durableTask.steps.every((s) => s.status === 'completed')))
+        )
+        if (isDurableTaskCompleted) {
+          durableActiveStep = null
+        }
+
         // Ambil Tools OpenAPI Schema yang relevan dengan query/tugas saat ini + group yang sudah dimuat
-        const activeTools = opts.disableTools
-          ? null
-          : await getActiveToolsSchema(
-              userInput + ' ' + (activeTaskObjectiveRef.current || ''),
-              dynamicallyLoadedToolGroups
-            )
+        const activeTools =
+          opts.disableTools || isDurableTaskCompleted
+            ? null
+            : await getActiveToolsSchema(
+                userInput + ' ' + (activeTaskObjectiveRef.current || ''),
+                dynamicallyLoadedToolGroups
+              )
 
         // Loading thinking indicator di awal turn (akumulasi semua pemikiran dari langkah sebelumnya)
         targetSetChatData((prev) => {
@@ -1466,7 +1527,7 @@ export const useMarkPlan = ({
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
-          tools: activeTools,
+          tools: isDurableTaskCompleted ? null : activeTools,
           signal: sessionAbortController.signal,
           onReasoning: (chunk) => {
             currentTurnReasoning += chunk
@@ -1607,6 +1668,11 @@ export const useMarkPlan = ({
           }
         }
 
+        // Jika alur kerja Durable Task telah tuntas 100%, abaikan seluruh tool calls dan paksa penyelesaian
+        if (isDurableTaskCompleted) {
+          effectiveToolCalls = []
+        }
+
         // ======================================================================
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
@@ -1679,6 +1745,30 @@ export const useMarkPlan = ({
                 ? activeTopic?.title || activeTopic?.name || 'Main Thread'
                 : `Sesi #${activeSessionNum}`
 
+            // Jika alur kerja Durable Task sudah selesai, tolak pemanggilan task baru atau mark_done_task
+            if (
+              durableTask &&
+              !durableActiveStep &&
+              (toolName === 'create_agent_task' || toolName === 'mark_done_task')
+            ) {
+              const rejectResult = `[TUGAS TELAH SELESAI]: Seluruh tahapan alur kerja '${durableTask.title}' telah tuntas 100%. DILARANG memanggil tool '${toolName}' lagi! SEGERA berikan jawaban akhir ringkasan menyeluruh kepada pengguna.`
+              const toolObservation = {
+                type: 'tool_result',
+                tool_call_id: tc.id,
+                tool: toolName,
+                success: false,
+                data: null,
+                error: rejectResult
+              }
+              loopMessages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                name: toolName,
+                content: JSON.stringify(toolObservation)
+              })
+              continue
+            }
+
             const execResult = await executeSingleTool(toolName, parsedArgs, {
               tgContext,
               isAutonomous,
@@ -1689,6 +1779,7 @@ export const useMarkPlan = ({
               activeTopic,
               userInput,
               durableTask,
+              durableActiveStep,
               agenticProcessId,
               workspaceRoot: opts.workspaceRoot,
               sessionId: String(activeSessionNum || 1),
@@ -1700,8 +1791,8 @@ export const useMarkPlan = ({
               durableTask = execResult.durableTask
               durableTaskForRecovery = execResult.durableTask
             }
-            if (execResult.durableActiveStep) {
-              durableActiveStep = execResult.durableActiveStep
+            if (toolName === 'create_agent_task' || toolName === 'mark_done_task') {
+              durableActiveStep = execResult.durableActiveStep || null
             }
 
             lastToolExecution = execResult.toolExecution
@@ -1776,6 +1867,146 @@ export const useMarkPlan = ({
               name: toolName,
               content: JSON.stringify(toolObservation)
             })
+
+            // Jika mark_done_task berhasil dan ada tahap berikutnya, otomatis majukan loop
+            if (
+              toolName === 'mark_done_task' &&
+              executionSucceeded &&
+              execResult?.durableActiveStep &&
+              execResult?.durableTask
+            ) {
+              const nextStep = execResult.durableActiveStep
+              const nextIdx = (nextStep.stepIndex ?? nextStep.index ?? 0) + 1
+              const totalSteps = execResult.durableTask?.steps?.length || 0
+              const isNextLastStep = nextIdx === totalSteps
+              consecutiveErrors = 0
+              loopMessages.push({
+                role: 'user',
+                content: `[TAHAP SELESAI & PINDAH KE TAHAP ${nextIdx}${isNextLastStep ? ' - TAHAP TERAKHIR' : ''}]: Artefak tahap sebelumnya telah disimpan ke disk.\n\n>>> SEKARANG KERJAKAN TAHAP ${nextIdx}: "${nextStep.title}"\n- Sasaran: ${nextStep.objective}\n- Target Deliverable: ${nextStep.deliverable}\n${nextStep.acceptanceCriteria?.length ? `- Kriteria Sukses: ${nextStep.acceptanceCriteria.join(', ')}` : ''}\nKerjakan tugas tahap ini di workspace pengguna (buat file/tulis kode). DILARANG memanggil 'read_task' untuk membaca artefak sebelumnya (kamu sudah tahu apa yang kamu buat). WAJIB UJI & VERIFIKASI HASIL terlebih dahulu. DILARANG memanggil 'mark_done_task' sebelum pengujian berhasil! Setelah teruji, barulah PANGGIL TOOL 'mark_done_task' TEPAT 1 KALI dengan parameter stepIndex: ${nextIdx}, artifactContent, dan verificationProof (bukti hasil uji)!${isNextLastStep ? ' Karena ini adalah TAHAP TERAKHIR, saat deliverable tahap ini selesai dan diuji, panggil tool "mark_done_task" dengan parameter "summary" yang memuat rangkuman menyeluruh seluruh alur kerja proyek dari awal hingga akhir!' : ''}`
+              })
+              await startAgentTaskStep(execResult.durableTask.id, nextStep.id)
+              targetPushProcess({
+                id: agenticProcessId,
+                type: 'planning',
+                status: 'active',
+                data: {
+                  steps: (execResult.durableTask.steps || []).map((s) => ({ task: s.title })),
+                  currentStep: nextStep.stepIndex ?? nextStep.index ?? 0,
+                  reasoning: `Melanjutkan ke Tahap ${nextIdx}: "${nextStep.title}"...`
+                }
+              })
+            } else if (
+              toolName === 'mark_done_task' &&
+              executionSucceeded &&
+              !execResult?.durableActiveStep &&
+              execResult?.durableTask
+            ) {
+              // Seluruh tahapan alur kerja telah tuntas 100%!
+              consecutiveErrors = 0
+              durableActiveStep = null
+
+              const completedTask = execResult.durableTask
+              const steps = completedTask.steps || []
+              const taskTitle = completedTask.title || 'Task Workflow'
+
+              let rawSummary =
+                (typeof parsedArgs.summary === 'string' && parsedArgs.summary.trim()) ||
+                (typeof parsedArgs.artifactContent === 'string' &&
+                  parsedArgs.artifactContent.trim()) ||
+                ''
+
+              let finalReport = ''
+              if (rawSummary && rawSummary.length > 150) {
+                finalReport = rawSummary
+              } else {
+                const stepsSummary = steps
+                  .map((s, i) => {
+                    const num = (s.stepIndex ?? s.index ?? i) + 1
+                    const title = s.title || `Tahap ${num}`
+                    const out = s.outputSummary || s.deliverable || 'Selesai dan terverifikasi'
+                    return `${num}. **${title}**: ${out}`
+                  })
+                  .join('\n')
+
+                finalReport = `Seluruh tahapan alur kerja **${taskTitle}** telah berhasil diselesaikan dan terverifikasi 100%.\n\n### Rangkuman Hasil Pekerjaan:\n${stepsSummary}${rawSummary ? `\n\n**Catatan Tambahan:**\n${rawSummary}` : ''}`
+              }
+
+              // Pastikan nol emoji
+              finalReport = finalReport
+                .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+                .trim()
+
+              isDone = true
+              finalContentAccumulator = finalReport
+
+              execSteps.push({ task: 'Selesai' })
+              targetPushProcess({
+                id: agenticProcessId,
+                type: 'planning',
+                status: 'done',
+                data: {
+                  steps: [...execSteps],
+                  currentStep: execSteps.length,
+                  reasoning: 'Seluruh tahapan tugas telah diselesaikan dan terverifikasi.'
+                }
+              })
+
+              targetSetChatData((prev) => {
+                const filtered = prev.filter((item) => !item.isThinking)
+                const finalAllThoughts = [...accumulatedThoughts, currentTurnReasoning]
+                  .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                  .filter(Boolean)
+                const mergedReasoning =
+                  finalAllThoughts.length > 0
+                    ? Array.from(new Set(finalAllThoughts)).join('\n\n---\n\n')
+                    : null
+
+                const cleanFinalOutput = finalReport
+                  .replace(/^(?:<|\[)mood:[a-zA-Z_]+(?:>|\])\s*/i, '')
+                  .trim()
+
+                const aiMsg = {
+                  role: 'ai',
+                  content: cleanFinalOutput,
+                  executedTools: executedToolsList.length > 0 ? executedToolsList : null,
+                  isTaskDone: true,
+                  reasoning: mergedReasoning,
+                  mood: currentActiveMood || 'neutral',
+                  pluginExecution: lastToolExecution,
+                  isProactive: isAutonomous,
+                  timestamp: getCurrentTimeInfo(),
+                  created_at: Date.now(),
+                  source: tgContext ? 'telegram' : 'pc'
+                }
+
+                savedTurnAiMsg = aiMsg
+
+                return filtered
+                  .map((msg) => {
+                    if (!msg.isPlanSteps || msg.taskId !== completedTask.id) return msg
+                    return {
+                      ...msg,
+                      taskStatus: 'completed',
+                      currentStep: (msg.plan || []).length,
+                      plan: (msg.plan || []).map((s) => ({
+                        ...s,
+                        status: s.status === 'failed' ? 'failed' : 'completed'
+                      }))
+                    }
+                  })
+                  .concat(aiMsg)
+              })
+
+              if (finalIsSpeak && finalReport) {
+                playVoice(finalReport).catch(() => {})
+              }
+
+              if (window.api?.showNotification && !document.hasFocus() && finalReport) {
+                window.api.showNotification('Mark', `Alur kerja "${taskTitle}" tuntas!`)
+              }
+
+              break
+            }
           }
 
           // Jika ada tool yang menghasilkan gambar visual, sertakan observasi multimodal
@@ -1799,6 +2030,9 @@ export const useMarkPlan = ({
           if (sessionAbortController.signal.aborted) {
             throw new Error('AbortError')
           }
+          if (isDone) {
+            break
+          }
           continue
         }
 
@@ -1807,159 +2041,31 @@ export const useMarkPlan = ({
         // ======================================================================
         const turnAnswer = streamResult.content || currentTurnContent || ''
 
-        // Jika giliran ini bagian dari Durable Task, kelola checkpointing & promosi step
-        if (durableTask && durableActiveStep) {
-          const currentStep = durableActiveStep
-          const checkpoint = buildDurableStepCheckpoint(
-            currentStep,
-            turnAnswer,
-            durableTask.maxRetries || 2
-          )
-          const stepValidation = checkpoint.validation
-          const checkpointData = { ...checkpoint }
-          delete checkpointData.canRetry
+        // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
+        if (durableTask && !isDurableTaskCompleted) {
+          const activeStep =
+            durableActiveStep ||
+            durableTask.steps?.find((s) => s.status === 'running') ||
+            durableTask.steps?.find((s) => s.status !== 'completed') ||
+            durableTask.steps?.[0]
+          const curIdx = activeStep ? (activeStep.stepIndex ?? activeStep.index ?? 0) + 1 : 1
+          const curTitle = activeStep?.title || 'Tahap Aktif'
+          const curObj = activeStep?.objective || durableTask.objective || ''
+          const curDeliv = activeStep?.deliverable || ''
 
-          // Simpan artefak markdown jika lolos validasi dan memiliki artifactPath
-          if (
-            stepValidation?.isComplete &&
-            currentStep.artifactPath &&
-            window.api?.executeNativeTool
-          ) {
-            try {
-              await window.api.executeNativeTool(
-                'write-file',
-                { path: currentStep.artifactPath, content: turnAnswer },
-                { workspaceRoot: opts.workspaceRoot }
-              )
-            } catch (err) {
-              console.warn('[useMarkPlan] Gagal menulis artefak step:', err)
-            }
-          }
-
-          const checkpointCompleted = checkpointData.status === 'completed'
-          const checkpointCanRetry =
-            !checkpointCompleted && (currentStep.attempts || 0) < (durableTask.maxRetries || 2) + 1
-          const checkpointNeedsRevision = !checkpointCompleted && checkpointCanRetry
-
-          const checkpointedTask = await checkpointAgentTaskStep(
-            durableTask.id,
-            currentStep.id,
-            checkpointData
-          )
-
-          if (!checkpointCompleted && !checkpointCanRetry) {
-            await transitionAgentTask(
-              durableTask.id,
-              'failed',
-              'Tahap gagal memenuhi kriteria setelah batas retry.'
-            )
-            durableTask = checkpointedTask
-            durableActiveStep = null
-            if (activeTaskObjectiveRef) activeTaskObjectiveRef.current = null
-          } else {
-            const nextStep = checkpointCompleted
-              ? checkpointedTask?.steps?.find((s) => s.id === checkpointedTask.activeStepId)
-              : null
-
-            durableTask = checkpointedTask
-            durableTaskForRecovery = checkpointedTask
-            durableActiveStep = nextStep || (checkpointNeedsRevision ? currentStep : null)
-            if (activeTaskObjectiveRef) {
-              activeTaskObjectiveRef.current =
-                nextStep?.objective || (checkpointNeedsRevision ? currentStep.objective : null)
-            }
-
-            // Perbarui state Task Workflow Bubble di chatData secara real-time
-            targetSetChatData((prev) =>
-              prev.map((msg) => {
-                if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
-                const updatedPlan = (msg.plan || []).map((s, sIdx) => {
-                  const isCurrentMatch =
-                    s.id === currentStep.id ||
-                    (s.id &&
-                      currentStep.id &&
-                      (s.id.endsWith(currentStep.id) || currentStep.id.endsWith(s.id))) ||
-                    (s.stepIndex !== undefined && s.stepIndex === currentStep.stepIndex) ||
-                    sIdx === (currentStep.stepIndex ?? currentStep.index ?? 0)
-
-                  if (isCurrentMatch) {
-                    return {
-                      ...s,
-                      status: checkpointCompleted ? 'completed' : 'failed',
-                      output: turnAnswer.slice(0, 1000),
-                      artifactPath: currentStep.artifactPath,
-                      executedTools: [...(s.executedTools || []), ...executedToolsList]
-                    }
-                  }
-
-                  const isNextMatch =
-                    nextStep &&
-                    (s.id === nextStep.id ||
-                      (s.id &&
-                        nextStep.id &&
-                        (s.id.endsWith(nextStep.id) || nextStep.id.endsWith(s.id))) ||
-                      (s.stepIndex !== undefined && s.stepIndex === nextStep.stepIndex) ||
-                      sIdx === (nextStep.stepIndex ?? nextStep.index ?? 0))
-
-                  if (isNextMatch) {
-                    return { ...s, status: 'running' }
-                  }
-                  return s
-                })
-                return {
-                  ...msg,
-                  taskStatus: nextStep ? 'running' : 'completed',
-                  currentStep: nextStep
-                    ? (nextStep.stepIndex ?? nextStep.index ?? 0)
-                    : (msg.plan || []).length,
-                  plan: updatedPlan
-                }
-              })
-            )
-
-            // Jika butuh revisi, minta AI memperbaiki dan ulangi tahap ini
-            if (!checkpointCompleted && checkpointNeedsRevision) {
-              loopMessages.push({
-                role: 'assistant',
-                content: `[TAHAP PERLU REVISI]: ${turnAnswer}`
-              })
-              loopMessages.push({
-                role: 'user',
-                content: `[REVISI TAHAP] Ulangi dan lengkapi tahap "${currentStep.title}". Kekurangan: ${(stepValidation?.missingRequirements || []).join('; ')}. Penuhi target deliverable!`
-              })
-              await startAgentTaskStep(durableTask.id, durableActiveStep.id)
-              continue
-            }
-
-            // Jika masih ada tahap berikutnya, promosikan dan lanjutkan loop ReAct
-            if (nextStep) {
-              consecutiveErrors = 0
-              loopMessages.push({
-                role: 'assistant',
-                content: `[TAHAP SELESAI]: "${currentStep.title}". Output: ${turnAnswer}`
-              })
-              loopMessages.push({
-                role: 'user',
-                content: `[LANJUTKAN TAHAP BERIKUTNYA]: "${nextStep.title}"\n- Sasaran: ${nextStep.objective}\n- Target Deliverable: ${nextStep.deliverable}\n${nextStep.acceptanceCriteria?.length ? `- Kriteria: ${nextStep.acceptanceCriteria.join(', ')}` : ''}\nKerjakan tahap ini sekarang menggunakan tools yang relevan sampai tuntas!`
-              })
-              await startAgentTaskStep(durableTask.id, nextStep.id)
-              targetPushProcess({
-                id: agenticProcessId,
-                type: 'planning',
-                status: 'active',
-                data: {
-                  steps: durableTask.steps.map((s) => ({ task: s.title })),
-                  currentStep: nextStep.stepIndex ?? nextStep.index ?? 0,
-                  reasoning: `Tahap "${currentStep.title}" selesai. Melanjutkan ke "${nextStep.title}"...`
-                }
-              })
-              continue
-            }
-          }
+          loopMessages.push({
+            role: 'assistant',
+            content: turnAnswer
+          })
+          loopMessages.push({
+            role: 'user',
+            content: `[PENGINGAT TAHAP AKTIF]: Kamu saat ini sedang berada di Tahap ${curIdx}: "${curTitle}".\n- Sasaran: ${curObj}\n- Target Deliverable: ${curDeliv}\n\nTahap ini BELUM selesai karena kamu belum memverifikasi hasil dan belum memanggil tool 'mark_done_task'. Kerjakan sasaran ini dengan tools yang relevan di workspace pengguna, lakukan pengujian/verifikasi hasil, lalu PANGGIL TOOL 'mark_done_task' dengan parameter stepIndex: ${curIdx}, artifactContent, dan verificationProof agar alur kerja dapat beralih ke tahap berikutnya!`
+          })
+          continue
         }
 
-        // Jika Durable Task selesai seluruhnya, tandai status final
-        if (durableTask) {
+        // Jika seluruh tahapan Durable Task telah tuntas diselesaikan via mark_done_task
+        if (durableTask && isDurableTaskCompleted) {
           targetSetChatData((prev) =>
             prev.map((msg) => {
               if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
@@ -2260,6 +2366,16 @@ export const useMarkPlan = ({
         try {
           speechQueue.reset()
         } catch (_) {}
+        try {
+          const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
+          for (const t of runningTasks) {
+            await transitionAgentTask(
+              t.id,
+              'cancelled',
+              'Eksekusi dibatalkan atas permintaan pengguna.'
+            ).catch(() => {})
+          }
+        } catch (_) {}
         if (durableTaskForRecovery) {
           transitionAgentTask(
             durableTaskForRecovery.id,
@@ -2273,9 +2389,11 @@ export const useMarkPlan = ({
         const thinkingItem = prev.find((item) => item.isThinking)
         let updated = prev.filter((item) => !item.isThinking)
 
-        if (isAbort && durableTaskForRecovery) {
+        if (isAbort) {
           updated = updated.map((msg) => {
-            if (!msg.isPlanSteps || msg.taskId !== durableTaskForRecovery.id) return msg
+            if (!msg.isPlanSteps) return msg
+            if (durableTaskForRecovery && msg.taskId && msg.taskId !== durableTaskForRecovery.id)
+              return msg
             return {
               ...msg,
               taskStatus: 'stopped',

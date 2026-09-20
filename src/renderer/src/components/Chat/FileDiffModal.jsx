@@ -78,6 +78,7 @@ export const FileDiffModal = ({ isOpen = false, onClose, tool = '', query = null
   const [filePath, setFilePath] = useState('')
   const [isNewFile, setIsNewFile] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const isViewOnly = !onResolve || tool === 'read-file' || tool === 'view-artifact'
 
   useEffect(() => {
     if (!isOpen) return
@@ -204,20 +205,28 @@ export const FileDiffModal = ({ isOpen = false, onClose, tool = '', query = null
                 ({filePath})
               </span>
             )}
-            {tool && (
-              <span className="bg-white/10 text-white/80 px-2 py-0.5 rounded text-[11px] font-mono shrink-0">
-                {tool}
+            {isViewOnly ? (
+              <span className="bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded text-[11px] font-mono shrink-0">
+                Artefak Tahap
               </span>
-            )}
-            {isNewFile && (
-              <span className="bg-success/15 text-success px-2 py-0.5 rounded text-[11px] font-semibold shrink-0">
-                Berkas Baru
-              </span>
-            )}
-            {tool === 'delete-file' && (
-              <span className="bg-error/15 text-error px-2 py-0.5 rounded text-[11px] font-semibold shrink-0">
-                Hapus Berkas
-              </span>
+            ) : (
+              <>
+                {tool && (
+                  <span className="bg-white/10 text-white/80 px-2 py-0.5 rounded text-[11px] font-mono shrink-0">
+                    {tool}
+                  </span>
+                )}
+                {isNewFile && (
+                  <span className="bg-success/15 text-success px-2 py-0.5 rounded text-[11px] font-semibold shrink-0">
+                    Berkas Baru
+                  </span>
+                )}
+                {tool === 'delete-file' && (
+                  <span className="bg-error/15 text-error px-2 py-0.5 rounded text-[11px] font-semibold shrink-0">
+                    Hapus Berkas
+                  </span>
+                )}
+              </>
             )}
           </div>
           <button
@@ -250,7 +259,7 @@ export const FileDiffModal = ({ isOpen = false, onClose, tool = '', query = null
               theme="vs-dark"
               options={{
                 readOnly: true,
-                renderSideBySide: true,
+                renderSideBySide: !isViewOnly,
                 minimap: { enabled: false },
                 fontSize: 12,
                 lineNumbers: 'on',
@@ -265,36 +274,48 @@ export const FileDiffModal = ({ isOpen = false, onClose, tool = '', query = null
 
         {/* Footer Informative Actions */}
         <div className="flex flex-wrap items-center justify-end px-4 py-3 bg-base-200/90 border-t border-white/10 shrink-0 gap-2">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onResolve && onResolve('reject')}
-              className="btn btn-ghost btn-sm text-error/80 hover:text-error hover:bg-error/10 rounded-lg px-3"
-            >
-              Tolak
-            </button>
-            <button
-              type="button"
-              onClick={() => onResolve && onResolve('approve_session')}
-              className="btn btn-ghost btn-sm text-warning/80 hover:text-warning hover:bg-warning/10 rounded-lg px-3"
-            >
-              Izinkan Sesi Ini
-            </button>
-            <button
-              type="button"
-              onClick={() => onResolve && onResolve('approve_always')}
-              className="btn btn-ghost btn-sm text-white/40 hover:text-error hover:bg-error/10 rounded-lg px-3"
-            >
-              Izinkan Selamanya
-            </button>
-            <button
-              type="button"
-              onClick={() => onResolve && onResolve('approve_once')}
-              className="btn btn-primary btn-sm text-black font-semibold rounded-lg px-4 shadow-sm"
-            >
-              Izinkan Sekali
-            </button>
-          </div>
+          {isViewOnly ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn btn-primary btn-sm text-black font-semibold rounded-lg px-4 shadow-sm"
+              >
+                Tutup Pratinjau
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onResolve && onResolve('reject')}
+                className="btn btn-ghost btn-sm text-error/80 hover:text-error hover:bg-error/10 rounded-lg px-3"
+              >
+                Tolak
+              </button>
+              <button
+                type="button"
+                onClick={() => onResolve && onResolve('approve_session')}
+                className="btn btn-ghost btn-sm text-warning/80 hover:text-warning hover:bg-warning/10 rounded-lg px-3"
+              >
+                Izinkan Sesi Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => onResolve && onResolve('approve_always')}
+                className="btn btn-ghost btn-sm text-white/40 hover:text-error hover:bg-error/10 rounded-lg px-3"
+              >
+                Izinkan Selamanya
+              </button>
+              <button
+                type="button"
+                onClick={() => onResolve && onResolve('approve_once')}
+                className="btn btn-primary btn-sm text-black font-semibold rounded-lg px-4 shadow-sm"
+              >
+                Izinkan Sekali
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
