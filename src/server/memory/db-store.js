@@ -287,7 +287,8 @@ ensureTableColumns('agent_task_steps', {
 ensureTableColumns('session_compact', {
   summary_block: 'TEXT',
   last_compacted_message_id: 'TEXT',
-  last_compacted_at: 'INTEGER'
+  last_compacted_at: 'INTEGER',
+  total_tokens: 'INTEGER DEFAULT 0'
 })
 
 /**

@@ -27,7 +27,7 @@ flowchart TD
 
     subgraph "Context Management Shield"
         ActiveTurn["Turn Aktif: Raw Base64 Payload Dikirim ke AI"]
-        HistoryDB["Riwayat DB: Normalisasi Teks [Gambar: 2000 chars]"]
+        HistoryDB["Riwayat DB & Tokenizer: Bobot Tetap (~1.000 tokens)"]
     end
 
     subgraph "Model AI Multimodal"
@@ -86,18 +86,24 @@ Untuk memahami tampilan aplikasi pihak ketiga yang tidak memiliki API teks:
 
 String citra Base64 berukuran rata-rata antara 500 KB hingga 3 MB (setara puluhan hingga ratusan ribu token jika dibiarkan dalam riwayat percakapan teks mentah). Jika 5 gambar terkumpul dalam satu sesi, jendela konteks akan langsung penuh (_context window blowout_).
 
-MARK menerapkan teknik **Normalisasi Konteks Dua Tahap** di [`src/renderer/src/api/ai/contextManager.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/contextManager.js):
+MARK menerapkan teknik **Normalisasi Konteks Token & Format Riwayat** di [`src/renderer/src/api/ai/contextManager.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/contextManager.js):
 
 1. **Pada Turn Aktif:** Citra Base64 utuh dikirimkan ke model vision untuk mendapatkan inferensi visual akurat.
-2. **Setelah Turn Selesai:** Citra di dalam riwayat obrolan dipangkas dan dinormalisasi menjadi representasi penanda berbobot tetap (maksimal 2.000 karakter):
+2. **Normalisasi Token Per-Citra:** Pada penghitungan konteks via `calculateMessageTokens()`, representasi base64 citra dinormalisasi menjadi bobot tetap **~1.000 tokens** per gambar, memastikan kuota jendela 256K tokens tetap stabil dan tidak terdistorsi oleh ukuran byte base64:
    ```javascript
-   // Cuplikan dari src/renderer/src/api/ai/contextManager.js
+   // Cuplikan dari calculateMessageTokens di src/renderer/src/api/ai/contextManager.js
+   if (msg.content.includes('data:image/')) {
+     const normalized = msg.content.replace(/data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g, '')
+     total += countTokens(normalized) + 1000
+   }
+   ```
+3. **Penyusutan String Riwayat:** String Base64 pada riwayat dipangkas (maksimal 2.000 karakter) agar tidak membebani payload IPC dan serialisasi database:
+   ```javascript
    if (part.type === 'image_url') {
-     // Potong string base64 yang sangat panjang untuk menghemat context history
      const urlStr = part.image_url?.url || ''
      const truncated =
        urlStr.length > 2000 ? urlStr.slice(0, 2000) + '...[GAMBAR DIPANGKAS]' : urlStr
      return { type: 'image_url', image_url: { url: truncated } }
    }
    ```
-3. Berkas fisik gambar tetap tersimpan di disk atau cache lokal sehingga antarmuka pengguna dapat menampilkannya kembali kapan saja tanpa membebani memori inferensi LLM.
+4. **Persistensi File Fisik:** Berkas fisik gambar tetap tersimpan di disk atau cache lokal sehingga antarmuka pengguna dapat menampilkannya kembali kapan saja tanpa membebani memori inferensi LLM.

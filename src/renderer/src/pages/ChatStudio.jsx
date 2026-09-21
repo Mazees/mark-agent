@@ -214,8 +214,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         new CustomEvent('context-tracker-updated', {
           detail: {
             sessionId: String(activeSessionId),
+            currentTokens: 0,
+            maxTokens: 256000,
             currentChars: 0,
-            maxChars: 525000,
+            maxChars: 256000,
             percentage: 0
           }
         })
@@ -225,9 +227,9 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     let isMounted = true
     import('../api/ai/contextManager')
-      .then(({ calculateSessionChars, MAX_CONTEXT_CHARS }) => {
+      .then(({ calculateSessionTokens, MAX_CONTEXT_TOKENS }) => {
         if (!isMounted) return
-        const chars = calculateSessionChars(
+        const tokens = calculateSessionTokens(
           currentDisplayMessages,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
           activeSessionCompact?.lastCompactedMessageId ||
@@ -238,9 +240,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           new CustomEvent('context-tracker-updated', {
             detail: {
               sessionId: String(activeSessionId),
-              currentChars: chars,
-              maxChars: MAX_CONTEXT_CHARS,
-              percentage: Math.min(100, (chars / MAX_CONTEXT_CHARS) * 100)
+              currentTokens: tokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (tokens / MAX_CONTEXT_TOKENS) * 100),
+              currentChars: tokens,
+              maxChars: MAX_CONTEXT_TOKENS
             }
           })
         )
@@ -477,13 +481,17 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             }
           })
         )
+        const currentTok = res.currentTokens ?? res.currentChars ?? 0
+        const maxTok = res.maxTokens || 256000
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {
             detail: {
               sessionId: String(activeSessionId),
-              currentChars: res.currentChars || 0,
-              maxChars: 525000,
-              percentage: Math.min(100, ((res.currentChars || 0) / 525000) * 100),
+              currentTokens: currentTok,
+              maxTokens: maxTok,
+              currentChars: currentTok,
+              maxChars: maxTok,
+              percentage: Math.min(100, (currentTok / maxTok) * 100),
               lastCompactedAt: Date.now()
             }
           })

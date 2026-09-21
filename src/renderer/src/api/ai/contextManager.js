@@ -1,23 +1,37 @@
 /**
  * Context Manager Engine (MARK v5.0.0)
  * Mengelola siklus context management per-session:
- * - Batas global konstanta 525.000 karakter (MAX_CONTEXT_CHARS)
- * - Penghitungan karakter presisi in-memory per sesi
+ * - Batas global konstanta 256.000 tokens (MAX_CONTEXT_TOKENS) via gpt-tokenizer BPE
+ * - Penghitungan token presisi in-memory per sesi (system prompt + multimodal + messages)
  * - Tahap 1: Pruning output tool lama di memori (0ms delay, tanpa AI)
  * - Tahap 2: AI Summarization inkremental (Gemini Web -> fallback active provider)
  * - Pembersihan orphan tool pairs
  * - Perakitan payload prompt berformat [ COMPACTED MESSAGE SUMMARY ]
  */
 
+import { encode } from 'gpt-tokenizer'
 import { fetchAI } from './core.js'
 import { getSessionCompact, saveSessionCompact, saveSession } from '../db.js'
 import { compactCodeBlocks } from './contextCompactor.js'
 
-export const MAX_CONTEXT_CHARS = 525000
-export const GATEWAY_HYGIENE_THRESHOLD = 0.85 // Jaring pengaman pra-turn (85% kapasitas)
-export const IN_LOOP_COMPACT_THRESHOLD = 0.5 // Ambang pemicu in-loop ReAct (50% kapasitas)
+export const MAX_CONTEXT_TOKENS = 256000 // 256K tokens
+export const MAX_CONTEXT_CHARS = 256000 // Legacy backward-compatibility alias disinkronkan ke 256K
+export const GATEWAY_HYGIENE_THRESHOLD = 0.85 // Jaring pengaman pra-turn (85% kapasitas = ~217.6K tokens)
+export const IN_LOOP_COMPACT_THRESHOLD = 0.5 // Ambang pemicu in-loop ReAct (50% kapasitas = ~128K tokens)
 export const OLD_TOOL_PRUNE_CHAR_LIMIT = 200 // Batas karakter output tool lama untuk dipangkas
 export const CLEARED_TOOL_PLACEHOLDER = '[Old tool output cleared to save context space]'
+
+/**
+ * Helper menghitung token teks murni via BPE tokenizer (gpt-tokenizer)
+ */
+export function countTokens(text) {
+  if (!text || typeof text !== 'string') return 0
+  try {
+    return encode(text).length
+  } catch {
+    return Math.ceil(text.length / 4)
+  }
+}
 
 /**
  * Mendapatkan ID unik dari sebuah objek pesan
@@ -28,13 +42,12 @@ export function getMessageId(msg, fallbackIndex = 0) {
 }
 
 /**
- * Menghitung panjang karakter representasi sebuah pesan
+ * Menghitung panjang karakter representasi sebuah pesan (legacy helper)
  */
 export function calculateMessageChars(msg) {
   if (!msg) return 0
   let total = 0
 
-  // Konten teks & multimodal (normalisasi bobot gambar Base64)
   if (typeof msg.content === 'string') {
     if (msg.content.includes('data:image/')) {
       const normalized = msg.content.replace(
@@ -67,8 +80,6 @@ export function calculateMessageChars(msg) {
           total += textStr.length
         }
       } else if (part.type === 'image_url' || part.image_url || part.type === 'image') {
-        // Satu gambar pada LLM bernilai ~258 s/d 500 token (~1.000 - 2.000 karakter ekuivalen),
-        // BUKAN ukuran string Base64 mentah ratusan ribu karakter.
         total += 2000
       } else {
         total += JSON.stringify(part).length
@@ -82,11 +93,9 @@ export function calculateMessageChars(msg) {
     }
   }
 
-  // Reasoning / Thought
   if (typeof msg.reasoning === 'string') total += msg.reasoning.length
   if (typeof msg.thought === 'string') total += msg.thought.length
 
-  // Tool calls & executed tools (abaikan preview dataUrl base64 karena hanya untuk rendering UI)
   if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
     const sanitizedTools = msg.executedTools.map((t) => {
       if (!t) return t
@@ -104,14 +113,112 @@ export function calculateMessageChars(msg) {
 }
 
 /**
- * Menghitung total karakter pesan satu sesi + ringkasan aktif di memori.
- * Jika terdapat lastCompactedMessageId, pesan-pesan sebelum atau sama dengan ID tersebut
- * SUDAH terangkum di dalam summaryBlock sehingga TIDAK dihitung dua kali.
+ * Menghitung estimasi token presisi sebuah pesan.
+ * Prioritas:
+ * 1. Token yang sudah tersimpan di database/objek pesan (msg.tokens)
+ * 2. Token completion resmi dari API (msg.usage.completion_tokens)
+ * 3. Fallback hitung lokal via BPE tokenizer (gpt-tokenizer) lalu simpan ke msg.tokens
  */
-export function calculateSessionChars(
+export function calculateMessageTokens(msg) {
+  if (!msg) return 0
+
+  // 1. Jika token sudah tersimpan di database/objek pesan, langsung gunakan tanpa hitung ulang
+  if (typeof msg.tokens === 'number' && msg.tokens > 0) {
+    return msg.tokens
+  }
+
+  // 2. Jika pesan memiliki usage completion_tokens resmi dari API
+  if (
+    msg.usage &&
+    typeof msg.usage.completion_tokens === 'number' &&
+    msg.usage.completion_tokens > 0
+  ) {
+    msg.tokens = msg.usage.completion_tokens
+    return msg.tokens
+  }
+
+  let total = 0
+
+  // Konten teks & multimodal (normalisasi bobot gambar Base64)
+  if (typeof msg.content === 'string') {
+    if (msg.content.includes('data:image/')) {
+      const normalized = msg.content.replace(
+        /data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g,
+        ''
+      )
+      total += countTokens(normalized) + 1000
+    } else {
+      total += countTokens(msg.content)
+    }
+  } else if (Array.isArray(msg.content)) {
+    for (const part of msg.content) {
+      if (!part) continue
+      if (typeof part === 'string') {
+        if (part.includes('data:image/')) {
+          const normalized = part.replace(/data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g, '')
+          total += countTokens(normalized) + 1000
+        } else {
+          total += countTokens(part)
+        }
+      } else if (part.type === 'text') {
+        const textStr = part.text || ''
+        if (textStr.includes('data:image/')) {
+          const normalized = textStr.replace(
+            /data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/g,
+            ''
+          )
+          total += countTokens(normalized) + 1000
+        } else {
+          total += countTokens(textStr)
+        }
+      } else if (part.type === 'image_url' || part.image_url || part.type === 'image') {
+        // Satu gambar pada LLM bernilai ~1000 token
+        total += 1000
+      } else {
+        total += countTokens(JSON.stringify(part))
+      }
+    }
+  } else if (msg.content && typeof msg.content === 'object') {
+    if (msg.content.type === 'image_url' || msg.content.image_url) {
+      total += 1000
+    } else {
+      total += countTokens(JSON.stringify(msg.content))
+    }
+  }
+
+  // Reasoning / Thought
+  if (typeof msg.reasoning === 'string') total += countTokens(msg.reasoning)
+  if (typeof msg.thought === 'string') total += countTokens(msg.thought)
+
+  // Tool calls & executed tools (abaikan preview dataUrl base64 karena hanya untuk rendering UI)
+  if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
+    const sanitizedTools = msg.executedTools.map((t) => {
+      if (!t) return t
+      const copy = { ...t }
+      delete copy.preview
+      return copy
+    })
+    total += countTokens(JSON.stringify(sanitizedTools))
+  }
+  if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+    total += countTokens(JSON.stringify(msg.tool_calls))
+  }
+
+  // Simpan hasil hitungan ke objek pesan agar tidak dihitung ulang lagi
+  msg.tokens = total
+  return total
+}
+
+/**
+ * Menghitung total token pesan satu sesi + ringkasan aktif + system prompt di memori.
+ * Prioritas utama: Menggunakan usage.total_tokens dari DB/API jika ada.
+ * Fallback: BPE tokenizer (gpt-tokenizer) dengan caching per-pesan.
+ */
+export function calculateSessionTokens(
   messages = [],
   summaryBlock = '',
-  lastCompactedMessageId = null
+  lastCompactedMessageId = null,
+  systemPrompt = ''
 ) {
   let startIndex = 0
   let isBoundaryFound = false
@@ -132,18 +239,69 @@ export function calculateSessionChars(
     }
   }
 
-  // Hanya hitung panjang summaryBlock jika batas pesan lama benar-benar ditemukan
-  let total = isBoundaryFound && typeof summaryBlock === 'string' ? summaryBlock.length : 0
+  // 1. Cek apakah ada pesan asisten terakhir yang memiliki usage.total_tokens resmi dari DB / API
+  // Jika ada, gunakan total_tokens tersebut sebagai baseline dan hanya hitung pesan setelahnya
+  let lastUsageAssistantIdx = -1
+  for (let i = messages.length - 1; i >= startIndex; i--) {
+    const msg = messages[i]
+    if (
+      msg &&
+      (msg.role === 'ai' || msg.role === 'assistant') &&
+      msg.usage &&
+      typeof msg.usage.total_tokens === 'number' &&
+      msg.usage.total_tokens > 0
+    ) {
+      lastUsageAssistantIdx = i
+      break
+    }
+  }
+
+  if (lastUsageAssistantIdx !== -1) {
+    let total = messages[lastUsageAssistantIdx].usage.total_tokens
+    for (let i = lastUsageAssistantIdx + 1; i < messages.length; i++) {
+      const msg = messages[i]
+      if (
+        !msg ||
+        msg.isThinking ||
+        msg.isSearching ||
+        msg.isSummarizing ||
+        msg.role === 'command'
+      ) {
+        continue
+      }
+      total += calculateMessageTokens(msg)
+    }
+    return total
+  }
+
+  // 2. Fallback: Hitung token via BPE tokenizer (gpt-tokenizer) dengan caching per-pesan
+  let total = countTokens(systemPrompt)
+
+  if (isBoundaryFound && typeof summaryBlock === 'string') {
+    total += countTokens(summaryBlock)
+  }
 
   for (let i = startIndex; i < messages.length; i++) {
     const msg = messages[i]
     if (!msg || msg.isThinking || msg.isSearching || msg.isSummarizing || msg.role === 'command') {
       continue
     }
-    total += calculateMessageChars(msg)
+    total += calculateMessageTokens(msg)
   }
 
   return total
+}
+
+/**
+ * Kompatibilitas mundur: Menghitung session tokens (dialihkan langsung ke calculateSessionTokens)
+ */
+export function calculateSessionChars(
+  messages = [],
+  summaryBlock = '',
+  lastCompactedMessageId = null,
+  systemPrompt = ''
+) {
+  return calculateSessionTokens(messages, summaryBlock, lastCompactedMessageId, systemPrompt)
 }
 
 /**
@@ -436,7 +594,8 @@ export async function executeSessionCompaction({
   messages = [],
   activeConfig = {},
   onProgress = null,
-  force = false
+  force = false,
+  systemPrompt = ''
 }) {
   // Ambil summary & pointer sebelumnya dari tabel session_compact jika ada
   let existingSummaryBlock = ''
@@ -452,17 +611,19 @@ export async function executeSessionCompaction({
     console.warn('[contextManager] Gagal mengambil session_compact lama:', err)
   }
 
-  const currentChars = calculateSessionChars(
+  const currentTokens = calculateSessionTokens(
     messages,
     existingSummaryBlock,
-    existingLastCompactedId
+    existingLastCompactedId,
+    systemPrompt
   )
-  if (!force && currentChars < MAX_CONTEXT_CHARS) {
+  if (!force && currentTokens < MAX_CONTEXT_TOKENS) {
     return {
       success: true,
       isCompacted: false,
       compactedMessages: messages,
-      currentChars
+      currentTokens,
+      currentChars: currentTokens
     }
   }
 
@@ -474,14 +635,15 @@ export async function executeSessionCompaction({
   }
 
   const prunedMessages = pruneOldToolResultsInMemory(messages, 4)
-  const prunedChars = calculateSessionChars(
+  const prunedTokens = calculateSessionTokens(
     prunedMessages,
     existingSummaryBlock,
-    existingLastCompactedId
+    existingLastCompactedId,
+    systemPrompt
   )
 
-  // Jika Tahap 1 saja sudah cukup membawa karakter di bawah batas (hanya saat auto-compact / !force):
-  if (!force && prunedChars < MAX_CONTEXT_CHARS) {
+  // Jika Tahap 1 saja sudah cukup membawa token di bawah batas (hanya saat auto-compact / !force):
+  if (!force && prunedTokens < MAX_CONTEXT_TOKENS) {
     // Simpan hasil prune ke tabel sessions
     try {
       await saveSession(sessionId, prunedMessages)
@@ -494,7 +656,8 @@ export async function executeSessionCompaction({
       isCompacted: true,
       prunedOnly: true,
       compactedMessages: prunedMessages,
-      currentChars: prunedChars
+      currentTokens: prunedTokens,
+      currentChars: prunedTokens
     }
   }
 
@@ -562,10 +725,11 @@ export async function executeSessionCompaction({
     console.warn('[contextManager] Gagal menyimpan sessions:', e)
   }
 
-  const finalChars = calculateSessionChars(
+  const finalTokens = calculateSessionTokens(
     tailMessages,
     newSummaryBlock,
-    null // tailMessages sudah merupakan pesan setelah cutIndex
+    null, // tailMessages sudah merupakan pesan setelah cutIndex
+    systemPrompt
   )
 
   return {
@@ -576,7 +740,8 @@ export async function executeSessionCompaction({
     tailMessages,
     lastCompactedMessageId,
     newSummaryBlock,
-    currentChars: finalChars
+    currentTokens: finalTokens,
+    currentChars: finalTokens
   }
 }
 
@@ -728,27 +893,26 @@ export function assembleCompactedPayload({
 
 /**
  * In-Flight Pruning untuk loop ReAct.
- * Murni berbasis kapasitas ambang batas 525K karakter (MAX_CONTEXT_CHARS).
- * Jika selama giliran panjang (banyak pemanggilan tool) akumulasi loopMessages >= MAX_CONTEXT_CHARS,
- * pangkas data output tool terlama di dalam loopMessages sampai total karakter kembali < MAX_CONTEXT_CHARS.
+ * Berbasis kapasitas ambang batas 256K tokens (MAX_CONTEXT_TOKENS).
+ * Jika selama giliran panjang akumulasi loopMessages >= MAX_CONTEXT_TOKENS,
+ * pangkas data output tool terlama di dalam loopMessages sampai total token kembali < MAX_CONTEXT_TOKENS.
  */
-export function pruneInFlightMessages(messages = [], maxChars = MAX_CONTEXT_CHARS) {
+export function pruneInFlightMessages(messages = [], maxTokens = MAX_CONTEXT_TOKENS) {
   if (!Array.isArray(messages) || messages.length === 0) return messages
 
-  let totalChars = 0
+  let totalTokens = 0
   for (const m of messages) {
-    totalChars += calculateMessageChars(m)
+    totalTokens += calculateMessageTokens(m)
   }
 
-  if (totalChars < maxChars) return messages
+  if (totalTokens < maxTokens) return messages
 
-  // Pangkas output tool terlama satu per satu sampai di bawah maxChars
+  // Pangkas output tool terlama satu per satu sampai di bawah maxTokens
   for (let i = 0; i < messages.length; i++) {
-    if (totalChars < maxChars) break
+    if (totalTokens < maxTokens) break
     const m = messages[i]
     if (m && m.role === 'tool' && m.content) {
-      const origLen =
-        typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length
+      const origTokens = calculateMessageTokens(m)
       let parsed = null
       try {
         parsed = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
@@ -757,15 +921,18 @@ export function pruneInFlightMessages(messages = [], maxChars = MAX_CONTEXT_CHAR
       }
 
       if (parsed && (parsed.data || parsed.output)) {
-        const prunedText = '[Output dipangkas: kapasitas sesi mencapai 525K]'
+        const prunedText = '[Output dipangkas: kapasitas sesi mencapai 256K tokens]'
         parsed.data = prunedText
         if (parsed.output) parsed.output = prunedText
         m.content = JSON.stringify(parsed)
-        const newLen = m.content.length
-        totalChars -= origLen - newLen
+        m.tokens = null // invalidate cache
+        const newTokens = calculateMessageTokens(m)
+        totalTokens -= origTokens - newTokens
       } else if (typeof m.content === 'string' && m.content.length > 200) {
-        m.content = '[Output tool lama dipangkas karena kapasitas 525K]'
-        totalChars -= origLen - m.content.length
+        m.content = '[Output tool lama dipangkas karena kapasitas 256K tokens]'
+        m.tokens = null
+        const newTokens = calculateMessageTokens(m)
+        totalTokens -= origTokens - newTokens
       }
     }
   }
@@ -786,32 +953,40 @@ export function pruneInFlightMessages(messages = [], maxChars = MAX_CONTEXT_CHAR
 export async function checkAndCompressInLoop({
   loopMessages = [],
   sessionId = '1',
-  maxChars = MAX_CONTEXT_CHARS,
+  maxTokens = MAX_CONTEXT_TOKENS,
+  maxChars = null, // backward compatibility
   thresholdRatio = IN_LOOP_COMPACT_THRESHOLD,
   protectLastN = 6,
   protectFirstN = 2,
   activeConfig = {},
-  onProgress = null
+  onProgress = null,
+  systemPrompt = ''
 }) {
   if (!Array.isArray(loopMessages) || loopMessages.length <= protectLastN + protectFirstN) {
     return { compressed: false, loopMessages }
   }
 
-  const triggerLimit = maxChars * thresholdRatio
-  let totalChars = 0
-  let sessionChars = 0
+  const effectiveMaxTokens = maxTokens || MAX_CONTEXT_TOKENS
+  const triggerLimit = effectiveMaxTokens * thresholdRatio
+  let totalTokens = countTokens(systemPrompt)
+  let sessionTokens = 0
   for (const m of loopMessages) {
-    const chars = calculateMessageChars(m)
-    totalChars += chars
+    const tokens = calculateMessageTokens(m)
+    totalTokens += tokens
     if (m.role !== 'system') {
-      sessionChars += chars
+      sessionTokens += tokens
     }
   }
 
-  // Jika masih di bawah ambang batas (50% dari maxChars) dan jumlah pesan belum terlalu panjang (< 24),
+  // Jika masih di bawah ambang batas (50% dari 256K) dan jumlah pesan belum terlalu panjang (< 24),
   // tidak memerlukan kompresi
-  if (totalChars < triggerLimit && loopMessages.length < 24) {
-    return { compressed: false, loopMessages, totalChars: sessionChars }
+  if (totalTokens < triggerLimit && loopMessages.length < 24) {
+    return {
+      compressed: false,
+      loopMessages,
+      totalTokens: sessionTokens,
+      totalChars: sessionTokens
+    }
   }
 
   if (typeof onProgress === 'function') {
@@ -820,24 +995,26 @@ export async function checkAndCompressInLoop({
 
   // FASE 1: Zero-cost O(n) Tool Pruning
   const prunedMessages = pruneOldToolResultsInLoop(loopMessages, protectLastN)
-  let prunedChars = 0
-  let prunedSessionChars = 0
+  let prunedTokens = countTokens(systemPrompt)
+  let prunedSessionTokens = 0
   for (const m of prunedMessages) {
-    const chars = calculateMessageChars(m)
-    prunedChars += chars
+    m.tokens = null // invalidate cache for pruned
+    const tokens = calculateMessageTokens(m)
+    prunedTokens += tokens
     if (m.role !== 'system') {
-      prunedSessionChars += chars
+      prunedSessionTokens += tokens
     }
   }
 
   // Jika Fase 1 saja sudah cukup membawa konteks di bawah ambang batas 50%:
-  if (prunedChars < triggerLimit) {
-    const didPrune = prunedChars < totalChars
+  if (prunedTokens < triggerLimit) {
+    const didPrune = prunedTokens < totalTokens
     return {
       compressed: didPrune,
       prunedOnly: true,
       loopMessages: prunedMessages,
-      totalChars: prunedSessionChars
+      totalTokens: prunedSessionTokens,
+      totalChars: prunedSessionTokens
     }
   }
 
@@ -857,7 +1034,8 @@ export async function checkAndCompressInLoop({
       compressed: true,
       prunedOnly: true,
       loopMessages: prunedMessages,
-      totalChars: prunedChars
+      totalTokens: prunedTokens,
+      totalChars: prunedTokens
     }
   }
 
@@ -899,10 +1077,10 @@ export async function checkAndCompressInLoop({
   ]
 
   const sanitized = cleanOrphanToolPairs(assembled)
-  let finalSessionChars = 0
+  let finalSessionTokens = 0
   for (const m of sanitized) {
     if (m.role !== 'system') {
-      finalSessionChars += calculateMessageChars(m)
+      finalSessionTokens += calculateMessageTokens(m)
     }
   }
 
@@ -910,7 +1088,8 @@ export async function checkAndCompressInLoop({
     compressed: true,
     prunedOnly: false,
     loopMessages: sanitized,
-    totalChars: finalSessionChars,
+    totalTokens: finalSessionTokens,
+    totalChars: finalSessionTokens,
     newSummaryBlock: newSummary
   }
 }

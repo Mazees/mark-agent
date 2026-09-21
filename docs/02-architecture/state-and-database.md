@@ -68,6 +68,7 @@ erDiagram
         string session_id PK
         string summary_block
         string last_compacted_message_id
+        int total_tokens
         int last_compacted_at
     }
 
@@ -166,20 +167,20 @@ erDiagram
 
 ## 3. Rincian 12 Tabel Relasional
 
-| Nama Tabel          | Tujuan & Kegunaan                                                                                                      | Kolom Kunci & Tipe Data                                                                                             |
-| :------------------ | :--------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------ |
-| `config`            | Menyimpan preferensi aplikasi, kunci API, provider AI aktif, rate TTS, dan custom wake words.                          | `id` (PK, TEXT), `data` (JSON TEXT), `updated_at` (INTEGER)                                                         |
-| `sessions`          | Mengelola thread percakapan chat, binding direktori workspace proyek, dan status Auto Mode (YOLO).                     | `id` (PK, TEXT), `title` (TEXT), `workspace_root` (TEXT), `is_auto_mode` (INTEGER 0/1), `timestamp` (INTEGER)       |
-| `chat_turns`        | Riwayat giliran pesan per sesi, mencatat pemikiran (_thoughts_), riwayat tool yang dieksekusi, dan respon asisten.     | `id` (PK, TEXT), `session_id` (TEXT), `user_text` (TEXT), `ai_text` (TEXT), `executed_tools` (JSON TEXT)            |
-| `session_compact`   | Cache memori ringkasan hasil pemadatan konteks percakapan untuk mencegah lonjakan token pada sesi panjang.             | `session_id` (PK, TEXT), `summary_block` (TEXT), `last_compacted_message_id` (TEXT), `last_compacted_at` (INTEGER)  |
-| `memories`          | Sistem Memori Kognitif Jangka Panjang (MMS) dengan klasifikasi kategori (`profile`, `preference`, `notes`, `learn`).   | `id` (PK, TEXT), `type` (TEXT), `summary` (TEXT), `memory` (TEXT), `vector` (JSON 384d Array), `confidence` (REAL)  |
-| `relationships`     | Model relasional dinamik 4D yang mengukur ikatan emosional dan gaya komunikasi antara MARK dan pengguna.               | `user_id` (PK, TEXT), `warmth` (REAL), `sarcasm_level` (REAL), `trust` (REAL), `energy` (REAL), `mood` (TEXT)       |
-| `subagents`         | Registry status agen pembantu mandiri (_Mission Control_), status eksekusi, target tugas, dan batasan alat.            | `id` (PK, TEXT), `name` (TEXT), `role` (TEXT), `goal` (TEXT), `status` (TEXT), `parent_session_id` (TEXT)           |
-| `subagent_messages` | Aliran pesan ReAct internal sub-agent, mencatat pemikiran terisolasi, pemanggilan alat, dan observasi.                 | `id` (PK, TEXT), `subagent_id` (TEXT), `sender` (TEXT), `thought` (TEXT), `action` (TEXT), `tool_calls` (JSON TEXT) |
-| `agent_tasks`       | Definisi Durable Agent Tasks untuk pekerjaan multi-langkah berdurasi panjang dengan persistensi state.                 | `id` (PK, TEXT), `title` (TEXT), `status` (pending/running/completed/failed), `current_step_index` (INTEGER)        |
-| `agent_task_steps`  | Rincian instruksi langkah tugas individual, kriteria penerimaan, hash konten berkas, dan batas coba ulang (_retries_). | `id` (PK, TEXT), `task_id` (TEXT), `step_index` (INTEGER), `objective` (TEXT), `attempts` (INTEGER)                 |
-| `documents`         | Indeks berkas dokumen lokal pengguna untuk Retrieval-Augmented Generation (RAG).                                       | `id` (PK, TEXT), `title` (TEXT), `content` (TEXT), `vector` (JSON 384d Array), `chunk_index` (INTEGER)              |
-| `learned_skills`    | Kumpulan instruksi atau skrip keahlian baru yang dipelajari MARK secara mandiri dari instruksi pengguna.               | `id` (PK, TEXT), `name` (TEXT), `description` (TEXT), `script` (TEXT), `category` (TEXT)                            |
+| Nama Tabel          | Tujuan & Kegunaan                                                                                                      | Kolom Kunci & Tipe Data                                                                                                                                |
+| :------------------ | :--------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`            | Menyimpan preferensi aplikasi, kunci API, provider AI aktif, rate TTS, dan custom wake words.                          | `id` (PK, TEXT), `data` (JSON TEXT), `updated_at` (INTEGER)                                                                                            |
+| `sessions`          | Mengelola thread percakapan chat, binding direktori workspace proyek, dan status Auto Mode (YOLO).                     | `id` (PK, TEXT), `title` (TEXT), `workspace_root` (TEXT), `is_auto_mode` (INTEGER 0/1), `timestamp` (INTEGER)                                          |
+| `chat_turns`        | Riwayat giliran pesan per sesi, mencatat pemikiran (_thoughts_), riwayat tool yang dieksekusi, dan respon asisten.     | `id` (PK, TEXT), `session_id` (TEXT), `user_text` (TEXT), `ai_text` (TEXT), `executed_tools` (JSON TEXT)                                               |
+| `session_compact`   | Cache memori ringkasan hasil pemadatan konteks percakapan untuk mencegah lonjakan token pada sesi panjang.             | `session_id` (PK, TEXT), `summary_block` (TEXT), `last_compacted_message_id` (TEXT), `total_tokens` (INTEGER DEFAULT 0), `last_compacted_at` (INTEGER) |
+| `memories`          | Sistem Memori Kognitif Jangka Panjang (MMS) dengan klasifikasi kategori (`profile`, `preference`, `notes`, `learn`).   | `id` (PK, TEXT), `type` (TEXT), `summary` (TEXT), `memory` (TEXT), `vector` (JSON 384d Array), `confidence` (REAL)                                     |
+| `relationships`     | Model relasional dinamik 4D yang mengukur ikatan emosional dan gaya komunikasi antara MARK dan pengguna.               | `user_id` (PK, TEXT), `warmth` (REAL), `sarcasm_level` (REAL), `trust` (REAL), `energy` (REAL), `mood` (TEXT)                                          |
+| `subagents`         | Registry status agen pembantu mandiri (_Mission Control_), status eksekusi, target tugas, dan batasan alat.            | `id` (PK, TEXT), `name` (TEXT), `role` (TEXT), `goal` (TEXT), `status` (TEXT), `parent_session_id` (TEXT)                                              |
+| `subagent_messages` | Aliran pesan ReAct internal sub-agent, mencatat pemikiran terisolasi, pemanggilan alat, dan observasi.                 | `id` (PK, TEXT), `subagent_id` (TEXT), `sender` (TEXT), `thought` (TEXT), `action` (TEXT), `tool_calls` (JSON TEXT)                                    |
+| `agent_tasks`       | Definisi Durable Agent Tasks untuk pekerjaan multi-langkah berdurasi panjang dengan persistensi state.                 | `id` (PK, TEXT), `title` (TEXT), `status` (pending/running/completed/failed), `current_step_index` (INTEGER)                                           |
+| `agent_task_steps`  | Rincian instruksi langkah tugas individual, kriteria penerimaan, hash konten berkas, dan batas coba ulang (_retries_). | `id` (PK, TEXT), `task_id` (TEXT), `step_index` (INTEGER), `objective` (TEXT), `attempts` (INTEGER)                                                    |
+| `documents`         | Indeks berkas dokumen lokal pengguna untuk Retrieval-Augmented Generation (RAG).                                       | `id` (PK, TEXT), `title` (TEXT), `content` (TEXT), `vector` (JSON 384d Array), `chunk_index` (INTEGER)                                                 |
+| `learned_skills`    | Kumpulan instruksi atau skrip keahlian baru yang dipelajari MARK secara mandiri dari instruksi pengguna.               | `id` (PK, TEXT), `name` (TEXT), `description` (TEXT), `script` (TEXT), `category` (TEXT)                                                               |
 
 ---
 
@@ -205,7 +206,7 @@ function ensureTableColumns(tableName, requiredColumns) {
 }
 ```
 
-Mekanisme ini memastikan kolom baru (seperti `is_auto_mode` pada tabel `sessions` atau `summary_block` pada `session_compact`) langsung ditambahkan ke tabel yang sudah ada secara transparan saat server booting.
+Mekanisme ini memastikan kolom baru (seperti `is_auto_mode` pada tabel `sessions` atau `total_tokens` pada `session_compact`) langsung ditambahkan ke tabel yang sudah ada secara transparan saat server booting.
 
 ---
 

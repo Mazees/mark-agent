@@ -17,7 +17,7 @@ import {
 import { Zap, Folder, Wrench, ChevronLeft } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import { NATIVE_SKILLS } from './native-skills'
-import { calculateSessionChars, MAX_CONTEXT_CHARS } from '../../api/ai/contextManager'
+import { calculateSessionTokens, MAX_CONTEXT_TOKENS } from '../../api/ai/contextManager'
 import {
   getChatData,
   getSessionCompact,
@@ -138,8 +138,8 @@ const InputBar = ({
   }, [loadToolGroups])
 
   const [contextTracker, setContextTracker] = useState({
-    currentChars: 0,
-    maxChars: 525000,
+    currentTokens: 0,
+    maxTokens: MAX_CONTEXT_TOKENS,
     percentage: 0,
     lastCompactedAt: null
   })
@@ -199,15 +199,15 @@ const InputBar = ({
           getSessionCompact(String(sessionId))
         ])
         if (isCancelled) return
-        const chars = calculateSessionChars(
+        const tokens = calculateSessionTokens(
           messages || [],
           compact?.summaryBlock || compact?.summary_block || '',
           compact?.lastCompactedMessageId || compact?.last_compacted_message_id || null
         )
         setContextTracker({
-          currentChars: chars,
-          maxChars: MAX_CONTEXT_CHARS,
-          percentage: Math.min(100, (chars / MAX_CONTEXT_CHARS) * 100),
+          currentTokens: tokens,
+          maxTokens: MAX_CONTEXT_TOKENS,
+          percentage: Math.min(100, (tokens / MAX_CONTEXT_TOKENS) * 100),
           lastCompactedAt: compact?.lastCompactedAt || null
         })
       } catch {
@@ -226,10 +226,18 @@ const InputBar = ({
         if (e.detail.sessionId && String(e.detail.sessionId) !== String(sessionId)) {
           return
         }
+        const tokens = Number(e.detail.currentTokens ?? e.detail.currentChars ?? 0)
+        const maxTokens = Number(e.detail.maxTokens ?? e.detail.maxChars ?? MAX_CONTEXT_TOKENS)
         setContextTracker({
-          currentChars: Number(e.detail.currentChars || 0),
-          maxChars: Number(e.detail.maxChars || 525000),
-          percentage: Number(e.detail.percentage || 0),
+          currentTokens: tokens,
+          maxTokens,
+          percentage: Number(
+            e.detail.percentage !== undefined
+              ? e.detail.percentage
+              : maxTokens > 0
+                ? Math.min(100, (tokens / maxTokens) * 100)
+                : 0
+          ),
           lastCompactedAt: e.detail.lastCompactedAt || null
         })
       }
@@ -1173,7 +1181,9 @@ const InputBar = ({
           {(() => {
             const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
             const roundedPct =
-              contextTracker.currentChars > 0 ? Math.max(1, Math.round(pct)) : Math.round(pct)
+              (contextTracker.currentTokens || contextTracker.currentChars || 0) > 0
+                ? Math.max(1, Math.round(pct))
+                : Math.round(pct)
             const radius = 14
             const circumference = 2 * Math.PI * radius
             const strokeDashoffset = circumference - (pct / 100) * circumference
@@ -1241,10 +1251,10 @@ const InputBar = ({
 
                     <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
                       <span className="text-white">
-                        {contextTracker.currentChars >= 1000
-                          ? `${(contextTracker.currentChars / 1000).toFixed(1)}K`
-                          : contextTracker.currentChars}{' '}
-                        / 525K chars
+                        {(contextTracker.currentTokens || contextTracker.currentChars || 0) >= 1000
+                          ? `${((contextTracker.currentTokens || contextTracker.currentChars || 0) / 1000).toFixed(1)}K`
+                          : contextTracker.currentTokens || contextTracker.currentChars || 0}{' '}
+                        / 256K tokens
                       </span>
                       <span className="text-white/60">{roundedPct}%</span>
                     </div>

@@ -4,6 +4,7 @@ import { buildSubagentSystemPrompt } from './subagentPrompt'
 import { core_tools_schema } from '../tools/core-tools'
 import { webApi } from '../web-bridge.js'
 import {
+  MAX_CONTEXT_TOKENS,
   MAX_CONTEXT_CHARS,
   IN_LOOP_COMPACT_THRESHOLD,
   checkAndCompressInLoop
@@ -160,6 +161,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         const inLoopResult = await checkAndCompressInLoop({
           loopMessages: messagesPayload,
           sessionId: `subagent_${subagentId}`,
+          maxTokens: MAX_CONTEXT_TOKENS,
           maxChars: MAX_CONTEXT_CHARS,
           thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
           protectLastN: 6,

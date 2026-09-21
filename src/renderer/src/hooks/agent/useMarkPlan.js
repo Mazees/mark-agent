@@ -20,9 +20,12 @@ import { startAgentTaskStep, transitionAgentTask } from '../../api/taskStore'
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import {
+  MAX_CONTEXT_TOKENS,
   MAX_CONTEXT_CHARS,
   GATEWAY_HYGIENE_THRESHOLD,
   IN_LOOP_COMPACT_THRESHOLD,
+  calculateSessionTokens,
+  calculateMessageTokens,
   calculateSessionChars,
   executeSessionCompaction,
   assembleCompactedPayload,
@@ -1186,7 +1189,7 @@ export const useMarkPlan = ({
       )
 
       // ------------------------------------------------------------------------
-      // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 525.000 Karakter)
+      // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 256.000 Tokens)
       // ------------------------------------------------------------------------
       let activeSessionCompact = null
       try {
@@ -1203,10 +1206,12 @@ export const useMarkPlan = ({
       const currentUserMsg = { ...userMessage, content: payloadContent }
       let effectiveSourceMessages = [...sourceChatData, currentUserMsg]
 
-      const currentEstimatedChars = calculateSessionChars(
+      currentUserMsg.tokens = calculateMessageTokens(currentUserMsg)
+      const currentEstimatedTokens = calculateSessionTokens(
         effectiveSourceMessages,
         activeSummaryBlock,
-        activeLastCompactedId
+        activeLastCompactedId,
+        systemPrompt
       )
 
       // Bypass proses kompaksi berat jika instruksi internal (greeting sistem / awareness autonomous / disableTools)
@@ -1215,8 +1220,8 @@ export const useMarkPlan = ({
       )
 
       // Layer 1: Gateway Session Hygiene (Hermes 85% safety net)
-      const gatewayHygieneTriggerChars = MAX_CONTEXT_CHARS * GATEWAY_HYGIENE_THRESHOLD
-      if (!isInternalTurn && currentEstimatedChars >= gatewayHygieneTriggerChars) {
+      const gatewayHygieneTriggerTokens = MAX_CONTEXT_TOKENS * GATEWAY_HYGIENE_THRESHOLD
+      if (!isInternalTurn && currentEstimatedTokens >= gatewayHygieneTriggerTokens) {
         const compactBannerId = `compact-banner-${Date.now()}`
         targetSetChatData((prev) => [
           ...prev,
@@ -1233,6 +1238,7 @@ export const useMarkPlan = ({
             sessionId: String(activeSessionNum),
             messages: effectiveSourceMessages,
             activeConfig: config[0] || {},
+            systemPrompt,
             onProgress: (prog) => {
               targetSetChatData((prev) =>
                 prev.map((item) =>
@@ -1266,14 +1272,18 @@ export const useMarkPlan = ({
             }
 
             // Segera update indikator context-tracker agar gauge langsung berwarna hijau
-            const activeCharsAfterCompact = Number(compactionResult.currentChars || 0)
+            const activeTokensAfterCompact = Number(
+              compactionResult.currentTokens || compactionResult.currentChars || 0
+            )
             window.dispatchEvent(
               new CustomEvent('context-tracker-updated', {
                 detail: {
                   sessionId: String(activeSessionNum),
-                  currentChars: activeCharsAfterCompact,
-                  maxChars: MAX_CONTEXT_CHARS,
-                  percentage: Math.min(100, (activeCharsAfterCompact / MAX_CONTEXT_CHARS) * 100),
+                  currentTokens: activeTokensAfterCompact,
+                  maxTokens: MAX_CONTEXT_TOKENS,
+                  percentage: Math.min(100, (activeTokensAfterCompact / MAX_CONTEXT_TOKENS) * 100),
+                  currentChars: activeTokensAfterCompact,
+                  maxChars: MAX_CONTEXT_TOKENS,
                   lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
                 }
               })
@@ -1347,7 +1357,7 @@ export const useMarkPlan = ({
       } else {
         // TURN CHAT/CODING NORMAL:
         // Seluruh riwayat pesan & log tool dikirim 100% UTUH tanpa batasan turn (maxTurns)
-        // selama masih berada dalam kapasitas 525.000 karakter (MAX_CONTEXT_CHARS).
+        // selama masih berada dalam kapasitas 256.000 tokens (MAX_CONTEXT_TOKENS).
         loopMessages = assembleCompactedPayload({
           messages: effectiveSourceMessages,
           sessionCompact: activeSessionCompact,
@@ -1363,6 +1373,7 @@ export const useMarkPlan = ({
       let currentActiveMood = 'neutral'
       finalContentAccumulator = ''
       let savedTurnAiMsg = null
+      let lastServerUsage = null
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
 
@@ -1508,8 +1519,8 @@ export const useMarkPlan = ({
         let currentTurnContent = ''
         let sentenceBuffer = ''
 
-        // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai 525K,
-        // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 525K.
+        // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai batas kapasitas,
+        // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 256K tokens.
         // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
         // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
@@ -1517,23 +1528,27 @@ export const useMarkPlan = ({
           const inLoopResult = await checkAndCompressInLoop({
             loopMessages,
             sessionId: String(activeSessionNum || 1),
-            maxChars: MAX_CONTEXT_CHARS,
+            maxTokens: MAX_CONTEXT_TOKENS,
             thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
             protectLastN: 6,
             protectFirstN: 2,
-            activeConfig: config[0] || {}
+            activeConfig: config[0] || {},
+            systemPrompt
           })
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
             loopMessages = inLoopResult.loopMessages
-            if (inLoopResult.totalChars) {
+            if (inLoopResult.totalTokens || inLoopResult.totalChars) {
+              const inLoopTokens = inLoopResult.totalTokens || inLoopResult.totalChars
               window.dispatchEvent(
                 new CustomEvent('context-tracker-updated', {
                   detail: {
                     sessionId: String(activeSessionNum || 1),
-                    currentChars: inLoopResult.totalChars,
-                    maxChars: MAX_CONTEXT_CHARS,
-                    percentage: Math.min(100, (inLoopResult.totalChars / MAX_CONTEXT_CHARS) * 100),
+                    currentTokens: inLoopTokens,
+                    maxTokens: MAX_CONTEXT_TOKENS,
+                    percentage: Math.min(100, (inLoopTokens / MAX_CONTEXT_TOKENS) * 100),
+                    currentChars: inLoopTokens,
+                    maxChars: MAX_CONTEXT_TOKENS,
                     lastCompactedAt: Date.now()
                   }
                 })
@@ -1545,7 +1560,7 @@ export const useMarkPlan = ({
         }
 
         // Safety Net Pruning
-        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_CHARS)
+        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
@@ -1633,6 +1648,10 @@ export const useMarkPlan = ({
 
         if (streamResult?.mood && streamResult.mood !== 'neutral') {
           currentActiveMood = streamResult.mood
+        }
+
+        if (streamResult?.usage) {
+          lastServerUsage = streamResult.usage
         }
 
         if (streamResult?.finishReason === 'error') {
@@ -1999,7 +2018,14 @@ export const useMarkPlan = ({
                   isProactive: isAutonomous,
                   timestamp: getCurrentTimeInfo(),
                   created_at: Date.now(),
-                  source: tgContext ? 'telegram' : 'pc'
+                  source: tgContext ? 'telegram' : 'pc',
+                  usage: lastServerUsage || null,
+                  tokens:
+                    lastServerUsage?.completion_tokens ||
+                    calculateMessageTokens({
+                      content: cleanFinalOutput,
+                      reasoning: mergedReasoning
+                    })
                 }
 
                 savedTurnAiMsg = aiMsg
@@ -2215,7 +2241,11 @@ export const useMarkPlan = ({
             isProactive: isAutonomous,
             timestamp: getCurrentTimeInfo(),
             created_at: Date.now(),
-            source: tgContext ? 'telegram' : 'pc'
+            source: tgContext ? 'telegram' : 'pc',
+            usage: lastServerUsage || null,
+            tokens:
+              lastServerUsage?.completion_tokens ||
+              calculateMessageTokens({ content: finalOutput, reasoning: mergedReasoning })
           }
 
           savedTurnAiMsg = aiMsg
@@ -2280,7 +2310,14 @@ export const useMarkPlan = ({
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             timestamp: getCurrentTimeInfo(),
-            created_at: Date.now()
+            created_at: Date.now(),
+            usage: lastServerUsage || null,
+            tokens:
+              lastServerUsage?.completion_tokens ||
+              calculateMessageTokens({
+                content: 'Tugas telah selesai diproses.',
+                reasoning: mergedReasoning
+              })
           }
         ]
       })
@@ -2309,7 +2346,7 @@ export const useMarkPlan = ({
         lastUserPromptRef.current = ''
       }
 
-      // Post-Turn Context Sync: Hitung total karakter terkini dan trigger event ke UI
+      // Post-Turn Context Sync: Hitung total token terkini dan trigger event ke UI
       try {
         let latestSessionData =
           activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
@@ -2321,20 +2358,23 @@ export const useMarkPlan = ({
             latestSessionData = [...(latestSessionData || []), savedTurnAiMsg]
           }
         }
-        const latestChars = calculateSessionChars(
+        const latestTokens = calculateSessionTokens(
           latestSessionData,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
           activeSessionCompact?.lastCompactedMessageId ||
             activeSessionCompact?.last_compacted_message_id ||
-            null
+            null,
+          systemPrompt
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {
             detail: {
               sessionId: String(activeSessionNum),
-              currentChars: latestChars,
-              maxChars: MAX_CONTEXT_CHARS,
-              percentage: Math.min(100, (latestChars / MAX_CONTEXT_CHARS) * 100),
+              currentTokens: latestTokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (latestTokens / MAX_CONTEXT_TOKENS) * 100),
+              currentChars: latestTokens,
+              maxChars: MAX_CONTEXT_TOKENS,
               lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
             }
           })
