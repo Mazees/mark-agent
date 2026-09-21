@@ -13,7 +13,13 @@ export const aiRouter = Router()
 
 // 1. AI Fetch Direct Gateway
 aiRouter.post('/ai/fetch', async (req, res) => {
-  const { messages, config = {}, isSmallTask = false, jsonSchema = null } = req.body || {}
+  const {
+    messages,
+    config = {},
+    isSmallTask = false,
+    jsonSchema = null,
+    sessionId = null
+  } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
     const finalConfig = { ...getActiveConfig(), ...config }
@@ -33,10 +39,15 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: false,
-      payload: { messages, jsonSchema, isSmallTask }
+      payload: { messages, jsonSchema, isSmallTask, sessionId }
     })
 
-    const result = await fetchAI(messages, false, { config: finalConfig, isSmallTask, jsonSchema })
+    const result = await fetchAI(messages, false, {
+      config: finalConfig,
+      isSmallTask,
+      jsonSchema,
+      sessionId
+    })
     res.json(result)
   } catch (err) {
     res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })
@@ -45,7 +56,13 @@ aiRouter.post('/ai/fetch', async (req, res) => {
 
 // 2. AI Streaming Gateway (Native Tool Calling + SSE & WebSocket Tokens)
 aiRouter.post('/ai/stream', async (req, res) => {
-  const { messages, tools = null, config = {}, isSmallTask = false } = req.body || {}
+  const {
+    messages,
+    tools = null,
+    config = {},
+    isSmallTask = false,
+    sessionId = null
+  } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
     const finalConfig = { ...getActiveConfig(), ...config }
@@ -66,13 +83,14 @@ aiRouter.post('/ai/stream', async (req, res) => {
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: Array.isArray(tools) && tools.length > 0,
       toolsCount: Array.isArray(tools) ? tools.length : 0,
-      payload: { messages, tools, isSmallTask }
+      payload: { messages, tools, isSmallTask, sessionId }
     })
 
     const result = await fetchAI(messages, true, {
       tools,
       config: finalConfig,
       isSmallTask,
+      sessionId,
       onToken: (token) => {
         wsHub.streamToken(token, 'answer')
       },

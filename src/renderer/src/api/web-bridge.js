@@ -105,6 +105,25 @@ export function removeAllWebListeners(event) {
   }
 }
 
+export function resolveAbortSignal(sig) {
+  if (!sig) return undefined
+  if (typeof AbortSignal !== 'undefined' && sig instanceof AbortSignal) {
+    return sig
+  }
+  if (
+    sig &&
+    sig.signal &&
+    typeof AbortSignal !== 'undefined' &&
+    sig.signal instanceof AbortSignal
+  ) {
+    return sig.signal
+  }
+  if (sig && typeof sig === 'object' && sig.current) {
+    return resolveAbortSignal(sig.current)
+  }
+  return undefined
+}
+
 export const webApi = {
   // 1. Health & Config
   getHealth: async () => {
@@ -131,11 +150,12 @@ export const webApi = {
   // 2. Chat & AI
   fetchAI: async (params, signal = null) => {
     const endpoint = params?.stream ? `${API_BASE}/api/ai/stream` : `${API_BASE}/api/ai/fetch`
+    const effectiveSignal = resolveAbortSignal(signal) || resolveAbortSignal(params?.signal)
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
-      signal: signal || undefined
+      signal: effectiveSignal
     })
     const json = await res.json()
     if (!res.ok || json.error) {

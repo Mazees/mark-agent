@@ -178,6 +178,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
       let turnContent = ''
 
       const streamResult = await fetchAI(messagesPayload, true, {
+        sessionId: `subagent_${subagentId}`,
         tools: allowedSchemas,
         signal: abortController.signal,
         onReasoning: (chunk) => {

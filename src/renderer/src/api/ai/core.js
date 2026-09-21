@@ -1,5 +1,6 @@
 import { getAllConfig } from '../db'
 import { jsonrepair } from 'jsonrepair'
+import { resolveAbortSignal } from '../web-bridge'
 
 /**
  * Frontend AI fetch wrapper.
@@ -8,6 +9,16 @@ import { jsonrepair } from 'jsonrepair'
  * @param {Object} [options={}] - tools, signal, isSmallTask, jsonSchema, configOverride, callbacks
  */
 export const fetchAI = async (messages, stream = false, options = {}) => {
+  let actualStream = stream
+  let actualOptions = options
+
+  if (typeof stream === 'object' && stream !== null) {
+    actualOptions = stream
+    actualStream = Boolean(actualOptions.stream)
+  } else {
+    actualStream = Boolean(stream)
+  }
+
   const {
     tools = null,
     signal = null,
@@ -17,14 +28,16 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     onToken = null,
     onReasoning = null,
     onMood = null,
-    onToolCall = null
-  } = options
+    onToolCall = null,
+    sessionId = null
+  } = actualOptions
 
   const currentConfig = await getAllConfig()
   const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
+  const cleanSignal = resolveAbortSignal(signal)
 
   // 1. Streaming Mode
-  if (stream) {
+  if (actualStream) {
     let unsubToken = null
     let unsubMood = null
 
@@ -47,8 +60,8 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
 
     try {
       const result = await window.api.fetchAI(
-        { messages, tools, config: conf, isSmallTask, stream: true },
-        signal
+        { messages, tools, config: conf, isSmallTask, stream: true, sessionId },
+        cleanSignal
       )
       if (result?.toolCalls && onToolCall) {
         onToolCall(result.toolCalls)
@@ -62,8 +75,8 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
 
   // 2. Non-Streaming Mode
   return window.api.fetchAI(
-    { messages, config: conf, isSmallTask, jsonSchema, stream: false },
-    signal
+    { messages, config: conf, isSmallTask, jsonSchema, stream: false, sessionId },
+    cleanSignal
   )
 }
 

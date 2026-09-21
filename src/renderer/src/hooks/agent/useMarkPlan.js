@@ -824,6 +824,7 @@ export const useMarkPlan = ({
       !tgContextOrOptions.from
     ) {
       opts = tgContextOrOptions
+      opts = { ...opts, ...tgContextOrOptions }
       tgContext = null
     } else if (
       autonomousInitialMessage &&
@@ -832,8 +833,10 @@ export const useMarkPlan = ({
         autonomousInitialMessage.customChatData ||
         autonomousInitialMessage.customSetChatData ||
         autonomousInitialMessage.onSaveSession)
+      typeof autonomousInitialMessage === 'object'
     ) {
       opts = autonomousInitialMessage
+      opts = { ...opts, ...autonomousInitialMessage }
       autonomousInitialMessage = null
     }
 
@@ -841,6 +844,11 @@ export const useMarkPlan = ({
     // FASE 1: VALIDASI INPUT & PER-SESSION LOCKING
     // ------------------------------------------------------------------------
     const activeSessionNum = opts.sessionId ? Number(opts.sessionId) : 1
+    const activeSessionNum = opts.sessionId
+      ? !isNaN(Number(opts.sessionId))
+        ? Number(opts.sessionId)
+        : String(opts.sessionId)
+      : 1
     activeRunningSessionIdRef.current = activeSessionNum
 
     if (activeSessionsRef.current.has(activeSessionNum)) {
@@ -1527,6 +1535,7 @@ export const useMarkPlan = ({
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
+          sessionId: String(activeSessionNum || 1),
           tools: isDurableTaskCompleted ? null : activeTools,
           signal: sessionAbortController.signal,
           onReasoning: (chunk) => {

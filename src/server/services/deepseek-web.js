@@ -30,6 +30,11 @@ const utilitySessionCache = new Map()
 const sessionStateMap = new Map() // sessionId -> { lastMessageId, turnCount, createdAt, lastUsedAt }
 let lastUsedToken = null
 
+export function getSessionCacheKey(token, markSessionId = '1', isSmallTask = false) {
+  const prefix = isSmallTask ? 'util_' : 'sess_'
+  return `${token}:${prefix}${markSessionId || '1'}`
+}
+
 function ensureTokenSession(token) {
   // Jika token berubah, clear session cache lama
   if (lastUsedToken !== token) {
@@ -40,14 +45,30 @@ function ensureTokenSession(token) {
   }
 }
 
-export function clearDeepSeekSession(token = null) {
+export function clearDeepSeekSession(token = null, markSessionId = null) {
   if (token) {
-    const sId = activeSessionCache.get(token)
-    if (sId) sessionStateMap.delete(sId)
-    activeSessionCache.delete(token)
-    const uId = utilitySessionCache.get(token)
-    if (uId) sessionStateMap.delete(uId)
-    utilitySessionCache.delete(token)
+    if (markSessionId) {
+      for (const isSmall of [false, true]) {
+        const cache = isSmall ? utilitySessionCache : activeSessionCache
+        const key = getSessionCacheKey(token, markSessionId, isSmall)
+        const sId = cache.get(key)
+        if (sId) sessionStateMap.delete(sId)
+        cache.delete(key)
+      }
+    } else {
+      for (const [key, sId] of [...activeSessionCache.entries()]) {
+        if (key.startsWith(`${token}:`)) {
+          sessionStateMap.delete(sId)
+          activeSessionCache.delete(key)
+        }
+      }
+      for (const [key, sId] of [...utilitySessionCache.entries()]) {
+        if (key.startsWith(`${token}:`)) {
+          sessionStateMap.delete(sId)
+          utilitySessionCache.delete(key)
+        }
+      }
+    }
   } else {
     activeSessionCache.clear()
     utilitySessionCache.clear()
@@ -55,9 +76,10 @@ export function clearDeepSeekSession(token = null) {
   }
 }
 
-export function getSessionState(token, isSmallTask = false) {
+export function getSessionState(token, isSmallTask = false, markSessionId = '1') {
   const cache = isSmallTask ? utilitySessionCache : activeSessionCache
-  const sessionId = cache.get(token)
+  const key = getSessionCacheKey(token, markSessionId, isSmallTask)
+  const sessionId = cache.get(key)
   if (!sessionId) return null
   return sessionStateMap.get(sessionId) || null
 }
@@ -485,8 +507,10 @@ async function _executeSingleDeepSeekCall(
 
   const isSmallTask = !!options.isSmallTask
   const targetCache = isSmallTask ? utilitySessionCache : activeSessionCache
+  const markSessionId = options.sessionId || '1'
+  const cacheKey = getSessionCacheKey(token, markSessionId, isSmallTask)
 
-  let sessionId = options.sessionId || targetCache.get(token)
+  let sessionId = targetCache.get(cacheKey)
   let sessionState = sessionId ? sessionStateMap.get(sessionId) : null
 
   const now = Date.now()
@@ -495,15 +519,14 @@ async function _executeSingleDeepSeekCall(
 
   // Rotasi otomatis jika melebihi batas turn atau idle > 2 jam
   if (
-    !options.sessionId &&
     sessionId &&
     sessionState &&
     (sessionState.turnCount >= MAX_TURNS_PER_SESSION || now - sessionState.lastUsedAt > MAX_IDLE_MS)
   ) {
     console.log(
-      `[DeepSeek-Web] Merotasi sesi ${isSmallTask ? '(utility)' : '(utama)'} (turnCount: ${sessionState.turnCount}). Membuat chat session baru...`
+      `[DeepSeek-Web] Merotasi sesi ${isSmallTask ? '(utility)' : `(${markSessionId})`} (turnCount: ${sessionState.turnCount}). Membuat chat session baru...`
     )
-    targetCache.delete(token)
+    targetCache.delete(cacheKey)
     sessionStateMap.delete(sessionId)
     sessionId = null
     sessionState = null
@@ -512,7 +535,7 @@ async function _executeSingleDeepSeekCall(
   // Buat session baru jika tidak ada
   if (!sessionId) {
     sessionId = await createChatSession(token)
-    targetCache.set(token, sessionId)
+    targetCache.set(cacheKey, sessionId)
     sessionState = { lastMessageId: null, turnCount: 0, createdAt: now, lastUsedAt: now }
     sessionStateMap.set(sessionId, sessionState)
   } else if (!sessionState) {
@@ -641,6 +664,7 @@ async function _executeSingleDeepSeekCall(
             if (fullContent) return
             // Content kosong + click_behavior = session expired
             targetCache.delete(token)
+            targetCache.delete(cacheKey)
             if (sessionId) sessionStateMap.delete(sessionId)
             reject(
               new Error(
@@ -657,6 +681,7 @@ async function _executeSingleDeepSeekCall(
               errMsg.toLowerCase().includes('terlalu sering')
             if (!isFrequent) {
               targetCache.delete(token)
+              targetCache.delete(cacheKey)
               if (sessionId) sessionStateMap.delete(sessionId)
             }
             reject(new Error(`DeepSeek Server Error (${obj.code}): ${errMsg}`))
@@ -673,6 +698,7 @@ async function _executeSingleDeepSeekCall(
               errMsg.toLowerCase().includes('terlalu sering')
             if (!isFrequent) {
               targetCache.delete(token)
+              targetCache.delete(cacheKey)
               if (sessionId) sessionStateMap.delete(sessionId)
             }
             reject(
@@ -868,6 +894,12 @@ export async function generateDeepSeekResponse(
         if (attempt % 5 === 0) {
           activeSessionCache.delete(token)
           utilitySessionCache.delete(token)
+          const markSessionId = options.sessionId || '1'
+          const key = getSessionCacheKey(token, markSessionId, !!options.isSmallTask)
+          const targetCache = options.isSmallTask ? utilitySessionCache : activeSessionCache
+          const sId = targetCache.get(key)
+          if (sId) sessionStateMap.delete(sId)
+          targetCache.delete(key)
         }
 
         console.warn(
