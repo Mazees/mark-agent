@@ -60,6 +60,10 @@ export const buildOptimizedChatSession = (sourceChatData) => {
       if (toolLog) {
         msgContent = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${msgContent}`
       }
+
+      if (item.mood && !/^(?:<|\[)mood:/i.test(msgContent.trim())) {
+        msgContent = `<mood:${item.mood}> ${msgContent}`
+      }
     }
 
     return {
@@ -95,9 +99,14 @@ export function assembleMultiTurnContext(systemPrompt, historicalTurns = [], cur
       })
     }
     if (turn.ai_text || (turn.role === 'assistant' && turn.content)) {
+      let aiContent = turn.ai_text || turn.content || ''
+      if (turn.mood && !/^(?:<|\[)mood:/i.test(aiContent.trim())) {
+        aiContent = `<mood:${turn.mood}> ${aiContent}`
+      }
       messages.push({
         role: 'assistant',
-        content: turn.ai_text || turn.content
+        content: aiContent,
+        mood: turn.mood
       })
     }
   }

@@ -165,4 +165,37 @@ export const useRelationalGrowth = ({
     window.addEventListener('mark:evaluate-relationship', handleForceRelationalEval)
     return () => window.removeEventListener('mark:evaluate-relationship', handleForceRelationalEval)
   }, [])
+
+  // --- TACTILE INTERACTION DRIFT (Touch, Pet, Bonk) ---
+  useEffect(() => {
+    const handleTactile = async (e) => {
+      const type = e.detail?.type
+      if (!type) return
+      try {
+        const current = await getRelationship('owner')
+        let { warmth = 0.5, trust = 0.5, sarcasm_level = 0.5 } = current || {}
+        if (type === 'petting' || type === 'pet_purr') {
+          warmth = Math.min(1.0, warmth + 0.005)
+          trust = Math.min(1.0, trust + 0.005)
+        } else if (type === 'bonk_annoyed') {
+          sarcasm_level = Math.min(1.0, sarcasm_level + 0.005)
+        } else if (type === 'bonk_dizzy' || type === 'shield_block') {
+          sarcasm_level = Math.min(1.0, sarcasm_level + 0.01)
+          trust = Math.max(0.15, trust - 0.005)
+        }
+        const updatedRecord = {
+          ...current,
+          userId: 'owner',
+          warmth,
+          trust,
+          sarcasm_level,
+          lastEvaluation: new Date().toISOString()
+        }
+        await saveRelationship(updatedRecord)
+        window.dispatchEvent(new CustomEvent('relationship-updated', { detail: updatedRecord }))
+      } catch (_) {}
+    }
+    window.addEventListener('mark-tactile-interaction', handleTactile)
+    return () => window.removeEventListener('mark-tactile-interaction', handleTactile)
+  }, [])
 }

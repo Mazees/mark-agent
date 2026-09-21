@@ -833,9 +833,7 @@ export const useMarkPlan = ({
         autonomousInitialMessage.customChatData ||
         autonomousInitialMessage.customSetChatData ||
         autonomousInitialMessage.onSaveSession)
-      typeof autonomousInitialMessage === 'object'
     ) {
-      opts = autonomousInitialMessage
       opts = { ...opts, ...autonomousInitialMessage }
       autonomousInitialMessage = null
     }
@@ -843,7 +841,6 @@ export const useMarkPlan = ({
     // ------------------------------------------------------------------------
     // FASE 1: VALIDASI INPUT & PER-SESSION LOCKING
     // ------------------------------------------------------------------------
-    const activeSessionNum = opts.sessionId ? Number(opts.sessionId) : 1
     const activeSessionNum = opts.sessionId
       ? !isNaN(Number(opts.sessionId))
         ? Number(opts.sessionId)
@@ -1302,10 +1299,14 @@ export const useMarkPlan = ({
 
         loopMessages = [
           { role: 'system', content: systemPrompt },
-          ...recentHistory.map((m) => ({
-            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
-            content: m.content || ''
-          })),
+          ...recentHistory.map((m) => {
+            const role = m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role
+            let content = m.content || ''
+            if (role === 'assistant' && m.mood && !/^(?:<|\[)mood:/i.test(content)) {
+              content = `<mood:${m.mood}> ${content}`
+            }
+            return { role, content, mood: m.mood || undefined }
+          }),
           { role: 'user', content: payloadContent }
         ]
       } else if (isAutonomous) {
@@ -1324,10 +1325,14 @@ export const useMarkPlan = ({
 
         loopMessages = [
           { role: 'system', content: systemPrompt },
-          ...recentHistory.map((m) => ({
-            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
-            content: m.content || ''
-          })),
+          ...recentHistory.map((m) => {
+            const role = m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role
+            let content = m.content || ''
+            if (role === 'assistant' && m.mood && !/^(?:<|\[)mood:/i.test(content)) {
+              content = `<mood:${m.mood}> ${content}`
+            }
+            return { role, content, mood: m.mood || undefined }
+          }),
           { role: 'user', content: payloadContent }
         ]
       } else {

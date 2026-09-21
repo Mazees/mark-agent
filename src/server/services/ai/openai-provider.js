@@ -35,6 +35,15 @@ export async function executeOpenAIProvider({
 
     if (
       (m.role === 'assistant' || m.role === 'model') &&
+      typeof sanitizedContent === 'string' &&
+      m.mood &&
+      !/^(?:<|\[)mood:/i.test(sanitizedContent.trim())
+    ) {
+      sanitizedContent = `<mood:${m.mood}> ${sanitizedContent}`
+    }
+
+    if (
+      (m.role === 'assistant' || m.role === 'model') &&
       !sanitizedContent &&
       (!m.tool_calls || m.tool_calls.length === 0)
     ) {

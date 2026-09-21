@@ -586,6 +586,7 @@ export async function executeSessionCompaction({
 export function formatMessageWithToolLogs(msg) {
   if (!msg) return ''
   if (Array.isArray(msg.content)) {
+    let newContent = [...msg.content]
     if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
       const toolLog = msg.executedTools
         .map((t) => {
@@ -594,10 +595,24 @@ export function formatMessageWithToolLogs(msg) {
         })
         .join('\n\n')
       if (toolLog) {
-        return [...msg.content, { type: 'text', text: `\n\n[RIWAYAT TOOL TURN INI]:\n${toolLog}` }]
+        newContent.push({ type: 'text', text: `\n\n[RIWAYAT TOOL TURN INI]:\n${toolLog}` })
       }
     }
-    return msg.content
+    const role = (msg.role || '').toLowerCase()
+    if ((role === 'ai' || role === 'assistant') && msg.mood) {
+      const textItemIdx = newContent.findIndex((p) => p && p.type === 'text')
+      if (textItemIdx >= 0) {
+        if (!/^(?:<|\[)mood:/i.test(newContent[textItemIdx].text || '')) {
+          newContent[textItemIdx] = {
+            ...newContent[textItemIdx],
+            text: `<mood:${msg.mood}> ${newContent[textItemIdx].text || ''}`
+          }
+        }
+      } else {
+        newContent.unshift({ type: 'text', text: `<mood:${msg.mood}>` })
+      }
+    }
+    return newContent
   }
 
   let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '')
@@ -612,6 +627,13 @@ export function formatMessageWithToolLogs(msg) {
       content = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${content}`
     }
   }
+
+  // Sisipkan tag mood pada pesan asisten jika ada dan belum tersemat
+  const role = (msg.role || '').toLowerCase()
+  if ((role === 'ai' || role === 'assistant') && msg.mood && !/^(?:<|\[)mood:/i.test(content)) {
+    content = `<mood:${msg.mood}> ${content}`
+  }
+
   return content
 }
 
@@ -673,7 +695,8 @@ export function assembleCompactedPayload({
         }
         payload.push({
           role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
-          content: formatMessageWithToolLogs(msg)
+          content: formatMessageWithToolLogs(msg),
+          mood: msg.mood || undefined
         })
       }
 
@@ -695,7 +718,8 @@ export function assembleCompactedPayload({
     }
     payload.push({
       role: msg.role === 'ai' || msg.role === 'planSteps' ? 'assistant' : msg.role,
-      content: formatMessageWithToolLogs(msg)
+      content: formatMessageWithToolLogs(msg),
+      mood: msg.mood || undefined
     })
   }
 

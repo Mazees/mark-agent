@@ -258,13 +258,27 @@ const MarkHome = () => {
 
   const mood = currentResponse?.mood || 'neutral'
 
-  const handleAvatarClick = () => {
-    if (orbStatus === 'idle' && !isRecording && !isProcessing && !isLoading) {
-      if (typeof startRecording === 'function') startRecording()
-    } else if (isRecording) {
-      if (typeof stopRecording === 'function') stopRecording()
-    }
+  const handleAvatarInteract = (type, detail = {}) => {
+    // Dispatch event untuk sistem pertumbuhan relasi 4D
+    window.dispatchEvent(
+      new CustomEvent('mark-tactile-interaction', {
+        detail: { type, ...detail }
+      })
+    )
   }
+
+  // Sinkronisasi status operasional AI secara komprehensif
+  const computedAvatarStatus = isRecording
+    ? 'listening'
+    : isSpeak || window.isMarkSpeaking
+      ? 'speaking'
+      : isLoading || isAgentBusy
+        ? 'thinking'
+        : isProcessing
+          ? 'processing'
+          : isPlaying
+            ? 'music_groove'
+            : orbStatus || 'idle'
 
   return (
     <div className="h-screen w-screen text-white overflow-hidden relative bg-[#060a08]">
@@ -316,10 +330,10 @@ const MarkHome = () => {
       <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
         <div className="scale-115 md:scale-140 lg:scale-165 xl:scale-180 pointer-events-auto cursor-pointer transition-transform duration-300">
           <Avatar
-            status={isRecording ? 'listening' : orbStatus}
-            isRecording={isRecording}
+            status={computedAvatarStatus}
+            intensity={audioIntensity}
             mood={mood}
-            onClick={handleAvatarClick}
+            onInteract={handleAvatarInteract}
           />
         </div>
       </div>
