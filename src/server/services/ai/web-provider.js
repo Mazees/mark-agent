@@ -102,6 +102,56 @@ function extractImageSources(messages) {
   return [...new Set(sources)]
 }
 
+/**
+ * Membangun Dynamic State Anchor ringkas untuk turn sela sesi aktif DeepSeek Web.
+ * Memangkas persona dan background statis (~15.000 char -> ~400-800 char),
+ * namun tetap membawa waktu real-time, status PC, status musik, relational traits,
+ * mood continuity anchor, serta skema tools jika hasTools aktif.
+ */
+function buildDynamicStateAnchor(sysMsgs, lastAssistant, hasTools = false) {
+  const fullContent = (sysMsgs || [])
+    .map((m) => (typeof m.content === 'string' ? m.content : ''))
+    .join('\n\n')
+
+  const extractedSections = []
+
+  // 1. Konteks Waktu & Riwayat
+  const timeMatch = fullContent.match(/\[KONTEKS WAKTU & RIWAYAT\][\s\S]*?(?=\n#|\n\n\[|$)/i)
+  if (timeMatch) extractedSections.push(timeMatch[0].trim())
+
+  // 2. Relational Growth (warmth, trust, sarcasm)
+  const relMatch = fullContent.match(/# RELATIONAL GROWTH[\s\S]*?(?=\n#|\n\n\[|$)/i)
+  if (relMatch) extractedSections.push(relMatch[0].trim())
+
+  // 3. Telemetri Fisik PC
+  const telemMatch = fullContent.match(/# TELEMETRI FISIK PC[\s\S]*?(?=\n#|\n\n\[|$)/i)
+  if (telemMatch) extractedSections.push(telemMatch[0].trim())
+
+  // 4. Status Player Musik
+  const musicMatch = fullContent.match(/# STATUS PLAYER MUSIK[\s\S]*?(?=\n#|\n\n\[|$)/i)
+  if (musicMatch) extractedSections.push(musicMatch[0].trim())
+
+  // 5. Gumaman Batin Terakhir
+  const thoughtMatch = fullContent.match(/# GUMAMAN BATIN TERAKHIR[\s\S]*?(?=\n#|\n\n\[|$)/i)
+  if (thoughtMatch) extractedSections.push(thoughtMatch[0].trim())
+
+  const lastMood = lastAssistant?.mood || 'neutral'
+  const dynamicBody = extractedSections.length > 0 ? `\n\n${extractedSections.join('\n\n')}` : ''
+
+  let toolSection = ''
+  if (hasTools) {
+    const toolMatch = fullContent.match(/# TOOLS & CAPABILITY REGISTRY[\s\S]*$/i)
+    if (toolMatch) {
+      toolSection = `\n\n${toolMatch[0].trim()}`
+    }
+  }
+
+  return `[DYNAMIC STATE ANCHOR - MARK AI OS]
+Kamu adalah MARK (Metacognitive Artificial Relational Knowledge). Tetap konsisten dengan kepribadian santai/cerdas tongkrongan, bukan robot kaku.
+ATURAN EMOSI MUTLAK: Awali karakter pertama responmu dengan tag <mood:nama_mood> (joy/sadness/fear/anger/disgust/anxiety/envy/embarrassment/ennui/neutral).
+Status emosi giliran sebelumnya: <mood:${lastMood}>. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
+}
+
 export async function executeWebProvider({
   messages,
   tools = null,
@@ -236,8 +286,10 @@ ${toolSections.join('\n\n')}
     loadConfig()?.deepseekUserToken?.trim() ||
     ''
 
-  const isDeepSeekActiveSession =
-    !isGemini && !!userToken && !!getSessionState(userToken, isSmallTask, sessionId)?.lastMessageId
+  const dsSessionState =
+    !isGemini && !!userToken ? getSessionState(userToken, isSmallTask, sessionId) : null
+  const isDeepSeekActiveSession = !isGemini && !!userToken && !!dsSessionState?.lastMessageId
+  const currentTurnCount = dsSessionState?.turnCount || 0
 
   let messagesToPrompt = workMessages
   if (isDeepSeekActiveSession) {
@@ -253,8 +305,20 @@ ${toolSections.join('\n\n')}
       const sysMsgs = workMessages.filter((m) => m.role === 'system')
       const activeTurn = workMessages.slice(lastAssistantIdx + 1).filter((m) => m.role !== 'system')
       const lastAssistant = workMessages[lastAssistantIdx]
+
+      // Injeksi periodik: Turn 1 (currentTurnCount = 0) dan kelipatan 5 (currentTurnCount % 5 === 0)
+      // mendapatkan Full System Prompt untuk me-refresh instruksi dan mengatasi lost-in-the-middle.
+      // Turn sela (2-5, 7-10) mendapatkan Dynamic State Anchor ringkas.
+      const isRefreshTurn = currentTurnCount % 5 === 0
+
+      let effectiveSysMsgs = sysMsgs
+      if (!isRefreshTurn) {
+        const anchorText = buildDynamicStateAnchor(sysMsgs, lastAssistant, hasTools)
+        effectiveSysMsgs = [{ role: 'system', content: anchorText }]
+      }
+
       // Sertakan pesan asisten terakhir beserta mood-nya agar riwayat emosi tetap kontinu di sesi DeepSeek aktif
-      messagesToPrompt = [...sysMsgs, lastAssistant, ...activeTurn]
+      messagesToPrompt = [...effectiveSysMsgs, lastAssistant, ...activeTurn]
     }
   }
 

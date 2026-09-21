@@ -1076,7 +1076,16 @@ export const useMarkPlan = ({
     )
 
     if (!isAutonomous && !isSystem) {
-      targetSetChatData((prev) => [...prev, userMessage])
+      targetSetChatData((prev) => [
+        ...prev,
+        userMessage,
+        {
+          role: 'ai',
+          content: 'Menganalisis instruksi...',
+          isThinking: true,
+          mood: 'neutral'
+        }
+      ])
     }
 
     const agenticProcessId = `agentic-${Date.now()}`

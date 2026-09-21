@@ -514,7 +514,7 @@ async function _executeSingleDeepSeekCall(
   let sessionState = sessionId ? sessionStateMap.get(sessionId) : null
 
   const now = Date.now()
-  const MAX_TURNS_PER_SESSION = 20
+  const MAX_TURNS_PER_SESSION = 10
   const MAX_IDLE_MS = 2 * 60 * 60 * 1000 // 2 jam
 
   // Rotasi otomatis jika melebihi batas turn atau idle > 2 jam
