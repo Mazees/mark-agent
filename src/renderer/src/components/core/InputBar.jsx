@@ -202,7 +202,9 @@ const InputBar = ({
         const tokens = calculateSessionTokens(
           messages || [],
           compact?.summaryBlock || compact?.summary_block || '',
-          compact?.lastCompactedMessageId || compact?.last_compacted_message_id || null
+          compact?.lastCompactedMessageId || compact?.last_compacted_message_id || null,
+          '',
+          compact?.lastCompactedAt || compact?.last_compacted_at || null
         )
         setContextTracker({
           currentTokens: tokens,

@@ -19,7 +19,10 @@ const __dirname = path.dirname(__filename)
 
 // Global crash safety: prevent unhandled promise rejections from crashing the server
 process.on('unhandledRejection', (reason) => {
-  console.warn('[Server Warning] Handled UnhandledRejection:', typeof reason === 'string' ? reason : reason?.message || reason)
+  console.warn(
+    '[Server Warning] Handled UnhandledRejection:',
+    typeof reason === 'string' ? reason : reason?.message || reason
+  )
 })
 
 process.on('uncaughtException', (err) => {
@@ -40,8 +43,24 @@ const PORT = process.env.PORT || 3000
 const app = express()
 const server = http.createServer(app)
 
+const allowedOrigins = [/^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/]
+
 // --- Middleware ---
-app.use(cors())
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Izinkan request tanpa origin (seperti Edge App Mode, native HTTP/CLI, bot)
+      if (!origin) return callback(null, true)
+      const isAllowed = allowedOrigins.some((pattern) => pattern.test(origin))
+      if (isAllowed) {
+        callback(null, true)
+      } else {
+        callback(new Error('Akses diblokir oleh kebijakan CORS MARK'))
+      }
+    },
+    credentials: true
+  })
+)
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
@@ -75,7 +94,8 @@ const activeConfig = getActiveConfig()
 try {
   const configs = dbStore.config.getAll()
   const dbCfg = configs[0] || {}
-  const unpackedCfg = dbCfg.data && typeof dbCfg.data === 'object' ? { ...dbCfg, ...dbCfg.data } : dbCfg
+  const unpackedCfg =
+    dbCfg.data && typeof dbCfg.data === 'object' ? { ...dbCfg, ...dbCfg.data } : dbCfg
   const initialTgToken = unpackedCfg.tgBotToken || activeConfig.tgBotToken
   if (initialTgToken && initialTgToken.trim()) {
     console.log('[Telegram] Mengaktifkan bot secara otomatis dari konfigurasi server...')
@@ -137,18 +157,20 @@ async function setupWebUIServing() {
 await setupWebUIServing()
 
 // --- Start Server dengan Auto-Fallback Port jika terjadi EADDRINUSE ---
+const HOST = process.env.HOST || '127.0.0.1'
 let activePort = Number(PORT)
 
 function startServer(portToTry) {
-  server.listen(portToTry)
+  server.listen(portToTry, HOST)
 }
 
 server.on('listening', async () => {
   const address = server.address()
   activePort = typeof address === 'object' && address ? address.port : activePort
+  const activeHost = typeof address === 'object' && address?.address ? address.address : HOST
   app.set('port', activePort)
   console.log(`\n======================================================`)
-  console.log(`  Menyalakan Server MARK di http://localhost:${activePort}`)
+  console.log(`  Menyalakan Server MARK di http://${activeHost}:${activePort}`)
   console.log(`======================================================\n`)
 
   if (!process.argv.includes('--no-launch') && !process.argv.includes('--headless')) {
@@ -158,7 +180,9 @@ server.on('listening', async () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.warn(`[Port Manager] Port ${activePort} sedang digunakan aplikasi lain. Mencoba port ${activePort + 1}...`)
+    console.warn(
+      `[Port Manager] Port ${activePort} sedang digunakan aplikasi lain. Mencoba port ${activePort + 1}...`
+    )
     activePort += 1
     setTimeout(() => startServer(activePort), 200)
   } else {

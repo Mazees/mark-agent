@@ -234,7 +234,9 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
           activeSessionCompact?.lastCompactedMessageId ||
             activeSessionCompact?.last_compacted_message_id ||
-            null
+            null,
+          '',
+          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {

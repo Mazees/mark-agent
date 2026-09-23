@@ -62,6 +62,7 @@ const MarkHome = () => {
     message,
     isLoading,
     isAgentBusy,
+    runningSessionIds = [],
     isSpeak,
     setIsSpeak,
     handlePlanningCommand,
@@ -83,6 +84,9 @@ const MarkHome = () => {
   } = chatContext
   const { isPlaying, currentTrack } = useYoutubeMusic()
   useMemoryGroomer(false)
+
+  const isMainLoading =
+    (runningSessionIds && runningSessionIds.map(String).includes('1')) || isLoading
 
   const [currentResponse, setCurrentResponse] = useState(null)
   const [showMusicWidget, setShowMusicWidget] = useState(false)
@@ -190,12 +194,12 @@ const MarkHome = () => {
     if (typeof setOrbStatus !== 'function') return
     if (isRecording) {
       setOrbStatus('listening')
-    } else if (isProcessing || isLoading) {
+    } else if (isProcessing || isMainLoading) {
       setOrbStatus('thinking')
     } else if (!window.isMarkSpeaking) {
       setOrbStatus('idle')
     }
-  }, [isLoading, chatData, isRecording, isProcessing, setOrbStatus])
+  }, [isMainLoading, chatData, isRecording, isProcessing, setOrbStatus])
 
   // Derived currentResponse from chatData
   useEffect(() => {
@@ -224,7 +228,7 @@ const MarkHome = () => {
           })
         }
       } else {
-        if (isLoading) {
+        if (isMainLoading) {
           setCurrentResponse({
             text: 'Memproses...',
             type: 'short',
@@ -243,7 +247,7 @@ const MarkHome = () => {
         type: 'short'
       })
     }
-  }, [chatData, isLoading, isSpeak])
+  }, [chatData, isMainLoading, isSpeak])
 
   const handleSubmit = (e, text, opts = {}) => {
     if (typeof chatContext?.handleSubmit === 'function') {
@@ -272,7 +276,7 @@ const MarkHome = () => {
     ? 'listening'
     : isSpeak || window.isMarkSpeaking
       ? 'speaking'
-      : isLoading || isAgentBusy
+      : isMainLoading
         ? 'thinking'
         : isProcessing
           ? 'processing'
@@ -308,11 +312,17 @@ const MarkHome = () => {
           <FloatingMenu />
           <button
             onClick={() => navigate('/chat')}
-            className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-2 transition-all text-white/80 hover:text-white rounded-xl cursor-pointer text-xs font-mono font-semibold"
+            className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-2 transition-all text-white/80 hover:text-white rounded-xl cursor-pointer text-xs font-mono font-semibold relative"
             title="Buka Chat Studio"
           >
             <MessageSquare className="w-3.5 h-3.5 text-primary" />
             <span className="hidden md:inline">Studio</span>
+            {isAgentBusy && !isMainLoading && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-warning"></span>
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -354,7 +364,7 @@ const MarkHome = () => {
                 </h3>
               </div>
               <span className="text-[10px] font-mono text-primary uppercase">
-                {isLoading ? 'Streaming' : 'Ready'}
+                {isMainLoading ? 'Streaming' : 'Ready'}
               </span>
             </div>
 
@@ -461,13 +471,13 @@ const MarkHome = () => {
               setIsSpeak(false)
               handleSubmit(null, prompt, sendOptions)
             }}
-            isLoading={isLoading || isAgentBusy}
+            isLoading={isMainLoading}
             isRecording={isRecording}
             isProcessing={isProcessing}
             audioIntensity={audioIntensity}
             onStartRecord={startRecording}
             onStopRecord={stopRecording}
-            onStop={handleStop}
+            onStop={() => handleStop(1)}
             source={inputSource}
             workspaceRoot={workspaceRoot}
             onSelectWorkspace={handleSelectWorkspace}

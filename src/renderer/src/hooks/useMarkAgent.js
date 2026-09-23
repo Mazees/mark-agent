@@ -376,7 +376,11 @@ export const useMarkAgent = () => {
 
     const targetSessionId = sendOptions?.sessionId || 1
 
-    if (isLoading || isAgentBusy) {
+    const isTargetRunning =
+      (runningSessionIds && runningSessionIds.map(String).includes(String(targetSessionId))) ||
+      (String(targetSessionId) === '1' && isLoading)
+
+    if (isTargetRunning) {
       if (handleIntervention) {
         handleIntervention(textToSend, targetSessionId, sendOptions)
       }

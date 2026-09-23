@@ -95,3 +95,13 @@ Pola yang dicegah meliputi:
 - Eksekusi skrip remote anonim yang tidak terverifikasi melalui pipe (`Invoke-Expression (New-Object Net.WebClient)...`).
 
 Perintah yang cocok dengan pola tersebut akan langsung ditolak di tingkat server sebelum mencapai shell Windows.
+
+---
+
+## 6. Keamanan Jaringan & Local Loopback Binding (CORS & Host Binding)
+
+Untuk melindungi komputer pengguna dari serangan lintas situs (*Cross-Site Request Forgery* / CSRF dan DNS rebinding) saat menjelajah web di peramban eksternal:
+
+1. **Strict Local Loopback (`127.0.0.1`):** Secara default, server Node.js MARK mengikat soket HTTP secara eksklusif ke `127.0.0.1` (bukan wildcard `0.0.0.0`). Tindakan ini mencegah perangkat lain di jaringan Wi-Fi/LAN lokal mengakses daemon kontrol PC atau API REST MARK. Binding dapat disesuaikan menggunakan variabel lingkungan `HOST` bila diperlukan secara sengaja.
+2. **Whitelist CORS Ketat:** Middleware Express menerapkan filter asal (*origin*) yang membatasi akses lintas domain hanya untuk klien lokal (`http://localhost:*` dan `http://127.0.0.1:*`) serta permintaan tanpa origin (seperti Microsoft Edge App Mode, CLI launcher, dan bot Telegram). Permintaan lintas domain dari situs web publik manapun di peramban standar otomatis ditolak oleh server.
+

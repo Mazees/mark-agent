@@ -1211,7 +1211,8 @@ export const useMarkPlan = ({
         effectiveSourceMessages,
         activeSummaryBlock,
         activeLastCompactedId,
-        systemPrompt
+        systemPrompt,
+        activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
       )
 
       // Bypass proses kompaksi berat jika instruksi internal (greeting sistem / awareness autonomous / disableTools)
@@ -1652,6 +1653,27 @@ export const useMarkPlan = ({
 
         if (streamResult?.usage) {
           lastServerUsage = streamResult.usage
+          const liveTokens = Number(
+            streamResult.usage.total_tokens ||
+              (streamResult.usage.prompt_tokens || 0) +
+                (streamResult.usage.completion_tokens || 0) ||
+              0
+          )
+          if (liveTokens > 0) {
+            window.dispatchEvent(
+              new CustomEvent('context-tracker-updated', {
+                detail: {
+                  sessionId: String(activeSessionNum || 1),
+                  currentTokens: liveTokens,
+                  maxTokens: MAX_CONTEXT_TOKENS,
+                  percentage: Math.min(100, (liveTokens / MAX_CONTEXT_TOKENS) * 100),
+                  currentChars: liveTokens,
+                  maxChars: MAX_CONTEXT_TOKENS,
+                  lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
+                }
+              })
+            )
+          }
         }
 
         if (streamResult?.finishReason === 'error') {
@@ -1775,7 +1797,9 @@ export const useMarkPlan = ({
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
                   executedTools: currentLiveTools,
-                  mood: currentActiveMood
+                  mood: currentActiveMood,
+                  usage: lastServerUsage || undefined,
+                  tokens: lastServerUsage?.completion_tokens || undefined
                 }
               ]
             })
@@ -2364,7 +2388,8 @@ export const useMarkPlan = ({
           activeSessionCompact?.lastCompactedMessageId ||
             activeSessionCompact?.last_compacted_message_id ||
             null,
-          systemPrompt
+          systemPrompt,
+          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {

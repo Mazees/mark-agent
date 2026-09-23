@@ -218,7 +218,8 @@ export function calculateSessionTokens(
   messages = [],
   summaryBlock = '',
   lastCompactedMessageId = null,
-  systemPrompt = ''
+  systemPrompt = '',
+  lastCompactedAt = null
 ) {
   let startIndex = 0
   let isBoundaryFound = false
@@ -240,7 +241,7 @@ export function calculateSessionTokens(
   }
 
   // 1. Cek apakah ada pesan asisten terakhir yang memiliki usage.total_tokens resmi dari DB / API
-  // Jika ada, gunakan total_tokens tersebut sebagai baseline dan hanya hitung pesan setelahnya
+  // Jika ada pemadatan aktif (lastCompactedAt), hanya gunakan usage dari pesan yang dibuat SETELAH pemadatan
   let lastUsageAssistantIdx = -1
   for (let i = messages.length - 1; i >= startIndex; i--) {
     const msg = messages[i]
@@ -251,6 +252,9 @@ export function calculateSessionTokens(
       typeof msg.usage.total_tokens === 'number' &&
       msg.usage.total_tokens > 0
     ) {
+      if (lastCompactedAt && msg.created_at && Number(msg.created_at) < Number(lastCompactedAt)) {
+        continue
+      }
       lastUsageAssistantIdx = i
       break
     }
@@ -299,9 +303,16 @@ export function calculateSessionChars(
   messages = [],
   summaryBlock = '',
   lastCompactedMessageId = null,
-  systemPrompt = ''
+  systemPrompt = '',
+  lastCompactedAt = null
 ) {
-  return calculateSessionTokens(messages, summaryBlock, lastCompactedMessageId, systemPrompt)
+  return calculateSessionTokens(
+    messages,
+    summaryBlock,
+    lastCompactedMessageId,
+    systemPrompt,
+    lastCompactedAt
+  )
 }
 
 /**

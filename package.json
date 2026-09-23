@@ -8,7 +8,15 @@
     "mark": "./bin/mark.js"
   },
   "author": "Mazees",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/Mazees/mark-agent/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mazees/mark-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Mazees/mark-agent/issues"
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -16,9 +24,20 @@
     "dev": "node bin/mark.js --dev",
     "dev:server": "node src/server/index.js --dev",
     "dev:ui": "vite",
+    "build": "vite build",
     "build:ui": "vite build",
     "cli": "node bin/mark.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "out",
+    "public",
+    "index.html",
+    "LICENSE",
+    "README.md",
+    "package.json"
+  ],
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
