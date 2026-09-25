@@ -78,7 +78,7 @@ export function printMonitorHeader(config = {}, uiActive = false) {
   process.stdout.write('\x1b[r\x1b[2J\x1b[1;1H')
   drawLeftRail('', lines, 74, uiActive ? c.darkGray : c.yellow)
   console.log(
-    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka MARK${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[j]${c.reset} ${c.gray}Inspect Data${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Bersihkan Layar${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}\n`
+    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka MARK${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Bersihkan Layar${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}\n`
   )
   console.log(
     ` ${c.darkGray}── Live Activity ─────────────────────────────────────────────────────────────${c.reset}`
@@ -123,24 +123,32 @@ export function toggleJsonInspector(config) {
 }
 
 export function printJsonInspector(payload) {
-  if (!payload) {
-    console.log(
-      `\n ${c.yellow}●${c.reset} ${c.gray}Belum ada payload request JSON yang di-fetch. Menunggu aksi dari MARK...${c.reset}\n`
-    )
-    return
-  }
-
-  const jsonStr = JSON.stringify(payload, null, 2)
-  const lines = jsonStr.split('\n')
-
   console.log(
-    `\n ${c.bold}${c.green}── [INSPECT] AI Request JSON Payload (${lines.length} lines) ── [Tekan 'j' untuk tutup/kembali] ──${c.reset}\n`
+    `\n ${c.bold}${c.green}── [INFO] AI Request Inspector ── [Tekan 'j' untuk kembali] ──────────────────${c.reset}\n`
   )
-  for (let i = 0; i < lines.length; i++) {
-    console.log(` ${c.cyan}${lines[i]}${c.reset}`)
+  console.log(
+    ` ${c.gray}Untuk performa maksimal dan bebas lag, payload raksasa kini diinspeksi via:${c.reset}`
+  )
+  console.log(` ${c.cyan}WebUI DevTools Console (F12) › window.__LAST_AI__${c.reset}\n`)
+  if (payload) {
+    console.log(` ${c.white}Metadata Permintaan Terakhir:${c.reset}`)
+    console.log(
+      ` ${c.darkGray}Provider      :${c.reset} ${c.teal}${payload.provider || '-'}${c.reset}`
+    )
+    console.log(
+      ` ${c.darkGray}Model         :${c.reset} ${c.teal}${payload.model || '-'}${c.reset}`
+    )
+    console.log(
+      ` ${c.darkGray}Messages Count:${c.reset} ${c.teal}${payload.messagesCount ?? '-'}${c.reset}`
+    )
+    console.log(
+      ` ${c.darkGray}Has Tools     :${c.reset} ${c.teal}${payload.hasTools ? 'Ya' : 'Tidak'}${c.reset}`
+    )
+  } else {
+    console.log(` ${c.yellow}● Belum ada riwayat aktivitas request AI.${c.reset}`)
   }
   console.log(
-    `\n ${c.bold}${c.green}────────────────────────────────────────────────────────────────────────────────────────${c.reset}\n`
+    `\n ${c.bold}${c.green}─────────────────────────────────────────────────────────────────────────────${c.reset}\n`
   )
 }
 
@@ -218,11 +226,7 @@ export async function runMonitor(portOverride) {
         } else if (event === 'ai:fetch') {
           lastFetchPayload = payload
           const info = `[${payload.provider}/${payload.model}] ${payload.messagesCount || 0} msgs${payload.hasTools ? `, ${payload.toolsCount || 0} tools` : ''}`
-          logActivity(
-            'fetch',
-            `AI Request (${payload.type || 'fetch'})`,
-            `${info} (Tekan [j] utk inspect)`
-          )
+          logActivity('fetch', `AI Request (${payload.type || 'fetch'})`, info)
         } else if (event === 'agent:thought') {
           logActivity('thought', `Turn ${payload.turn}`, payload.thought)
         } else if (event === 'tool:call') {

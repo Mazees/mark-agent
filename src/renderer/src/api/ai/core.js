@@ -36,6 +36,26 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
   const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
   const cleanSignal = resolveAbortSignal(signal)
 
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    window.__LAST_AI__ = {
+      messages,
+      tools,
+      options: actualOptions,
+      stream: actualStream,
+      timestamp: new Date().toISOString()
+    }
+    const msgCount = Array.isArray(messages) ? messages.length : 0
+    console.groupCollapsed(
+      `%c[MARK AI Request]%c ${actualStream ? 'Stream' : 'Fetch'} (${msgCount} msgs) › ketik __LAST_AI__ di console`,
+      'color: #22c55e; font-weight: bold;',
+      'color: inherit;'
+    )
+    console.log('Messages:', messages)
+    if (tools) console.log('Tools:', tools)
+    console.log('Options:', actualOptions)
+    console.groupEnd()
+  }
+
   // 1. Streaming Mode
   if (actualStream) {
     let unsubToken = null
@@ -63,6 +83,10 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
         { messages, tools, config: conf, isSmallTask, stream: true, sessionId },
         cleanSignal
       )
+      if (import.meta.env.DEV && typeof window !== 'undefined') {
+        window.__LAST_AI_RESULT__ = result
+        console.log('[MARK AI Result]', result)
+      }
       if (result?.toolCalls && onToolCall) {
         onToolCall(result.toolCalls)
       }
@@ -74,10 +98,15 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
   }
 
   // 2. Non-Streaming Mode
-  return window.api.fetchAI(
+  const result = await window.api.fetchAI(
     { messages, config: conf, isSmallTask, jsonSchema, stream: false, sessionId },
     cleanSignal
   )
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    window.__LAST_AI_RESULT__ = result
+    console.log('[MARK AI Result]', result)
+  }
+  return result
 }
 
 /**

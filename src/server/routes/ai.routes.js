@@ -38,8 +38,7 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
-      hasTools: false,
-      payload: { messages, jsonSchema, isSmallTask, sessionId }
+      hasTools: false
     })
 
     const result = await fetchAI(messages, false, {
@@ -82,8 +81,7 @@ aiRouter.post('/ai/stream', async (req, res) => {
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: Array.isArray(tools) && tools.length > 0,
-      toolsCount: Array.isArray(tools) ? tools.length : 0,
-      payload: { messages, tools, isSmallTask, sessionId }
+      toolsCount: Array.isArray(tools) ? tools.length : 0
     })
 
     const result = await fetchAI(messages, true, {
