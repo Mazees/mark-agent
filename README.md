@@ -1,7 +1,7 @@
 # MARK - Metacognitive Artificial Relational Knowledge
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Mazees/mark-agent/main/assets/banner-repo.png" alt="MARK AI Banner" width="100%">
+  <img src="https://raw.githubusercontent.com/Mazees/mark-agent/master/assets/banner-repo.png" alt="MARK AI Banner" width="100%">
 </p>
 
 <p align="center">
