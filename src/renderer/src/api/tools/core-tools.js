@@ -680,6 +680,26 @@ export const core_tools_schema = [
   }
 ]
 
+// Injeksi parameter reason ke seluruh core tools agar model selalu memberikan alasan natural
+for (const t of core_tools_schema) {
+  if (t.function?.parameters?.properties) {
+    if (!t.function.parameters.properties.reason) {
+      t.function.parameters.properties.reason = {
+        type: 'string',
+        description:
+          'Penjelasan ringkas dalam bahasa manusia mengenai alasan atau tujuan aksi ini (contoh: "Membuka tab Instagram di browser").'
+      }
+    }
+    if (Array.isArray(t.function.parameters.required)) {
+      if (!t.function.parameters.required.includes('reason')) {
+        t.function.parameters.required.push('reason')
+      }
+    } else {
+      t.function.parameters.required = ['reason']
+    }
+  }
+}
+
 // Legacy dictionary representation for backwards-compatibility
 export const core_tools = core_tools_schema.reduce((acc, t) => {
   acc[t.function.name] = t.function.description

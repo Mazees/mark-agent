@@ -16,3 +16,4 @@ PLUGIN_SYSTEM_SRS.md
 .mark/
 MARK.exe
 src/renderer/public/robot-simulator.html
+tests/

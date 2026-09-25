@@ -281,8 +281,9 @@ ${toolSections.join('\n\n')}
 5. ATURAN BATCH & PARALLEL ACTIONS (EFISIENSI MAKSIMAL):
    - Kamu SANGAT DIANJURKAN menyertakan beberapa tool sekaligus di dalam array "tool_calls" dalam satu giliran jika aksi-aksi tersebut sekuensial dan sudah pasti (misal otomasi PC: klik + ketik + key combo, riset web: multi-fetch beberapa URL, atau membaca beberapa berkas sekaligus).
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
-6. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.
-7. HANYA JIKA kamu TIDAK memanggil tool sama sekali, barulah kamu boleh menjawab dengan pesan teks santai/biasa kepada pengguna.`
+6. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
+7. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.
+8. HANYA JIKA kamu TIDAK memanggil tool sama sekali, barulah kamu boleh menjawab dengan pesan teks santai/biasa kepada pengguna.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {

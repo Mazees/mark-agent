@@ -16,7 +16,7 @@ import { webApi } from '../../api/web-bridge.js'
  */
 export async function executeAgentTool({
   tool,
-  rawArgs,
+  rawArgs: incomingArgs,
   config,
   context,
   activeSessionNum,
@@ -35,6 +35,26 @@ export async function executeAgentTool({
   let res
   let updatedDurableTask = durableTask
   let durableActiveStep = incomingDurableActiveStep
+
+  // Sanitasi parameter reason: simpan untuk timeline UI dan buang sebelum dikirim ke fungsi native
+  let rawArgs = incomingArgs
+  let execReason = null
+  if (incomingArgs && typeof incomingArgs === 'object' && !Array.isArray(incomingArgs)) {
+    rawArgs = { ...incomingArgs }
+    if (rawArgs.reason) {
+      execReason = String(rawArgs.reason).trim()
+      delete rawArgs.reason
+    }
+  } else if (typeof incomingArgs === 'string') {
+    try {
+      const parsed = JSON.parse(incomingArgs)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.reason) {
+        execReason = String(parsed.reason).trim()
+        delete parsed.reason
+        rawArgs = JSON.stringify(parsed)
+      }
+    } catch (_) {}
+  }
 
   if (currentSignal?.aborted) {
     throw new Error('AbortError')
@@ -869,6 +889,7 @@ export async function executeAgentTool({
   return {
     res,
     durableTask: updatedDurableTask,
-    durableActiveStep
+    durableActiveStep,
+    reason: execReason
   }
 }

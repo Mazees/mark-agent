@@ -38,6 +38,7 @@ const ChatList = ({
   youtubeLink = '',
   isSearchingMusic = false,
   sources = [],
+  executionSteps = null,
   executedTools = [],
   isPlanSteps = false,
   plan = [],
@@ -202,6 +203,7 @@ const ChatList = ({
                 content={cleanReportContent}
                 reasoning={reasoning}
                 sources={sources}
+                executionSteps={executionSteps}
                 executedTools={executedTools}
               />
 
@@ -242,6 +244,7 @@ const ChatList = ({
                 content={displayUserContent}
                 reasoning={reasoning}
                 sources={sources}
+                executionSteps={executionSteps}
                 executedTools={executedTools}
                 isPlanConclusion={isPlanConclusion}
               />
@@ -279,6 +282,7 @@ const ChatList = ({
                 content={displayUserContent}
                 reasoning={reasoning}
                 sources={sources}
+                executionSteps={executionSteps}
                 executedTools={executedTools}
                 isPlanConclusion={isPlanConclusion}
               />
@@ -350,6 +354,7 @@ const ChatList = ({
                 content={content}
                 youtubeLink={youtubeLink}
                 reasoning={reasoning}
+                executionSteps={executionSteps}
                 executedTools={executedTools}
               />
             ) : (
@@ -364,6 +369,7 @@ const ChatList = ({
                   content={cleanAiContent}
                   reasoning={reasoning}
                   sources={sources}
+                  executionSteps={executionSteps}
                   executedTools={executedTools}
                   isPlanConclusion={isPlanConclusion}
                   isThinking={isThinking}

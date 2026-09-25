@@ -96,8 +96,9 @@ export function calculateMessageChars(msg) {
   if (typeof msg.reasoning === 'string') total += msg.reasoning.length
   if (typeof msg.thought === 'string') total += msg.thought.length
 
-  if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
-    const sanitizedTools = msg.executedTools.map((t) => {
+  const steps = msg.executionSteps || msg.executedTools
+  if (Array.isArray(steps) && steps.length > 0) {
+    const sanitizedTools = steps.map((t) => {
       if (!t) return t
       const copy = { ...t }
       delete copy.preview
@@ -190,9 +191,10 @@ export function calculateMessageTokens(msg) {
   if (typeof msg.reasoning === 'string') total += countTokens(msg.reasoning)
   if (typeof msg.thought === 'string') total += countTokens(msg.thought)
 
-  // Tool calls & executed tools (abaikan preview dataUrl base64 karena hanya untuk rendering UI)
-  if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
-    const sanitizedTools = msg.executedTools.map((t) => {
+  // Tool calls & executed tools / execution steps (abaikan preview dataUrl base64 karena hanya untuk rendering UI)
+  const steps = msg.executionSteps || msg.executedTools
+  if (Array.isArray(steps) && steps.length > 0) {
+    const sanitizedTools = steps.map((t) => {
       if (!t) return t
       const copy = { ...t }
       delete copy.preview
@@ -327,6 +329,9 @@ export function pruneOldToolResultsInLoop(messages = [], protectLastN = 6) {
     if (!m) return m
     return {
       ...m,
+      executionSteps: Array.isArray(m.executionSteps)
+        ? m.executionSteps.map((t) => ({ ...t }))
+        : m.executionSteps,
       executedTools: Array.isArray(m.executedTools)
         ? m.executedTools.map((t) => ({ ...t }))
         : m.executedTools
@@ -375,9 +380,11 @@ export function pruneOldToolResultsInLoop(messages = [], protectLastN = 6) {
       }
     }
 
-    // 2. Pesan dengan executedTools (Format historis chat MARK)
-    if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
-      msg.executedTools = msg.executedTools.map((t) => {
+    // 2. Pesan dengan executionSteps / executedTools (Format historis chat MARK)
+    const targetSteps = msg.executionSteps || msg.executedTools
+    if (Array.isArray(targetSteps) && targetSteps.length > 0) {
+      const pruned = targetSteps.map((t) => {
+        if (!t || t.type === 'narration') return t
         const next = { ...t }
         if (typeof t.fullResult === 'string' && t.fullResult.length > OLD_TOOL_PRUNE_CHAR_LIMIT) {
           next.fullResult = t.resultSummary || CLEARED_TOOL_PLACEHOLDER
@@ -388,6 +395,8 @@ export function pruneOldToolResultsInLoop(messages = [], protectLastN = 6) {
         }
         return next
       })
+      if (msg.executionSteps) msg.executionSteps = pruned
+      if (msg.executedTools) msg.executedTools = pruned
     }
 
     // 3. Kompaksi blok kode panjang di teks lama jika > 500 char
@@ -757,21 +766,26 @@ export async function executeSessionCompaction({
 }
 
 /**
- * Memformat pesan dengan riwayat executedTools utuh (100% fullResult tanpa batasan turn)
+ * Memformat pesan dengan riwayat executionSteps/executedTools utuh (100% fullResult tanpa batasan turn)
  */
 export function formatMessageWithToolLogs(msg) {
   if (!msg) return ''
+  const steps = msg.executionSteps || msg.executedTools
   if (Array.isArray(msg.content)) {
     let newContent = [...msg.content]
-    if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
-      const toolLog = msg.executedTools
+    if (Array.isArray(steps) && steps.length > 0) {
+      const toolLog = steps
         .map((t) => {
+          if (t.type === 'narration' || (!t.tool && t.text)) {
+            return `  * [Catatan Narasi AI]: "${t.text || ''}"`
+          }
           const res = t.fullResult || t.resultSummary || 'OK'
-          return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+          const reasonStr = t.reason ? ` (${t.reason})` : ''
+          return `  * [Tool: ${t.tool || t.task || 'tool'}]${reasonStr} query: "${t.query || ''}"\n    Hasil:\n${res}`
         })
         .join('\n\n')
       if (toolLog) {
-        newContent.push({ type: 'text', text: `\n\n[RIWAYAT TOOL TURN INI]:\n${toolLog}` })
+        newContent.push({ type: 'text', text: `\n\n[RIWAYAT LANGKAH EKSEKUSI TURN INI]:\n${toolLog}` })
       }
     }
     const role = (msg.role || '').toLowerCase()
@@ -792,15 +806,19 @@ export function formatMessageWithToolLogs(msg) {
   }
 
   let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '')
-  if (Array.isArray(msg.executedTools) && msg.executedTools.length > 0) {
-    const toolLog = msg.executedTools
+  if (Array.isArray(steps) && steps.length > 0) {
+    const toolLog = steps
       .map((t) => {
+        if (t.type === 'narration' || (!t.tool && t.text)) {
+          return `  * [Catatan Narasi AI]: "${t.text || ''}"`
+        }
         const res = t.fullResult || t.resultSummary || 'OK'
-        return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+        const reasonStr = t.reason ? ` (${t.reason})` : ''
+        return `  * [Tool: ${t.tool || t.task || 'tool'}]${reasonStr} query: "${t.query || ''}"\n    Hasil:\n${res}`
       })
       .join('\n\n')
     if (toolLog) {
-      content = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${content}`
+      content = `[RIWAYAT LANGKAH EKSEKUSI TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${content}`
     }
   }
 

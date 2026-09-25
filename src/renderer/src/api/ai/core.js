@@ -1,6 +1,6 @@
-import { getAllConfig } from '../db'
+import { getAllConfig } from '../db.js'
 import { jsonrepair } from 'jsonrepair'
-import { resolveAbortSignal } from '../web-bridge'
+import { resolveAbortSignal } from '../web-bridge.js'
 
 /**
  * Frontend AI fetch wrapper.
