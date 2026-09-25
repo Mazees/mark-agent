@@ -5,6 +5,7 @@ import { getAwarenessResponse, generateDailyJournalEntry } from '../api/ai/aware
 import { subagentStore } from '../api/subagent/subagentStore'
 import { runSubagentTurn } from '../api/subagent/subagentExecutor'
 import { getCurrentTimeInfo } from '../api/ai/utils'
+import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 const CHECKIN_POLL_INTERVAL = 20 * 1000 // Polling telemetri setiap 20 detik
 const MIN_CHECKIN_GAP = 3 * 60 * 1000 // Minimal 3 menit antar evaluasi normal
@@ -167,9 +168,7 @@ export const useAwareness = ({
         }
 
         // 3. Aksi: Vocal (Balon Chat & Sapaan)
-        const cleanMessage = (result.message || '')
-          .replace(/(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi, '')
-          .trim()
+        const cleanMessage = stripMarkTags(result.message || '').trim()
         if (result.action_type === 'vocal' && cleanMessage) {
           const recentVisibleMessages = (chatDataRef.current || [])
             .filter((m) => !m.isThinking && !m.isSearching && !m.isSummarizing)

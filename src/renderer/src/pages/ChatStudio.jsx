@@ -35,6 +35,7 @@ import {
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import { useConfirm } from '../hooks/useConfirm'
+import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 /**
  * Ekstraksi dan filter semua prefix/meta-tag (seperti <mic>, <mood:value>)
@@ -62,14 +63,11 @@ export function filterMessagePrefixes(content) {
   }
 
   const prefixes = []
-  const cleanContent = content
-    .replace(
-      /(?:<(?:mic|mood:[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+)>|\(Mikrofon\)|\[mood:[a-zA-Z0-9_-]+\])/gi,
-      (match) => {
-        prefixes.push(match)
-        return ''
-      }
-    )
+  const cleanContent = stripMarkTags(content)
+    .replace(/(?:<mic>|\(Mikrofon\))/gi, (match) => {
+      prefixes.push(match)
+      return ''
+    })
     .trim()
 
   return { cleanContent, prefixes }

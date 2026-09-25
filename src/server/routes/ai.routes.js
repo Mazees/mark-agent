@@ -100,6 +100,12 @@ aiRouter.post('/ai/stream', async (req, res) => {
       onMood: (mood) => {
         wsHub.broadcast('ai:mood', { mood })
       },
+      onMeta: (meta) => {
+        wsHub.broadcast('ai:mark_meta', meta)
+        if (meta?.mood) {
+          wsHub.broadcast('ai:mood', { mood: meta.mood })
+        }
+      },
       onToolCall: (toolCalls) => {
         wsHub.broadcast('ai:tool_calls', { toolCalls })
       }

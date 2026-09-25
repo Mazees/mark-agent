@@ -778,14 +778,14 @@ export function formatMessageWithToolLogs(msg) {
     if ((role === 'ai' || role === 'assistant') && msg.mood) {
       const textItemIdx = newContent.findIndex((p) => p && p.type === 'text')
       if (textItemIdx >= 0) {
-        if (!/^(?:<|\[)mood:/i.test(newContent[textItemIdx].text || '')) {
+        if (!/<mark\b/i.test(newContent[textItemIdx].text || '')) {
           newContent[textItemIdx] = {
             ...newContent[textItemIdx],
-            text: `<mood:${msg.mood}> ${newContent[textItemIdx].text || ''}`
+            text: `<mark mood="${msg.mood}" done="true" /> ${newContent[textItemIdx].text || ''}`
           }
         }
       } else {
-        newContent.unshift({ type: 'text', text: `<mood:${msg.mood}>` })
+        newContent.unshift({ type: 'text', text: `<mark mood="${msg.mood}" done="true" />` })
       }
     }
     return newContent
@@ -806,8 +806,8 @@ export function formatMessageWithToolLogs(msg) {
 
   // Sisipkan tag mood pada pesan asisten jika ada dan belum tersemat
   const role = (msg.role || '').toLowerCase()
-  if ((role === 'ai' || role === 'assistant') && msg.mood && !/^(?:<|\[)mood:/i.test(content)) {
-    content = `<mood:${msg.mood}> ${content}`
+  if ((role === 'ai' || role === 'assistant') && msg.mood && !/<mark\b/i.test(content)) {
+    content = `<mark mood="${msg.mood}" done="true" /> ${content}`
   }
 
   return content

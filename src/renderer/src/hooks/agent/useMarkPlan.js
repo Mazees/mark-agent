@@ -3,6 +3,7 @@ import { buildPlanningSystemPrompt } from '../../api/ai/planning'
 import { getYoutubeSummary } from '../../api/ai/tools'
 import { fetchAI } from '../../api/ai/core'
 import { playVoice, speechQueue, getCurrentTimeInfo } from '../../api/ai/utils'
+import { parseMarkTag, stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 import { executeAgentTool } from './executeAgentTool.js'
 import { webApi } from '../../api/web-bridge.js'
 import {
@@ -1322,8 +1323,8 @@ export const useMarkPlan = ({
           ...recentHistory.map((m) => {
             const role = m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role
             let content = m.content || ''
-            if (role === 'assistant' && m.mood && !/^(?:<|\[)mood:/i.test(content)) {
-              content = `<mood:${m.mood}> ${content}`
+            if (role === 'assistant' && m.mood && !/<mark\b/i.test(content)) {
+              content = `<mark mood="${m.mood}" done="true" /> ${content}`
             }
             return { role, content, mood: m.mood || undefined }
           }),
@@ -1348,8 +1349,8 @@ export const useMarkPlan = ({
           ...recentHistory.map((m) => {
             const role = m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role
             let content = m.content || ''
-            if (role === 'assistant' && m.mood && !/^(?:<|\[)mood:/i.test(content)) {
-              content = `<mood:${m.mood}> ${content}`
+            if (role === 'assistant' && m.mood && !/<mark\b/i.test(content)) {
+              content = `<mark mood="${m.mood}" done="true" /> ${content}`
             }
             return { role, content, mood: m.mood || undefined }
           }),
@@ -1595,6 +1596,14 @@ export const useMarkPlan = ({
             targetSetChatData((prev) =>
               prev.map((msg) => (msg.isThinking ? { ...msg, mood: moodTag } : msg))
             )
+          },
+          onMeta: (meta) => {
+            if (meta?.mood) {
+              currentActiveMood = meta.mood
+              targetSetChatData((prev) =>
+                prev.map((msg) => (msg.isThinking ? { ...msg, mood: meta.mood } : msg))
+              )
+            }
           },
           onToken: (token) => {
             currentTurnContent += token
@@ -2099,9 +2108,11 @@ export const useMarkPlan = ({
                     ? Array.from(new Set(finalAllThoughts)).join('\n\n---\n\n')
                     : null
 
-                const cleanFinalOutput = finalReport
-                  .replace(/^(?:<|\[)mood:[a-zA-Z_]+(?:>|\])\s*/i, '')
-                  .trim()
+                const { meta: reportMeta, cleanContent: cleanFinalOutput } =
+                  parseMarkTag(finalReport)
+                if (reportMeta?.mood && reportMeta.mood !== 'neutral') {
+                  currentActiveMood = reportMeta.mood
+                }
 
                 const aiMsg = {
                   role: 'ai',
@@ -2184,7 +2195,11 @@ export const useMarkPlan = ({
         // ======================================================================
         // CABANG 2: SELESAI / DIRECT TEXT RESPONSE (Stop / Selesai)
         // ======================================================================
-        const turnAnswer = streamResult.content || currentTurnContent || ''
+        const rawTurnAnswer = streamResult.content || currentTurnContent || ''
+        const { meta: turnMeta, cleanContent: turnAnswer } = parseMarkTag(rawTurnAnswer)
+        if (turnMeta?.mood && turnMeta.mood !== 'neutral') {
+          currentActiveMood = turnMeta.mood
+        }
 
         // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
         if (durableTask && !isDurableTaskCompleted) {
@@ -2200,7 +2215,7 @@ export const useMarkPlan = ({
 
           loopMessages.push({
             role: 'assistant',
-            content: turnAnswer
+            content: rawTurnAnswer
           })
           loopMessages.push({
             role: 'user',
@@ -2230,8 +2245,8 @@ export const useMarkPlan = ({
         // Cek apakah ada intervensi user yang masuk saat streaming giliran ini
         if (sessionRecord.interventions?.length > 0) {
           const interventions = sessionRecord.interventions.splice(0).join('\n')
-          if (turnAnswer && turnAnswer.trim()) {
-            loopMessages.push({ role: 'assistant', content: turnAnswer })
+          if (rawTurnAnswer && rawTurnAnswer.trim()) {
+            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
           }
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
 
@@ -2261,6 +2276,32 @@ export const useMarkPlan = ({
               steps: [...execSteps],
               currentStep: execSteps.length - 1,
               reasoning: 'Menerima arahan baru dari user saat penyelesaian giliran.'
+            }
+          })
+
+          continue
+        }
+
+        // Strict Explicit Done: AI harus menuliskan done="true" untuk mengakhiri loop.
+        // Jika done === false, teruskan loop ke turn berikutnya agar AI bisa mengeksekusi langkah lanjutan.
+        if (!turnMeta.done) {
+          if (rawTurnAnswer && rawTurnAnswer.trim()) {
+            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
+          }
+          loopMessages.push({
+            role: 'user',
+            content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+          })
+
+          execSteps.push({ task: 'Melanjutkan langkah...' })
+          targetPushProcess({
+            id: agenticProcessId,
+            type: 'planning',
+            status: 'active',
+            data: {
+              steps: [...execSteps],
+              currentStep: execSteps.length - 1,
+              reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
             }
           })
 
@@ -2311,9 +2352,13 @@ export const useMarkPlan = ({
             return true
           })
 
-          let finalOutput = (finalContentAccumulator || '')
-            .replace(/^(?:<|\[)mood:[a-zA-Z_]+(?:>|\])\s*/i, '')
-            .trim()
+          const { meta: endMeta, cleanContent: parsedEndOutput } = parseMarkTag(
+            finalContentAccumulator || ''
+          )
+          if (endMeta?.mood && endMeta.mood !== 'neutral') {
+            currentActiveMood = endMeta.mood
+          }
+          let finalOutput = parsedEndOutput
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
           }

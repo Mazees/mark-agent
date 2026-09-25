@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { stripMarkTags } from '../../shared/parsers/mark-tag-parser.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -30,12 +31,10 @@ function getNotificationIconPath() {
  */
 export function showNativeNotification(title = 'Mark', body = '') {
   const isWindows = os.platform() === 'win32'
-  const safeTitle = (title || 'Mark')
-    .replace(/(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi, '')
+  const safeTitle = stripMarkTags(title || 'Mark')
     .replace(/["`$\\]/g, ' ')
     .trim()
-  const safeBody = (body || '')
-    .replace(/(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi, '')
+  const safeBody = stripMarkTags(body || '')
     .replace(/["`$\\]/g, ' ')
     .trim()
   const iconPath = getNotificationIconPath()

@@ -4,7 +4,9 @@ import {
   activeAbortControllers,
   createMoodStreamFilter,
   createLMStudioOfflineError,
-  isLMStudioOfflineError
+  isLMStudioOfflineError,
+  parseMarkTag,
+  stripMarkTags
 } from './ai-utils.js'
 
 export async function executeOpenAIProvider({
@@ -18,6 +20,7 @@ export async function executeOpenAIProvider({
   onToken = null,
   onReasoning = null,
   onMood = null,
+  onMeta = null,
   onToolCall = null,
   onStatus = null
 }) {
@@ -37,9 +40,9 @@ export async function executeOpenAIProvider({
       (m.role === 'assistant' || m.role === 'model') &&
       typeof sanitizedContent === 'string' &&
       m.mood &&
-      !/^(?:<|\[)mood:/i.test(sanitizedContent.trim())
+      !/<mark\b/i.test(sanitizedContent.trim())
     ) {
-      sanitizedContent = `<mood:${m.mood}> ${sanitizedContent}`
+      sanitizedContent = `<mark mood="${m.mood}" done="true" /> ${sanitizedContent}`
     }
 
     if (
@@ -139,9 +142,9 @@ export async function executeOpenAIProvider({
     let moodExtracted = false
     const extractMood = (text) => {
       if (!moodExtracted && text && onMood) {
-        const match = text.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
-        if (match) {
-          onMood(match[1].toLowerCase())
+        const parsed = parseMarkTag(text)
+        if (parsed.meta?.mood && parsed.meta.mood !== 'neutral') {
+          onMood(parsed.meta.mood)
           moodExtracted = true
         }
       }
@@ -164,7 +167,10 @@ export async function executeOpenAIProvider({
       if (!response.ok && body.stream_options && response.status === 400) {
         const errCloned = response.clone()
         const textData = await errCloned.text().catch(() => '')
-        if (textData.toLowerCase().includes('stream_options') || textData.toLowerCase().includes('unknown')) {
+        if (
+          textData.toLowerCase().includes('stream_options') ||
+          textData.toLowerCase().includes('unknown')
+        ) {
           const fallbackBody = { ...body }
           delete fallbackBody.stream_options
           const retryRes = await fetch(endpoint, {
@@ -189,10 +195,16 @@ export async function executeOpenAIProvider({
         throw new Error(`API Error (${response.status}): ${errorMsg}`)
       }
 
-      const sseMoodFilter = createMoodStreamFilter(onToken, (mood) => {
-        onMood?.(mood)
-        moodExtracted = true
-      })
+      const sseMoodFilter = createMoodStreamFilter(
+        onToken,
+        (mood) => {
+          onMood?.(mood)
+          moodExtracted = true
+        },
+        (meta) => {
+          onMeta?.(meta)
+        }
+      )
 
       const processContentToken = (token) => {
         accumulatedContent += token
@@ -322,9 +334,9 @@ export async function executeOpenAIProvider({
 
       let finalMood = null
       const fullText = (accumulatedReasoning + '\n' + accumulatedContent).trim()
-      const endMoodMatch = fullText.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/i)
-      if (endMoodMatch) {
-        finalMood = endMoodMatch[1].toLowerCase()
+      const parsedFull = parseMarkTag(fullText)
+      if (parsedFull.meta?.mood) {
+        finalMood = parsedFull.meta.mood
         if (!moodExtracted) {
           onMood?.(finalMood)
           moodExtracted = true

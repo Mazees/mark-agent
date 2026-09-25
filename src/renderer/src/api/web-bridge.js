@@ -185,6 +185,11 @@ export const webApi = {
     return () => removeWebListener('ai:mood', callback)
   },
 
+  onAiMarkMeta: (callback) => {
+    addWebListener('ai:mark_meta', callback)
+    return () => removeWebListener('ai:mark_meta', callback)
+  },
+
   onToolStatus: (callback) => {
     addWebListener('tool:status', callback)
     return () => removeWebListener('tool:status', callback)

@@ -12,7 +12,9 @@ import {
   cleanAndParse,
   checkCloudThrottle,
   getSystemSignature,
-  createMoodStreamFilter
+  createMoodStreamFilter,
+  parseMarkTag,
+  stripMarkTags
 } from './ai-utils.js'
 import { getActiveConfig, loadConfig } from '../../config-manager.js'
 import { GROUP_TOOLS_SCHEMA } from '../../tools/group-tools.js'
@@ -148,8 +150,11 @@ function buildDynamicStateAnchor(sysMsgs, lastAssistant, hasTools = false) {
 
   return `[DYNAMIC STATE ANCHOR - MARK AI OS]
 Kamu adalah MARK (Metacognitive Artificial Relational Knowledge). Tetap konsisten dengan kepribadian santai/cerdas tongkrongan, bukan robot kaku.
-ATURAN EMOSI MUTLAK: Awali karakter pertama responmu dengan tag <mood:nama_mood> (joy/sadness/fear/anger/disgust/anxiety/envy/embarrassment/ennui/neutral).
-Status emosi giliran sebelumnya: <mood:${lastMood}>. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
+ATURAN KONTROL & EMOSI MUTLAK:
+Awali baris pertama responmu dengan tag: <mark mood="[nama_mood]" done="[true|false]" />
+- Atribut mood: neutral, happy, thinking, sarcasm, focused, excited, sad, confused, annoyed, calm.
+- Atribut done: false jika sedang memanggil tool atau berencana melanjutkan langkah berikutnya. true HANYA jika seluruh tugas/pertanyaan pengguna telah selesai tuntas dijawab.
+Status giliran sebelumnya: <mark mood="${lastMood || 'neutral'}" done="true" />. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
 }
 
 export async function executeWebProvider({
@@ -163,6 +168,7 @@ export async function executeWebProvider({
   onToken = null,
   onReasoning = null,
   onMood = null,
+  onMeta = null,
   onToolCall = null,
   onStatus = null
 }) {
@@ -182,6 +188,9 @@ export async function executeWebProvider({
           },
           (mood) => {
             onMood?.(mood)
+          },
+          (meta) => {
+            onMeta?.(meta)
           }
         )
       : null
@@ -373,9 +382,9 @@ ${toolSections.join('\n\n')}
     if (
       (roleName === 'ASSISTANT' || roleName === 'AI' || roleName === 'MODEL') &&
       m.mood &&
-      !/^(?:<|\[)mood:/i.test(textBody.trim())
+      !/<mark\b/i.test(textBody.trim())
     ) {
-      textBody = `<mood:${m.mood}> ${textBody}`
+      textBody = `<mark mood="${m.mood}" done="true" /> ${textBody}`
     }
 
     fullPrompt += `[${roleName}]: ${textBody}\n`
@@ -519,11 +528,11 @@ ${toolSections.join('\n\n')}
   let cleanReasoning = reasoning || ''
 
   if (cleanReasoning) {
-    const moodMatch = cleanReasoning.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
-    if (moodMatch) {
-      onMood?.(moodMatch[1].toLowerCase())
+    const parsedReasoning = parseMarkTag(cleanReasoning)
+    if (parsedReasoning.meta?.mood && parsedReasoning.meta.mood !== 'neutral') {
+      onMood?.(parsedReasoning.meta.mood)
     }
-    cleanReasoning = cleanReasoning.replace(/(?:<|\[)mood:[a-zA-Z_]+(?:>|\])/gi, '').trim()
+    cleanReasoning = parsedReasoning.cleanContent
     onReasoning?.(cleanReasoning)
   }
 
@@ -541,11 +550,13 @@ ${toolSections.join('\n\n')}
   const lastBrace = candidateStr.lastIndexOf('}')
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     const prelude = candidateStr.substring(0, firstBrace)
-    const moodMatch =
-      prelude.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/) ||
-      cleanContent.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
-    if (moodMatch) {
-      onMood?.(moodMatch[1].toLowerCase())
+    const parsedPrelude = parseMarkTag(prelude)
+    const parsedContent = parseMarkTag(cleanContent)
+    const foundMood =
+      (parsedPrelude.meta?.mood !== 'neutral' ? parsedPrelude.meta.mood : null) ||
+      (parsedContent.meta?.mood !== 'neutral' ? parsedContent.meta.mood : null)
+    if (foundMood) {
+      onMood?.(foundMood)
     }
     candidateStr = candidateStr.substring(firstBrace, lastBrace + 1).trim()
   }
@@ -693,11 +704,11 @@ ${toolSections.join('\n\n')}
     cleanContent = cleanContent
       .replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '')
       .trim()
-    const moodMatch = cleanContent.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
-    if (moodMatch) {
-      onMood?.(moodMatch[1].toLowerCase())
+    const parsedContent = parseMarkTag(cleanContent)
+    if (parsedContent.meta?.mood && parsedContent.meta.mood !== 'neutral') {
+      onMood?.(parsedContent.meta.mood)
     }
-    cleanContent = cleanContent.replace(/(?:<|\[)mood:[a-zA-Z_]+(?:>|\])/gi, '').trim()
+    cleanContent = parsedContent.cleanContent
     if (!streamedAnyToken) {
       onToken?.(cleanContent)
     }
