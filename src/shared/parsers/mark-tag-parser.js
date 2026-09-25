@@ -70,7 +70,8 @@ const LEGACY_DONE_REGEX = /<\/?done\s*\/?>/gi
 export function parseAttributes(attrString) {
   const result = {
     mood: MARK_TAG_SCHEMA.mood.default,
-    done: MARK_TAG_SCHEMA.done.default
+    done: MARK_TAG_SCHEMA.done.default,
+    hasExplicitDone: false
   }
 
   if (!attrString || typeof attrString !== 'string') {
@@ -86,6 +87,9 @@ export function parseAttributes(attrString) {
 
     if (rawKey in MARK_TAG_SCHEMA) {
       result[rawKey] = MARK_TAG_SCHEMA[rawKey].validate(rawValue)
+      if (rawKey === 'done') {
+        result.hasExplicitDone = true
+      }
     }
   }
 
@@ -112,14 +116,16 @@ export function stripMarkTags(text) {
 /**
  * Parsing teks respons AI untuk mengekstrak metadata <mark>, CoT reasoning, dan cleanContent.
  * @param {string} rawText - Teks mentah dari AI
- * @returns {{ meta: { mood: string, done: boolean }, reasoning: string, cleanContent: string }}
+ * @returns {{ meta: { mood: string, done: boolean, hasTag: boolean, hasExplicitDone: boolean }, reasoning: string, cleanContent: string }}
  */
 export function parseMarkTag(rawText) {
   if (!rawText || typeof rawText !== 'string') {
     return {
       meta: {
         mood: MARK_TAG_SCHEMA.mood.default,
-        done: MARK_TAG_SCHEMA.done.default
+        done: MARK_TAG_SCHEMA.done.default,
+        hasTag: false,
+        hasExplicitDone: false
       },
       reasoning: '',
       cleanContent: ''
@@ -136,13 +142,19 @@ export function parseMarkTag(rawText) {
   // 2. Ekstraksi Tag <mark ... />
   let meta = {
     mood: MARK_TAG_SCHEMA.mood.default,
-    done: MARK_TAG_SCHEMA.done.default
+    done: MARK_TAG_SCHEMA.done.default,
+    hasTag: false,
+    hasExplicitDone: false
   }
 
   const markMatch = rawText.match(MARK_TAG_REGEX)
   if (markMatch) {
     const attrString = markMatch[1]
-    meta = parseAttributes(attrString)
+    const parsedAttrs = parseAttributes(attrString)
+    meta = {
+      ...parsedAttrs,
+      hasTag: true
+    }
   }
 
   // 3. Sanitasi teks untuk tampilan dan penyimpanan

@@ -1511,7 +1511,6 @@ export const useMarkPlan = ({
               content: loadingText,
               isThinking: true,
               reasoning: initialReasoning,
-              executionSteps: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
               executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
               mood: currentActiveMood
             }
@@ -1586,7 +1585,6 @@ export const useMarkPlan = ({
                   content: currentTurnContent,
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
-                  executionSteps: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
                   executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
                   mood: currentActiveMood
                 }
@@ -1639,7 +1637,6 @@ export const useMarkPlan = ({
                   content: currentTurnContent,
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
-                  executionSteps: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
                   executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
                   mood: currentActiveMood
                 }
@@ -1827,16 +1824,6 @@ export const useMarkPlan = ({
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
           sentenceBuffer = ''
           speechQueue.reset()
-
-          const { cleanContent: callNarration } = parseMarkTag(streamResult.content || '')
-          if (callNarration && callNarration.trim()) {
-            executedToolsList.push({
-              type: 'narration',
-              text: callNarration.trim(),
-              timestamp: Date.now()
-            })
-          }
-
           const assistantMsg = {
             role: 'assistant',
             content: streamResult.content || null,
@@ -1870,10 +1857,8 @@ export const useMarkPlan = ({
             })
 
             currentInFlightTool = {
-              type: 'tool',
               tool: toolName,
               query: JSON.stringify(parsedArgs),
-              reason: parsedArgs?.reason || null,
               status: 'running'
             }
             const currentLiveTools = [...executedToolsList, currentInFlightTool]
@@ -1892,7 +1877,6 @@ export const useMarkPlan = ({
                   content: streamResult.content || `Mengeksekusi [${toolName}]...`,
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
-                  executionSteps: currentLiveTools,
                   executedTools: currentLiveTools,
                   mood: currentActiveMood,
                   usage: lastServerUsage || undefined,
@@ -1983,10 +1967,8 @@ export const useMarkPlan = ({
             }
 
             executedToolsList.push({
-              type: 'tool',
               tool: toolName,
               query: JSON.stringify(parsedArgs),
-              reason: execResult.reason || parsedArgs?.reason || null,
               status: executionSucceeded ? 'done' : 'failed',
               preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
               fullResult:
@@ -2135,7 +2117,6 @@ export const useMarkPlan = ({
                 const aiMsg = {
                   role: 'ai',
                   content: cleanFinalOutput,
-                  executionSteps: executedToolsList.length > 0 ? executedToolsList : null,
                   executedTools: executedToolsList.length > 0 ? executedToolsList : null,
                   isTaskDone: true,
                   reasoning: mergedReasoning,
@@ -2304,39 +2285,12 @@ export const useMarkPlan = ({
         // Strict Explicit Done: AI harus menuliskan done="true" untuk mengakhiri loop.
         // Jika done === false, teruskan loop ke turn berikutnya agar AI bisa mengeksekusi langkah lanjutan.
         if (!turnMeta.done) {
-          if (turnAnswer && turnAnswer.trim()) {
-            executedToolsList.push({
-              type: 'narration',
-              text: turnAnswer.trim(),
-              timestamp: Date.now()
-            })
-          }
           if (rawTurnAnswer && rawTurnAnswer.trim()) {
             loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
           }
           loopMessages.push({
             role: 'user',
             content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
-          })
-
-          targetSetChatData((prev) => {
-            const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
-              .map((t) => (typeof t === 'string' ? t.trim() : ''))
-              .filter(Boolean)
-            const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
-            const filtered = prev.filter((item) => !item.isThinking)
-            return [
-              ...filtered,
-              {
-                role: 'ai',
-                content: 'Melanjutkan analisis & langkah berikutnya...',
-                isThinking: true,
-                reasoning: liveReasoning || undefined,
-                executionSteps: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                mood: currentActiveMood
-              }
-            ]
           })
 
           execSteps.push({ task: 'Melanjutkan langkah...' })
@@ -2420,7 +2374,6 @@ export const useMarkPlan = ({
           const aiMsg = {
             role: 'ai',
             content: finalOutput,
-            executionSteps: executedToolsList.length > 0 ? executedToolsList : null,
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: true,
             reasoning: mergedReasoning,
@@ -2493,7 +2446,6 @@ export const useMarkPlan = ({
           {
             role: 'ai',
             content: 'Tugas telah selesai diproses.',
-            executionSteps: executedToolsList.length > 0 ? executedToolsList : null,
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: true,
             reasoning: mergedReasoning,
@@ -2660,11 +2612,9 @@ export const useMarkPlan = ({
 
         // Ambil riwayat tool yang sempat dieksekusi sebelum di-abort
         let rawExecutedTools =
-          thinkingItem?.executionSteps && thinkingItem.executionSteps.length > 0
-            ? [...thinkingItem.executionSteps]
-            : thinkingItem?.executedTools && thinkingItem.executedTools.length > 0
-              ? [...thinkingItem.executedTools]
-              : [...(executedToolsList || [])]
+          thinkingItem?.executedTools && thinkingItem.executedTools.length > 0
+            ? [...thinkingItem.executedTools]
+            : [...(executedToolsList || [])]
 
         // Pastikan in-flight tool yang sedang dieksekusi saat abort tidak hilang
         if (
@@ -2719,7 +2669,6 @@ export const useMarkPlan = ({
             role: 'ai',
             content: abortContent,
             reasoning: preservedReasoning,
-            executionSteps: preservedExecutedTools.length > 0 ? preservedExecutedTools : undefined,
             executedTools: preservedExecutedTools.length > 0 ? preservedExecutedTools : undefined,
             mood: isAbort ? 'neutral' : 'sadness',
             timestamp: getCurrentTimeInfo(),

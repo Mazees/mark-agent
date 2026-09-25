@@ -282,8 +282,13 @@ ${toolSections.join('\n\n')}
    - Kamu SANGAT DIANJURKAN menyertakan beberapa tool sekaligus di dalam array "tool_calls" dalam satu giliran jika aksi-aksi tersebut sekuensial dan sudah pasti (misal otomasi PC: klik + ketik + key combo, riset web: multi-fetch beberapa URL, atau membaca beberapa berkas sekaligus).
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
 6. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
-7. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.
-8. HANYA JIKA kamu TIDAK memanggil tool sama sekali, barulah kamu boleh menjawab dengan pesan teks santai/biasa kepada pengguna.`
+7. ATURAN WAJIB TAG MARK (done="true" PADA JAWABAN TEKS - SANGAT KRUSIAL):
+   - HANYA JIKA kamu TIDAK memanggil tool sama sekali (seluruh proses tool telah selesai atau tidak memerlukan tool), barulah kamu memberikan teks jawaban kepada pengguna.
+   - PENTING MUTLAK: SETIAP KALI memberikan teks jawaban/penyelesaian tugas, baris PERTAMA WAJIB diawali dengan tag:
+     <mark mood="[nama_mood]" done="true" />
+   - Atribut done="true" adalah SINYAL RESMI bagi sistem bahwa tugasmu SUDAH TUNTAS dan loop eksekusi boleh berhenti! DILARANG KERAS merespons teks tanpa atribut done="true"!
+   - DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
+8. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
