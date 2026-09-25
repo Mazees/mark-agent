@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws'
+import { getCurrentVersion } from './services/updater.js'
 
 /**
  * WebSocket Hub untuk MARK Core.
@@ -31,7 +32,7 @@ class WebSocketHub {
 
       // Kirim event sambutan ready dan status presence UI terkini
       this.send(ws, 'core:ready', {
-        version: '5.0.0',
+        version: getCurrentVersion(),
         timestamp: Date.now()
       })
       this.send(ws, 'ui:status', {

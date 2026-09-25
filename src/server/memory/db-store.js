@@ -2,6 +2,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import Database from 'better-sqlite3'
+import { getCurrentVersion } from '../services/updater.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
 if (!fs.existsSync(CONFIG_DIR)) {
@@ -606,7 +607,7 @@ export function exportFullDatabase() {
 
   return {
     app: 'MARK',
-    version: '5.0.0',
+    version: getCurrentVersion(),
     exportedAt: new Date().toISOString(),
     tables
   }

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getActiveConfig, setActiveConfig, saveConfig, reloadConfig } from '../config-manager.js'
 import { wsHub } from '../ws-hub.js'
+import { getCurrentVersion } from '../services/updater.js'
 
 export const configRouter = Router()
 
@@ -9,7 +10,7 @@ configRouter.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     app: 'MARK',
-    version: '5.0.0',
+    version: getCurrentVersion(),
     uptime: process.uptime(),
     timestamp: Date.now()
   })
