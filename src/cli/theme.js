@@ -38,26 +38,138 @@ export const colors = {
   bgCard: '\x1b[48;2;25;54;45m'
 }
 
-export function drawBox(title, contentLines, width = 74, borderColor = colors.darkGray) {
+export function stripAnsi(str) {
+  if (typeof str !== 'string') return ''
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+}
+
+export function truncateAnsi(str, maxWidth) {
+  if (!str) return ''
+  const plain = stripAnsi(str)
+  if (plain.length <= maxWidth) return str
+  if (maxWidth <= 3) return '.'.repeat(Math.max(1, maxWidth))
+
+  const targetLen = maxWidth - 3
+  let visible = 0
+  let result = ''
+  let inAnsi = false
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i]
+    if (char === '\x1b') {
+      inAnsi = true
+      result += char
+      continue
+    }
+    if (inAnsi) {
+      result += char
+      if (/[a-zA-Z]/.test(char)) {
+        inAnsi = false
+      }
+      continue
+    }
+
+    result += char
+    visible++
+    if (visible >= targetLen) {
+      result += '...\x1b[0m'
+      break
+    }
+  }
+  return result
+}
+
+export function resolveWidth(customWidth = null, fallbackMax = 78, min = 40) {
+  const cols = process.stdout.columns || 80
+  const maxAllowed = Math.max(min, cols - 3)
+  if (typeof customWidth === 'number' && customWidth > 0) {
+    return Math.min(customWidth, maxAllowed)
+  }
+  return Math.min(fallbackMax, maxAllowed)
+}
+
+export function drawDivider(label = '', width = null, color = colors.darkGray) {
+  const w = resolveWidth(width)
+  if (!label) {
+    return `${color}${'─'.repeat(Math.max(0, w))}${colors.reset}`
+  }
+  const clean = stripAnsi(label)
+  const remain = Math.max(0, w - clean.length - 4)
+  return `${color}── ${label} ${'─'.repeat(remain)}${colors.reset}`
+}
+
+export function drawBox(
+  title = '',
+  contentLines = [],
+  width = null,
+  borderColor = colors.darkGray
+) {
   const c = colors
-  const topBorder = `${borderColor}╭─${title ? ` ${c.bold}${c.green}${title}${c.reset}${borderColor} ` : ''}${'─'.repeat(Math.max(0, width - (title ? title.length + 4 : 2)))}╮${c.reset}`
-  const bottomBorder = `${borderColor}╰${'─'.repeat(width)}╯${c.reset}`
+  const w = resolveWidth(width, 78)
+  const cleanTitle = stripAnsi(title)
+
+  let topBorder
+  if (cleanTitle) {
+    const dashCount = Math.max(0, w - cleanTitle.length - 5)
+    topBorder = `${borderColor}╭─ ${c.bold}${c.green}${title}${c.reset}${borderColor} ${'─'.repeat(dashCount)}╮${c.reset}`
+  } else {
+    const dashCount = Math.max(0, w - 3)
+    topBorder = `${borderColor}╭─${'─'.repeat(dashCount)}╮${c.reset}`
+  }
+  const bottomBorder = `${borderColor}╰${'─'.repeat(Math.max(0, w - 2))}╯${c.reset}`
 
   console.log(topBorder)
-  for (const line of contentLines) {
-    console.log(`${borderColor}│${c.reset} ${line}`)
+  const innerWidth = Math.max(10, w - 2)
+
+  // Flatten lines in case content contains embedded newlines
+  const flatLines = []
+  for (const raw of contentLines) {
+    const parts = String(raw ?? '').split(/\r?\n/)
+    flatLines.push(...parts)
+  }
+
+  for (const line of flatLines) {
+    const safeLine = truncateAnsi(line, innerWidth)
+    const padLen = Math.max(0, innerWidth - stripAnsi(safeLine).length)
+    console.log(
+      `${borderColor}│${c.reset}${safeLine}${' '.repeat(padLen)}${borderColor}│${c.reset}`
+    )
   }
   console.log(bottomBorder)
 }
 
-export function drawLeftRail(title, contentLines, width = 74, borderColor = colors.darkGray) {
+export function drawLeftRail(
+  title = '',
+  contentLines = [],
+  width = null,
+  borderColor = colors.darkGray
+) {
   const c = colors
-  const topBorder = `${borderColor}┌─${title ? ` ${c.bold}${c.green}${title}${c.reset}${borderColor} ` : ''}${'─'.repeat(Math.max(0, width - (title ? title.length + 4 : 2)))}${c.reset}`
-  const bottomBorder = `${borderColor}└${'─'.repeat(Math.max(0, width - 1))}${c.reset}`
+  const w = resolveWidth(width, 78)
+  const cleanTitle = stripAnsi(title)
+
+  let topBorder
+  if (cleanTitle) {
+    const dashCount = Math.max(0, w - cleanTitle.length - 4)
+    topBorder = `${borderColor}┌─ ${c.bold}${c.green}${title}${c.reset}${borderColor} ${'─'.repeat(dashCount)}${c.reset}`
+  } else {
+    const dashCount = Math.max(0, w - 2)
+    topBorder = `${borderColor}┌─${'─'.repeat(dashCount)}${c.reset}`
+  }
+  const bottomBorder = `${borderColor}└${'─'.repeat(Math.max(0, w - 1))}${c.reset}`
 
   console.log(topBorder)
-  for (const line of contentLines) {
-    console.log(`${borderColor}│${c.reset} ${line}`)
+  const innerWidth = Math.max(10, w - 2)
+
+  const flatLines = []
+  for (const raw of contentLines) {
+    const parts = String(raw ?? '').split(/\r?\n/)
+    flatLines.push(...parts)
+  }
+
+  for (const line of flatLines) {
+    const safeLine = truncateAnsi(line, innerWidth)
+    console.log(`${borderColor}│${c.reset}${safeLine}`)
   }
   console.log(bottomBorder)
 }
@@ -73,39 +185,59 @@ export function printHeader(config = {}) {
         ? config.customModel || 'default-model'
         : config.model || 'local-model'
   const cwd = process.cwd()
+  const termWidth = resolveWidth(null, 78)
+  const maxCwd = Math.max(15, termWidth - 18)
+  const displayCwd = cwd.length > maxCwd ? '...' + cwd.slice(-(maxCwd - 3)) : cwd
 
   const lines = [
     ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v${appVersion}]${c.reset}`,
-    ` ${c.darkGray}Workspace :${c.reset} ${c.gray}${cwd}${c.reset}`,
+    ` ${c.darkGray}Workspace :${c.reset} ${c.gray}${displayCwd}${c.reset}`,
     ` ${c.darkGray}Provider  :${c.reset} ${c.cyan}${provider}${c.reset} ${c.darkGray}(${model})${c.reset}  ${c.darkGray}|${c.reset}  ${c.darkGray}Port:${c.reset} ${c.teal}3000${c.reset}`,
     ` ${c.darkGray}WebUI     :${c.reset} ${c.blue}http://localhost:3000${c.reset} ${c.darkGray}[Edge App Mode Ready]${c.reset}`
   ]
 
-  drawBox('', lines, 74, c.darkGray)
-  console.log(
-    ` ${c.darkGray}Commands:${c.reset} ${c.green}/ui${c.reset} ${c.darkGray}|${c.reset} ${c.green}/web${c.reset} ${c.darkGray}|${c.reset} ${c.green}/provider${c.reset} ${c.darkGray}|${c.reset} ${c.green}/model${c.reset} ${c.darkGray}|${c.reset} ${c.green}/memory${c.reset} ${c.darkGray}|${c.reset} ${c.green}/status${c.reset} ${c.darkGray}|${c.reset} ${c.green}/clear${c.reset} ${c.darkGray}|${c.reset} ${c.green}/exit${c.reset}\n`
-  )
+  drawBox('', lines, termWidth, c.darkGray)
+
+  const cols = process.stdout.columns || 80
+  if (cols < 70) {
+    console.log(
+      ` ${c.darkGray}Cmds:${c.reset} ${c.green}/ui /web /provider /model /memory /status /clear /exit${c.reset}\n`
+    )
+  } else {
+    console.log(
+      ` ${c.darkGray}Commands:${c.reset} ${c.green}/ui${c.reset} ${c.darkGray}|${c.reset} ${c.green}/web${c.reset} ${c.darkGray}|${c.reset} ${c.green}/provider${c.reset} ${c.darkGray}|${c.reset} ${c.green}/model${c.reset} ${c.darkGray}|${c.reset} ${c.green}/memory${c.reset} ${c.darkGray}|${c.reset} ${c.green}/status${c.reset} ${c.darkGray}|${c.reset} ${c.green}/clear${c.reset} ${c.darkGray}|${c.reset} ${c.green}/exit${c.reset}\n`
+    )
+  }
 }
 
 export function printThought(thought, turn = 1) {
   const c = colors
-  const lines = [`  ${c.gray}${thought.trim()}${c.reset}`]
-  drawBox(`Thought (Turn ${turn})`, lines, 74, c.darkGray)
+  const lines = [` ${c.gray}${thought.trim()}${c.reset}`]
+  drawBox(`Thought (Turn ${turn})`, lines, null, c.darkGray)
   console.log()
 }
 
 export function printToolCall(tool, query) {
   const c = colors
+  const cols = process.stdout.columns || 80
+  const maxQuery = Math.max(20, cols - 30)
+  const safeQuery =
+    query && String(query).length > maxQuery ? String(query).slice(0, maxQuery - 3) + '...' : query
   console.log(
-    ` ${c.yellow}⚡ Action${c.reset}  › ${c.bold}${c.white}${tool}${c.reset} ${query ? `${c.darkGray}› ${c.gray}${query}${c.reset}` : ''}`
+    ` ${c.yellow}⚡ Action${c.reset}  › ${c.bold}${c.white}${tool}${c.reset} ${safeQuery ? `${c.darkGray}› ${c.gray}${safeQuery}${c.reset}` : ''}`
   )
 }
 
 export function printToolResult(tool, result) {
   const c = colors
-  const preview = String(result).trim().slice(0, 140).replace(/\n/g, ' ')
+  const cols = process.stdout.columns || 80
+  const maxLen = Math.max(25, cols - 30)
+  const raw = String(result ?? '')
+    .trim()
+    .replace(/\n/g, ' ')
+  const preview = raw.length > maxLen ? raw.slice(0, maxLen - 3) + '...' : raw
   console.log(
-    ` ${c.green}✓ Result${c.reset}  › ${c.darkGray}[${tool}]${c.reset} ${c.gray}${preview}${preview.length >= 140 ? '...' : ''}${c.reset}\n`
+    ` ${c.green}✓ Result${c.reset}  › ${c.darkGray}[${tool}]${c.reset} ${c.gray}${preview}${c.reset}\n`
   )
 }
 
@@ -124,7 +256,8 @@ export async function promptSelect({ title = 'Select Option', options = [], acti
     let selectedIndex = options.findIndex((o) => o.id === activeId)
     if (selectedIndex === -1) selectedIndex = 0
 
-    const width = 74
+    const width = resolveWidth(null, 76)
+    const innerWidth = Math.max(10, width - 2)
     let renderedLines = 0
 
     const render = (isFirst = false) => {
@@ -132,9 +265,11 @@ export async function promptSelect({ title = 'Select Option', options = [], acti
         process.stdout.write(`\x1b[${renderedLines}A\r`)
       }
 
-      const topBorder = `${colors.darkGray}╭─ ${colors.bold}${colors.green}${title}${colors.reset}${colors.darkGray} ${'─'.repeat(Math.max(0, width - title.length - 4))}╮${colors.reset}`
-      const bottomBorder = `${colors.darkGray}╰${'─'.repeat(width)}╯${colors.reset}`
-      const hint = ` ${colors.darkGray}Gunakan panah ↑/↓ atau angka [1-${options.length}] lalu Enter. Esc untuk batal.${colors.reset}`
+      const cleanTitle = stripAnsi(title)
+      const dashCount = Math.max(0, width - cleanTitle.length - 5)
+      const topBorder = `${colors.darkGray}╭─ ${colors.bold}${colors.green}${title}${colors.reset}${colors.darkGray} ${'─'.repeat(dashCount)}╮${colors.reset}`
+      const bottomBorder = `${colors.darkGray}╰${'─'.repeat(Math.max(0, width - 2))}╯${colors.reset}`
+      const hint = ` ${colors.darkGray}Gunakan panah ↑/↓ atau [1-${options.length}] lalu Enter. Esc untuk batal.${colors.reset}`
 
       const lines = options.map((opt, i) => {
         const isSelected = i === selectedIndex
@@ -148,12 +283,15 @@ export async function promptSelect({ title = 'Select Option', options = [], acti
           : `${colors.white}${opt.title}${colors.reset}`
         const descText = `${colors.darkGray}${opt.description || ''}${colors.reset}`
         const num = `${colors.darkGray}[${i + 1}]${colors.reset}`
-        return ` ${pointer} ${bullet} ${num} ${titleText}  ${descText}`
+        const rawLine = ` ${pointer} ${bullet} ${num} ${titleText}  ${descText}`
+        const safeLine = truncateAnsi(rawLine, innerWidth)
+        const padLen = Math.max(0, innerWidth - stripAnsi(safeLine).length)
+        return `${colors.darkGray}│${colors.reset}${safeLine}${' '.repeat(padLen)}${colors.darkGray}│${colors.reset}`
       })
 
       process.stdout.write(`\x1b[K${topBorder}\n`)
       for (const line of lines) {
-        process.stdout.write(`\x1b[K${colors.darkGray}│${colors.reset} ${line}\n`)
+        process.stdout.write(`\x1b[K${line}\n`)
       }
       process.stdout.write(`\x1b[K${bottomBorder}\n`)
       process.stdout.write(`\x1b[K${hint}\n`)
