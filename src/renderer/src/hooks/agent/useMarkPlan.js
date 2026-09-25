@@ -1692,7 +1692,8 @@ export const useMarkPlan = ({
           }
           if (
             cand.includes('"tool_calls"') ||
-            (cand.includes('"action"') && cand.includes('"tool"')) ||
+            cand.includes('"action"') ||
+            cand.includes('"tool"') ||
             cand.includes('"mood"') ||
             cand.includes('"answer"')
           ) {
@@ -1724,6 +1725,77 @@ export const useMarkPlan = ({
                           : String(tc.arguments || '{}')
                     }
                   }))
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
+                } else if (Array.isArray(pObj.action) && pObj.action.length > 0) {
+                  // Format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
+                  effectiveToolCalls = pObj.action
+                    .filter((act) => act && (act.tool || act.name))
+                    .map((act, idx) => ({
+                      id: `call_fallback_${Date.now()}_${idx}`,
+                      type: 'function',
+                      function: {
+                        name: act.tool || act.name,
+                        arguments:
+                          typeof act.arguments === 'object'
+                            ? JSON.stringify(act.arguments)
+                            : typeof act.query === 'object'
+                              ? JSON.stringify(act.query)
+                              : JSON.stringify(
+                                  act.query !== undefined
+                                    ? { query: act.query }
+                                    : act.arguments !== undefined
+                                      ? { query: act.arguments }
+                                      : {}
+                                )
+                      }
+                    }))
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
+                } else if (Array.isArray(pObj) && pObj.length > 0) {
+                  // Format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
+                  effectiveToolCalls = pObj
+                    .filter((item) => item && (item.name || item.tool || item.function?.name))
+                    .map((item, idx) => ({
+                      id: item.id || `call_fallback_${Date.now()}_${idx}`,
+                      type: 'function',
+                      function: {
+                        name: item.name || item.tool || item.function?.name,
+                        arguments:
+                          typeof item.arguments === 'object'
+                            ? JSON.stringify(item.arguments)
+                            : typeof item.query === 'object'
+                              ? JSON.stringify(item.query)
+                              : String(
+                                  item.arguments ||
+                                    (item.query !== undefined
+                                      ? JSON.stringify({ query: item.query })
+                                      : '{}')
+                                )
+                      }
+                    }))
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
+                } else if (pObj.action && (pObj.action.tool || pObj.action.name)) {
+                  effectiveToolCalls = [
+                    {
+                      id: `call_fallback_${Date.now()}_0`,
+                      type: 'function',
+                      function: {
+                        name: pObj.action.tool || pObj.action.name,
+                        arguments:
+                          typeof pObj.action.arguments === 'object'
+                            ? JSON.stringify(pObj.action.arguments)
+                            : typeof pObj.action.query === 'object'
+                              ? JSON.stringify(pObj.action.query)
+                              : JSON.stringify(
+                                  pObj.action.query !== undefined
+                                    ? { query: pObj.action.query }
+                                    : {}
+                                )
+                      }
+                    }
+                  ]
                   currentTurnContent = ''
                   finalContentAccumulator = ''
                 }

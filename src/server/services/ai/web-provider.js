@@ -256,17 +256,24 @@ ${toolSections.join('\n\n')}
 1. Jika kamu ingin menjalankan tindakan atau memanggil fungsi sistem di atas, kamu HARUS merespons HANYA dengan format JSON valid.
 2. Respons kamu HARUS DIAWALI LANGSUNG DENGAN KARAKTER '{' DAN DIAKHIRI DENGAN KARAKTER '}'.
 3. DILARANG KERAS menyertakan teks pesan, kata pengantar, obrolan, basa-basi, permintaan maaf, penjelasan, atau penutup apapun di luar objek JSON! Jangan tulis teks apapun sebelum '{' atau setelah '}'.
-4. Format JSON untuk memanggil tool WAJIB persis seperti ini:
+4. Format JSON untuk memanggil tool WAJIB persis seperti ini (mendukung BATCH / MULTI-TOOL sekaligus):
 {
   "tool_calls": [
     {
-      "name": "nama_tool",
+      "name": "nama_tool_1",
+      "arguments": { "parameter_key": "parameter_value" }
+    },
+    {
+      "name": "nama_tool_2",
       "arguments": { "parameter_key": "parameter_value" }
     }
   ]
 }
-5. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.
-6. HANYA JIKA kamu TIDAK memanggil tool sama sekali, barulah kamu boleh menjawab dengan pesan teks santai/biasa kepada pengguna.`
+5. ATURAN BATCH & PARALLEL ACTIONS (EFISIENSI MAKSIMAL):
+   - Kamu SANGAT DIANJURKAN menyertakan beberapa tool sekaligus di dalam array "tool_calls" dalam satu giliran jika aksi-aksi tersebut sekuensial dan sudah pasti (misal otomasi PC: klik + ketik + key combo, riset web: multi-fetch beberapa URL, atau membaca beberapa berkas sekaligus).
+   - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
+6. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.
+7. HANYA JIKA kamu TIDAK memanggil tool sama sekali, barulah kamu boleh menjawab dengan pesan teks santai/biasa kepada pengguna.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
@@ -567,17 +574,66 @@ ${toolSections.join('\n\n')}
                   : String(tc.arguments || '{}')
             }
           }))
-        } else if (parsed.action && parsed.action.tool) {
+        } else if (Array.isArray(parsed.action) && parsed.action.length > 0) {
+          // Dukungan format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
+          extractedToolCalls = parsed.action
+            .filter((act) => act && (act.tool || act.name))
+            .map((act, idx) => ({
+              id: `call_${Date.now()}_${idx}`,
+              type: 'function',
+              function: {
+                name: act.tool || act.name,
+                arguments:
+                  typeof act.arguments === 'object'
+                    ? JSON.stringify(act.arguments)
+                    : typeof act.query === 'object'
+                      ? JSON.stringify(act.query)
+                      : JSON.stringify(
+                          act.query !== undefined
+                            ? { query: act.query }
+                            : act.arguments !== undefined
+                              ? { query: act.arguments }
+                              : {}
+                        )
+              }
+            }))
+        } else if (Array.isArray(parsed) && parsed.length > 0) {
+          // Dukungan format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
+          extractedToolCalls = parsed
+            .filter((item) => item && (item.name || item.tool || item.function?.name))
+            .map((item, idx) => ({
+              id: item.id || `call_${Date.now()}_${idx}`,
+              type: 'function',
+              function: {
+                name: item.name || item.tool || item.function?.name,
+                arguments:
+                  typeof item.arguments === 'object'
+                    ? JSON.stringify(item.arguments)
+                    : typeof item.query === 'object'
+                      ? JSON.stringify(item.query)
+                      : String(
+                          item.arguments ||
+                            (item.query !== undefined
+                              ? JSON.stringify({ query: item.query })
+                              : '{}')
+                        )
+              }
+            }))
+        } else if (parsed.action && (parsed.action.tool || parsed.action.name)) {
           extractedToolCalls = [
             {
               id: `call_${Date.now()}_0`,
               type: 'function',
               function: {
-                name: parsed.action.tool,
+                name: parsed.action.tool || parsed.action.name,
                 arguments:
-                  typeof parsed.action.query === 'object'
-                    ? JSON.stringify(parsed.action.query)
-                    : JSON.stringify(parsed.action.query ? { query: parsed.action.query } : {})
+                  typeof parsed.action.arguments === 'object'
+                    ? JSON.stringify(parsed.action.arguments)
+                    : typeof parsed.action.query === 'object'
+                      ? JSON.stringify(parsed.action.query)
+                      : JSON.stringify(
+                          parsed.action.query !== undefined ? { query: parsed.action.query } : {}
+                        )
               }
             }
           ]

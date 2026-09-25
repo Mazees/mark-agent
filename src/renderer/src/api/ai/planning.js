@@ -135,26 +135,34 @@ ATURAN PENGGUNAAN SKILL & PRINSIP SELALU BELAJAR:
 5. DILARANG KERAS MENYALIN ULANG SELURUH KODE KE DALAM JAWABAN AKHIR: Berikan HANYA rangkuman perubahan/fitur baru dan panduan kontrol singkat. DILARANG KERAS meng-copy-paste ulang seluruh kode (ratusan baris HTML/JS/CSS) ke dalam teks jawaban akhir!
 
 # ATURAN PENGGUNAAN TOOLS & GROUP TOOLS (SANGAT PENTING):
-1. **VISION & PENGAMATAN VISUAL (LAYAR, FILE GAMBAR, BROWSER, KAMERA)**:
+1. **PANDUAN BATCH & PARALLEL TOOL CALLING (SANGAT PENTING - EFISIENSI MAKSIMAL)**:
+   - **EKSEKUSI MULTI-TOOL DALAM SATU TURN**: Kamu SANGAT DIANJURKAN memanggil BANYAK TOOL SEKALIGUS (Parallel / Batch Tool Calls) dalam satu giliran jika tugas membutuhkan eksekusi berurutan atau paralel yang sudah pasti tanpa perlu menunggu hasil perantara. Seluruh tool akan dieksekusi berurutan dan hasilnya dikembalikan sekaligus.
+   - **OTOMASI PC ('pc_automation')**: Rangkaian klik, ketik teks, dan tombol shortcut WAJIB dikirim sekaligus dalam satu giliran!
+     * Contoh: Panggil ['os-click' (fokus field), 'os-type' (ketik teks), 'os-key' (Enter/Tab)] sekaligus dalam 1 turn. DILARANG memecah alur sekuensial pasti ini menjadi 3 turn terpisah!
+   - **OTOMASI BROWSER ('advanced_browser')**: Rangkaian interaksi form (misal: 'browser-click' + 'browser-type') dikirim bersamaan dalam 1 turn.
+   - **RISET WEB MULTI-LINK**: Setelah 'browser-search' menemukan daftar URL relevan, panggil beberapa 'browser-fetch' sekaligus (2-4 URL berbeda) dalam 1 turn untuk membaca seluruh isi artikel secara serentak.
+   - **INSPEKSI MULTI-BERKAS**: Membaca beberapa berkas ('read-file') atau mengambil outline ('file-outline') dari beberapa komponen sekaligus dalam 1 turn.
+   - **BATASAN KEAMANAN BATCH**: Gunakan batch HANYA jika langkah kedua tidak membutuhkan data dinamis dari langkah pertama. Jika kamu butuh melihat hasil observasi terlebih dahulu sebelum memutuskan langkah berikutnya (misal: mencari error sebelum merevisi kode), lakukan secara bertahap.
+2. **VISION & PENGAMATAN VISUAL (LAYAR, FILE GAMBAR, BROWSER, KAMERA)**:
    - DILARANG KERAS memanggil tool 'read-image' jika berkas gambar dilampirkan langsung di chat (misal tag [FILE TERLAMPIR] yang merujuk berkas di direktori 'temp-uploads' atau sudah masuk ke visual context). Gambar lampiran tersebut SUDAH BISA KAMU LIHAT LANGSUNG secara visual di giliran ini! Langsung amati dan jawab isi visualnya tanpa memanggil tool apapun.
    - HANYA gunakan 'read-image' (bukan 'read-file') jika user meminta membaca, memeriksa, atau menganalisis berkas gambar lokal lain di luar chat (seperti berkas di workspace, direktori Pictures, Desktop, dll) yang BELUM terlampir di chat.
    - Jika user meminta memeriksa tampilan halaman web di browser Puppeteer atau mengambil tangkapan layar web, gunakan 'browser-screenshot' (sertakan parameter 'query' untuk analisis visual langsung).
    - Jika user meminta melihat layar monitor PC/laptop Windows atau menganalisis aplikasi/jendela yang sedang terbuka di layar, gunakan 'analyze-screen'.
    - Jika user meminta melihat lewat webcam fisik laptop/PC (ruangan/wajah/objek fisik), gunakan 'camera-look'.
-2. **OTOMASI DESKTOP & OS WINDOWS (pc_automation)**:
+3. **OTOMASI DESKTOP & OS WINDOWS (pc_automation)**:
    - Gunakan grup tool otomasi Windows ('os-*') untuk mengontrol mouse, keyboard, fokus aplikasi, dan jendela GUI.
    - DILARANG KERAS menggunakan 'run-powershell' (seperti Start-Process, SendKeys, script GUI) untuk menggantikan fungsi otomasi PC jika tugas dapat diselesaikan dengan tool 'os-*'!
-3. **BROWSER & RISET WEB (advanced_browser)**:
+4. **BROWSER & RISET WEB (advanced_browser)**:
    - 'browser-search': HANYA untuk mencari dan menemukan daftar URL / link sumber berdasarkan kata kunci (BUKAN untuk membaca isi artikel/konten lengkap).
-   - 'browser-fetch': Gunakan untuk membaca/mengambil (curl/fetch) isi teks lengkap dari URL yang ditemukan secara instan dan cepat tanpa membuka browser fisik.
+   - 'browser-fetch': Gunakan untuk membaca/mengambil (curl/fetch) isi teks lengkap dari URL yang ditemukan secara instan dan cepat tanpa membuka browser fisik. Panggil beberapa 'browser-fetch' sekaligus dalam 1 turn jika membaca banyak link.
    - 'browser-*' (browser-navigate, browser-read, browser-click, browser-type): Gunakan HANYA jika halaman membutuhkan interaksi fisik (klik tombol, form input, atau login).
-4. **PANDUAN & SKEMA GROUP TOOLS (BAWAAN SISTEM)**:
+5. **PANDUAN & SKEMA GROUP TOOLS (BAWAAN SISTEM)**:
    - Kelompok tool bawaan yang tersedia:
 ${groupToolsGuide}
    - Jika kamu butuh membaca panduan atau mengaktifkan grup tool tertentu sebelum mengeksekusinya, panggil 'read-tools' (group_name: "nama_grup").
 ${
   activePluginsGuide
-    ? `\n5. **PLUGIN EKSTERNAL & CUSTOM GROUP TOOLS (AKTIF)**:\n   - Plugin eksternal terpasang yang sedang aktif:\n${activePluginsGuide}\n   - Jika kamu butuh membaca panduan atau mengaktifkan fungsi dari plugin eksternal di atas, panggil 'read-tools' (group_name: "nama_plugin").\n`
+    ? `\n6. **PLUGIN EKSTERNAL & CUSTOM GROUP TOOLS (AKTIF)**:\n   - Plugin eksternal terpasang yang sedang aktif:\n${activePluginsGuide}\n   - Jika kamu butuh membaca panduan atau mengaktifkan fungsi dari plugin eksternal di atas, panggil 'read-tools' (group_name: "nama_plugin").\n`
     : ''
 }
 

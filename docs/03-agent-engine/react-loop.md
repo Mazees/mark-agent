@@ -289,3 +289,27 @@ Pada model DeepSeek Web RPC, sesi peramban web memiliki batas kenyamanan obrolan
 | **Streaming Engine**        | Server-Sent Events (SSE) dengan parser JSON / chunk    | `src/renderer/src/api/ai/core.js`           |
 | **Intervensi Real-time**    | Antrean non-blocking via `sessionRecord.interventions` | `useMarkPlan.js` line 165                   |
 | **Hitung Token Hibrida**    | Prioritas API `usage`, fallback BPE `gpt-tokenizer`    | `src/renderer/src/api/ai/contextManager.js` |
+| **Eksekusi Batch Tool**     | Multi-tool array per turn (`effectiveToolCalls`)       | `useMarkPlan.js` line 1754                  |
+
+---
+
+## 11. Native Parallel & Batch Tool Calling (Multi-Action Execution)
+
+Untuk meningkatkan efisiensi dan kecepatan otomasi, MARK V5 mendukung eksekusi multi-tool secara serentak dalam **satu giliran tunggal** (_Single-Turn Batching_). Pola ini mengeliminasi jeda bolak-balik inferensi API cloud yang berulang:
+
+### A. Pola Tindakan Batch yang Didukung
+
+1. **Otomasi Desktop & PC (`pc_automation`)**:
+   - Rangkaian interaksi input sekuensial yang pasti dikirim dalam satu giliran: `os-click` (fokus elemen) + `os-type` (ketik string) + `os-key` (tekan Enter/Tab).
+   - Menghilangkan latensi 3 turn terpisah (~9-12 detik) menjadi 1 turn instan (~1-2 detik).
+2. **Otomasi Peramban Web (`advanced_browser`)**:
+   - Pengisian form dan navigasi fisik: `browser-click` + `browser-type` dieksekusi secara berurutan dalam satu giliran.
+3. **Riset Web Multi-Link (`browser-fetch`)**:
+   - Setelah `browser-search` mengembalikan daftar URL relevan, agen memanggil 2-4 `browser-fetch` secara serentak untuk membaca seluruh artikel sekaligus.
+4. **Inspeksi Berkas Kode (`read-file` / `file-outline`)**:
+   - Membaca beberapa berkas komponen atau dependensi terkait dalam satu giliran.
+
+### B. Arsitektur Runtime & Parser Resilien
+
+- **OpenAI-Compatible `tool_calls` Array**: Jika model mengembalikan daftar fungsi di properti `tool_calls`, loop ReAct di [`useMarkPlan.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/hooks/agent/useMarkPlan.js) dan [`subagentExecutor.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/subagent/subagentExecutor.js) mengiterasi array `effectiveToolCalls`, mengeksekusi setiap alat melalui `executeSingleTool`, dan merekam observasi masing-masing ke `loopMessages`.
+- **Backward-Compatible Fallback Interceptor**: Jika model mengembalikan format JSON teks mentah (seperti DeepSeek Web atau Gemini Web), parser di [`src/server/services/ai/web-provider.js`](file:///d:/My%20Project/mark-project/mark/src/server/services/ai/web-provider.js) dan `useMarkPlan.js` secara otomatis memetakan format batch lama V4 (`{"action": [{"tool": ...}, ...]}`) maupun array langsung (`[{"name": ...}, ...]`) menjadi OpenAPI tool calls standar tanpa memutus siklus ReAct.

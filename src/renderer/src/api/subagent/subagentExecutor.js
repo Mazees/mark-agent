@@ -191,19 +191,144 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         }
       })
 
+      let effectiveToolCalls = streamResult.toolCalls
+      if (
+        (!effectiveToolCalls || effectiveToolCalls.length === 0) &&
+        (streamResult.content || turnContent)
+      ) {
+        const checkText = (streamResult.content || turnContent || '').trim()
+        const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+        let cand = (rawMatch ? rawMatch[1] : checkText).trim()
+        const firstBrace = cand.indexOf('{')
+        const lastBrace = cand.lastIndexOf('}')
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          cand = cand.substring(firstBrace, lastBrace + 1).trim()
+        }
+        if (
+          cand.includes('"tool_calls"') ||
+          cand.includes('"action"') ||
+          cand.includes('"tool"') ||
+          cand.includes('"name"')
+        ) {
+          try {
+            const { jsonrepair } = await import('jsonrepair')
+            let pObj = null
+            try {
+              pObj = JSON.parse(cand)
+            } catch (_) {
+              pObj = JSON.parse(jsonrepair(cand))
+            }
+            if (pObj) {
+              if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
+                effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
+                  id: tc.id || `call_subagent_${Date.now()}_${idx}`,
+                  type: 'function',
+                  function: {
+                    name: tc.name || tc.function?.name,
+                    arguments:
+                      typeof tc.arguments === 'object'
+                        ? JSON.stringify(tc.arguments)
+                        : String(tc.arguments || '{}')
+                  }
+                }))
+              } else if (Array.isArray(pObj.action) && pObj.action.length > 0) {
+                effectiveToolCalls = pObj.action
+                  .filter((act) => act && (act.tool || act.name))
+                  .map((act, idx) => ({
+                    id: `call_subagent_${Date.now()}_${idx}`,
+                    type: 'function',
+                    function: {
+                      name: act.tool || act.name,
+                      arguments:
+                        typeof act.arguments === 'object'
+                          ? JSON.stringify(act.arguments)
+                          : typeof act.query === 'object'
+                            ? JSON.stringify(act.query)
+                            : JSON.stringify(
+                                act.query !== undefined
+                                  ? { query: act.query }
+                                  : act.arguments !== undefined
+                                    ? { query: act.arguments }
+                                    : {}
+                              )
+                    }
+                  }))
+              } else if (Array.isArray(pObj) && pObj.length > 0) {
+                effectiveToolCalls = pObj
+                  .filter((item) => item && (item.name || item.tool || item.function?.name))
+                  .map((item, idx) => ({
+                    id: item.id || `call_subagent_${Date.now()}_${idx}`,
+                    type: 'function',
+                    function: {
+                      name: item.name || item.tool || item.function?.name,
+                      arguments:
+                        typeof item.arguments === 'object'
+                          ? JSON.stringify(item.arguments)
+                          : typeof item.query === 'object'
+                            ? JSON.stringify(item.query)
+                            : String(
+                                item.arguments ||
+                                  (item.query !== undefined
+                                    ? JSON.stringify({ query: item.query })
+                                    : '{}')
+                              )
+                    }
+                  }))
+              } else if (pObj.action && (pObj.action.tool || pObj.action.name)) {
+                effectiveToolCalls = [
+                  {
+                    id: `call_subagent_${Date.now()}_0`,
+                    type: 'function',
+                    function: {
+                      name: pObj.action.tool || pObj.action.name,
+                      arguments:
+                        typeof pObj.action.arguments === 'object'
+                          ? JSON.stringify(pObj.action.arguments)
+                          : typeof pObj.action.query === 'object'
+                            ? JSON.stringify(pObj.action.query)
+                            : JSON.stringify(
+                                pObj.action.query !== undefined ? { query: pObj.action.query } : {}
+                              )
+                    }
+                  }
+                ]
+              } else if (pObj.tool) {
+                effectiveToolCalls = [
+                  {
+                    id: `call_subagent_${Date.now()}_0`,
+                    type: 'function',
+                    function: {
+                      name: pObj.tool,
+                      arguments:
+                        typeof pObj.query === 'object'
+                          ? JSON.stringify(pObj.query)
+                          : JSON.stringify(
+                              pObj.query !== undefined
+                                ? { query: pObj.query }
+                                : pObj.arguments || {}
+                            )
+                    }
+                  }
+                ]
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
       // KONDISI 1: Sub-Agent Memanggil Native Tool Calls
-      if (streamResult.toolCalls && streamResult.toolCalls.length > 0) {
+      if (effectiveToolCalls && effectiveToolCalls.length > 0) {
         const assistantMsg = {
           sender: 'subagent',
           role: 'assistant',
           content: streamResult.content || null,
           thought: turnReasoning || null,
-          tool_calls: streamResult.toolCalls
+          tool_calls: effectiveToolCalls
         }
         await subagentStore.addMessage(subagentId, assistantMsg)
         const turnVisualUrls = []
 
-        for (const tc of streamResult.toolCalls) {
+        for (const tc of effectiveToolCalls) {
           const toolName = tc.function?.name
           let parsedArgs = {}
           try {
