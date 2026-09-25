@@ -2,6 +2,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import Database from 'better-sqlite3'
+import { getCurrentVersion } from '../services/updater.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
 if (!fs.existsSync(CONFIG_DIR)) {
@@ -44,7 +45,6 @@ sqlite.exec(`
     id TEXT PRIMARY KEY,
     title TEXT DEFAULT 'New Session',
     data TEXT,
-    workspace TEXT,
     workspace_root TEXT,
     is_auto_mode INTEGER DEFAULT 0,
     timestamp INTEGER NOT NULL,
@@ -217,10 +217,20 @@ function ensureTableColumns(tableName, requiredColumns) {
 }
 
 ensureTableColumns('sessions', {
-  workspace: 'TEXT',
   workspace_root: 'TEXT',
   is_auto_mode: 'INTEGER DEFAULT 0'
 })
+
+// Migrasi satu kali jika ada data di kolom legacy workspace
+try {
+  sqlite.exec(`
+    UPDATE sessions 
+    SET workspace_root = workspace 
+    WHERE (workspace_root IS NULL OR workspace_root = '') AND workspace IS NOT NULL AND workspace != ''
+  `)
+} catch (err) {
+  void err
+}
 
 ensureTableColumns('chat_turns', {
   created_at: 'INTEGER',
@@ -278,7 +288,8 @@ ensureTableColumns('agent_task_steps', {
 ensureTableColumns('session_compact', {
   summary_block: 'TEXT',
   last_compacted_message_id: 'TEXT',
-  last_compacted_at: 'INTEGER'
+  last_compacted_at: 'INTEGER',
+  total_tokens: 'INTEGER DEFAULT 0'
 })
 
 /**
@@ -327,6 +338,26 @@ class SqliteTable {
         if (res.index === undefined) res.index = res.step_index
         if (res.stepIndex === undefined) res.stepIndex = res.step_index
       }
+      if (res.task_id !== undefined && res.taskId === undefined) {
+        res.taskId = res.task_id
+      }
+    }
+
+    // Normalisasi khusus agent_tasks
+    if (this.tableName === 'agent_tasks') {
+      if (res.active_step_id !== undefined && res.activeStepId === undefined) {
+        res.activeStepId = res.active_step_id
+      }
+      if (res.current_step_index !== undefined && res.currentStepIndex === undefined) {
+        res.currentStepIndex = res.current_step_index
+      }
+    }
+
+    // Normalisasi khusus sessions: jadikan satu variabel workspaceRoot
+    if (this.tableName === 'sessions') {
+      res.workspaceRoot = res.workspace_root || res.workspaceRoot || null
+      delete res.workspace
+      delete res.workspace_root
     }
 
     for (const key of Object.keys(res)) {
@@ -410,6 +441,13 @@ class SqliteTable {
       }
     }
 
+    // Normalisasi khusus sessions: jadikan satu variabel workspaceRoot
+    if (this.tableName === 'sessions') {
+      raw.workspaceRoot = raw.workspaceRoot || null
+      delete raw.workspace
+      delete raw.workspace_root
+    }
+
     const record = {
       timestamp: raw.timestamp || raw.createdAt || Date.now(),
       createdAt: raw.createdAt || raw.timestamp || Date.now(),
@@ -430,8 +468,11 @@ class SqliteTable {
     for (const [k, v] of Object.entries(serialized)) {
       const col = this._toSnake(k)
       if (tableCols.includes(col)) {
-        if (colMap.has(col) && k !== col && serialized[col] !== undefined) {
-          continue
+        if (colMap.has(col) && k !== col) {
+          const currentVal = colMap.get(col)
+          if (currentVal !== null && currentVal !== undefined && currentVal !== '') {
+            continue
+          }
         }
         colMap.set(col, v)
       }
@@ -469,9 +510,17 @@ class SqliteTable {
     const existing = this.getById(id)
     if (!existing) return null
 
-    const updated = { ...existing, ...updates, updatedAt: Date.now() }
+    const normalizedUpdates = { ...updates }
+    for (const [k, v] of Object.entries(updates)) {
+      const snake = this._toSnake(k)
+      const camel = this._toCamel(k)
+      normalizedUpdates[snake] = v
+      normalizedUpdates[camel] = v
+    }
+
+    const updated = { ...existing, ...normalizedUpdates, updatedAt: Date.now() }
     this.insert(updated)
-    return updated
+    return this.getById(id)
   }
 
   delete(id) {
@@ -518,7 +567,20 @@ class SqliteTable {
       toolCalls: 'tool_calls',
       toolCallId: 'tool_call_id',
       taskId: 'task_id',
-      stepIndex: 'step_index'
+      stepIndex: 'step_index',
+      activeStepId: 'active_step_id',
+      currentStepIndex: 'current_step_index',
+      artifactRoot: 'artifact_root',
+      contextSummary: 'context_summary',
+      retryCount: 'retry_count',
+      maxRetries: 'max_retries',
+      completedAt: 'completed_at',
+      artifactPath: 'artifact_path',
+      contentHash: 'content_hash',
+      inputSummary: 'input_summary',
+      outputSummary: 'output_summary',
+      startedAt: 'started_at',
+      acceptanceCriteria: 'acceptance_criteria'
     }
     return map[str] || str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
   }
@@ -545,7 +607,7 @@ export function exportFullDatabase() {
 
   return {
     app: 'MARK',
-    version: '5.0.0',
+    version: getCurrentVersion(),
     exportedAt: new Date().toISOString(),
     tables
   }

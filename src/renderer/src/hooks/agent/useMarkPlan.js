@@ -3,7 +3,9 @@ import { buildPlanningSystemPrompt } from '../../api/ai/planning'
 import { getYoutubeSummary } from '../../api/ai/tools'
 import { fetchAI } from '../../api/ai/core'
 import { playVoice, speechQueue, getCurrentTimeInfo } from '../../api/ai/utils'
+import { parseMarkTag, stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 import { executeAgentTool } from './executeAgentTool.js'
+import { webApi } from '../../api/web-bridge.js'
 import {
   deleteMemory,
   getAllMemory,
@@ -15,18 +17,16 @@ import {
   db
 } from '../../api/db'
 import { checkTools, getActiveToolsSchema } from '../../api/tools/index'
-import { buildDurableStepCheckpoint } from '../../api/taskExecutor'
-import {
-  startAgentTaskStep,
-  checkpointAgentTaskStep,
-  transitionAgentTask
-} from '../../api/taskStore'
+import { startAgentTaskStep, transitionAgentTask } from '../../api/taskStore'
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
 import { searchMemoriesInOrama } from '../../api/oramaStore'
 import {
+  MAX_CONTEXT_TOKENS,
   MAX_CONTEXT_CHARS,
   GATEWAY_HYGIENE_THRESHOLD,
   IN_LOOP_COMPACT_THRESHOLD,
+  calculateSessionTokens,
+  calculateMessageTokens,
   calculateSessionChars,
   executeSessionCompaction,
   assembleCompactedPayload,
@@ -179,63 +179,125 @@ export const useMarkPlan = ({
         ? Number(targetSessionId)
         : activeRunningSessionIdRef.current || 1
 
+    const interventionItem = {
+      type: 'intervention',
+      text: displayMsg,
+      timestamp: Date.now()
+    }
+
     const session = activeSessionsRef.current.get(sId)
     if (session) {
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
+      if (session.executedToolsList) {
+        session.executedToolsList.push(interventionItem)
+      }
     }
 
     const updater = activeSessionUpdatersRef.current.get(sId) || (sId === 1 ? setChatData : null)
     if (updater) {
       updater((prev) => {
-        const thinkingItem = prev.find((item) => item.isThinking)
-        const filtered = prev.filter((item) => !item.isThinking)
-        const item = {
-          role: 'user',
-          content: displayMsg,
-          timestamp: getCurrentTimeInfo(),
-          created_at: Date.now(),
-          isIntervention: true
+        const thinkingIndex = prev.findIndex((item) => item.isThinking)
+        if (thinkingIndex === -1) return prev
+        const thinkingItem = prev[thinkingIndex]
+        const currentTools = Array.isArray(thinkingItem.executedTools)
+          ? thinkingItem.executedTools
+          : []
+        const updatedThinking = {
+          ...thinkingItem,
+          executedTools: [...currentTools, interventionItem]
         }
-        return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+        const newArr = [...prev]
+        newArr[thinkingIndex] = updatedThinking
+        return newArr
       })
     }
   }
 
   // Penghentian tugas per-sesi secara independen
-  const handleStop = (targetSessionId = null) => {
-    if (targetSessionId !== null && targetSessionId !== undefined) {
-      const numId = Number(targetSessionId)
-      const session = activeSessionsRef.current.get(numId)
-      if (session && session.abortController) {
-        session.abortController.abort()
+  const handleStop = async (targetSessionId = null) => {
+    try {
+      speechQueue.reset()
+    } catch (_) {}
+
+    const numId =
+      targetSessionId !== null && targetSessionId !== undefined ? Number(targetSessionId) : null
+    const strId =
+      targetSessionId !== null && targetSessionId !== undefined ? String(targetSessionId) : null
+
+    const sessionsToAbort = []
+    if (numId !== null) {
+      const s = activeSessionsRef.current.get(numId) || activeSessionsRef.current.get(strId)
+      if (s) sessionsToAbort.push(s)
+    }
+
+    if (sessionsToAbort.length === 0) {
+      for (const s of activeSessionsRef.current.values()) {
+        sessionsToAbort.push(s)
       }
-      if (window.api && window.api.abortFetchAI) {
+    }
+
+    for (const session of sessionsToAbort) {
+      if (session.abortController) {
         try {
-          window.api.abortFetchAI()
+          session.abortController.abort()
         } catch (_) {}
       }
-      if (window.api && window.api.browserClose) {
-        window.api
-          .browserClose({ sessionId: numId === 1 ? 'main' : `workspace-${numId}` })
-          .catch(() => {})
+    }
+
+    if (abortControllerRef?.current) {
+      try {
+        abortControllerRef.current.abort()
+      } catch (_) {}
+    }
+
+    if (window.api && window.api.abortFetchAI) {
+      try {
+        window.api.abortFetchAI()
+      } catch (_) {}
+    }
+
+    if (window.api && window.api.browserClose) {
+      const closeId = numId === 1 || !numId ? 'main' : `workspace-${numId}`
+      window.api.browserClose({ sessionId: closeId }).catch(() => {})
+    }
+
+    // Fail-safe: Langsung batalkan semua agent tasks yang berstatus running di SQLite
+    try {
+      const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
+      for (const t of runningTasks) {
+        await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
       }
-    } else {
-      // Hentikan seluruh sesi yang aktif
-      for (const [id, session] of activeSessionsRef.current.entries()) {
-        if (session.abortController) session.abortController.abort()
-        if (window.api && window.api.browserClose) {
-          window.api
-            .browserClose({ sessionId: id === 1 ? 'main' : `workspace-${id}` })
-            .catch(() => {})
+    } catch (_) {}
+
+    // Fail-safe: Langsung update chatData UI agar alur kerja dan spinner berhenti seketika
+    const stopUpdater = (prev) => {
+      const filtered = prev.filter((item) => !item.isThinking)
+      return filtered.map((msg) => {
+        if (!msg.isPlanSteps || msg.taskStatus !== 'running') return msg
+        return {
+          ...msg,
+          taskStatus: 'stopped',
+          plan: (msg.plan || []).map((s) => ({
+            ...s,
+            status: s.status === 'running' ? 'stopped' : s.status
+          }))
         }
+      })
+    }
+
+    if (numId !== null && activeSessionUpdatersRef.current.has(numId)) {
+      activeSessionUpdatersRef.current.get(numId)(stopUpdater)
+    } else {
+      setChatData(stopUpdater)
+      for (const updater of activeSessionUpdatersRef.current.values()) {
+        updater(stopUpdater)
       }
-      if (abortControllerRef?.current) abortControllerRef.current.abort()
-      if (window.api && window.api.abortFetchAI) {
-        try {
-          window.api.abortFetchAI()
-        } catch (_) {}
-      }
+    }
+
+    if (numId === 1 || numId === null) {
+      setIsLoading(false)
+      setIsAgentBusy(false)
     }
   }
 
@@ -251,6 +313,7 @@ export const useMarkPlan = ({
       activeTopic = null,
       userInput = '',
       durableTask = null,
+      durableActiveStep = null,
       agenticProcessId = null,
       targetSetChatData = setChatData,
       signal
@@ -568,6 +631,7 @@ export const useMarkPlan = ({
           activeTopic,
           userInput,
           durableTask,
+          durableActiveStep,
           agenticProcessId,
           targetPushProcess,
           targetSetChatData,
@@ -694,8 +758,11 @@ export const useMarkPlan = ({
           previewUrl: toolPreviewUrl,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
           loadedGroup: res?.loaded_group || null,
-          durableTask: executionResult?.durableTask || null,
-          durableActiveStep: executionResult?.durableActiveStep || null
+          durableTask: executionResult?.durableTask || durableTask || null,
+          durableActiveStep:
+            executionResult?.durableActiveStep !== undefined
+              ? executionResult.durableActiveStep
+              : durableActiveStep || null
         }
       }
       // 12. Dynamic Plugin Execution
@@ -773,6 +840,7 @@ export const useMarkPlan = ({
       !tgContextOrOptions.from
     ) {
       opts = tgContextOrOptions
+      opts = { ...opts, ...tgContextOrOptions }
       tgContext = null
     } else if (
       autonomousInitialMessage &&
@@ -782,14 +850,18 @@ export const useMarkPlan = ({
         autonomousInitialMessage.customSetChatData ||
         autonomousInitialMessage.onSaveSession)
     ) {
-      opts = autonomousInitialMessage
+      opts = { ...opts, ...autonomousInitialMessage }
       autonomousInitialMessage = null
     }
 
     // ------------------------------------------------------------------------
     // FASE 1: VALIDASI INPUT & PER-SESSION LOCKING
     // ------------------------------------------------------------------------
-    const activeSessionNum = opts.sessionId ? Number(opts.sessionId) : 1
+    const activeSessionNum = opts.sessionId
+      ? !isNaN(Number(opts.sessionId))
+        ? Number(opts.sessionId)
+        : String(opts.sessionId)
+      : 1
     activeRunningSessionIdRef.current = activeSessionNum
 
     if (activeSessionsRef.current.has(activeSessionNum)) {
@@ -806,7 +878,7 @@ export const useMarkPlan = ({
     }
     activeSessionsRef.current.set(activeSessionNum, sessionRecord)
 
-    if (activeSessionNum === 1) {
+    if (abortControllerRef) {
       abortControllerRef.current = sessionAbortController
     }
 
@@ -1020,13 +1092,26 @@ export const useMarkPlan = ({
     )
 
     if (!isAutonomous && !isSystem) {
-      targetSetChatData((prev) => [...prev, userMessage])
+      targetSetChatData((prev) => [
+        ...prev,
+        userMessage,
+        {
+          role: 'ai',
+          content: 'Menganalisis instruksi...',
+          isThinking: true,
+          mood: 'neutral'
+        }
+      ])
     }
 
     const agenticProcessId = `agentic-${Date.now()}`
     let durableTaskForRecovery = null
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
     let accumulatedThoughts = []
+    let executedToolsList = []
+    let currentInFlightTool = null
+    let currentTurnReasoning = ''
+    let finalContentAccumulator = ''
 
     try {
       let durableTask = null
@@ -1117,7 +1202,7 @@ export const useMarkPlan = ({
       )
 
       // ------------------------------------------------------------------------
-      // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 525.000 Karakter)
+      // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 256.000 Tokens)
       // ------------------------------------------------------------------------
       let activeSessionCompact = null
       try {
@@ -1134,10 +1219,13 @@ export const useMarkPlan = ({
       const currentUserMsg = { ...userMessage, content: payloadContent }
       let effectiveSourceMessages = [...sourceChatData, currentUserMsg]
 
-      const currentEstimatedChars = calculateSessionChars(
+      currentUserMsg.tokens = calculateMessageTokens(currentUserMsg)
+      const currentEstimatedTokens = calculateSessionTokens(
         effectiveSourceMessages,
         activeSummaryBlock,
-        activeLastCompactedId
+        activeLastCompactedId,
+        systemPrompt,
+        activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
       )
 
       // Bypass proses kompaksi berat jika instruksi internal (greeting sistem / awareness autonomous / disableTools)
@@ -1146,8 +1234,8 @@ export const useMarkPlan = ({
       )
 
       // Layer 1: Gateway Session Hygiene (Hermes 85% safety net)
-      const gatewayHygieneTriggerChars = MAX_CONTEXT_CHARS * GATEWAY_HYGIENE_THRESHOLD
-      if (!isInternalTurn && currentEstimatedChars >= gatewayHygieneTriggerChars) {
+      const gatewayHygieneTriggerTokens = MAX_CONTEXT_TOKENS * GATEWAY_HYGIENE_THRESHOLD
+      if (!isInternalTurn && currentEstimatedTokens >= gatewayHygieneTriggerTokens) {
         const compactBannerId = `compact-banner-${Date.now()}`
         targetSetChatData((prev) => [
           ...prev,
@@ -1164,6 +1252,7 @@ export const useMarkPlan = ({
             sessionId: String(activeSessionNum),
             messages: effectiveSourceMessages,
             activeConfig: config[0] || {},
+            systemPrompt,
             onProgress: (prog) => {
               targetSetChatData((prev) =>
                 prev.map((item) =>
@@ -1197,14 +1286,18 @@ export const useMarkPlan = ({
             }
 
             // Segera update indikator context-tracker agar gauge langsung berwarna hijau
-            const activeCharsAfterCompact = Number(compactionResult.currentChars || 0)
+            const activeTokensAfterCompact = Number(
+              compactionResult.currentTokens || compactionResult.currentChars || 0
+            )
             window.dispatchEvent(
               new CustomEvent('context-tracker-updated', {
                 detail: {
                   sessionId: String(activeSessionNum),
-                  currentChars: activeCharsAfterCompact,
-                  maxChars: MAX_CONTEXT_CHARS,
-                  percentage: Math.min(100, (activeCharsAfterCompact / MAX_CONTEXT_CHARS) * 100),
+                  currentTokens: activeTokensAfterCompact,
+                  maxTokens: MAX_CONTEXT_TOKENS,
+                  percentage: Math.min(100, (activeTokensAfterCompact / MAX_CONTEXT_TOKENS) * 100),
+                  currentChars: activeTokensAfterCompact,
+                  maxChars: MAX_CONTEXT_TOKENS,
                   lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
                 }
               })
@@ -1239,10 +1332,14 @@ export const useMarkPlan = ({
 
         loopMessages = [
           { role: 'system', content: systemPrompt },
-          ...recentHistory.map((m) => ({
-            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
-            content: m.content || ''
-          })),
+          ...recentHistory.map((m) => {
+            const role = m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role
+            let content = m.content || ''
+            if (role === 'assistant' && m.mood && !/<mark\b/i.test(content)) {
+              content = `<mark mood="${m.mood}" done="true" /> ${content}`
+            }
+            return { role, content, mood: m.mood || undefined }
+          }),
           { role: 'user', content: payloadContent }
         ]
       } else if (isAutonomous) {
@@ -1261,16 +1358,20 @@ export const useMarkPlan = ({
 
         loopMessages = [
           { role: 'system', content: systemPrompt },
-          ...recentHistory.map((m) => ({
-            role: m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role,
-            content: m.content || ''
-          })),
+          ...recentHistory.map((m) => {
+            const role = m.role === 'ai' || m.role === 'planSteps' ? 'assistant' : m.role
+            let content = m.content || ''
+            if (role === 'assistant' && m.mood && !/<mark\b/i.test(content)) {
+              content = `<mark mood="${m.mood}" done="true" /> ${content}`
+            }
+            return { role, content, mood: m.mood || undefined }
+          }),
           { role: 'user', content: payloadContent }
         ]
       } else {
         // TURN CHAT/CODING NORMAL:
         // Seluruh riwayat pesan & log tool dikirim 100% UTUH tanpa batasan turn (maxTurns)
-        // selama masih berada dalam kapasitas 525.000 karakter (MAX_CONTEXT_CHARS).
+        // selama masih berada dalam kapasitas 256.000 tokens (MAX_CONTEXT_TOKENS).
         loopMessages = assembleCompactedPayload({
           messages: effectiveSourceMessages,
           sessionCompact: activeSessionCompact,
@@ -1280,37 +1381,70 @@ export const useMarkPlan = ({
 
       let isDone = false
       let stepCount = 0
-      let executedToolsList = []
+      executedToolsList = []
+      sessionRecord.executedToolsList = executedToolsList
       let lastToolExecution = null
       accumulatedThoughts = []
       let currentActiveMood = 'neutral'
-      let finalContentAccumulator = ''
+      finalContentAccumulator = ''
       let savedTurnAiMsg = null
+      let lastServerUsage = null
       execSteps = [{ task: 'Menganalisis Konteks...' }]
       const dynamicallyLoadedToolGroups = new Set()
+
+      // Deteksi Tool Groups yang di-mention (@group_name) di input pengguna
+      if (typeof userInput === 'string' && userInput.includes('@')) {
+        try {
+          const groupToolsData = await webApi.getGroupTools()
+          const validGroupNames = new Set(
+            groupToolsData?.names || Object.keys(groupToolsData?.schema || {})
+          )
+          const mentionMatches = userInput.match(/@([a-zA-Z0-9_-]+)/g) || []
+          const taggedGroups = []
+          for (const rawMatch of mentionMatches) {
+            const groupName = rawMatch.slice(1).toLowerCase()
+            if (validGroupNames.has(groupName)) {
+              dynamicallyLoadedToolGroups.add(groupName)
+              taggedGroups.push(groupName)
+            }
+          }
+          if (taggedGroups.length > 0) {
+            loopMessages.push({
+              role: 'system',
+              content: `[TOOL GROUPS AKTIF VIA MENTION USER]: Pengguna secara eksplisit menandai kelompok tool berikut: ${taggedGroups.map((g) => `@${g}`).join(', ')}. Seluruh kapabilitas tool dalam kelompok ini telah dibuka dan aktif. Utamakan penggunaan tool ini untuk menyelesaikan instruksi pengguna.`
+            })
+          }
+        } catch (err) {
+          console.error('[useMarkPlan] Gagal memproses mention tool group:', err)
+        }
+      }
+
       let consecutiveErrors = 0
       const maxConsecutiveErrorRetries = 50
 
       while (!isDone && !sessionAbortController.signal.aborted) {
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
-          if (durableTask) {
-            await transitionAgentTask(durableTask.id, 'cancelled', 'user_abort').catch(() => {})
-            targetSetChatData((prev) =>
-              prev.map((msg) => {
-                if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
-                return {
-                  ...msg,
-                  taskStatus: 'stopped',
-                  plan: (msg.plan || []).map((s) => ({
-                    ...s,
-                    status: s.status === 'running' ? 'stopped' : s.status
-                  }))
-                }
-              })
-            )
-          }
-          break
+          try {
+            const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
+            for (const t of runningTasks) {
+              await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
+            }
+          } catch (_) {}
+          targetSetChatData((prev) =>
+            prev.map((msg) => {
+              if (!msg.isPlanSteps || msg.taskStatus !== 'running') return msg
+              return {
+                ...msg,
+                taskStatus: 'stopped',
+                plan: (msg.plan || []).map((s) => ({
+                  ...s,
+                  status: s.status === 'running' ? 'stopped' : s.status
+                }))
+              }
+            })
+          )
+          throw new Error('AbortError')
         }
 
         // Cek Intervensi User di tengah jalan
@@ -1318,22 +1452,16 @@ export const useMarkPlan = ({
           const interventions = sessionRecord.interventions.splice(0).join('\n')
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
 
-          targetSetChatData((prev) => {
-            const alreadyPresent = prev.some(
-              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
-            )
-            if (alreadyPresent) return prev
-            const thinkingItem = prev.find((m) => m.isThinking)
-            const filtered = prev.filter((m) => !m.isThinking)
-            const item = {
-              role: 'user',
-              content: interventions,
-              timestamp: getCurrentTimeInfo(),
-              created_at: Date.now(),
-              isIntervention: true
-            }
-            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
-          })
+          const alreadyInList = executedToolsList.some(
+            (t) => t.type === 'intervention' && t.text === interventions
+          )
+          if (!alreadyInList) {
+            executedToolsList.push({
+              type: 'intervention',
+              text: interventions,
+              timestamp: Date.now()
+            })
+          }
 
           execSteps.push({ task: `Intervensi User: ${interventions}` })
           targetPushProcess({
@@ -1346,17 +1474,40 @@ export const useMarkPlan = ({
               reasoning: 'Menerima arahan baru dari user di tengah proses.'
             }
           })
+
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isThinking
+                ? {
+                    ...msg,
+                    executedTools: [...executedToolsList]
+                  }
+                : msg
+            )
+          )
         }
 
         stepCount++
 
+        const isDurableTaskCompleted = Boolean(
+          durableTask &&
+          (durableTask.status === 'completed' ||
+            (durableTask.steps &&
+              durableTask.steps.length > 0 &&
+              durableTask.steps.every((s) => s.status === 'completed')))
+        )
+        if (isDurableTaskCompleted) {
+          durableActiveStep = null
+        }
+
         // Ambil Tools OpenAPI Schema yang relevan dengan query/tugas saat ini + group yang sudah dimuat
-        const activeTools = opts.disableTools
-          ? null
-          : await getActiveToolsSchema(
-              userInput + ' ' + (activeTaskObjectiveRef.current || ''),
-              dynamicallyLoadedToolGroups
-            )
+        const activeTools =
+          opts.disableTools || isDurableTaskCompleted
+            ? null
+            : await getActiveToolsSchema(
+                userInput + ' ' + (activeTaskObjectiveRef.current || ''),
+                dynamicallyLoadedToolGroups
+              )
 
         // Loading thinking indicator di awal turn (akumulasi semua pemikiran dari langkah sebelumnya)
         targetSetChatData((prev) => {
@@ -1384,12 +1535,12 @@ export const useMarkPlan = ({
           ]
         })
 
-        let currentTurnReasoning = ''
+        currentTurnReasoning = ''
         let currentTurnContent = ''
         let sentenceBuffer = ''
 
-        // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai 525K,
-        // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 525K.
+        // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai batas kapasitas,
+        // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 256K tokens.
         // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
         // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
@@ -1397,23 +1548,27 @@ export const useMarkPlan = ({
           const inLoopResult = await checkAndCompressInLoop({
             loopMessages,
             sessionId: String(activeSessionNum || 1),
-            maxChars: MAX_CONTEXT_CHARS,
+            maxTokens: MAX_CONTEXT_TOKENS,
             thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
             protectLastN: 6,
             protectFirstN: 2,
-            activeConfig: config[0] || {}
+            activeConfig: config[0] || {},
+            systemPrompt
           })
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
             loopMessages = inLoopResult.loopMessages
-            if (inLoopResult.totalChars) {
+            if (inLoopResult.totalTokens || inLoopResult.totalChars) {
+              const inLoopTokens = inLoopResult.totalTokens || inLoopResult.totalChars
               window.dispatchEvent(
                 new CustomEvent('context-tracker-updated', {
                   detail: {
                     sessionId: String(activeSessionNum || 1),
-                    currentChars: inLoopResult.totalChars,
-                    maxChars: MAX_CONTEXT_CHARS,
-                    percentage: Math.min(100, (inLoopResult.totalChars / MAX_CONTEXT_CHARS) * 100),
+                    currentTokens: inLoopTokens,
+                    maxTokens: MAX_CONTEXT_TOKENS,
+                    percentage: Math.min(100, (inLoopTokens / MAX_CONTEXT_TOKENS) * 100),
+                    currentChars: inLoopTokens,
+                    maxChars: MAX_CONTEXT_TOKENS,
                     lastCompactedAt: Date.now()
                   }
                 })
@@ -1425,11 +1580,12 @@ export const useMarkPlan = ({
         }
 
         // Safety Net Pruning
-        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_CHARS)
+        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
-          tools: activeTools,
+          sessionId: String(activeSessionNum || 1),
+          tools: isDurableTaskCompleted ? null : activeTools,
           signal: sessionAbortController.signal,
           onReasoning: (chunk) => {
             currentTurnReasoning += chunk
@@ -1458,6 +1614,14 @@ export const useMarkPlan = ({
             targetSetChatData((prev) =>
               prev.map((msg) => (msg.isThinking ? { ...msg, mood: moodTag } : msg))
             )
+          },
+          onMeta: (meta) => {
+            if (meta?.mood) {
+              currentActiveMood = meta.mood
+              targetSetChatData((prev) =>
+                prev.map((msg) => (msg.isThinking ? { ...msg, mood: meta.mood } : msg))
+              )
+            }
           },
           onToken: (token) => {
             currentTurnContent += token
@@ -1514,6 +1678,31 @@ export const useMarkPlan = ({
           currentActiveMood = streamResult.mood
         }
 
+        if (streamResult?.usage) {
+          lastServerUsage = streamResult.usage
+          const liveTokens = Number(
+            streamResult.usage.total_tokens ||
+              (streamResult.usage.prompt_tokens || 0) +
+                (streamResult.usage.completion_tokens || 0) ||
+              0
+          )
+          if (liveTokens > 0) {
+            window.dispatchEvent(
+              new CustomEvent('context-tracker-updated', {
+                detail: {
+                  sessionId: String(activeSessionNum || 1),
+                  currentTokens: liveTokens,
+                  maxTokens: MAX_CONTEXT_TOKENS,
+                  percentage: Math.min(100, (liveTokens / MAX_CONTEXT_TOKENS) * 100),
+                  currentChars: liveTokens,
+                  maxChars: MAX_CONTEXT_TOKENS,
+                  lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
+                }
+              })
+            )
+          }
+        }
+
         if (streamResult?.finishReason === 'error') {
           throw new Error('Terjadi kesalahan pada respon stream AI.')
         }
@@ -1530,7 +1719,8 @@ export const useMarkPlan = ({
           }
           if (
             cand.includes('"tool_calls"') ||
-            (cand.includes('"action"') && cand.includes('"tool"')) ||
+            cand.includes('"action"') ||
+            cand.includes('"tool"') ||
             cand.includes('"mood"') ||
             cand.includes('"answer"')
           ) {
@@ -1564,10 +1754,86 @@ export const useMarkPlan = ({
                   }))
                   currentTurnContent = ''
                   finalContentAccumulator = ''
+                } else if (Array.isArray(pObj.action) && pObj.action.length > 0) {
+                  // Format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
+                  effectiveToolCalls = pObj.action
+                    .filter((act) => act && (act.tool || act.name))
+                    .map((act, idx) => ({
+                      id: `call_fallback_${Date.now()}_${idx}`,
+                      type: 'function',
+                      function: {
+                        name: act.tool || act.name,
+                        arguments:
+                          typeof act.arguments === 'object'
+                            ? JSON.stringify(act.arguments)
+                            : typeof act.query === 'object'
+                              ? JSON.stringify(act.query)
+                              : JSON.stringify(
+                                  act.query !== undefined
+                                    ? { query: act.query }
+                                    : act.arguments !== undefined
+                                      ? { query: act.arguments }
+                                      : {}
+                                )
+                      }
+                    }))
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
+                } else if (Array.isArray(pObj) && pObj.length > 0) {
+                  // Format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
+                  effectiveToolCalls = pObj
+                    .filter((item) => item && (item.name || item.tool || item.function?.name))
+                    .map((item, idx) => ({
+                      id: item.id || `call_fallback_${Date.now()}_${idx}`,
+                      type: 'function',
+                      function: {
+                        name: item.name || item.tool || item.function?.name,
+                        arguments:
+                          typeof item.arguments === 'object'
+                            ? JSON.stringify(item.arguments)
+                            : typeof item.query === 'object'
+                              ? JSON.stringify(item.query)
+                              : String(
+                                  item.arguments ||
+                                    (item.query !== undefined
+                                      ? JSON.stringify({ query: item.query })
+                                      : '{}')
+                                )
+                      }
+                    }))
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
+                } else if (pObj.action && (pObj.action.tool || pObj.action.name)) {
+                  effectiveToolCalls = [
+                    {
+                      id: `call_fallback_${Date.now()}_0`,
+                      type: 'function',
+                      function: {
+                        name: pObj.action.tool || pObj.action.name,
+                        arguments:
+                          typeof pObj.action.arguments === 'object'
+                            ? JSON.stringify(pObj.action.arguments)
+                            : typeof pObj.action.query === 'object'
+                              ? JSON.stringify(pObj.action.query)
+                              : JSON.stringify(
+                                  pObj.action.query !== undefined
+                                    ? { query: pObj.action.query }
+                                    : {}
+                                )
+                      }
+                    }
+                  ]
+                  currentTurnContent = ''
+                  finalContentAccumulator = ''
                 }
               }
             } catch (_) {}
           }
+        }
+
+        // Jika alur kerja Durable Task telah tuntas 100%, abaikan seluruh tool calls dan paksa penyelesaian
+        if (isDurableTaskCompleted) {
+          effectiveToolCalls = []
         }
 
         // ======================================================================
@@ -1594,7 +1860,7 @@ export const useMarkPlan = ({
             }
 
             if (!toolName) continue
-            if (sessionAbortController.signal.aborted) break
+            if (sessionAbortController.signal.aborted) throw new Error('AbortError')
 
             execSteps.push({ task: `Eksekusi ${toolName}`, query: JSON.stringify(parsedArgs) })
             targetPushProcess({
@@ -1608,10 +1874,20 @@ export const useMarkPlan = ({
               }
             })
 
-            const currentLiveTools = [
-              ...executedToolsList,
-              { tool: toolName, query: JSON.stringify(parsedArgs), status: 'running' }
-            ]
+            const toolReason =
+              parsedArgs.reason ||
+              parsedArgs.description ||
+              parsedArgs.task ||
+              parsedArgs.title ||
+              null
+
+            currentInFlightTool = {
+              tool: toolName,
+              query: JSON.stringify(parsedArgs),
+              reason: toolReason,
+              status: 'running'
+            }
+            const currentLiveTools = [...executedToolsList, currentInFlightTool]
 
             const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
               .map((t) => (typeof t === 'string' ? t.trim() : ''))
@@ -1628,7 +1904,9 @@ export const useMarkPlan = ({
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
                   executedTools: currentLiveTools,
-                  mood: currentActiveMood
+                  mood: currentActiveMood,
+                  usage: lastServerUsage || undefined,
+                  tokens: lastServerUsage?.completion_tokens || undefined
                 }
               ]
             })
@@ -1640,6 +1918,30 @@ export const useMarkPlan = ({
                 ? activeTopic?.title || activeTopic?.name || 'Main Thread'
                 : `Sesi #${activeSessionNum}`
 
+            // Jika alur kerja Durable Task sudah selesai, tolak pemanggilan task baru atau mark_done_task
+            if (
+              durableTask &&
+              !durableActiveStep &&
+              (toolName === 'create_agent_task' || toolName === 'mark_done_task')
+            ) {
+              const rejectResult = `[TUGAS TELAH SELESAI]: Seluruh tahapan alur kerja '${durableTask.title}' telah tuntas 100%. DILARANG memanggil tool '${toolName}' lagi! SEGERA berikan jawaban akhir ringkasan menyeluruh kepada pengguna.`
+              const toolObservation = {
+                type: 'tool_result',
+                tool_call_id: tc.id,
+                tool: toolName,
+                success: false,
+                data: null,
+                error: rejectResult
+              }
+              loopMessages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                name: toolName,
+                content: JSON.stringify(toolObservation)
+              })
+              continue
+            }
+
             const execResult = await executeSingleTool(toolName, parsedArgs, {
               tgContext,
               isAutonomous,
@@ -1650,6 +1952,7 @@ export const useMarkPlan = ({
               activeTopic,
               userInput,
               durableTask,
+              durableActiveStep,
               agenticProcessId,
               workspaceRoot: opts.workspaceRoot,
               sessionId: String(activeSessionNum || 1),
@@ -1661,8 +1964,8 @@ export const useMarkPlan = ({
               durableTask = execResult.durableTask
               durableTaskForRecovery = execResult.durableTask
             }
-            if (execResult.durableActiveStep) {
-              durableActiveStep = execResult.durableActiveStep
+            if (toolName === 'create_agent_task' || toolName === 'mark_done_task') {
+              durableActiveStep = execResult.durableActiveStep || null
             }
 
             lastToolExecution = execResult.toolExecution
@@ -1692,6 +1995,7 @@ export const useMarkPlan = ({
             executedToolsList.push({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
+              reason: toolReason,
               status: executionSucceeded ? 'done' : 'failed',
               preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
               fullResult:
@@ -1703,6 +2007,7 @@ export const useMarkPlan = ({
                   ? execResult.resultString.slice(0, 250) + '...'
                   : execResult.resultString
             })
+            currentInFlightTool = null
 
             if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
               for (const u of execResult.imageUrls) {
@@ -1736,6 +2041,155 @@ export const useMarkPlan = ({
               name: toolName,
               content: JSON.stringify(toolObservation)
             })
+
+            // Jika mark_done_task berhasil dan ada tahap berikutnya, otomatis majukan loop
+            if (
+              toolName === 'mark_done_task' &&
+              executionSucceeded &&
+              execResult?.durableActiveStep &&
+              execResult?.durableTask
+            ) {
+              const nextStep = execResult.durableActiveStep
+              const nextIdx = (nextStep.stepIndex ?? nextStep.index ?? 0) + 1
+              const totalSteps = execResult.durableTask?.steps?.length || 0
+              const isNextLastStep = nextIdx === totalSteps
+              consecutiveErrors = 0
+              loopMessages.push({
+                role: 'user',
+                content: `[TAHAP SELESAI & PINDAH KE TAHAP ${nextIdx}${isNextLastStep ? ' - TAHAP TERAKHIR' : ''}]: Artefak tahap sebelumnya telah disimpan ke disk.\n\n>>> SEKARANG KERJAKAN TAHAP ${nextIdx}: "${nextStep.title}"\n- Sasaran: ${nextStep.objective}\n- Target Deliverable: ${nextStep.deliverable}\n${nextStep.acceptanceCriteria?.length ? `- Kriteria Sukses: ${nextStep.acceptanceCriteria.join(', ')}` : ''}\nKerjakan tugas tahap ini di workspace pengguna (buat file/tulis kode). DILARANG memanggil 'read_task' untuk membaca artefak sebelumnya (kamu sudah tahu apa yang kamu buat). WAJIB UJI & VERIFIKASI HASIL terlebih dahulu. DILARANG memanggil 'mark_done_task' sebelum pengujian berhasil! Setelah teruji, barulah PANGGIL TOOL 'mark_done_task' TEPAT 1 KALI dengan parameter stepIndex: ${nextIdx}, artifactContent, dan verificationProof (bukti hasil uji)!${isNextLastStep ? ' Karena ini adalah TAHAP TERAKHIR, saat deliverable tahap ini selesai dan diuji, panggil tool "mark_done_task" dengan parameter "summary" yang memuat rangkuman menyeluruh seluruh alur kerja proyek dari awal hingga akhir!' : ''}`
+              })
+              await startAgentTaskStep(execResult.durableTask.id, nextStep.id)
+              targetPushProcess({
+                id: agenticProcessId,
+                type: 'planning',
+                status: 'active',
+                data: {
+                  steps: (execResult.durableTask.steps || []).map((s) => ({ task: s.title })),
+                  currentStep: nextStep.stepIndex ?? nextStep.index ?? 0,
+                  reasoning: `Melanjutkan ke Tahap ${nextIdx}: "${nextStep.title}"...`
+                }
+              })
+            } else if (
+              toolName === 'mark_done_task' &&
+              executionSucceeded &&
+              !execResult?.durableActiveStep &&
+              execResult?.durableTask
+            ) {
+              // Seluruh tahapan alur kerja telah tuntas 100%!
+              consecutiveErrors = 0
+              durableActiveStep = null
+
+              const completedTask = execResult.durableTask
+              const steps = completedTask.steps || []
+              const taskTitle = completedTask.title || 'Task Workflow'
+
+              let rawSummary =
+                (typeof parsedArgs.summary === 'string' && parsedArgs.summary.trim()) ||
+                (typeof parsedArgs.artifactContent === 'string' &&
+                  parsedArgs.artifactContent.trim()) ||
+                ''
+
+              let finalReport = ''
+              if (rawSummary && rawSummary.length > 150) {
+                finalReport = rawSummary
+              } else {
+                const stepsSummary = steps
+                  .map((s, i) => {
+                    const num = (s.stepIndex ?? s.index ?? i) + 1
+                    const title = s.title || `Tahap ${num}`
+                    const out = s.outputSummary || s.deliverable || 'Selesai dan terverifikasi'
+                    return `${num}. **${title}**: ${out}`
+                  })
+                  .join('\n')
+
+                finalReport = `Seluruh tahapan alur kerja **${taskTitle}** telah berhasil diselesaikan dan terverifikasi 100%.\n\n### Rangkuman Hasil Pekerjaan:\n${stepsSummary}${rawSummary ? `\n\n**Catatan Tambahan:**\n${rawSummary}` : ''}`
+              }
+
+              // Pastikan nol emoji
+              finalReport = finalReport
+                .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+                .trim()
+
+              isDone = true
+              finalContentAccumulator = finalReport
+
+              execSteps.push({ task: 'Selesai' })
+              targetPushProcess({
+                id: agenticProcessId,
+                type: 'planning',
+                status: 'done',
+                data: {
+                  steps: [...execSteps],
+                  currentStep: execSteps.length,
+                  reasoning: 'Seluruh tahapan tugas telah diselesaikan dan terverifikasi.'
+                }
+              })
+
+              targetSetChatData((prev) => {
+                const filtered = prev.filter((item) => !item.isThinking)
+                const finalAllThoughts = [...accumulatedThoughts, currentTurnReasoning]
+                  .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                  .filter(Boolean)
+                const mergedReasoning =
+                  finalAllThoughts.length > 0
+                    ? Array.from(new Set(finalAllThoughts)).join('\n\n---\n\n')
+                    : null
+
+                const { meta: reportMeta, cleanContent: cleanFinalOutput } =
+                  parseMarkTag(finalReport)
+                if (reportMeta?.mood && reportMeta.mood !== 'neutral') {
+                  currentActiveMood = reportMeta.mood
+                }
+
+                const aiMsg = {
+                  role: 'ai',
+                  content: cleanFinalOutput,
+                  executedTools: executedToolsList.length > 0 ? executedToolsList : null,
+                  isTaskDone: true,
+                  reasoning: mergedReasoning,
+                  mood: currentActiveMood || 'neutral',
+                  pluginExecution: lastToolExecution,
+                  isProactive: isAutonomous,
+                  timestamp: getCurrentTimeInfo(),
+                  created_at: Date.now(),
+                  source: tgContext ? 'telegram' : 'pc',
+                  usage: lastServerUsage || null,
+                  tokens:
+                    lastServerUsage?.completion_tokens ||
+                    calculateMessageTokens({
+                      content: cleanFinalOutput,
+                      reasoning: mergedReasoning
+                    })
+                }
+
+                savedTurnAiMsg = aiMsg
+
+                return filtered
+                  .map((msg) => {
+                    if (!msg.isPlanSteps || msg.taskId !== completedTask.id) return msg
+                    return {
+                      ...msg,
+                      taskStatus: 'completed',
+                      currentStep: (msg.plan || []).length,
+                      plan: (msg.plan || []).map((s) => ({
+                        ...s,
+                        status: s.status === 'failed' ? 'failed' : 'completed'
+                      }))
+                    }
+                  })
+                  .concat(aiMsg)
+              })
+
+              if (finalIsSpeak && finalReport) {
+                playVoice(finalReport).catch(() => {})
+              }
+
+              if (window.api?.showNotification && !document.hasFocus() && finalReport) {
+                window.api.showNotification('Mark', `Alur kerja "${taskTitle}" tuntas!`)
+              }
+
+              break
+            }
           }
 
           // Jika ada tool yang menghasilkan gambar visual, sertakan observasi multimodal
@@ -1756,167 +2210,49 @@ export const useMarkPlan = ({
           }
 
           // Lanjut ke giliran berikutnya untuk membiarkan model menganalisis observasi tool
+          if (sessionAbortController.signal.aborted) {
+            throw new Error('AbortError')
+          }
+          if (isDone) {
+            break
+          }
           continue
         }
 
         // ======================================================================
         // CABANG 2: SELESAI / DIRECT TEXT RESPONSE (Stop / Selesai)
         // ======================================================================
-        const turnAnswer = streamResult.content || currentTurnContent || ''
-
-        // Jika giliran ini bagian dari Durable Task, kelola checkpointing & promosi step
-        if (durableTask && durableActiveStep) {
-          const currentStep = durableActiveStep
-          const checkpoint = buildDurableStepCheckpoint(
-            currentStep,
-            turnAnswer,
-            durableTask.maxRetries || 2
-          )
-          const stepValidation = checkpoint.validation
-          const checkpointData = { ...checkpoint }
-          delete checkpointData.canRetry
-
-          // Simpan artefak markdown jika lolos validasi dan memiliki artifactPath
-          if (
-            stepValidation?.isComplete &&
-            currentStep.artifactPath &&
-            window.api?.executeNativeTool
-          ) {
-            try {
-              await window.api.executeNativeTool(
-                'write-file',
-                { path: currentStep.artifactPath, content: turnAnswer },
-                { workspaceRoot: opts.workspaceRoot }
-              )
-            } catch (err) {
-              console.warn('[useMarkPlan] Gagal menulis artefak step:', err)
-            }
-          }
-
-          const checkpointCompleted = checkpointData.status === 'completed'
-          const checkpointCanRetry =
-            !checkpointCompleted && (currentStep.attempts || 0) < (durableTask.maxRetries || 2) + 1
-          const checkpointNeedsRevision = !checkpointCompleted && checkpointCanRetry
-
-          const checkpointedTask = await checkpointAgentTaskStep(
-            durableTask.id,
-            currentStep.id,
-            checkpointData
-          )
-
-          if (!checkpointCompleted && !checkpointCanRetry) {
-            await transitionAgentTask(
-              durableTask.id,
-              'failed',
-              'Tahap gagal memenuhi kriteria setelah batas retry.'
-            )
-            durableTask = checkpointedTask
-            durableActiveStep = null
-            if (activeTaskObjectiveRef) activeTaskObjectiveRef.current = null
-          } else {
-            const nextStep = checkpointCompleted
-              ? checkpointedTask?.steps?.find((s) => s.id === checkpointedTask.activeStepId)
-              : null
-
-            durableTask = checkpointedTask
-            durableTaskForRecovery = checkpointedTask
-            durableActiveStep = nextStep || (checkpointNeedsRevision ? currentStep : null)
-            if (activeTaskObjectiveRef) {
-              activeTaskObjectiveRef.current =
-                nextStep?.objective || (checkpointNeedsRevision ? currentStep.objective : null)
-            }
-
-            // Perbarui state Task Workflow Bubble di chatData secara real-time
-            targetSetChatData((prev) =>
-              prev.map((msg) => {
-                if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
-                const updatedPlan = (msg.plan || []).map((s, sIdx) => {
-                  const isCurrentMatch =
-                    s.id === currentStep.id ||
-                    (s.id &&
-                      currentStep.id &&
-                      (s.id.endsWith(currentStep.id) || currentStep.id.endsWith(s.id))) ||
-                    (s.stepIndex !== undefined && s.stepIndex === currentStep.stepIndex) ||
-                    sIdx === (currentStep.stepIndex ?? currentStep.index ?? 0)
-
-                  if (isCurrentMatch) {
-                    return {
-                      ...s,
-                      status: checkpointCompleted ? 'completed' : 'failed',
-                      output: turnAnswer.slice(0, 1000),
-                      artifactPath: currentStep.artifactPath,
-                      executedTools: [...(s.executedTools || []), ...executedToolsList]
-                    }
-                  }
-
-                  const isNextMatch =
-                    nextStep &&
-                    (s.id === nextStep.id ||
-                      (s.id &&
-                        nextStep.id &&
-                        (s.id.endsWith(nextStep.id) || nextStep.id.endsWith(s.id))) ||
-                      (s.stepIndex !== undefined && s.stepIndex === nextStep.stepIndex) ||
-                      sIdx === (nextStep.stepIndex ?? nextStep.index ?? 0))
-
-                  if (isNextMatch) {
-                    return { ...s, status: 'running' }
-                  }
-                  return s
-                })
-                return {
-                  ...msg,
-                  taskStatus: nextStep ? 'running' : 'completed',
-                  currentStep: nextStep
-                    ? (nextStep.stepIndex ?? nextStep.index ?? 0)
-                    : (msg.plan || []).length,
-                  plan: updatedPlan
-                }
-              })
-            )
-
-            // Jika butuh revisi, minta AI memperbaiki dan ulangi tahap ini
-            if (!checkpointCompleted && checkpointNeedsRevision) {
-              loopMessages.push({
-                role: 'assistant',
-                content: `[TAHAP PERLU REVISI]: ${turnAnswer}`
-              })
-              loopMessages.push({
-                role: 'user',
-                content: `[REVISI TAHAP] Ulangi dan lengkapi tahap "${currentStep.title}". Kekurangan: ${(stepValidation?.missingRequirements || []).join('; ')}. Penuhi target deliverable!`
-              })
-              await startAgentTaskStep(durableTask.id, durableActiveStep.id)
-              continue
-            }
-
-            // Jika masih ada tahap berikutnya, promosikan dan lanjutkan loop ReAct
-            if (nextStep) {
-              consecutiveErrors = 0
-              loopMessages.push({
-                role: 'assistant',
-                content: `[TAHAP SELESAI]: "${currentStep.title}". Output: ${turnAnswer}`
-              })
-              loopMessages.push({
-                role: 'user',
-                content: `[LANJUTKAN TAHAP BERIKUTNYA]: "${nextStep.title}"\n- Sasaran: ${nextStep.objective}\n- Target Deliverable: ${nextStep.deliverable}\n${nextStep.acceptanceCriteria?.length ? `- Kriteria: ${nextStep.acceptanceCriteria.join(', ')}` : ''}\nKerjakan tahap ini sekarang menggunakan tools yang relevan sampai tuntas!`
-              })
-              await startAgentTaskStep(durableTask.id, nextStep.id)
-              targetPushProcess({
-                id: agenticProcessId,
-                type: 'planning',
-                status: 'active',
-                data: {
-                  steps: durableTask.steps.map((s) => ({ task: s.title })),
-                  currentStep: nextStep.stepIndex ?? nextStep.index ?? 0,
-                  reasoning: `Tahap "${currentStep.title}" selesai. Melanjutkan ke "${nextStep.title}"...`
-                }
-              })
-              continue
-            }
-          }
+        const rawTurnAnswer = streamResult.content || currentTurnContent || ''
+        const { meta: turnMeta, cleanContent: turnAnswer } = parseMarkTag(rawTurnAnswer)
+        if (turnMeta?.mood && turnMeta.mood !== 'neutral') {
+          currentActiveMood = turnMeta.mood
         }
 
-        // Jika Durable Task selesai seluruhnya, tandai status final
-        if (durableTask) {
+        // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
+        if (durableTask && !isDurableTaskCompleted) {
+          const activeStep =
+            durableActiveStep ||
+            durableTask.steps?.find((s) => s.status === 'running') ||
+            durableTask.steps?.find((s) => s.status !== 'completed') ||
+            durableTask.steps?.[0]
+          const curIdx = activeStep ? (activeStep.stepIndex ?? activeStep.index ?? 0) + 1 : 1
+          const curTitle = activeStep?.title || 'Tahap Aktif'
+          const curObj = activeStep?.objective || durableTask.objective || ''
+          const curDeliv = activeStep?.deliverable || ''
+
+          loopMessages.push({
+            role: 'assistant',
+            content: rawTurnAnswer
+          })
+          loopMessages.push({
+            role: 'user',
+            content: `[PENGINGAT TAHAP AKTIF]: Kamu saat ini sedang berada di Tahap ${curIdx}: "${curTitle}".\n- Sasaran: ${curObj}\n- Target Deliverable: ${curDeliv}\n\nTahap ini BELUM selesai karena kamu belum memverifikasi hasil dan belum memanggil tool 'mark_done_task'. Kerjakan sasaran ini dengan tools yang relevan di workspace pengguna, lakukan pengujian/verifikasi hasil, lalu PANGGIL TOOL 'mark_done_task' dengan parameter stepIndex: ${curIdx}, artifactContent, dan verificationProof agar alur kerja dapat beralih ke tahap berikutnya!`
+          })
+          continue
+        }
+
+        // Jika seluruh tahapan Durable Task telah tuntas diselesaikan via mark_done_task
+        if (durableTask && isDurableTaskCompleted) {
           targetSetChatData((prev) =>
             prev.map((msg) => {
               if (!msg.isPlanSteps || msg.taskId !== durableTask.id) return msg
@@ -1936,27 +2272,21 @@ export const useMarkPlan = ({
         // Cek apakah ada intervensi user yang masuk saat streaming giliran ini
         if (sessionRecord.interventions?.length > 0) {
           const interventions = sessionRecord.interventions.splice(0).join('\n')
-          if (turnAnswer && turnAnswer.trim()) {
-            loopMessages.push({ role: 'assistant', content: turnAnswer })
+          if (rawTurnAnswer && rawTurnAnswer.trim()) {
+            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
           }
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
 
-          targetSetChatData((prev) => {
-            const alreadyPresent = prev.some(
-              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
-            )
-            if (alreadyPresent) return prev
-            const thinkingItem = prev.find((m) => m.isThinking)
-            const filtered = prev.filter((m) => !m.isThinking)
-            const item = {
-              role: 'user',
-              content: interventions,
-              timestamp: getCurrentTimeInfo(),
-              created_at: Date.now(),
-              isIntervention: true
-            }
-            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
-          })
+          const alreadyInList = executedToolsList.some(
+            (t) => t.type === 'intervention' && t.text === interventions
+          )
+          if (!alreadyInList) {
+            executedToolsList.push({
+              type: 'intervention',
+              text: interventions,
+              timestamp: Date.now()
+            })
+          }
 
           execSteps.push({ task: `Intervensi User: ${interventions}` })
           targetPushProcess({
@@ -1967,6 +2297,43 @@ export const useMarkPlan = ({
               steps: [...execSteps],
               currentStep: execSteps.length - 1,
               reasoning: 'Menerima arahan baru dari user saat penyelesaian giliran.'
+            }
+          })
+
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isThinking
+                ? {
+                    ...msg,
+                    executedTools: [...executedToolsList]
+                  }
+                : msg
+            )
+          )
+
+          continue
+        }
+
+        // Strict Explicit Done: AI harus menuliskan done="true" untuk mengakhiri loop.
+        // Jika done === false, teruskan loop ke turn berikutnya agar AI bisa mengeksekusi langkah lanjutan.
+        if (!turnMeta.done) {
+          if (rawTurnAnswer && rawTurnAnswer.trim()) {
+            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
+          }
+          loopMessages.push({
+            role: 'user',
+            content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+          })
+
+          execSteps.push({ task: 'Melanjutkan langkah...' })
+          targetPushProcess({
+            id: agenticProcessId,
+            type: 'planning',
+            status: 'active',
+            data: {
+              steps: [...execSteps],
+              currentStep: execSteps.length - 1,
+              reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
             }
           })
 
@@ -2017,9 +2384,13 @@ export const useMarkPlan = ({
             return true
           })
 
-          let finalOutput = (finalContentAccumulator || '')
-            .replace(/^(?:<|\[)mood:[a-zA-Z_]+(?:>|\])\s*/i, '')
-            .trim()
+          const { meta: endMeta, cleanContent: parsedEndOutput } = parseMarkTag(
+            finalContentAccumulator || ''
+          )
+          if (endMeta?.mood && endMeta.mood !== 'neutral') {
+            currentActiveMood = endMeta.mood
+          }
+          let finalOutput = parsedEndOutput
           if (isAutonomous && autonomousInitialMessage) {
             finalOutput = `**${autonomousInitialMessage}**\n\n${finalOutput}`
           }
@@ -2043,7 +2414,11 @@ export const useMarkPlan = ({
             isProactive: isAutonomous,
             timestamp: getCurrentTimeInfo(),
             created_at: Date.now(),
-            source: tgContext ? 'telegram' : 'pc'
+            source: tgContext ? 'telegram' : 'pc',
+            usage: lastServerUsage || null,
+            tokens:
+              lastServerUsage?.completion_tokens ||
+              calculateMessageTokens({ content: finalOutput, reasoning: mergedReasoning })
           }
 
           savedTurnAiMsg = aiMsg
@@ -2079,6 +2454,10 @@ export const useMarkPlan = ({
         break
       }
 
+      if (sessionAbortController.signal.aborted) {
+        throw new Error('AbortError')
+      }
+
       // Pastikan sisa thinking indicator selalu dibersihkan jika loop selesai
       targetSetChatData((prev) => {
         const hasThinking = prev.some((item) => item.isThinking)
@@ -2104,7 +2483,14 @@ export const useMarkPlan = ({
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             timestamp: getCurrentTimeInfo(),
-            created_at: Date.now()
+            created_at: Date.now(),
+            usage: lastServerUsage || null,
+            tokens:
+              lastServerUsage?.completion_tokens ||
+              calculateMessageTokens({
+                content: 'Tugas telah selesai diproses.',
+                reasoning: mergedReasoning
+              })
           }
         ]
       })
@@ -2133,7 +2519,7 @@ export const useMarkPlan = ({
         lastUserPromptRef.current = ''
       }
 
-      // Post-Turn Context Sync: Hitung total karakter terkini dan trigger event ke UI
+      // Post-Turn Context Sync: Hitung total token terkini dan trigger event ke UI
       try {
         let latestSessionData =
           activeSessionNum === 1 ? chatDataRef.current || chatData : inMemorySessionData
@@ -2145,20 +2531,24 @@ export const useMarkPlan = ({
             latestSessionData = [...(latestSessionData || []), savedTurnAiMsg]
           }
         }
-        const latestChars = calculateSessionChars(
+        const latestTokens = calculateSessionTokens(
           latestSessionData,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
           activeSessionCompact?.lastCompactedMessageId ||
             activeSessionCompact?.last_compacted_message_id ||
-            null
+            null,
+          systemPrompt,
+          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {
             detail: {
               sessionId: String(activeSessionNum),
-              currentChars: latestChars,
-              maxChars: MAX_CONTEXT_CHARS,
-              percentage: Math.min(100, (latestChars / MAX_CONTEXT_CHARS) * 100),
+              currentTokens: latestTokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (latestTokens / MAX_CONTEXT_TOKENS) * 100),
+              currentChars: latestTokens,
+              maxChars: MAX_CONTEXT_TOKENS,
               lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
             }
           })
@@ -2210,6 +2600,19 @@ export const useMarkPlan = ({
         }
       } else {
         dismissProcess(agenticProcessId)
+        try {
+          speechQueue.reset()
+        } catch (_) {}
+        try {
+          const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
+          for (const t of runningTasks) {
+            await transitionAgentTask(
+              t.id,
+              'cancelled',
+              'Eksekusi dibatalkan atas permintaan pengguna.'
+            ).catch(() => {})
+          }
+        } catch (_) {}
         if (durableTaskForRecovery) {
           transitionAgentTask(
             durableTaskForRecovery.id,
@@ -2220,10 +2623,14 @@ export const useMarkPlan = ({
       }
 
       targetSetChatData((prev) => {
+        const thinkingItem = prev.find((item) => item.isThinking)
         let updated = prev.filter((item) => !item.isThinking)
-        if (isAbort && durableTaskForRecovery) {
+
+        if (isAbort) {
           updated = updated.map((msg) => {
-            if (!msg.isPlanSteps || msg.taskId !== durableTaskForRecovery.id) return msg
+            if (!msg.isPlanSteps) return msg
+            if (durableTaskForRecovery && msg.taskId && msg.taskId !== durableTaskForRecovery.id)
+              return msg
             return {
               ...msg,
               taskStatus: 'stopped',
@@ -2234,18 +2641,80 @@ export const useMarkPlan = ({
             }
           })
         }
-        return [
+
+        // Ambil riwayat tool yang sempat dieksekusi sebelum di-abort
+        let rawExecutedTools =
+          thinkingItem?.executedTools && thinkingItem.executedTools.length > 0
+            ? [...thinkingItem.executedTools]
+            : [...(executedToolsList || [])]
+
+        // Pastikan in-flight tool yang sedang dieksekusi saat abort tidak hilang
+        if (
+          currentInFlightTool &&
+          !rawExecutedTools.some(
+            (t) =>
+              t.tool === currentInFlightTool.tool &&
+              (t.status === 'running' || t.status === 'stopped')
+          )
+        ) {
+          rawExecutedTools.push(currentInFlightTool)
+        }
+
+        // Tandai tool yang sedang 'running' saat abort menjadi 'stopped'
+        const preservedExecutedTools = rawExecutedTools.map((t) => ({
+          ...t,
+          status: t.status === 'running' ? 'stopped' : t.status
+        }))
+
+        // Ambil riwayat pemikiran (reasoning) yang sempat digenerate
+        const allAccumulated = [...accumulatedThoughts, currentTurnReasoning]
+          .map((t) => (typeof t === 'string' ? t.trim() : ''))
+          .filter(Boolean)
+        const fallbackReasoning =
+          allAccumulated.length > 0
+            ? Array.from(new Set(allAccumulated)).join('\n\n---\n\n')
+            : undefined
+        const preservedReasoning = thinkingItem?.reasoning || fallbackReasoning
+
+        // Ambil konten parsial yang sempat digenerate
+        const rawContent =
+          finalContentAccumulator ||
+          (thinkingItem?.content && !thinkingItem.content.startsWith('Mengeksekusi [')
+            ? thinkingItem.content
+            : '')
+        const partialContent = typeof rawContent === 'string' ? rawContent.trim() : ''
+
+        let abortContent = ''
+        if (isAbort) {
+          abortContent = partialContent
+            ? `${partialContent}\n\n[Eksekusi dihentikan oleh pengguna]`
+            : 'Eksekusi dibatalkan atas permintaan pengguna.'
+        } else {
+          abortContent = partialContent
+            ? `${partialContent}\n\n[Terjadi kendala saat memproses: ${error.message}]`
+            : `Terjadi kendala saat memproses: ${error.message}`
+        }
+
+        const finalUpdated = [
           ...updated,
           {
             role: 'ai',
-            content: isAbort
-              ? 'Eksekusi dibatalkan atas permintaan pengguna.'
-              : `Terjadi kendala saat memproses: ${error.message}`,
+            content: abortContent,
+            reasoning: preservedReasoning,
+            executedTools: preservedExecutedTools.length > 0 ? preservedExecutedTools : undefined,
             mood: isAbort ? 'neutral' : 'sadness',
             timestamp: getCurrentTimeInfo(),
             created_at: Date.now()
           }
         ]
+
+        if (activeSessionNum === 1) {
+          saveSession('1', finalUpdated).catch((err) => {
+            console.warn('[useMarkPlan] Gagal auto-save abort main thread session 1:', err)
+          })
+        }
+
+        return finalUpdated
       })
     } finally {
       activeSessionsRef.current.delete(activeSessionNum)

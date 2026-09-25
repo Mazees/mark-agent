@@ -4,7 +4,9 @@ import {
   activeAbortControllers,
   createMoodStreamFilter,
   createLMStudioOfflineError,
-  isLMStudioOfflineError
+  isLMStudioOfflineError,
+  parseMarkTag,
+  stripMarkTags
 } from './ai-utils.js'
 
 export async function executeOpenAIProvider({
@@ -18,6 +20,7 @@ export async function executeOpenAIProvider({
   onToken = null,
   onReasoning = null,
   onMood = null,
+  onMeta = null,
   onToolCall = null,
   onStatus = null
 }) {
@@ -31,6 +34,15 @@ export async function executeOpenAIProvider({
       } else {
         sanitizedContent = m.content
       }
+    }
+
+    if (
+      (m.role === 'assistant' || m.role === 'model') &&
+      typeof sanitizedContent === 'string' &&
+      m.mood &&
+      !/<mark\b/i.test(sanitizedContent.trim())
+    ) {
+      sanitizedContent = `<mark mood="${m.mood}" done="true" /> ${sanitizedContent}`
     }
 
     if (
@@ -106,6 +118,7 @@ export async function executeOpenAIProvider({
   if (stream) {
     const body = {
       stream: true,
+      stream_options: { include_usage: true },
       model,
       temperature: Number(conf.temperature) || 0,
       messages: formattedMessages
@@ -129,9 +142,9 @@ export async function executeOpenAIProvider({
     let moodExtracted = false
     const extractMood = (text) => {
       if (!moodExtracted && text && onMood) {
-        const match = text.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/)
-        if (match) {
-          onMood(match[1].toLowerCase())
+        const parsed = parseMarkTag(text)
+        if (parsed.meta?.mood && parsed.meta.mood !== 'neutral') {
+          onMood(parsed.meta.mood)
           moodExtracted = true
         }
       }
@@ -141,14 +154,36 @@ export async function executeOpenAIProvider({
     let accumulatedReasoning = ''
     const accumulatedToolCalls = {}
     let finishReason = 'stop'
+    let serverUsage = null
 
     try {
-      const response = await fetch(endpoint, {
+      let response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         signal: abortController.signal
       })
+
+      if (!response.ok && body.stream_options && response.status === 400) {
+        const errCloned = response.clone()
+        const textData = await errCloned.text().catch(() => '')
+        if (
+          textData.toLowerCase().includes('stream_options') ||
+          textData.toLowerCase().includes('unknown')
+        ) {
+          const fallbackBody = { ...body }
+          delete fallbackBody.stream_options
+          const retryRes = await fetch(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(fallbackBody),
+            signal: abortController.signal
+          })
+          if (retryRes.ok) {
+            response = retryRes
+          }
+        }
+      }
 
       if (!response.ok) {
         const textData = await response.text()
@@ -160,10 +195,16 @@ export async function executeOpenAIProvider({
         throw new Error(`API Error (${response.status}): ${errorMsg}`)
       }
 
-      const sseMoodFilter = createMoodStreamFilter(onToken, (mood) => {
-        onMood?.(mood)
-        moodExtracted = true
-      })
+      const sseMoodFilter = createMoodStreamFilter(
+        onToken,
+        (mood) => {
+          onMood?.(mood)
+          moodExtracted = true
+        },
+        (meta) => {
+          onMeta?.(meta)
+        }
+      )
 
       const processContentToken = (token) => {
         accumulatedContent += token
@@ -174,6 +215,9 @@ export async function executeOpenAIProvider({
         if (!jsonStr || jsonStr === '[DONE]') return
         try {
           const parsed = JSON.parse(jsonStr)
+          if (parsed.usage) {
+            serverUsage = parsed.usage
+          }
           const choice = parsed.choices?.[0]
           if (!choice) return
 
@@ -263,6 +307,9 @@ export async function executeOpenAIProvider({
       } else {
         const raw = await response.text()
         const parsed = JSON.parse(raw)
+        if (parsed.usage) {
+          serverUsage = parsed.usage
+        }
         const choice = parsed.choices?.[0]
         if (choice) {
           accumulatedContent = choice.message?.content || ''
@@ -287,9 +334,9 @@ export async function executeOpenAIProvider({
 
       let finalMood = null
       const fullText = (accumulatedReasoning + '\n' + accumulatedContent).trim()
-      const endMoodMatch = fullText.match(/(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])/i)
-      if (endMoodMatch) {
-        finalMood = endMoodMatch[1].toLowerCase()
+      const parsedFull = parseMarkTag(fullText)
+      if (parsedFull.meta?.mood) {
+        finalMood = parsedFull.meta.mood
         if (!moodExtracted) {
           onMood?.(finalMood)
           moodExtracted = true
@@ -301,7 +348,8 @@ export async function executeOpenAIProvider({
         reasoning: accumulatedReasoning,
         mood: finalMood,
         toolCalls: toolCallsList.length > 0 ? toolCallsList : null,
-        finishReason
+        finishReason,
+        usage: serverUsage
       }
     } catch (error) {
       if (conf.aiProvider !== 'custom' && isLMStudioOfflineError(error)) {
@@ -697,7 +745,7 @@ export async function executeOpenAIProvider({
       }
     }
 
-    return { content, reasoning }
+    return { content, reasoning, usage: processedData?.usage || null }
   } catch (error) {
     if (conf.aiProvider !== 'custom' && isLMStudioOfflineError(error)) {
       throw createLMStudioOfflineError(error)

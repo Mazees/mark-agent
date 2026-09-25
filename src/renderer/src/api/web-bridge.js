@@ -105,6 +105,25 @@ export function removeAllWebListeners(event) {
   }
 }
 
+export function resolveAbortSignal(sig) {
+  if (!sig) return undefined
+  if (typeof AbortSignal !== 'undefined' && sig instanceof AbortSignal) {
+    return sig
+  }
+  if (
+    sig &&
+    sig.signal &&
+    typeof AbortSignal !== 'undefined' &&
+    sig.signal instanceof AbortSignal
+  ) {
+    return sig.signal
+  }
+  if (sig && typeof sig === 'object' && sig.current) {
+    return resolveAbortSignal(sig.current)
+  }
+  return undefined
+}
+
 export const webApi = {
   // 1. Health & Config
   getHealth: async () => {
@@ -131,11 +150,12 @@ export const webApi = {
   // 2. Chat & AI
   fetchAI: async (params, signal = null) => {
     const endpoint = params?.stream ? `${API_BASE}/api/ai/stream` : `${API_BASE}/api/ai/fetch`
+    const effectiveSignal = resolveAbortSignal(signal) || resolveAbortSignal(params?.signal)
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
-      signal: signal || undefined
+      signal: effectiveSignal
     })
     const json = await res.json()
     if (!res.ok || json.error) {
@@ -146,6 +166,15 @@ export const webApi = {
     return json
   },
 
+  resetAiSession: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/reset-session`, { method: 'POST' })
+      return await res.json()
+    } catch {
+      return { success: false }
+    }
+  },
+
   onAiToken: (callback) => {
     addWebListener('ai:token', callback)
     return () => removeWebListener('ai:token', callback)
@@ -154,6 +183,11 @@ export const webApi = {
   onAiMood: (callback) => {
     addWebListener('ai:mood', callback)
     return () => removeWebListener('ai:mood', callback)
+  },
+
+  onAiMarkMeta: (callback) => {
+    addWebListener('ai:mark_meta', callback)
+    return () => removeWebListener('ai:mark_meta', callback)
   },
 
   onToolStatus: (callback) => {
@@ -288,6 +322,19 @@ export const webApi = {
       console.error('Gagal memuat skema group tools dari server:', err)
     }
     return { schema: {}, names: [], definition: {}, flat: {} }
+  },
+
+  getWorkspaceFiles: async (query = '', root = '') => {
+    try {
+      const q = encodeURIComponent(query || '')
+      const r = encodeURIComponent(root || '')
+      const res = await fetch(`${API_BASE}/api/workspace/files?query=${q}&root=${r}`)
+      const json = await res.json()
+      return json?.data || []
+    } catch (err) {
+      console.error('[webBridge] getWorkspaceFiles error:', err)
+      return []
+    }
   },
 
   checkToolApproval: async (tool, query) => {

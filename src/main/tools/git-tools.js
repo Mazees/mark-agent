@@ -2,12 +2,19 @@ import path from 'path'
 import os from 'os'
 import { getGitStatus, getGitDiff, gitCommit, gitRevert } from '../git-service.js'
 
+function resolveGitRoot(customPath, config) {
+  const raw = String(customPath || '').trim()
+  const baseRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+  if (!raw) return baseRoot
+  return path.isAbsolute(raw) ? raw : path.resolve(baseRoot, raw)
+}
+
 export const gitTools = {
   'git-status': {
     needsApproval: false,
     handler: async (args, config) => {
       const customPath = typeof args === 'object' && args !== null ? args.path : String(args || '').trim()
-      const activeRoot = customPath || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      const activeRoot = resolveGitRoot(customPath, config)
       return await getGitStatus(activeRoot)
     }
   },
@@ -23,7 +30,7 @@ export const gitTools = {
       } else {
         file = String(args || '').trim()
       }
-      const activeRoot = customPath || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      const activeRoot = resolveGitRoot(customPath, config)
       return await getGitDiff(activeRoot, file)
     }
   },
@@ -45,7 +52,7 @@ export const gitTools = {
         message = parts[0]?.trim() || 'Mark Agent Commit'
         customCwd = parts[1]?.trim()
       }
-      const activeRoot = customCwd || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      const activeRoot = resolveGitRoot(customCwd, config)
       return await gitCommit(activeRoot, message)
     }
   },
@@ -65,7 +72,7 @@ export const gitTools = {
       } else {
         file = String(args || '').trim()
       }
-      const activeRoot = customPath || config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      const activeRoot = resolveGitRoot(customPath, config)
       return await gitRevert(activeRoot, file)
     }
   }

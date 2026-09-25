@@ -1,4 +1,5 @@
 import { getAllConfig } from '../db'
+import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 export const getCurrentTimeInfo = (dateObj = new Date()) => {
   const options = {
@@ -17,11 +18,10 @@ export const getCurrentTimeInfo = (dateObj = new Date()) => {
 let ttsAudioContext = null
 let currentAudioElement = null
 
-// Bersihkan tag <mood:xxx> / [mood:xxx], tag <mic> / (Mikrofon), format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
+// Bersihkan tag kontrol (<mark ... />, legacy mood), tag <mic> / (Mikrofon), format markdown berlebih, dan tag teknis agar tidak terbaca oleh TTS
 export const cleanTextForTTS = (text) => {
   if (!text || typeof text !== 'string') return ''
-  return text
-    .replace(/(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi, '')
+  return stripMarkTags(text)
     .replace(/(?:<mic>|\(Mikrofon\))/gi, '')
     .replace(/```[\s\S]*?```/g, '') // Hapus blok kode
     .replace(/`([^`]+)`/g, '$1') // Bersihkan inline code

@@ -13,7 +13,13 @@ export const aiRouter = Router()
 
 // 1. AI Fetch Direct Gateway
 aiRouter.post('/ai/fetch', async (req, res) => {
-  const { messages, config = {}, isSmallTask = false, jsonSchema = null } = req.body || {}
+  const {
+    messages,
+    config = {},
+    isSmallTask = false,
+    jsonSchema = null,
+    sessionId = null
+  } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
     const finalConfig = { ...getActiveConfig(), ...config }
@@ -32,11 +38,15 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
-      hasTools: false,
-      payload: { messages, jsonSchema, isSmallTask }
+      hasTools: false
     })
 
-    const result = await fetchAI(messages, false, { config: finalConfig, isSmallTask, jsonSchema })
+    const result = await fetchAI(messages, false, {
+      config: finalConfig,
+      isSmallTask,
+      jsonSchema,
+      sessionId
+    })
     res.json(result)
   } catch (err) {
     res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })
@@ -45,7 +55,13 @@ aiRouter.post('/ai/fetch', async (req, res) => {
 
 // 2. AI Streaming Gateway (Native Tool Calling + SSE & WebSocket Tokens)
 aiRouter.post('/ai/stream', async (req, res) => {
-  const { messages, tools = null, config = {}, isSmallTask = false } = req.body || {}
+  const {
+    messages,
+    tools = null,
+    config = {},
+    isSmallTask = false,
+    sessionId = null
+  } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
     const finalConfig = { ...getActiveConfig(), ...config }
@@ -65,14 +81,14 @@ aiRouter.post('/ai/stream', async (req, res) => {
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: Array.isArray(tools) && tools.length > 0,
-      toolsCount: Array.isArray(tools) ? tools.length : 0,
-      payload: { messages, tools, isSmallTask }
+      toolsCount: Array.isArray(tools) ? tools.length : 0
     })
 
     const result = await fetchAI(messages, true, {
       tools,
       config: finalConfig,
       isSmallTask,
+      sessionId,
       onToken: (token) => {
         wsHub.streamToken(token, 'answer')
       },
@@ -81,6 +97,12 @@ aiRouter.post('/ai/stream', async (req, res) => {
       },
       onMood: (mood) => {
         wsHub.broadcast('ai:mood', { mood })
+      },
+      onMeta: (meta) => {
+        wsHub.broadcast('ai:mark_meta', meta)
+        if (meta?.mood) {
+          wsHub.broadcast('ai:mood', { mood: meta.mood })
+        }
       },
       onToolCall: (toolCalls) => {
         wsHub.broadcast('ai:tool_calls', { toolCalls })
@@ -97,6 +119,16 @@ aiRouter.post('/ai/abort', async (req, res) => {
   try {
     const { abortAllFetches } = await import('../services/ai-bridge.js')
     abortAllFetches()
+    res.json({ success: true })
+  } catch (err) {
+    res.json({ success: false, error: err.message })
+  }
+})
+
+aiRouter.post('/ai/reset-session', async (req, res) => {
+  try {
+    const { clearDeepSeekSession } = await import('../services/deepseek-web.js')
+    clearDeepSeekSession()
     res.json({ success: true })
   } catch (err) {
     res.json({ success: false, error: err.message })

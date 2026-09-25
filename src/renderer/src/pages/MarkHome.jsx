@@ -62,6 +62,7 @@ const MarkHome = () => {
     message,
     isLoading,
     isAgentBusy,
+    runningSessionIds = [],
     isSpeak,
     setIsSpeak,
     handlePlanningCommand,
@@ -83,6 +84,9 @@ const MarkHome = () => {
   } = chatContext
   const { isPlaying, currentTrack } = useYoutubeMusic()
   useMemoryGroomer(false)
+
+  const isMainLoading =
+    (runningSessionIds && runningSessionIds.map(String).includes('1')) || isLoading
 
   const [currentResponse, setCurrentResponse] = useState(null)
   const [showMusicWidget, setShowMusicWidget] = useState(false)
@@ -131,8 +135,17 @@ const MarkHome = () => {
         setBgOverlayOpacity(Number(e.detail.bgOverlayOpacity))
       }
     }
+    const handleWorkspaceUpdated = (e) => {
+      if (String(e.detail?.sessionId) === '1') {
+        setWorkspaceRoot(e.detail?.workspaceRoot || null)
+      }
+    }
     window.addEventListener('config-updated', handleConfigUpdated)
-    return () => window.removeEventListener('config-updated', handleConfigUpdated)
+    window.addEventListener('session-workspace-updated', handleWorkspaceUpdated)
+    return () => {
+      window.removeEventListener('config-updated', handleConfigUpdated)
+      window.removeEventListener('session-workspace-updated', handleWorkspaceUpdated)
+    }
   }, [])
 
   const handleSelectWorkspace = async () => {
@@ -178,14 +191,15 @@ const MarkHome = () => {
 
   // Sync orb status
   useEffect(() => {
+    if (typeof setOrbStatus !== 'function') return
     if (isRecording) {
       setOrbStatus('listening')
-    } else if (isProcessing || isLoading) {
+    } else if (isProcessing || isMainLoading) {
       setOrbStatus('thinking')
     } else if (!window.isMarkSpeaking) {
       setOrbStatus('idle')
     }
-  }, [isLoading, chatData, isRecording, isProcessing, setOrbStatus])
+  }, [isMainLoading, chatData, isRecording, isProcessing, setOrbStatus])
 
   // Derived currentResponse from chatData
   useEffect(() => {
@@ -214,7 +228,7 @@ const MarkHome = () => {
           })
         }
       } else {
-        if (isLoading) {
+        if (isMainLoading) {
           setCurrentResponse({
             text: 'Memproses...',
             type: 'short',
@@ -233,14 +247,14 @@ const MarkHome = () => {
         type: 'short'
       })
     }
-  }, [chatData, isLoading, isSpeak, setOrbStatus])
+  }, [chatData, isMainLoading, isSpeak])
 
   const handleSubmit = (e, text, opts = {}) => {
-    if (chatContext.handleSubmit) {
+    if (typeof chatContext?.handleSubmit === 'function') {
       chatContext.handleSubmit(e, text, opts)
     } else {
       const sendText = typeof text === 'string' && text.trim() ? text.trim() : message.trim()
-      if (sendText) {
+      if (sendText && typeof handlePlanningCommand === 'function') {
         handlePlanningCommand(sendText, null, false, opts)
       }
     }
@@ -248,13 +262,27 @@ const MarkHome = () => {
 
   const mood = currentResponse?.mood || 'neutral'
 
-  const handleAvatarClick = () => {
-    if (orbStatus === 'idle' && !isRecording && !isProcessing && !isLoading) {
-      startRecording()
-    } else if (isRecording) {
-      stopRecording()
-    }
+  const handleAvatarInteract = (type, detail = {}) => {
+    // Dispatch event untuk sistem pertumbuhan relasi 4D
+    window.dispatchEvent(
+      new CustomEvent('mark-tactile-interaction', {
+        detail: { type, ...detail }
+      })
+    )
   }
+
+  // Sinkronisasi status operasional AI secara komprehensif
+  const computedAvatarStatus = isRecording
+    ? 'listening'
+    : isSpeak || window.isMarkSpeaking
+      ? 'speaking'
+      : isMainLoading
+        ? 'thinking'
+        : isProcessing
+          ? 'processing'
+          : isPlaying
+            ? 'music_groove'
+            : orbStatus || 'idle'
 
   return (
     <div className="h-screen w-screen text-white overflow-hidden relative bg-[#060a08]">
@@ -284,11 +312,17 @@ const MarkHome = () => {
           <FloatingMenu />
           <button
             onClick={() => navigate('/chat')}
-            className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-2 transition-all text-white/80 hover:text-white rounded-xl cursor-pointer text-xs font-mono font-semibold"
+            className="h-8 px-3 bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-2 transition-all text-white/80 hover:text-white rounded-xl cursor-pointer text-xs font-mono font-semibold relative"
             title="Buka Chat Studio"
           >
             <MessageSquare className="w-3.5 h-3.5 text-primary" />
             <span className="hidden md:inline">Studio</span>
+            {isAgentBusy && !isMainLoading && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-warning"></span>
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -306,10 +340,10 @@ const MarkHome = () => {
       <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
         <div className="scale-115 md:scale-140 lg:scale-165 xl:scale-180 pointer-events-auto cursor-pointer transition-transform duration-300">
           <Avatar
-            status={isRecording ? 'listening' : orbStatus}
-            isRecording={isRecording}
+            status={computedAvatarStatus}
+            intensity={audioIntensity}
             mood={mood}
-            onClick={handleAvatarClick}
+            onInteract={handleAvatarInteract}
           />
         </div>
       </div>
@@ -330,7 +364,7 @@ const MarkHome = () => {
                 </h3>
               </div>
               <span className="text-[10px] font-mono text-primary uppercase">
-                {isLoading ? 'Streaming' : 'Ready'}
+                {isMainLoading ? 'Streaming' : 'Ready'}
               </span>
             </div>
 
@@ -437,13 +471,13 @@ const MarkHome = () => {
               setIsSpeak(false)
               handleSubmit(null, prompt, sendOptions)
             }}
-            isLoading={isLoading || isAgentBusy}
+            isLoading={isMainLoading}
             isRecording={isRecording}
             isProcessing={isProcessing}
             audioIntensity={audioIntensity}
             onStartRecord={startRecording}
             onStopRecord={stopRecording}
-            onStop={handleStop}
+            onStop={() => handleStop(1)}
             source={inputSource}
             workspaceRoot={workspaceRoot}
             onSelectWorkspace={handleSelectWorkspace}

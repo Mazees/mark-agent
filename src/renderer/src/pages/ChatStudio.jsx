@@ -35,6 +35,7 @@ import {
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import { useConfirm } from '../hooks/useConfirm'
+import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 /**
  * Ekstraksi dan filter semua prefix/meta-tag (seperti <mic>, <mood:value>)
@@ -62,14 +63,11 @@ export function filterMessagePrefixes(content) {
   }
 
   const prefixes = []
-  const cleanContent = content
-    .replace(
-      /(?:<(?:mic|mood:[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+)>|\(Mikrofon\)|\[mood:[a-zA-Z0-9_-]+\])/gi,
-      (match) => {
-        prefixes.push(match)
-        return ''
-      }
-    )
+  const cleanContent = stripMarkTags(content)
+    .replace(/(?:<mic>|\(Mikrofon\))/gi, (match) => {
+      prefixes.push(match)
+      return ''
+    })
     .trim()
 
   return { cleanContent, prefixes }
@@ -102,6 +100,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const [activeSessionId, setActiveSessionId] = useState('1')
   const [lastCompactedMessageId, setLastCompactedMessageId] = useState(null)
   const [activeSessionCompact, setActiveSessionCompact] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (typeof setCurrentActiveSessionId === 'function') {
@@ -166,7 +165,21 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }
 
   useEffect(() => {
-    loadAllSessions()
+    let isMounted = true
+    const initStudio = async () => {
+      try {
+        setLoading(true)
+        await loadAllSessions()
+      } catch (err) {
+        console.error('Error loading sessions:', err)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+    initStudio()
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
@@ -199,8 +212,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         new CustomEvent('context-tracker-updated', {
           detail: {
             sessionId: String(activeSessionId),
+            currentTokens: 0,
+            maxTokens: 256000,
             currentChars: 0,
-            maxChars: 525000,
+            maxChars: 256000,
             percentage: 0
           }
         })
@@ -210,22 +225,26 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     let isMounted = true
     import('../api/ai/contextManager')
-      .then(({ calculateSessionChars, MAX_CONTEXT_CHARS }) => {
+      .then(({ calculateSessionTokens, MAX_CONTEXT_TOKENS }) => {
         if (!isMounted) return
-        const chars = calculateSessionChars(
+        const tokens = calculateSessionTokens(
           currentDisplayMessages,
           activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || '',
           activeSessionCompact?.lastCompactedMessageId ||
             activeSessionCompact?.last_compacted_message_id ||
-            null
+            null,
+          '',
+          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {
             detail: {
               sessionId: String(activeSessionId),
-              currentChars: chars,
-              maxChars: MAX_CONTEXT_CHARS,
-              percentage: Math.min(100, (chars / MAX_CONTEXT_CHARS) * 100)
+              currentTokens: tokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (tokens / MAX_CONTEXT_TOKENS) * 100),
+              currentChars: tokens,
+              maxChars: MAX_CONTEXT_TOKENS
             }
           })
         )
@@ -257,8 +276,9 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
     const commandOpts = {
-      workspaceRoot: currentSession?.workspaceRoot,
+      workspaceRoot: currentSession?.workspaceRoot || null,
       displayPrompt: rawDisplay,
+      attachedFiles: sendOptions?.attachedFiles,
       ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
     }
 
@@ -325,6 +345,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   const handleCreateNewChat = async () => {
     try {
+      window.api?.resetAiSession?.().catch(() => {})
       const newSession = await createSession('Percakapan Baru', [])
       await loadAllSessions()
       setActiveSessionId(newSession.id)
@@ -375,9 +396,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         await setSessionWorkspace(activeSessionId, selected)
         setSessions((prev) =>
           prev.map((s) =>
-            String(s.id) === String(activeSessionId)
-              ? { ...s, workspaceRoot: selected, workspace: selected }
-              : s
+            String(s.id) === String(activeSessionId) ? { ...s, workspaceRoot: selected } : s
           )
         )
       }
@@ -462,13 +481,17 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             }
           })
         )
+        const currentTok = res.currentTokens ?? res.currentChars ?? 0
+        const maxTok = res.maxTokens || 256000
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {
             detail: {
               sessionId: String(activeSessionId),
-              currentChars: res.currentChars || 0,
-              maxChars: 525000,
-              percentage: Math.min(100, ((res.currentChars || 0) / 525000) * 100),
+              currentTokens: currentTok,
+              maxTokens: maxTok,
+              currentChars: currentTok,
+              maxChars: maxTok,
+              percentage: Math.min(100, (currentTok / maxTok) * 100),
               lastCompactedAt: Date.now()
             }
           })
@@ -510,349 +533,386 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     id: '1',
     title: 'Main Thread'
   }
+  const activeSessionWorkspace = activeSessionObj?.workspaceRoot || null
 
   return (
     <>
       <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
-        <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
-          {/* Sidebar Header */}
-          <div className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none">
-            <div className="flex items-center justify-between pointer-events-auto">
-              <div className="flex items-center gap-2 font-bold text-sm tracking-wide text-white">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleClose()
-                  }}
-                  className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
-                  title="Tutup Studio (Esc)"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <span className="truncate">Chat Studio</span>
-              </div>
-              <div className="flex items-center gap-1 pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={handleCreateNewChat}
-                  className="btn btn-xs btn-primary rounded-lg gap-1 font-medium shadow-md shadow-primary/20 cursor-pointer pointer-events-auto"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Sesi Baru
-                </button>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative pointer-events-auto">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-              <input
-                type="text"
-                placeholder="Cari obrolan..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input input-sm bg-base-300 border-white/10 pl-9 w-full rounded-xl text-xs text-white placeholder:text-white/30 focus:border-primary/50"
-              />
-            </div>
-          </div>
-
-          {/* Sessions Scroll List */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-1 custom-scrollbar">
-            {/* PINNED MAIN THREAD */}
-            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
-              <span>Sesi Utama</span>
-            </div>
-
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setActiveSessionId('1')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setActiveSessionId('1')
-              }}
-              className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/item cursor-pointer ${
-                String(activeSessionId) === '1'
-                  ? 'bg-primary/20 border border-primary/40 text-white shadow-sm'
-                  : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
-              }`}
+        {loading ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 relative">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="absolute top-4 left-4 btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white pointer-events-auto"
+              title="Tutup Studio (Esc)"
             >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    runningSessionIds.map(String).includes('1') ||
-                    (!runningSessionIds.length && (isMainLoading || isAgentBusy))
-                      ? 'bg-warning animate-ping'
-                      : 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
-                  }`}
-                />
-                <div className="min-w-0">
-                  <h4 className="text-xs font-semibold truncate">Main Thread</h4>
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <span className="loading loading-spinner loading-lg text-primary" />
+            <p className="font-mono text-xs text-base-content/50 tracking-widest uppercase">
+              Memuat Chat Studio...
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
+              {/* Sidebar Header */}
+              <div className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none">
+                <div className="flex items-center justify-between pointer-events-auto">
+                  <div className="flex items-center gap-2 font-bold text-sm tracking-wide text-white">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleClose()
+                      }}
+                      className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
+                      title="Tutup Studio (Esc)"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <span className="truncate">Chat Studio</span>
+                  </div>
+                  <div className="flex items-center gap-1 pointer-events-auto">
+                    <button
+                      type="button"
+                      onClick={handleCreateNewChat}
+                      className="btn btn-xs btn-primary rounded-lg gap-1 font-medium shadow-md shadow-primary/20 cursor-pointer pointer-events-auto"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Sesi Baru
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search Input */}
+                <div className="relative pointer-events-auto">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="text"
+                    placeholder="Cari obrolan..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="input input-sm bg-base-300 border-white/10 pl-9 w-full rounded-xl text-xs text-white placeholder:text-white/30 focus:border-primary/50"
+                  />
                 </div>
               </div>
-            </div>
 
-            <div className="my-2 border-t border-white/5" />
+              {/* Sessions Scroll List */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-1 custom-scrollbar">
+                {/* PINNED MAIN THREAD */}
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
+                  <span>Sesi Utama</span>
+                </div>
 
-            {/* WORKSPACE SESSIONS */}
-            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
-              Semua Sesi
-            </div>
-
-            {filteredSessions
-              .filter(
-                (s) => String(s.id) !== '1' && String(s.id) !== '1.0' && s.title !== 'Main Thread'
-              )
-              .map((s) => {
-                const isActive = String(activeSessionId) === String(s.id)
-                const isEditing = String(editingSessionId) === String(s.id)
-                const isThisSessionRunning = runningSessionIds.map(String).includes(String(s.id))
-
-                return (
-                  <div
-                    key={s.id}
-                    onClick={() => setActiveSessionId(s.id)}
-                    className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/session cursor-pointer ${
-                      isActive
-                        ? 'bg-white/10 border border-white/20 text-white shadow-sm'
-                        : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                      <div
-                        className={`w-2 h-2 rounded-full shrink-0 ${
-                          isThisSessionRunning
-                            ? 'bg-warning animate-ping'
-                            : isActive
-                              ? 'bg-primary shadow-[0_0_6px_var(--color-primary)]'
-                              : 'bg-white/20'
-                        }`}
-                      />
-                      <MessageSquare className="w-3.5 h-3.5 opacity-50 shrink-0" />
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveRename(s.id)
-                            if (e.key === 'Escape') setEditingSessionId(null)
-                          }}
-                          autoFocus
-                          className="input input-xs bg-base-300 border-primary/50 text-xs text-white p-1 h-6 w-full rounded"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <div className="min-w-0 flex-1">
-                          <h4 className="text-xs font-medium truncate">
-                            {s.title || 'Percakapan'}
-                          </h4>
-                          <p className="text-[10px] opacity-40">
-                            {s.timestamp
-                              ? new Date(s.timestamp).toLocaleDateString('id-ID', {
-                                  month: 'short',
-                                  day: 'numeric'
-                                })
-                              : ''}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action buttons on hover */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
-                      {isEditing ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleSaveRename(s.id)
-                          }}
-                          className="btn btn-ghost btn-xs p-1 text-success hover:bg-success/20"
-                        >
-                          <Check className="w-3 h-3" />
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            onClick={(e) => handleStartRename(e, s)}
-                            className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-white"
-                            title="Ubah judul sesi"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={(e) => handleDeleteSessionClick(e, s.id)}
-                            className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-error"
-                            title="Hapus sesi"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </>
-                      )}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveSessionId('1')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setActiveSessionId('1')
+                  }}
+                  className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/item cursor-pointer ${
+                    String(activeSessionId) === '1'
+                      ? 'bg-primary/20 border border-primary/40 text-white shadow-sm'
+                      : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        runningSessionIds.map(String).includes('1') ||
+                        (!runningSessionIds.length && (isMainLoading || isAgentBusy))
+                          ? 'bg-warning animate-ping'
+                          : 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-semibold truncate">Main Thread</h4>
                     </div>
                   </div>
-                )
-              })}
+                </div>
 
-            {filteredSessions.filter((s) => s.id !== 1).length === 0 && (
-              <div className="text-center py-6 text-xs text-white/30">
-                Belum ada sesi workspace lain.
-              </div>
-            )}
-          </div>
-        </div>
+                <div className="my-2 border-t border-white/5" />
 
-        {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
-        <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
-          {/* Header */}
-          <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
-            <div className="flex flex-col min-w-0 pr-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white truncate max-w-md">
-                  {activeSessionObj.title || 'Percakapan'}
-                </h3>
-                {activeSessionObj?.workspaceRoot && (
-                  <span
-                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate inline-flex items-center gap-1"
-                    title={`Workspace: ${activeSessionObj.workspaceRoot}`}
-                  >
-                    <Folder className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">
-                      {activeSessionObj.workspaceRoot.split(/[\\/]/).pop()}
-                    </span>
-                  </span>
+                {/* WORKSPACE SESSIONS */}
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                  Semua Sesi
+                </div>
+
+                {filteredSessions
+                  .filter(
+                    (s) =>
+                      String(s.id) !== '1' && String(s.id) !== '1.0' && s.title !== 'Main Thread'
+                  )
+                  .map((s) => {
+                    const isActive = String(activeSessionId) === String(s.id)
+                    const isEditing = String(editingSessionId) === String(s.id)
+                    const isThisSessionRunning = runningSessionIds
+                      .map(String)
+                      .includes(String(s.id))
+
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => setActiveSessionId(s.id)}
+                        className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/session cursor-pointer ${
+                          isActive
+                            ? 'bg-white/10 border border-white/20 text-white shadow-sm'
+                            : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                          <div
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              isThisSessionRunning
+                                ? 'bg-warning animate-ping'
+                                : isActive
+                                  ? 'bg-primary shadow-[0_0_6px_var(--color-primary)]'
+                                  : 'bg-white/20'
+                            }`}
+                          />
+                          <MessageSquare className="w-3.5 h-3.5 opacity-50 shrink-0" />
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveRename(s.id)
+                                if (e.key === 'Escape') setEditingSessionId(null)
+                              }}
+                              autoFocus
+                              className="input input-xs bg-base-300 border-primary/50 text-xs text-white p-1 h-6 w-full rounded"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs font-medium truncate">
+                                {s.title || 'Percakapan'}
+                              </h4>
+                              <p className="text-[10px] opacity-40">
+                                {s.timestamp
+                                  ? new Date(s.timestamp).toLocaleDateString('id-ID', {
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })
+                                  : ''}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action buttons on hover */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
+                          {isEditing ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSaveRename(s.id)
+                              }}
+                              className="btn btn-ghost btn-xs p-1 text-success hover:bg-success/20"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => handleStartRename(e, s)}
+                                className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-white"
+                                title="Ubah judul sesi"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteSessionClick(e, s.id)}
+                                className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-error"
+                                title="Hapus sesi"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                {filteredSessions.filter((s) => s.id !== 1).length === 0 && (
+                  <div className="text-center py-6 text-xs text-white/30">
+                    Belum ada sesi workspace lain.
+                  </div>
                 )}
               </div>
-              <span className="text-[10px] text-white/40">
-                {currentDisplayMessages.length} pesan terdaftar
-              </span>
             </div>
 
-            <div className="flex items-center gap-2 pointer-events-auto mr-28"></div>
-          </div>
-
-          {/* Messages Stream Container */}
-          <div
-            ref={messagesContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
-          >
-            <div className="max-w-6xl mx-auto w-full flex flex-col space-y-8">
-              {currentDisplayMessages.length > visibleMessageCount && (
-                <div className="flex justify-center py-2">
-                  <button
-                    type="button"
-                    onClick={() => setVisibleMessageCount((prev) => prev + 30)}
-                    className="btn btn-xs btn-ghost text-[11px] text-white/50 hover:text-white border border-white/10 rounded-full px-4 normal-case cursor-pointer"
-                  >
-                    Muat pesan sebelumnya ({currentDisplayMessages.length - visibleMessageCount}{' '}
-                    pesan lagi)
-                  </button>
-                </div>
-              )}
-
-              {currentDisplayMessages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4 my-auto">
-                  <img src="/icon-256.png" alt="icon" className="size-30" />
-                  <div className="max-w-lg space-y-1">
-                    <h4 className="text-xl font-bold text-white">Selamat Datang di Mark Agent</h4>
-                    <p className="text-lg text-white/50">
-                      Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
-                    </p>
+            {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
+            <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
+              {/* Header */}
+              <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
+                <div className="flex flex-col min-w-0 pr-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white truncate max-w-md">
+                      {activeSessionObj.title || 'Percakapan'}
+                    </h3>
+                    {activeSessionWorkspace && (
+                      <span
+                        className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate inline-flex items-center gap-1"
+                        title={`Workspace: ${activeSessionWorkspace}`}
+                      >
+                        <Folder className="w-2.5 h-2.5 shrink-0" />
+                        <span className="truncate">
+                          {activeSessionWorkspace.split(/[\\/]/).pop()}
+                        </span>
+                      </span>
+                    )}
                   </div>
+                  <span className="text-[10px] text-white/40">
+                    {currentDisplayMessages.length} pesan terdaftar
+                  </span>
                 </div>
-              ) : (
-                (() => {
-                  const hasActivePlan = (currentDisplayMessages || []).some(
-                    (m) => m.isPlanSteps && m.taskStatus === 'running'
-                  )
-                  const activeThinkingMsg = isCurrentLoading
-                    ? [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking)
-                    : null
 
-                  return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
-                    if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
-                      return null
-                    }
-                    const { cleanContent } = filterMessagePrefixes(msg.content)
-                    return (
-                      <ChatList
-                        key={
-                          msg.id
-                            ? `${msg.id}-${idx}`
-                            : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
-                        }
-                        id={msg.id || msg.timestamp || msg.created_at}
-                        lastCompactedMessageId={lastCompactedMessageId}
-                        isCompacting={msg.isCompacting}
-                        compactProgress={msg.compactProgress}
-                        role={msg.role}
-                        content={cleanContent}
-                        reasoning={msg.reasoning}
-                        isThinking={msg.isThinking}
-                        isSearching={msg.isSearching}
-                        isSummarizing={msg.isSummarizing}
-                        isSearchingMusic={msg.isSearchingMusic}
-                        sources={msg.sources}
-                        executedTools={msg.executedTools}
-                        isMemorySaved={msg.isMemorySaved}
-                        isMemoryUpdated={msg.isMemoryUpdated}
-                        isMemoryDeleted={msg.isMemoryDeleted}
-                        timestamp={msg.timestamp}
-                        mood={msg.mood}
-                        source={msg.source}
-                        sender={msg.sender}
-                        isPlanSteps={msg.isPlanSteps}
-                        plan={msg.plan}
-                        currentStep={msg.currentStep}
-                        taskId={msg.taskId}
-                        taskTitle={msg.taskTitle}
-                        taskObjective={msg.taskObjective}
-                        taskStatus={msg.taskStatus}
-                        artifactRoot={msg.artifactRoot}
-                        activeLiveTools={
-                          hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.executedTools : null
-                        }
-                        activeThinkingContent={
-                          hasActivePlan && msg.isPlanSteps ? activeThinkingMsg?.content : null
-                        }
-                        onStop={handleStopSession}
-                        isApproval={msg.isApproval}
-                        approvalId={msg.approvalId}
-                        approvalTool={msg.tool}
-                        approvalQuery={msg.query}
-                        approvalStatus={msg.status}
-                      />
-                    )
-                  })
-                })()
-              )}
-              <div ref={messagesEndRef} className="h-2" />
-            </div>
-          </div>
+                <div className="flex items-center gap-2 pointer-events-auto mr-28"></div>
+              </div>
 
-          {/* Bottom Input Area */}
-          <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
-            <div className="max-w-6xl mx-auto w-full">
-              <InputBar
-                sessionId={String(activeSessionId)}
-                inline={true}
-                onSubmit={handleSendMessage}
-                isLoading={isCurrentLoading}
-                isRecording={isRecording}
-                isProcessing={isProcessing}
-                audioIntensity={audioIntensity}
-                onStartRecord={startRecording}
-                onStopRecord={stopRecording}
-                onStop={handleStopSession}
-                source={inputSource || 'pc'}
-                workspaceRoot={activeSessionObj?.workspaceRoot}
-                onSelectWorkspace={handleSelectSessionWorkspace}
-                onManualCompact={handleManualCompaction}
-              />
+              {/* Messages Stream Container */}
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
+              >
+                <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col space-y-8">
+                  {currentDisplayMessages.length > visibleMessageCount && (
+                    <div className="flex justify-center py-2">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleMessageCount((prev) => prev + 30)}
+                        className="btn btn-xs btn-ghost text-[11px] text-white/50 hover:text-white border border-white/10 rounded-full px-4 normal-case cursor-pointer"
+                      >
+                        Muat pesan sebelumnya ({currentDisplayMessages.length - visibleMessageCount}{' '}
+                        pesan lagi)
+                      </button>
+                    </div>
+                  )}
+
+                  {currentDisplayMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4 my-auto">
+                      <img src="/icon-256.png" alt="icon" className="size-30" />
+                      <div className="max-w-lg space-y-1">
+                        <h4 className="text-xl font-bold text-white">
+                          Selamat Datang di Mark Agent
+                        </h4>
+                        <p className="text-lg text-white/50">
+                          Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    (() => {
+                      const hasActivePlan = (currentDisplayMessages || []).some(
+                        (m) => m.isPlanSteps && m.taskStatus === 'running'
+                      )
+                      const activeThinkingMsg =
+                        [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking) ||
+                        null
+
+                      return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
+                        if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
+                          return null
+                        }
+                        const { cleanContent } = filterMessagePrefixes(msg.content)
+                        return (
+                          <ChatList
+                            key={
+                              msg.id
+                                ? `${msg.id}-${idx}`
+                                : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
+                            }
+                            id={msg.id || msg.timestamp || msg.created_at}
+                            lastCompactedMessageId={lastCompactedMessageId}
+                            isCompacting={msg.isCompacting}
+                            compactProgress={msg.compactProgress}
+                            role={msg.role}
+                            content={cleanContent}
+                            reasoning={msg.reasoning}
+                            isThinking={msg.isThinking}
+                            isSearching={msg.isSearching}
+                            isSummarizing={msg.isSummarizing}
+                            isSearchingMusic={msg.isSearchingMusic}
+                            sources={msg.sources}
+                            executedTools={msg.executedTools}
+                            isMemorySaved={msg.isMemorySaved}
+                            isMemoryUpdated={msg.isMemoryUpdated}
+                            isMemoryDeleted={msg.isMemoryDeleted}
+                            timestamp={msg.timestamp}
+                            mood={msg.mood}
+                            source={msg.source}
+                            sender={msg.sender}
+                            isPlanSteps={msg.isPlanSteps}
+                            plan={msg.plan}
+                            currentStep={msg.currentStep}
+                            taskId={msg.taskId}
+                            taskTitle={msg.taskTitle}
+                            taskObjective={msg.taskObjective}
+                            taskStatus={msg.taskStatus}
+                            artifactRoot={msg.artifactRoot}
+                            activeLiveTools={
+                              hasActivePlan && msg.isPlanSteps
+                                ? activeThinkingMsg?.executedTools || null
+                                : null
+                            }
+                            activeThinkingContent={
+                              hasActivePlan && msg.isPlanSteps
+                                ? (activeThinkingMsg?.reasoning
+                                    ? activeThinkingMsg.reasoning
+                                        .split('\n')
+                                        .map((s) => s.trim())
+                                        .filter(Boolean)
+                                        .pop()
+                                    : null) ||
+                                  activeThinkingMsg?.content ||
+                                  null
+                                : null
+                            }
+                            onStop={handleStopSession}
+                            isApproval={msg.isApproval}
+                            approvalId={msg.approvalId}
+                            approvalTool={msg.tool}
+                            approvalQuery={msg.query}
+                            approvalStatus={msg.status}
+                          />
+                        )
+                      })
+                    })()
+                  )}
+                  <div ref={messagesEndRef} className="h-2" />
+                </div>
+              </div>
+
+              {/* Bottom Input Area */}
+              <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
+                <div className="max-w-6xl mx-auto w-full h-full">
+                  <InputBar
+                    sessionId={String(activeSessionId)}
+                    inline={true}
+                    onSubmit={handleSendMessage}
+                    isLoading={isCurrentLoading}
+                    isRecording={isRecording}
+                    isProcessing={isProcessing}
+                    audioIntensity={audioIntensity}
+                    onStartRecord={startRecording}
+                    onStopRecord={stopRecording}
+                    onStop={handleStopSession}
+                    source={inputSource || 'pc'}
+                    workspaceRoot={activeSessionWorkspace}
+                    onSelectWorkspace={handleSelectSessionWorkspace}
+                    onManualCompact={handleManualCompaction}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
       <ModalComponent />

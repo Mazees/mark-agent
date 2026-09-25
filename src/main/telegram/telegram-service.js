@@ -497,38 +497,161 @@ export const startTelegramBot = async (token) => {
   }
 }
 
+export const resolveTelegramChatIds = (chatId = null) => {
+  const cleanId = String(chatId || '').trim()
+  if (cleanId && /^-?\d+$/.test(cleanId)) {
+    return [cleanId]
+  }
+
+  const cleanUser = cleanId.replace(/^@/, '').toLowerCase()
+  if (cleanUser && usernameToChatIdMap.has(cleanUser)) {
+    return [usernameToChatIdMap.get(cleanUser)]
+  }
+
+  const config = getTelegramConfig()
+  const adminInputs = (config.tgAdminIds || '')
+    .split(',')
+    .map((id) => id.trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean)
+
+  const targetChatIds = new Set(adminChatIdsSet)
+  for (const input of adminInputs) {
+    if (/^-?\d+$/.test(input)) {
+      targetChatIds.add(input)
+    } else if (usernameToChatIdMap.has(input)) {
+      targetChatIds.add(usernameToChatIdMap.get(input))
+    }
+  }
+
+  return Array.from(targetChatIds)
+}
+
 export const sendTelegramMessage = async (chatId, text) => {
   if (!bot || currentStatus !== 'connected') {
     return { success: false, error: 'Telegram Bot belum terhubung.' }
   }
-  try {
-    const htmlText = formatMarkdownToTelegramHTML(text)
-    await bot.telegram.sendMessage(chatId, htmlText, { parse_mode: 'HTML' })
-    return { success: true }
-  } catch (err) {
+  const targets = resolveTelegramChatIds(chatId)
+  if (targets.length === 0) {
+    return { success: false, error: 'Tidak ada ID chat tujuan atau admin Telegram yang terdaftar.' }
+  }
+
+  let lastError = null
+  let successCount = 0
+  const htmlText = formatMarkdownToTelegramHTML(text)
+
+  for (const target of targets) {
     try {
-      await bot.telegram.sendMessage(chatId, text)
-      return { success: true }
-    } catch (fallbackErr) {
-      return { success: false, error: fallbackErr.message }
+      await bot.telegram.sendMessage(target, htmlText, { parse_mode: 'HTML' })
+      successCount++
+    } catch {
+      try {
+        await bot.telegram.sendMessage(target, text)
+        successCount++
+      } catch (fallbackErr) {
+        lastError = fallbackErr.message
+      }
     }
   }
+
+  return successCount > 0
+    ? { success: true, targets }
+    : { success: false, error: lastError || 'Gagal mengirim pesan Telegram.' }
 }
 
-export const sendTelegramFile = async (chatId, filePath, caption = '') => {
+export const sendTelegramFile = async (chatId, filePathOrData, caption = '', options = {}) => {
   if (!bot || currentStatus !== 'connected') {
     return { success: false, error: 'Telegram Bot belum terhubung.' }
   }
-  if (!fs.existsSync(filePath)) {
-    return { success: false, error: `File tidak ditemukan: ${filePath}` }
+
+  const targets = resolveTelegramChatIds(chatId)
+  if (targets.length === 0) {
+    return { success: false, error: 'Tidak ada target Telegram yang terdaftar atau valid.' }
   }
-  try {
-    const fileStream = fs.createReadStream(filePath)
-    await bot.telegram.sendDocument(chatId, { source: fileStream }, { caption })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: err.message }
+
+  let fileBuffer = null
+  let fileName = 'file'
+  let isImage = false
+
+  const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
+
+  if (
+    typeof filePathOrData === 'string' &&
+    (filePathOrData.startsWith('data:') ||
+      (filePathOrData.length > 500 && !fs.existsSync(filePathOrData)))
+  ) {
+    const cleanBase64 = filePathOrData.replace(/^data:[^;]+;base64,/, '')
+    fileBuffer = Buffer.from(cleanBase64, 'base64')
+    fileName = options.filename || `image-${Date.now()}.png`
+    isImage = true
+  } else if (typeof filePathOrData === 'string' && fs.existsSync(filePathOrData)) {
+    const rawPath = filePathOrData.trim()
+    fileName = path.basename(rawPath)
+    const ext = path.extname(rawPath).toLowerCase()
+    isImage = IMAGE_EXTS.includes(ext)
+
+    const rawBuf = fs.readFileSync(rawPath)
+    const previewStr = rawBuf.slice(0, 100).toString('utf8')
+    if (previewStr.startsWith('data:image/') || previewStr.startsWith('data:application/')) {
+      const cleanBase64 = rawBuf
+        .toString('utf8')
+        .replace(/^data:[^;]+;base64,/, '')
+        .trim()
+      fileBuffer = Buffer.from(cleanBase64, 'base64')
+    } else {
+      fileBuffer = rawBuf
+    }
+  } else if (Buffer.isBuffer(filePathOrData)) {
+    fileBuffer = filePathOrData
+    fileName = options.filename || `file-${Date.now()}.png`
+    isImage =
+      options.type === 'photo' || IMAGE_EXTS.some((ext) => fileName.toLowerCase().endsWith(ext))
+  } else {
+    return { success: false, error: `Berkas atau data tidak ditemukan: ${filePathOrData}` }
   }
+
+  if (options.type === 'photo' || options.type === 'image') {
+    isImage = true
+  } else if (options.type === 'file' || options.type === 'document') {
+    isImage = false
+  }
+
+  let successCount = 0
+  let lastError = null
+
+  for (const target of targets) {
+    try {
+      if (isImage) {
+        try {
+          await bot.telegram.sendPhoto(
+            target,
+            { source: fileBuffer, filename: fileName },
+            caption ? { caption } : undefined
+          )
+          successCount++
+          continue
+        } catch (photoErr) {
+          console.warn(
+            `[Telegram] sendPhoto gagal ke ${target}, fallback ke sendDocument:`,
+            photoErr.message
+          )
+        }
+      }
+
+      await bot.telegram.sendDocument(
+        target,
+        { source: fileBuffer, filename: fileName },
+        caption ? { caption } : undefined
+      )
+      successCount++
+    } catch (err) {
+      console.error(`[Telegram] Gagal kirim berkas ke ${target}:`, err.message)
+      lastError = err.message
+    }
+  }
+
+  return successCount > 0
+    ? { success: true, targets }
+    : { success: false, error: lastError || 'Gagal mengirim berkas ke Telegram.' }
 }
 
 export const sendTelegramScreenshot = async (chatId = null) => {
@@ -539,27 +662,7 @@ export const sendTelegramScreenshot = async (chatId = null) => {
     const { captureDesktopScreenshotsBase64 } = await import('../../server/tools/screen-service.js')
     const base64List = await captureDesktopScreenshotsBase64()
 
-    const targets = []
-    if (chatId) {
-      targets.push(String(chatId))
-    } else {
-      const config = getTelegramConfig()
-      const adminInputs = (config.tgAdminIds || '')
-        .split(',')
-        .map((id) => id.trim().toLowerCase().replace(/^@/, ''))
-        .filter(Boolean)
-
-      const targetChatIds = new Set(adminChatIdsSet)
-      for (const input of adminInputs) {
-        if (/^\d+$/.test(input)) {
-          targetChatIds.add(input)
-        } else if (usernameToChatIdMap.has(input)) {
-          targetChatIds.add(usernameToChatIdMap.get(input))
-        }
-      }
-      targets.push(...Array.from(targetChatIds))
-    }
-
+    const targets = resolveTelegramChatIds(chatId)
     if (targets.length === 0) {
       return { success: false, error: 'Tidak ada target admin Telegram yang terdaftar.' }
     }

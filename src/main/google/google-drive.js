@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { google } from 'googleapis'
 import { getAuthClient } from './google-service.js'
 
@@ -85,14 +87,49 @@ export async function readFile(clientId, clientSecret, fileId) {
 }
 
 /**
- * gdrive-upload: Upload text as a new file (simplified for AI).
+ * gdrive-upload: Upload local file to Google Drive.
  */
-export async function uploadFile(clientId, clientSecret, name, content, mimeType = 'text/plain') {
+export async function uploadFile(clientId, clientSecret, filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Berkas tidak ditemukan: ${filePath}`)
+  }
   const drive = await getDriveApi(clientId, clientSecret)
+  const name = path.basename(filePath)
+  const ext = path.extname(filePath).toLowerCase()
+  const mimeMap = {
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.md': 'text/markdown',
+    '.json': 'application/json',
+    '.csv': 'text/csv',
+    '.html': 'text/html',
+    '.htm': 'text/html',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.zip': 'application/zip',
+    '.tar': 'application/x-tar',
+    '.gz': 'application/gzip',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.mp4': 'video/mp4',
+    '.mkv': 'video/x-matroska'
+  }
+  const mimeType = mimeMap[ext] || 'application/octet-stream'
+
   const res = await drive.files.create({
     requestBody: { name, mimeType },
-    media: { mimeType, body: content },
-    fields: 'id, name, webViewLink'
+    media: { mimeType, body: fs.createReadStream(filePath) },
+    fields: 'id, name, mimeType, webViewLink, size'
   })
   return res.data
 }
@@ -184,5 +221,43 @@ export async function getDriveInfo(clientId, clientSecret) {
     usagePercentage: limit > 0 ? ((usage / limit) * 100).toFixed(1) + '%' : 'N/A',
     driveUsage: formatBytes(usageInDrive),
     trashUsage: formatBytes(usageInDriveTrash)
+  }
+}
+
+/**
+ * gdrive-share: Share file or change file permission (e.g. public anyone reader, or specific email).
+ */
+export async function shareFile(
+  clientId,
+  clientSecret,
+  fileId,
+  role = 'reader',
+  type = 'anyone',
+  emailAddress = null
+) {
+  const drive = await getDriveApi(clientId, clientSecret)
+  const permission = {
+    role,
+    type
+  }
+  if (emailAddress && (type === 'user' || type === 'group')) {
+    permission.emailAddress = emailAddress
+  }
+
+  const permRes = await drive.permissions.create({
+    fileId,
+    requestBody: permission,
+    fields: 'id, type, role, emailAddress'
+  })
+
+  const fileRes = await drive.files.get({
+    fileId,
+    fields: 'id, name, webViewLink'
+  })
+
+  return {
+    permission: permRes.data,
+    name: fileRes.data.name,
+    webViewLink: fileRes.data.webViewLink
   }
 }

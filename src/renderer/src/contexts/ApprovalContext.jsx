@@ -322,23 +322,6 @@ export const ApprovalProvider = ({ children }) => {
         }
         approvalRef.current = dataObj
         setApprovalData(dataObj)
-
-        // Jika dipanggil dari sesi percakapan, tambahkan ApprovalBubble ke riwayat chat
-        if (typeof meta.targetSetChatData === 'function') {
-          const approvalMsg = {
-            id: approvalId,
-            role: 'ai',
-            isApproval: true,
-            approvalId,
-            tool,
-            content: message,
-            message,
-            query,
-            status: 'pending',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-          meta.targetSetChatData((prev) => [...(prev || []), approvalMsg])
-        }
       })
     },
     [checkIsAlwaysAllowed, checkIsSessionAllowed]

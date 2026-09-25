@@ -50,7 +50,7 @@ const APPROVAL_REQUIRED_TOOLS = new Set([
   'gdrive-create',
   'gdrive-move',
   'gdrive-copy',
-  'gcalendar-create',
+  'gdrive-share',
   'gcalendar-delete',
   'gmail-send',
   'browser-download'

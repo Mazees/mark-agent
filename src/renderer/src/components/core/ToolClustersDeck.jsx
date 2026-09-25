@@ -6,7 +6,7 @@ import { webApi } from '../../api/web-bridge'
 
 /**
  * ToolClustersDeck Component
- * Docked Left Panel di MARK V5 yang merender seluruh kluster tools otonom,
+ * Docked Left Panel di MARK yang merender seluruh kluster tools otonom,
  * telemetry proses aktif, dan daftar custom plugins yang tersinkronisasi secara real-time.
  */
 const ToolClustersDeck = ({ activeProcesses = [], dismissProcess, className = '' }) => {

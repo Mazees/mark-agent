@@ -1,3 +1,4 @@
+import fs from 'fs'
 import {
   sendTelegramMessage,
   sendTelegramFile,
@@ -10,28 +11,62 @@ export const telegramTools = {
     handler: async (args) => {
       try {
         let chatId = ''
-        let type = 'text'
+        let type = 'auto'
         let content = ''
+        let caption = ''
 
         if (typeof args === 'object' && args !== null) {
           chatId = String(args.chat_id || args.chatId || '').trim()
-          type = String(args.type || 'text')
+          type = String(args.type || 'auto')
             .trim()
             .toLowerCase()
           content = args.content ?? ''
+          caption = String(args.caption || args.text || '').trim()
         } else {
-          const parts = String(args || '').split(/\|+/)
-          if (parts.length < 2) return { success: false, error: 'Format: chatId||type||content' }
-          chatId = parts[0].trim()
-          type = parts[1].trim().toLowerCase()
-          content = parts.slice(2).join('||').trim()
+          const rawStr = String(args || '').trim()
+          const parts = rawStr.split(/\|+/)
+          if (parts.length === 1) {
+            content = parts[0].trim()
+          } else if (parts.length === 2) {
+            if (['text', 'file', 'photo', 'image'].includes(parts[0].trim().toLowerCase())) {
+              type = parts[0].trim().toLowerCase()
+              content = parts[1].trim()
+            } else {
+              chatId = parts[0].trim()
+              content = parts[1].trim()
+            }
+          } else {
+            chatId = parts[0].trim()
+            type = parts[1].trim().toLowerCase()
+            content = parts.slice(2).join('||').trim()
+          }
         }
 
-        if (type === 'file') {
-          const result = await sendTelegramFile(chatId, content)
+        // Auto-detect type jika 'auto'
+        if (type === 'auto') {
+          const cleanContent = typeof content === 'string' ? content.trim() : ''
+          if (
+            cleanContent.startsWith('data:') ||
+            fs.existsSync(cleanContent) ||
+            /\.(png|jpe?g|webp|gif|bmp|pdf|docx?|xlsx?|txt|zip)$/i.test(cleanContent)
+          ) {
+            type =
+              /\.(png|jpe?g|webp|gif|bmp)$/i.test(cleanContent) ||
+              cleanContent.startsWith('data:image/')
+                ? 'photo'
+                : 'file'
+          } else {
+            type = 'text'
+          }
+        }
+
+        if (type === 'file' || type === 'photo' || type === 'image') {
+          const result = await sendTelegramFile(chatId, content, caption, { type })
           return {
             success: result.success,
-            data: result.success ? `Berhasil mengirim file ke Telegram.` : `Gagal: ${result.error}`
+            data: result.success
+              ? `Berhasil mengirim ${type === 'photo' ? 'gambar/foto' : 'berkas'} ke Telegram.`
+              : `Gagal: ${result.error}`
           }
         } else {
           const result = await sendTelegramMessage(chatId, content)

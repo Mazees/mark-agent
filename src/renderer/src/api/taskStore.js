@@ -193,7 +193,9 @@ export async function startAgentTaskStep(taskId, stepId) {
   const timestamp = now()
   return db.transaction('rw', db.agentTasks, db.agentTaskSteps, async () => {
     const step = await db.agentTaskSteps.get(stepId)
-    if (!step || step.taskId !== taskId) throw new Error('Task step tidak ditemukan')
+    const currentTaskId = step?.taskId || step?.task_id
+    if (!step || (currentTaskId && currentTaskId !== taskId))
+      throw new Error('Task step tidak ditemukan')
     await db.agentTaskSteps.update(stepId, {
       status: 'running',
       attempts: (step.attempts || 0) + 1,
@@ -204,7 +206,7 @@ export async function startAgentTaskStep(taskId, stepId) {
     await db.agentTasks.update(taskId, {
       status: 'running',
       activeStepId: stepId,
-      currentStepIndex: step.index,
+      currentStepIndex: step.stepIndex ?? step.step_index ?? step.index ?? 0,
       updatedAt: timestamp
     })
     return db.agentTaskSteps.get(stepId)
@@ -217,7 +219,9 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
   return db.transaction('rw', db.agentTasks, db.agentTaskSteps, async () => {
     const step = await db.agentTaskSteps.get(stepId)
     const task = await db.agentTasks.get(taskId)
-    if (!step || step.taskId !== taskId || !task) throw new Error('Task checkpoint tidak ditemukan')
+    const currentTaskId = step?.taskId || step?.task_id
+    if (!step || (currentTaskId && currentTaskId !== taskId) || !task)
+      throw new Error('Task checkpoint tidak ditemukan')
     if (checkpoint.status) assertStepStatus(checkpoint.status)
     await db.agentTaskSteps.update(stepId, {
       ...checkpoint,
@@ -228,8 +232,21 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
     })
     const taskChanges = { updatedAt: timestamp }
     if (checkpoint.status === 'completed') {
-      const allSteps = await db.agentTaskSteps.where('taskId').equals(taskId).toArray()
-      const next = allSteps
+      let allSteps = []
+      try {
+        allSteps = await db.agentTaskSteps.where('taskId').equals(taskId).toArray()
+      } catch (err) {
+        void err
+      }
+      if (!allSteps || allSteps.length === 0) {
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/steps`).then((r) => r.json())
+          if (res?.data) allSteps = res.data
+        } catch (e) {
+          void e
+        }
+      }
+      const next = (allSteps || [])
         .filter((item) => item.id !== stepId && ['pending', 'needs_revision'].includes(item.status))
         .sort(
           (a, b) =>
@@ -237,11 +254,20 @@ export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
             (b.stepIndex ?? b.step_index ?? b.index ?? 0)
         )[0]
       taskChanges.activeStepId = next?.id || null
+      taskChanges.active_step_id = next?.id || null
       taskChanges.currentStepIndex =
-        next?.stepIndex ?? next?.step_index ?? next?.index ?? step.stepIndex ?? step.index ?? 0
+        next?.stepIndex ??
+        next?.step_index ??
+        next?.index ??
+        step.stepIndex ??
+        step.step_index ??
+        step.index ??
+        0
       if (!next) {
         taskChanges.status = 'completed'
         taskChanges.completedAt = timestamp
+        taskChanges.activeStepId = null
+        taskChanges.active_step_id = null
       }
     }
     await db.agentTasks.update(taskId, taskChanges)

@@ -3,6 +3,7 @@
  * Helper murni untuk parsing dan transformasi teks pada ChatList
  * Memisahkan pemrosesan regex & parsing XML dari siklus render React
  */
+import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 /**
  * Parsing teks pesan user: bersihkan instruksi internal skill dan ambil tag skill
@@ -87,11 +88,8 @@ export function parseAiContent(content) {
     return `__CODE_BLOCK_${codeBlocks.length - 1}__`
   })
 
-  // Bersihkan tag mood (<mood:value> atau fallback riwayat [mood:value])
-  maskedContent = maskedContent.replace(
-    /(?:<mood:[a-zA-Z0-9_-]+>|\[mood:[a-zA-Z0-9_-]+\])\s*/gi,
-    ''
-  )
+  // Bersihkan tag kontrol (<mark ... />, legacy mood)
+  maskedContent = stripMarkTags(maskedContent)
 
   let elicitationGroup = null
 

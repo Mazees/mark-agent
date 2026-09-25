@@ -106,37 +106,36 @@ sequenceDiagram
 
 ## 4. Context Management Engine (`contextManager.js`)
 
-Pada sesi percakapan yang panjang atau saat agent menjalankan banyak tool yang menghasilkan ribuan baris teks, ukuran konteks dapat melebihi batas jendela konteks model LLM. MARK menerapkan **Context Manager Engine** di [`src/renderer/src/api/ai/contextManager.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/contextManager.js).
+Pada sesi percakapan yang panjang atau saat agent menjalankan banyak tool yang menghasilkan ribuan baris teks, ukuran konteks dapat melebihi batas jendela konteks model LLM. MARK menerapkan **Context Manager Engine** presisi berbasis token di [`src/renderer/src/api/ai/contextManager.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/contextManager.js).
 
-### Parameter & Batas Karakter:
+### Parameter & Batas Token (256K Tokens):
 
-- `MAX_CONTEXT_CHARS = 525000`: Batas global (~131.000 token ekuivalen untuk model berkapasitas 128k/200k konteks).
-- `GATEWAY_HYGIENE_THRESHOLD = 0.85`: Jaring pengaman pra-turn pada 85% kapasitas untuk menangkap backlog percakapan besar sebelum pesan diproses.
-- `IN_LOOP_COMPACT_THRESHOLD = 0.50`: Ambang pemicu kompresor in-loop ReAct pada 50% kapasitas di setiap langkah eksekusi tool.
+- `MAX_CONTEXT_TOKENS = 256000`: Batas global 256K tokens (menggunakan tokenizer BPE lokal via `gpt-tokenizer` serta adopsi langsung objek `usage` dari server API).
+- `GATEWAY_HYGIENE_THRESHOLD = 0.85`: Jaring pengaman pra-turn pada 85% kapasitas (~217.6K tokens) untuk menangkap backlog percakapan besar sebelum pesan diproses.
+- `IN_LOOP_COMPACT_THRESHOLD = 0.50`: Ambang pemicu kompresor in-loop ReAct pada 50% kapasitas (~128K tokens) di setiap langkah eksekusi tool.
 - `OLD_TOOL_PRUNE_CHAR_LIMIT = 200`: Ambang batas karakter output tool lama yang langsung dipangkas secara $O(n)$.
 - `CLEARED_TOOL_PLACEHOLDER = '[Old tool output cleared to save context space]'`: Penanda stub pemangkasan hasil tool lama.
 
-### Normalisasi Konten Multimodal (Pencegahan Token Blowout):
+### Skema Hibrida & Zero-Recalculation DB Caching:
 
-Gambar Base64 berukuran ratusan ribu karakter seringkali membakar habis jendela konteks. MARK menerapkan normalisasi bobot pada `calculateMessageChars`:
-
-- Teks: Dihitung panjang karakter asli (`text.length`).
-- Gambar Base64: Dinormalisasi menjadi bobot tetap **2.000 karakter ekuivalen** (setara ~250–500 token LLM vision riil), mengabaikan ukuran string Base64 mentah.
-
-### 2 Tahapan Pemadatan Konteks (_Compaction Pipeline_):
+1. **Adopsi Usage Server Resmi**: Jika provider menyediakan metadata `usage` (`prompt_tokens`, `completion_tokens`, `total_tokens` dari OpenAI, Groq, LM Studio, Cerebras), MARK langsung mengadopsi angka resmi tersebut tanpa perhitungan ulang tokenizer.
+2. **Baseline O(1) Sesi**: Fungsi `calculateSessionTokens` mengambil nilai `usage.total_tokens` asisten terakhir sebagai baseline riwayat dan hanya menghitung delta token pesan baru setelahnya.
+3. **Persistensi SQLite**: Objek `usage` dan nilai `tokens` per-pesan disimpan langsung ke tabel `sessions` dan `session_compact` di SQLite (`mark.db`), sehingga riwayat masa lalu tidak pernah ditokenisasi ulang saat aplikasi dibuka kembali.
+4. **Fallback Presisi `gpt-tokenizer`**: Untuk provider berbasis Web RPC tanpa metadata usage (DeepSeek Web & Gemini Web) serta estimasi real-time input bar, MARK menjalankan BPE tokenizer lokal murni JavaScript tanpa dependensi WASM/eksternal.
+5. **System Prompt & Multimodal Image**: System prompt ikut dihitung secara presisi ke dalam kapasitas token, dan gambar Base64 dinormalisasi menjadi estimasi tetap **~1.000 tokens** per gambar (mencegah ledakan ratusan ribu karakter Base64).
 
 ### Sistem Kompresi Ganda (Dual-Layer Architecture):
 
 Mengadopsi pola arsitektur dari **Hermes Agent (Nous Research)**, MARK menerapkan dua lapisan kompresor independen:
 
-1. **Layer 1: Gateway Session Hygiene (Pra-Turn - 85% Ambang Batas)**:
+1. **Layer 1: Gateway Session Hygiene (Pra-Turn - 85% Ambang Batas / ~217.6K Tokens)**:
    Berjalan di `useMarkPlan.js` sebelum pesan diproses oleh agen. Ini adalah jaring pengaman untuk mencegah kegagalan API ketika sesi menjadi terlalu besar di antara giliran (misalnya akumulasi percakapan ribuan pesan).
-2. **Layer 2: In-Loop Agent Context Engine (Setiap Iterasi - 50% Ambang Batas)**:
+2. **Layer 2: In-Loop Agent Context Engine (Setiap Iterasi - 50% Ambang Batas / ~128K Tokens)**:
    Berjalan di dalam perulangan ReAct `while (!isDone)` pada Lead Agent (`useMarkPlan.js`) dan `while (!abortController.signal.aborted)` pada Sub-Agent (`subagentExecutor.js`). Memastikan agen dapat menjalankan 50–500 iterasi tool tanpa mengalami pembengkakan konteks (_context ballooning_).
 
 ```mermaid
 flowchart TD
-    CheckLimit{"Total Karakter > MAX_CONTEXT_CHARS?"} -->|Tidak| Pass["Kirim Pesan Utuh Tanpa Pemadatan"]
+    CheckLimit{"Total Token > MAX_CONTEXT_TOKENS?"} -->|Tidak| Pass["Kirim Pesan Utuh Tanpa Pemadatan"]
     CheckLimit -->|Ya| Stage1["Tahap 1: Pruning Output Tool (0ms Delay, Tanpa AI)"]
     subgraph Layer1["Layer 1: Gateway Session Hygiene (Pra-Turn, 85%)"]
         A["Pesan Masuk"] --> B{"Kapasitas Sesi >= 85%?"}

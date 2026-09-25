@@ -207,17 +207,13 @@ Pengguna dapat menghentikan eksekusi agen kapan saja melalui tombol Stop di UI a
 
 ---
 
-## 7. Diagram Status Siklus ReAct
-
----
-
 ## 7. Manajemen Konteks In-Loop (Hermes Compressor Guard)
 
 Untuk mendukung siklus ReAct yang berjalan puluhan hingga ratusan langkah tanpa batas turn (`maxTurns: unconstrained`), MARK mengadopsi arsitektur **In-Loop Context Compressor** dari **Hermes Agent (Nous Research)**:
 
 1. **Evaluasi Per-Iterasi**: Pada setiap putaran siklus `while (!isDone)` tepat sebelum `fetchAI` dipanggil, sistem menjalankan `checkAndCompressInLoop`.
 2. **Fase 1 Tool Pruning**: Output dari pemanggilan tool sebelumnya yang berumur > 6 langkah dan berukuran > 200 karakter secara otomatis diganti menjadi stub `[Old tool output cleared to save context space]`. Ini memangkas 70–80% bobot memori secara instan tanpa biaya token LLM.
-3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 50% kapasitas, bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
+3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 50% kapasitas (128.000 token dari batas 256.000 token), bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
 4. **Pencegahan Context Ballooning**: Mekanisme ini menjamin bahwa model tidak akan mengalami kegagalan akibat batas konteks terlampaui (_context length exceeded_) meskipun menjalankan 500+ iterasi dalam satu tugas otonom.
 
 ---
@@ -229,7 +225,7 @@ stateDiagram-v2
     [*] --> Idle: Menunggu Masukan
     Idle --> Inisialisasi: Input Diterima (handlePlanningCommand)
     Inisialisasi --> Retrieval: Ambil Memori Vektor & Orama
-    Retrieval --> Compaction: Evaluasi Batas Karakter Konteks
+    Retrieval --> Compaction: Evaluasi Batas Token Konteks
     Compaction --> Inferensi: Panggil fetchAI dengan Tools
     Retrieval --> GatewayHygiene: Cek Kapasitas Sesi (>= 85%)
     GatewayHygiene --> Inferensi: Masuk ReAct Loop
@@ -270,17 +266,50 @@ stateDiagram-v2
 
 ---
 
-## 8. Ringkasan Teknis Penting
+## 9. Rotasi Sesi & Dynamic State Anchor (DeepSeek Web)
 
-## 9. Ringkasan Teknis Penting
+Pada model DeepSeek Web RPC, sesi peramban web memiliki batas kenyamanan obrolan sebelum mengalami degradasi respons atau penolakan server. MARK mengimplementasikan **Dynamic State Anchor & Auto Session Rotation**:
+
+1. **Threshold Rotasi**: Dibatasi maksimal 10 giliran turn aktif (`DEEPSEEK_WEB_MAX_TURNS_PER_SESSION = 10`).
+2. **Anchor Injection**: Tepat sebelum sesi dirotasi, sistem merangkum ringkasan status tugas yang sedang berjalan (_Dynamic State Anchor_) dan menyuntikkannya ke awal sesi baru sebagai konteks dasar.
+3. **Transparansi Pengguna**: Rotasi sesi berjalan di latar belakang tanpa memutus kelangsungan obrolan atau membatalkan ReAct loop yang sedang berjalan.
+
+---
+
+## 10. Ringkasan Teknis Penting
 
 | Parameter / Fitur           | Nilai / Kebijakan                                      | Lokasi Kode                                 |
 | :-------------------------- | :----------------------------------------------------- | :------------------------------------------ |
 | **Batas Turn (`maxTurns`)** | Tidak Terbatas (berjalan hingga selesai / dibatalkan)  | `useMarkPlan.js` line 1256                  |
-| **Batas Karakter Konteks**  | 525.000 karakter (~131.000 token)                      | `src/renderer/src/api/ai/contextManager.js` |
-| **Batas Global Konteks**    | 525.000 karakter (~131.000 token)                      | `src/renderer/src/api/ai/contextManager.js` |
-| **Gateway Hygiene Trigger** | 85% dari batas global (Pra-Turn Safety Net)            | `useMarkPlan.js` line 1148                  |
-| **In-Loop Compact Trigger** | 50% dari batas global (Per-Iteration Guard)            | `src/renderer/src/api/ai/contextManager.js` |
+| **Batas Global Konteks**    | 256.000 tokens (256K tokens via `gpt-tokenizer`)       | `src/renderer/src/api/ai/contextManager.js` |
+| **Gateway Hygiene Trigger** | 85% dari batas token (~217.6K tokens pra-turn safety)  | `useMarkPlan.js` line 1148                  |
+| **In-Loop Compact Trigger** | 50% dari batas token (~128K tokens in-loop guard)      | `src/renderer/src/api/ai/contextManager.js` |
+| **Rotasi Sesi DeepSeek**    | Maksimal 10 turn aktif (rotasi + State Anchor)         | `src/server/services/ai/deepseek-web.js`    |
 | **Toleransi Retry Error**   | Maksimal 50 kali kesalahan berturut-turut              | `useMarkPlan.js` line 1276                  |
 | **Streaming Engine**        | Server-Sent Events (SSE) dengan parser JSON / chunk    | `src/renderer/src/api/ai/core.js`           |
 | **Intervensi Real-time**    | Antrean non-blocking via `sessionRecord.interventions` | `useMarkPlan.js` line 165                   |
+| **Hitung Token Hibrida**    | Prioritas API `usage`, fallback BPE `gpt-tokenizer`    | `src/renderer/src/api/ai/contextManager.js` |
+| **Eksekusi Batch Tool**     | Multi-tool array per turn (`effectiveToolCalls`)       | `useMarkPlan.js` line 1754                  |
+
+---
+
+## 11. Native Parallel & Batch Tool Calling (Multi-Action Execution)
+
+Untuk meningkatkan efisiensi dan kecepatan otomasi, MARK V5 mendukung eksekusi multi-tool secara serentak dalam **satu giliran tunggal** (_Single-Turn Batching_). Pola ini mengeliminasi jeda bolak-balik inferensi API cloud yang berulang:
+
+### A. Pola Tindakan Batch yang Didukung
+
+1. **Otomasi Desktop & PC (`pc_automation`)**:
+   - Rangkaian interaksi input sekuensial yang pasti dikirim dalam satu giliran: `os-click` (fokus elemen) + `os-type` (ketik string) + `os-key` (tekan Enter/Tab).
+   - Menghilangkan latensi 3 turn terpisah (~9-12 detik) menjadi 1 turn instan (~1-2 detik).
+2. **Otomasi Peramban Web (`advanced_browser`)**:
+   - Pengisian form dan navigasi fisik: `browser-click` + `browser-type` dieksekusi secara berurutan dalam satu giliran.
+3. **Riset Web Multi-Link (`browser-fetch`)**:
+   - Setelah `browser-search` mengembalikan daftar URL relevan, agen memanggil 2-4 `browser-fetch` secara serentak untuk membaca seluruh artikel sekaligus.
+4. **Inspeksi Berkas Kode (`read-file` / `file-outline`)**:
+   - Membaca beberapa berkas komponen atau dependensi terkait dalam satu giliran.
+
+### B. Arsitektur Runtime & Parser Resilien
+
+- **OpenAI-Compatible `tool_calls` Array**: Jika model mengembalikan daftar fungsi di properti `tool_calls`, loop ReAct di [`useMarkPlan.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/hooks/agent/useMarkPlan.js) dan [`subagentExecutor.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/subagent/subagentExecutor.js) mengiterasi array `effectiveToolCalls`, mengeksekusi setiap alat melalui `executeSingleTool`, dan merekam observasi masing-masing ke `loopMessages`.
+- **Backward-Compatible Fallback Interceptor**: Jika model mengembalikan format JSON teks mentah (seperti DeepSeek Web atau Gemini Web), parser di [`src/server/services/ai/web-provider.js`](file:///d:/My%20Project/mark-project/mark/src/server/services/ai/web-provider.js) dan `useMarkPlan.js` secara otomatis memetakan format batch lama V4 (`{"action": [{"tool": ...}, ...]}`) maupun array langsung (`[{"name": ...}, ...]`) menjadi OpenAPI tool calls standar tanpa memutus siklus ReAct.

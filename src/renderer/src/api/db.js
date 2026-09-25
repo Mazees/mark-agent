@@ -130,21 +130,28 @@ class CollectionProxy {
   }
 
   where(field) {
+    const snake = field.replace(/[A-Z]/g, (l) => '_' + l.toLowerCase())
     return {
       equals: (val) => {
         return new CollectionProxy(
           this.tableProxy,
-          (item) => item[field] === val,
+          (item) => {
+            const v = item[field] !== undefined ? item[field] : item[snake]
+            return String(v) === String(val)
+          },
           this.sortField,
           this.isReverse,
           this.limitCount
         )
       },
       anyOf: (arr) => {
-        const set = new Set(arr)
+        const set = new Set((arr || []).map((v) => String(v)))
         return new CollectionProxy(
           this.tableProxy,
-          (item) => set.has(item[field]),
+          (item) => {
+            const v = item[field] !== undefined ? item[field] : item[snake]
+            return set.has(String(v))
+          },
           this.sortField,
           this.isReverse,
           this.limitCount
@@ -296,16 +303,20 @@ class TableProxy {
   }
 
   where(field) {
+    const snake = field.replace(/[A-Z]/g, (l) => '_' + l.toLowerCase())
     return {
       equals: (val) => {
         return new CollectionProxy(this, (item) => {
           const v =
-            item[field] ??
-            (field === 'subagentId'
-              ? item.subagent_id
-              : field === 'subagent_id'
-                ? item.subagentId
-                : undefined)
+            item[field] !== undefined
+              ? item[field]
+              : item[snake] !== undefined
+                ? item[snake]
+                : field === 'subagentId'
+                  ? item.subagent_id
+                  : field === 'subagent_id'
+                    ? item.subagentId
+                    : undefined
           return String(v) === String(val)
         })
       },
@@ -313,12 +324,15 @@ class TableProxy {
         const lowerVal = String(val || '').toLowerCase()
         return new CollectionProxy(this, (item) => {
           const v =
-            item[field] ??
-            (field === 'subagentId'
-              ? item.subagent_id
-              : field === 'subagent_id'
-                ? item.subagentId
-                : undefined)
+            item[field] !== undefined
+              ? item[field]
+              : item[snake] !== undefined
+                ? item[snake]
+                : field === 'subagentId'
+                  ? item.subagent_id
+                  : field === 'subagent_id'
+                    ? item.subagentId
+                    : undefined
           return String(v || '').toLowerCase() === lowerVal
         })
       },
@@ -326,12 +340,15 @@ class TableProxy {
         const set = new Set((Array.isArray(values) ? values : [values]).map((v) => String(v)))
         return new CollectionProxy(this, (item) => {
           const v =
-            item[field] ??
-            (field === 'subagentId'
-              ? item.subagent_id
-              : field === 'subagent_id'
-                ? item.subagentId
-                : undefined)
+            item[field] !== undefined
+              ? item[field]
+              : item[snake] !== undefined
+                ? item[snake]
+                : field === 'subagentId'
+                  ? item.subagent_id
+                  : field === 'subagent_id'
+                    ? item.subagentId
+                    : undefined
           return set.has(String(v))
         })
       }
@@ -532,7 +549,7 @@ export async function getChatData(sessionId = '1') {
   }
 }
 
-export async function setSessionWorkspace(sessionId, workspace) {
+export async function setSessionWorkspace(sessionId, workspaceRoot) {
   try {
     const cleanId = normalizeDbId(sessionId)
     const existing = await db.sessions.get(cleanId)
@@ -543,10 +560,16 @@ export async function setSessionWorkspace(sessionId, workspace) {
         data: []
       }),
       id: cleanId,
-      workspace,
-      workspaceRoot: workspace,
+      workspaceRoot: workspaceRoot || null,
       timestamp: Date.now()
     })
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('session-workspace-updated', {
+          detail: { sessionId: cleanId, workspaceRoot }
+        })
+      )
+    }
   } catch (error) {
     console.error(`Error setSessionWorkspace ${sessionId}:`, error)
   }
@@ -556,7 +579,7 @@ export async function getSessionWorkspace(sessionId) {
   try {
     const cleanId = normalizeDbId(sessionId)
     const session = await db.sessions.get(cleanId)
-    return session?.workspaceRoot || session?.workspace || null
+    return session?.workspaceRoot || null
   } catch (error) {
     console.error(`Error getSessionWorkspace ${sessionId}:`, error)
     return null

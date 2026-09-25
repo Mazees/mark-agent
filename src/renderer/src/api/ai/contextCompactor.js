@@ -51,14 +51,25 @@ export const buildOptimizedChatSession = (sourceChatData) => {
       if (item.executedTools && item.executedTools.length > 0) {
         toolLog = item.executedTools
           .map((t) => {
+            if (t.type === 'intervention') {
+              return `  * [Intervensi Pengguna]: "${t.text || ''}"`
+            }
+            if (t.type === 'narration' || (!t.tool && t.text)) {
+              return `  * [Catatan Narasi AI]: "${t.text || ''}"`
+            }
             const res = t.fullResult || t.resultSummary || 'OK'
             return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+            return `  * [Tool: ${t.tool || t.task || 'tool'}] query: "${t.query || ''}"\n    Hasil:\n${res}`
           })
           .join('\n\n')
       }
 
       if (toolLog) {
         msgContent = `[RIWAYAT TOOL TURN INI]:\n${toolLog}\n\n[JAWABAN]:\n${msgContent}`
+      }
+
+      if (item.mood && !/^(?:<|\[)mood:/i.test(msgContent.trim())) {
+        msgContent = `<mood:${item.mood}> ${msgContent}`
       }
     }
 
@@ -95,9 +106,14 @@ export function assembleMultiTurnContext(systemPrompt, historicalTurns = [], cur
       })
     }
     if (turn.ai_text || (turn.role === 'assistant' && turn.content)) {
+      let aiContent = turn.ai_text || turn.content || ''
+      if (turn.mood && !/^(?:<|\[)mood:/i.test(aiContent.trim())) {
+        aiContent = `<mood:${turn.mood}> ${aiContent}`
+      }
       messages.push({
         role: 'assistant',
-        content: turn.ai_text || turn.content
+        content: aiContent,
+        mood: turn.mood
       })
     }
   }

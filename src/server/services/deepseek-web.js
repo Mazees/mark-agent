@@ -6,6 +6,7 @@ import https from 'https'
 import fs from 'fs'
 import path from 'path'
 import zlib from 'zlib'
+import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -25,24 +26,62 @@ const BASE_HOST = 'chat.deepseek.com'
 
 let wasmInstanceCache = null
 const activeSessionCache = new Map()
+const utilitySessionCache = new Map()
+const sessionStateMap = new Map() // sessionId -> { lastMessageId, turnCount, createdAt, lastUsedAt }
 let lastUsedToken = null
+
+export function getSessionCacheKey(token, markSessionId = '1', isSmallTask = false) {
+  const prefix = isSmallTask ? 'util_' : 'sess_'
+  return `${token}:${prefix}${markSessionId || '1'}`
+}
 
 function ensureTokenSession(token) {
   // Jika token berubah, clear session cache lama
   if (lastUsedToken !== token) {
     if (lastUsedToken) {
-      activeSessionCache.delete(lastUsedToken)
+      clearDeepSeekSession(lastUsedToken)
     }
     lastUsedToken = token
   }
 }
 
-export function clearDeepSeekSession(token = null) {
+export function clearDeepSeekSession(token = null, markSessionId = null) {
   if (token) {
-    activeSessionCache.delete(token)
+    if (markSessionId) {
+      for (const isSmall of [false, true]) {
+        const cache = isSmall ? utilitySessionCache : activeSessionCache
+        const key = getSessionCacheKey(token, markSessionId, isSmall)
+        const sId = cache.get(key)
+        if (sId) sessionStateMap.delete(sId)
+        cache.delete(key)
+      }
+    } else {
+      for (const [key, sId] of [...activeSessionCache.entries()]) {
+        if (key.startsWith(`${token}:`)) {
+          sessionStateMap.delete(sId)
+          activeSessionCache.delete(key)
+        }
+      }
+      for (const [key, sId] of [...utilitySessionCache.entries()]) {
+        if (key.startsWith(`${token}:`)) {
+          sessionStateMap.delete(sId)
+          utilitySessionCache.delete(key)
+        }
+      }
+    }
   } else {
     activeSessionCache.clear()
+    utilitySessionCache.clear()
+    sessionStateMap.clear()
   }
+}
+
+export function getSessionState(token, isSmallTask = false, markSessionId = '1') {
+  const cache = isSmallTask ? utilitySessionCache : activeSessionCache
+  const key = getSessionCacheKey(token, markSessionId, isSmallTask)
+  const sessionId = cache.get(key)
+  if (!sessionId) return null
+  return sessionStateMap.get(sessionId) || null
 }
 
 /**
@@ -148,19 +187,59 @@ function httpPostJson(path, headers, bodyObj) {
 }
 
 /**
+ * Utility HTTP GET JSON request
+ */
+function httpGetJson(path, headers) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: BASE_HOST,
+      port: 443,
+      path: path,
+      method: 'GET',
+      headers: {
+        ...headers
+      }
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', (chunk) => (data += chunk.toString()))
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data)
+          resolve(json)
+        } catch {
+          resolve(data)
+        }
+      })
+    })
+
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+/**
  * Header standar untuk menyerupai peramban web asli
  */
 function getBaseHeaders(token, userAgent = null) {
   return {
     authorization: `Bearer ${token}`,
     accept: '*/*',
+    'accept-language': 'en-US,en;q=0.9,id;q=0.8',
     'user-agent':
       userAgent ||
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
     origin: `https://${BASE_HOST}`,
     referer: `https://${BASE_HOST}/`,
-    'x-app-version': '2.0.0',
-    'x-client-version': '2.0.0',
+    'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'x-app-version': '2.0.2',
+    'x-client-version': '2.0.2',
     'x-client-platform': 'web',
     'x-client-locale': 'en_US',
     'x-client-bundle-id': 'com.deepseek.chat'
@@ -177,6 +256,201 @@ function unwrapBizData(resJson) {
   const biz = resJson.data?.biz_data
   if (!biz) throw new Error(`Envelope biz_data tidak ditemukan: ${JSON.stringify(resJson)}`)
   return biz
+}
+
+/**
+ * Utility HTTP POST multipart/form-data untuk upload berkas mentah.
+ */
+function httpPostMultipart(reqPath, headers, fields, fileField) {
+  return new Promise((resolve, reject) => {
+    const boundary = '----MarkAgentBoundary' + crypto.randomBytes(16).toString('hex')
+    const CRLF = '\r\n'
+    const chunks = []
+
+    for (const [key, value] of Object.entries(fields || {})) {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}${CRLF}` +
+            `Content-Disposition: form-data; name="${key}"${CRLF}${CRLF}` +
+            `${value}${CRLF}`
+        )
+      )
+    }
+
+    chunks.push(
+      Buffer.from(
+        `--${boundary}${CRLF}` +
+          `Content-Disposition: form-data; name="${fileField.fieldName}"; filename="${fileField.filename}"${CRLF}` +
+          `Content-Type: ${fileField.mimeType}${CRLF}${CRLF}`
+      )
+    )
+    chunks.push(fileField.buffer)
+    chunks.push(Buffer.from(CRLF))
+    chunks.push(Buffer.from(`--${boundary}--${CRLF}`))
+
+    const body = Buffer.concat(chunks)
+
+    const options = {
+      hostname: BASE_HOST,
+      port: 443,
+      path: reqPath,
+      method: 'POST',
+      headers: {
+        ...headers,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'content-length': body.length
+      }
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', (chunk) => (data += chunk.toString()))
+      res.on('end', () => {
+        try {
+          resolve({ statusCode: res.statusCode, json: JSON.parse(data) })
+        } catch {
+          resolve({ statusCode: res.statusCode, json: null, raw: data })
+        }
+      })
+    })
+
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+/**
+ * Upload gambar mentah ke DeepSeek Web RPC.
+ * Mendukung Buffer, Base64 data URL, atau path file lokal.
+ */
+export async function uploadImageFile(token, imagePathOrBuffer, filename = 'image.png') {
+  let buffer
+  if (Buffer.isBuffer(imagePathOrBuffer)) {
+    buffer = imagePathOrBuffer
+  } else if (typeof imagePathOrBuffer === 'string') {
+    if (imagePathOrBuffer.startsWith('data:')) {
+      const commaIdx = imagePathOrBuffer.indexOf(',')
+      const headerPart = imagePathOrBuffer.slice(0, commaIdx)
+      const base64Data = imagePathOrBuffer.slice(commaIdx + 1)
+      buffer = Buffer.from(base64Data, 'base64')
+      const matchMime = headerPart.match(/data:([^;]+)/)
+      if (matchMime) {
+        const ext = matchMime[1].split('/')[1] || 'png'
+        filename = `upload_${Date.now()}.${ext}`
+      }
+    } else {
+      buffer = fs.readFileSync(imagePathOrBuffer)
+      filename = path.basename(imagePathOrBuffer)
+    }
+  } else {
+    throw new Error(
+      'Format berkas gambar tidak valid (harus Buffer, Base64 data URL, atau file path).'
+    )
+  }
+
+  const ext = path.extname(filename).toLowerCase()
+  const mimeMap = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif'
+  }
+  const mimeType = mimeMap[ext] || 'image/png'
+  const powHeader = await generatePowHeader(token, '/api/v0/file/upload_file')
+  const headers = {
+    ...getBaseHeaders(token),
+    'x-ds-pow-response': powHeader
+  }
+
+  const { statusCode, json, raw } = await httpPostMultipart(
+    '/api/v0/file/upload_file',
+    headers,
+    {},
+    { fieldName: 'file', filename, mimeType, buffer }
+  )
+
+  if (statusCode !== 200 || !json || json.code !== 0) {
+    throw new Error(
+      `Upload gambar ke DeepSeek gagal (${statusCode}): ${JSON.stringify(json || raw)}`
+    )
+  }
+
+  const biz = unwrapBizData(json)
+  const fileId = biz.file_id || biz.id || biz.file?.id
+  if (!fileId) {
+    throw new Error(`Tidak menemukan file_id pada respon upload: ${JSON.stringify(biz)}`)
+  }
+  return { fileId, raw: biz }
+}
+
+/**
+ * Fork file ke target task 'vision' jika diperlukan oleh DeepSeek.
+ * Menggunakan fallback ke file_id awal bila endpoint fork gagal/tidak dibutuhkan.
+ */
+export async function forkFileToVision(token, fileId) {
+  const headers = getBaseHeaders(token)
+  try {
+    const res = await httpPostJson('/api/v0/file/fork_file_task', headers, {
+      file_id: fileId,
+      target_type: 'vision'
+    })
+    if (res?.code === 0 && res.data?.biz_data) {
+      const biz = res.data.biz_data
+      return biz.file_id || biz.id || fileId
+    }
+    return fileId
+  } catch (err) {
+    console.warn('[DeepSeek-Web] forkFileToVision fallback ke fileId awal:', err?.message || err)
+    return fileId
+  }
+}
+
+/**
+ * Polling status parsing/readiness file di DeepSeek Web via /api/v0/file/fetch_files.
+ */
+export async function waitForFileReady(
+  token,
+  fileId,
+  { maxAttempts = 30, intervalMs = 1000, settleMs = 1200 } = {}
+) {
+  const headers = getBaseHeaders(token)
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await httpGetJson(
+        `/api/v0/file/fetch_files?file_ids=${encodeURIComponent(fileId)}`,
+        headers
+      )
+      const biz = res?.data?.biz_data
+      let file = null
+      if (Array.isArray(biz)) {
+        file = biz.find((f) => f.id === fileId || f.file_id === fileId) || biz[0]
+      } else if (Array.isArray(biz?.files)) {
+        file = biz.files.find((f) => f.id === fileId || f.file_id === fileId) || biz.files[0]
+      } else {
+        file = biz
+      }
+
+      const status = String(file?.status || '').toUpperCase()
+      if (['SUCCESS', 'READY', 'DONE', 'COMPLETED', 'FINISHED', 'OK'].includes(status)) {
+        if (settleMs > 0) {
+          await new Promise((r) => setTimeout(r, settleMs))
+        }
+        return file
+      }
+
+      if (['FAILED', 'ERROR', 'REJECTED', 'CONTENT_EMPTY'].includes(status)) {
+        throw new Error(`Pemrosesan berkas DeepSeek gagal (status: ${status})`)
+      }
+    } catch (err) {
+      if (err.message?.includes('Pemrosesan berkas DeepSeek gagal')) {
+        throw err
+      }
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  return { id: fileId, status: 'ready_assumed' }
 }
 
 /**
@@ -231,14 +505,57 @@ async function _executeSingleDeepSeekCall(
   // Auto-clear session cache jika token berubah
   ensureTokenSession(token)
 
-  const { parentMessageId = null, onDelta = null, wasmBuffer = null } = options
+  const isSmallTask = !!options.isSmallTask
+  const targetCache = isSmallTask ? utilitySessionCache : activeSessionCache
+  const markSessionId = options.sessionId || '1'
+  const cacheKey = getSessionCacheKey(token, markSessionId, isSmallTask)
+
+  let sessionId = targetCache.get(cacheKey)
+  let sessionState = sessionId ? sessionStateMap.get(sessionId) : null
+
+  const now = Date.now()
+  const MAX_TURNS_PER_SESSION = 10
+  const MAX_IDLE_MS = 2 * 60 * 60 * 1000 // 2 jam
+
+  // Rotasi otomatis jika melebihi batas turn atau idle > 2 jam
+  if (
+    sessionId &&
+    sessionState &&
+    (sessionState.turnCount >= MAX_TURNS_PER_SESSION || now - sessionState.lastUsedAt > MAX_IDLE_MS)
+  ) {
+    console.log(
+      `[DeepSeek-Web] Merotasi sesi ${isSmallTask ? '(utility)' : `(${markSessionId})`} (turnCount: ${sessionState.turnCount}). Membuat chat session baru...`
+    )
+    targetCache.delete(cacheKey)
+    sessionStateMap.delete(sessionId)
+    sessionId = null
+    sessionState = null
+  }
 
   // Buat session baru jika tidak ada
-  let sessionId = options.sessionId || activeSessionCache.get(token)
   if (!sessionId) {
     sessionId = await createChatSession(token)
-    activeSessionCache.set(token, sessionId)
+    targetCache.set(cacheKey, sessionId)
+    sessionState = { lastMessageId: null, turnCount: 0, createdAt: now, lastUsedAt: now }
+    sessionStateMap.set(sessionId, sessionState)
+  } else if (!sessionState) {
+    sessionState = { lastMessageId: null, turnCount: 0, createdAt: now, lastUsedAt: now }
+    sessionStateMap.set(sessionId, sessionState)
   }
+
+  // Tentukan parentMessageId: prioritaskan options, jika undefined ambil dari state chaining
+  let parentMessageId = null
+  if (options.parentMessageId !== undefined) {
+    parentMessageId = options.parentMessageId
+  } else if (sessionState?.lastMessageId) {
+    parentMessageId = sessionState.lastMessageId
+  }
+
+  const { onDelta = null, wasmBuffer = null, refFileIds = [] } = options
+
+  // Jeda acak manusiawi (jitter delay 350-800ms) untuk menghindari deteksi burst
+  const jitterMs = Math.floor(Math.random() * (800 - 350 + 1)) + 350
+  await new Promise((resolve) => setTimeout(resolve, jitterMs))
 
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
   let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
@@ -248,7 +565,7 @@ async function _executeSingleDeepSeekCall(
     chat_session_id: sessionId,
     parent_message_id: parentMessageId,
     prompt: prompt,
-    ref_file_ids: [],
+    ref_file_ids: Array.isArray(refFileIds) ? refFileIds : [],
     thinking_enabled: selected.thinking,
     search_enabled: selected.search,
     action: null,
@@ -307,6 +624,7 @@ async function _executeSingleDeepSeekCall(
       let reasoningContent = ''
       let activePath = null
       let lastReceivedPayload = ''
+      let responseMessageId = null
 
       const processLine = (line) => {
         const trimmed = line.trim()
@@ -325,12 +643,29 @@ async function _executeSingleDeepSeekCall(
         try {
           const obj = JSON.parse(payload)
 
+          // Tangkap message_id respon assistant
+          if (obj.v?.response?.message_id) {
+            responseMessageId = obj.v.response.message_id
+          }
+
+          // Abaikan frame status seperti response/status: "FINISHED" atau "WIP"
+          if (
+            obj.p === 'response/status' ||
+            obj.p?.includes('status') ||
+            obj.v === 'FINISHED' ||
+            obj.v === 'WIP'
+          ) {
+            return
+          }
+
           // 0. Deteksi error resmi dari server DeepSeek
           if (obj.click_behavior !== undefined || obj.auto_resume !== undefined) {
             // Jika sudah ada content, ini bukan error - akhir stream normal
             if (fullContent) return
             // Content kosong + click_behavior = session expired
-            activeSessionCache.delete(token)
+            targetCache.delete(token)
+            targetCache.delete(cacheKey)
+            if (sessionId) sessionStateMap.delete(sessionId)
             reject(
               new Error(
                 'DeepSeek Web session expired atau tidak valid. Session di-clear, silakan coba lagi.'
@@ -345,7 +680,9 @@ async function _executeSingleDeepSeekCall(
               errMsg.toLowerCase().includes('too many') ||
               errMsg.toLowerCase().includes('terlalu sering')
             if (!isFrequent) {
-              activeSessionCache.delete(token)
+              targetCache.delete(token)
+              targetCache.delete(cacheKey)
+              if (sessionId) sessionStateMap.delete(sessionId)
             }
             reject(new Error(`DeepSeek Server Error (${obj.code}): ${errMsg}`))
             return
@@ -360,7 +697,9 @@ async function _executeSingleDeepSeekCall(
               errMsg.toLowerCase().includes('too many') ||
               errMsg.toLowerCase().includes('terlalu sering')
             if (!isFrequent) {
-              activeSessionCache.delete(token)
+              targetCache.delete(token)
+              targetCache.delete(cacheKey)
+              if (sessionId) sessionStateMap.delete(sessionId)
             }
             reject(
               new Error(
@@ -456,6 +795,11 @@ async function _executeSingleDeepSeekCall(
           processLine(buffer.trim())
         }
 
+        // Sanitasi trailing status jika ada yang lolos
+        if (fullContent) {
+          fullContent = fullContent.replace(/\s*(?:FINISHED|FINISH|DONE)\b.*$/i, '').trim()
+        }
+
         // Fallback: Jika content kosong tapi thinking terisi, gunakan thinking sebagai jawaban
         if (!fullContent && reasoningContent) {
           fullContent = reasoningContent
@@ -476,10 +820,22 @@ async function _executeSingleDeepSeekCall(
           )
           return
         }
+
+        // Simpan progress chaining sesi jika berhasil
+        if (sessionId && sessionStateMap.has(sessionId)) {
+          const state = sessionStateMap.get(sessionId)
+          if (responseMessageId) {
+            state.lastMessageId = responseMessageId
+          }
+          state.turnCount = (state.turnCount || 0) + 1
+          state.lastUsedAt = Date.now()
+        }
+
         resolve({
           text: fullContent,
           thinking: reasoningContent || null,
-          sessionId: sessionId
+          sessionId: sessionId,
+          messageId: responseMessageId || null
         })
       })
     })
@@ -521,6 +877,7 @@ export async function generateDeepSeekResponse(
       const isRetryable =
         errMsg.toLowerCase().includes('session expired') ||
         errMsg.toLowerCase().includes('tidak valid') ||
+        errMsg.toLowerCase().includes('invalid ref file id') ||
         errMsg.toLowerCase().includes('frequent') ||
         errMsg.toLowerCase().includes('too many') ||
         errMsg.toLowerCase().includes('terlalu sering') ||
@@ -536,6 +893,13 @@ export async function generateDeepSeekResponse(
         // Setiap 5 kali kegagalan berulang, reset session cache agar membuat session baru
         if (attempt % 5 === 0) {
           activeSessionCache.delete(token)
+          utilitySessionCache.delete(token)
+          const markSessionId = options.sessionId || '1'
+          const key = getSessionCacheKey(token, markSessionId, !!options.isSmallTask)
+          const targetCache = options.isSmallTask ? utilitySessionCache : activeSessionCache
+          const sId = targetCache.get(key)
+          if (sId) sessionStateMap.delete(sId)
+          targetCache.delete(key)
         }
 
         console.warn(
@@ -552,4 +916,41 @@ export async function generateDeepSeekResponse(
       throw err
     }
   }
+}
+
+/**
+ * Fungsi tingkat tinggi Vision: upload gambar -> wait ready -> generate respons chat DeepSeek.
+ *
+ * @param {string} prompt - Pertanyaan tentang gambar
+ * @param {string|Buffer} imagePathOrBuffer - Path file gambar atau Buffer
+ * @param {string} token - DeepSeek Bearer token
+ * @param {object} options - Opsi tambahan (filename, modelName, onDelta, onStatus, dll)
+ */
+export async function generateDeepSeekVisionResponse(
+  prompt,
+  imagePathOrBuffer,
+  token,
+  options = {}
+) {
+  if (!token) {
+    throw new Error('DeepSeek User Token (Bearer) dibutuhkan.')
+  }
+
+  if (typeof options.onStatus === 'function') {
+    options.onStatus('Mengupload gambar ke DeepSeek...')
+  }
+  const { fileId } = await uploadImageFile(token, imagePathOrBuffer, options.filename)
+
+  if (typeof options.onStatus === 'function') {
+    options.onStatus('Menunggu DeepSeek selesai memproses gambar...')
+  }
+  await waitForFileReady(token, fileId)
+
+  const modelName = options.modelName || 'deepseek-chat'
+  const existingRefs = Array.isArray(options.refFileIds) ? options.refFileIds : []
+
+  return generateDeepSeekResponse(prompt, modelName, token, {
+    ...options,
+    refFileIds: [...new Set([...existingRefs, fileId])]
+  })
 }

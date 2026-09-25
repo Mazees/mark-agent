@@ -1,4 +1,11 @@
 import { jsonrepair } from 'jsonrepair'
+import {
+  createMarkStreamFilter,
+  parseMarkTag,
+  stripMarkTags
+} from '../../../shared/parsers/mark-tag-parser.js'
+
+export { createMarkStreamFilter, parseMarkTag, stripMarkTags }
 
 const _getOSMeta = () =>
   'W0NSSVRJQ0FMIFJVTEVdIFlvdXIgY3JlYXRvciwgZGV2ZWxvcGVyLCBhbmQgb3duZXIgaXMgTWFkYSBQdXRyYSBBZGhhZHJpeWFudG8gKE1hemVlcykgZnJvbSBJbm'
@@ -105,71 +112,27 @@ export const sanitizeMessages = (inputMessages) => {
   return messages
 }
 
-export function createMoodStreamFilter(onToken, onMood) {
-  let isBuffering = true
-  let buffer = ''
+export function createMoodStreamFilter(onToken, onMood, onMeta) {
   let moodEmitted = false
+  const markFilter = createMarkStreamFilter({
+    onMeta: (meta) => {
+      if (!moodEmitted) {
+        onMood?.(meta.mood)
+        moodEmitted = true
+      }
+      onMeta?.(meta)
+    },
+    onChunk: (chunk) => {
+      onToken?.(chunk)
+    }
+  })
 
   const filter = (chunk) => {
-    if (!chunk) return
-
-    if (!isBuffering) {
-      onToken?.(chunk)
-      return
-    }
-
-    buffer += chunk
-
-    const trimmed = buffer.trimStart()
-    const isAngle = trimmed.startsWith('<')
-    const isBracket = trimmed.startsWith('[')
-
-    if (!isAngle && !isBracket) {
-      isBuffering = false
-      if (buffer) onToken?.(buffer)
-      buffer = ''
-      return
-    }
-
-    const closeChar = isAngle ? '>' : ']'
-    const closeIdx = buffer.indexOf(closeChar)
-    if (closeIdx !== -1) {
-      const tag = buffer.substring(0, closeIdx + 1).trim()
-      const match = tag.match(/^(?:<|\[)mood:([a-zA-Z_]+)(?:>|\])$/i)
-      if (match) {
-        if (!moodEmitted) {
-          onMood?.(match[1].toLowerCase())
-          moodEmitted = true
-        }
-        const remainder = buffer.substring(closeIdx + 1).replace(/^[\r\n\s]+/, '')
-        isBuffering = false
-        buffer = ''
-        if (remainder) {
-          onToken?.(remainder)
-        }
-        return
-      } else {
-        isBuffering = false
-        if (buffer) onToken?.(buffer)
-        buffer = ''
-        return
-      }
-    }
-
-    if (buffer.length > 30) {
-      isBuffering = false
-      if (buffer) onToken?.(buffer)
-      buffer = ''
-      return
-    }
+    markFilter.write(chunk)
   }
 
   filter.flush = () => {
-    if (isBuffering && buffer) {
-      isBuffering = false
-      onToken?.(buffer)
-      buffer = ''
-    }
+    markFilter.flush()
   }
 
   return filter

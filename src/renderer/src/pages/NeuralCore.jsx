@@ -311,6 +311,11 @@ const NeuralCore = () => {
 
   useEffect(() => {
     loadBrainData()
+    const handleRelUpdated = () => {
+      loadBrainData()
+    }
+    window.addEventListener('relationship-updated', handleRelUpdated)
+    return () => window.removeEventListener('relationship-updated', handleRelUpdated)
   }, [loadBrainData])
 
   // Resize canvas graph

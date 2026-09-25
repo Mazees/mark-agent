@@ -1,138 +1,125 @@
 /* eslint-disable react/prop-types */
-import React from 'react'
-import { CheckCircle2, XCircle, Terminal, FileCode } from 'lucide-react'
+import { useState } from 'react'
 import { useApproval, extractToolTarget } from '../../contexts/ApprovalContext'
+import FileDiffModal from './FileDiffModal'
+
+const FILE_TOOLS = ['write-file', 'replace-content', 'replace-lines', 'delete-file']
 
 export const ApprovalBubble = ({
   approvalId,
   tool = '',
   message = '',
   query = null,
-  status = 'pending',
-  timestamp = ''
+  status = 'pending'
 }) => {
   const { resolveApproval } = useApproval()
-  const isPending = status === 'pending'
+  const [showDiffModal, setShowDiffModal] = useState(false)
+
+  // Hilang seketika setelah di-acc atau ditolak
+  if (status !== 'pending') {
+    return null
+  }
+
   const targetInfo = extractToolTarget(tool, query)
+  const isFileTool = FILE_TOOLS.includes(tool)
+  const previewValue =
+    targetInfo.value ||
+    message ||
+    (typeof query === 'string' ? query : JSON.stringify(query, null, 2))
+
+  const handleDecision = (decisionType) => {
+    setShowDiffModal(false)
+    if (resolveApproval) {
+      resolveApproval(approvalId, decisionType)
+    }
+  }
 
   return (
-    <div className="w-full rounded-2xl">
-      {/* Top Banner */}
-      <div className="flex items-center justify-between px-4 py-3">
+    <div className="my-2 p-3 rounded-xl bg-base-300/50 border border-white/5 space-y-2.5 text-xs text-base-content select-text shadow-sm">
+      {/* Header persetujuan */}
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-bold text-white tracking-wide">
-            Persetujuan Eksekusi Tool
+          <span className="font-semibold text-white/90 text-xs tracking-wide">
+            Persetujuan Eksekusi
           </span>
+          {tool && (
+            <span className="bg-warning/10 text-warning px-2 py-0.5 rounded text-[11px] font-mono font-medium">
+              {tool}
+            </span>
+          )}
         </div>
-        {tool && (
-          <span className="badge badge-sm bg-black/40 text-warning border-warning/40 font-mono text-[10px] font-semibold">
-            {tool}
-          </span>
+
+        {isFileTool && (
+          <button
+            type="button"
+            onClick={() => setShowDiffModal(true)}
+            className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-mono text-xs transition-colors cursor-pointer"
+          >
+            Review
+          </button>
         )}
       </div>
 
-      {/* Content Area */}
-      <div className="p-4 space-y-3 text-xs leading-relaxed text-base-content">
-        <p className="text-white/80">
-          Mark meminta izin untuk mengeksekusi operasi sistem berikut:
-        </p>
+      <p className="text-white/60 text-[11px]">
+        Mark meminta izin untuk mengeksekusi operasi berikut:
+      </p>
 
-        {/* Monospace Parameter / Command Preview */}
-        <div className="bg-black/40 rounded-xl p-3 border border-white/5 font-mono text-[11px] text-white/90 overflow-x-auto max-h-48 custom-scrollbar">
-          {targetInfo.value ? (
-            <div className="space-y-1">
-              <div className="text-[10px] uppercase font-bold text-warning/70 flex items-center gap-1.5 select-none">
-                {targetInfo.type === 'command' ? (
-                  <>
-                    <Terminal className="w-3 h-3" />
-                    <span>Perintah Shell:</span>
-                  </>
-                ) : (
-                  <>
-                    <FileCode className="w-3 h-3" />
-                    <span>Target Berkas:</span>
-                  </>
-                )}
-              </div>
-              <div className="text-white whitespace-pre-wrap break-all">{targetInfo.value}</div>
-            </div>
-          ) : (
-            <div className="whitespace-pre-wrap break-all">
-              {message || (typeof query === 'string' ? query : JSON.stringify(query, null, 2))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer Actions / Status */}
-        <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
-          {isPending ? (
-            <>
-              <button
-                type="button"
-                onClick={() => resolveApproval(approvalId, 'reject')}
-                className="btn btn-ghost btn-xs text-error hover:bg-error/10 border border-error/20 rounded-lg px-3 cursor-pointer"
-              >
-                Tolak
-              </button>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => resolveApproval(approvalId, 'approve_once')}
-                  className="btn btn-outline btn-xs rounded-lg px-2.5 cursor-pointer text-white/80 hover:text-white"
-                >
-                  Izinkan Sekali
-                </button>
-                <button
-                  type="button"
-                  onClick={() => resolveApproval(approvalId, 'approve_session')}
-                  className="btn btn-outline btn-warning btn-xs rounded-lg px-2.5 cursor-pointer"
-                >
-                  Izinkan Sesi Ini
-                </button>
-                <button
-                  type="button"
-                  onClick={() => resolveApproval(approvalId, 'approve_always')}
-                  className="btn btn-error btn-xs shadow-md rounded-lg px-2.5 font-semibold cursor-pointer"
-                >
-                  Izinkan Selamanya
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="w-full flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                {status === 'approved_once' && (
-                  <span className="badge badge-sm bg-white/10 text-white/90 border-white/20 gap-1.5 text-[10px] font-medium py-1 px-2.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-white/70" />
-                    Diizinkan Sekali
-                  </span>
-                )}
-                {status === 'approved_session' && (
-                  <span className="badge badge-sm bg-warning/15 text-warning border-warning/30 gap-1.5 text-[10px] font-medium py-1 px-2.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-warning" />
-                    Diizinkan Sesi Ini
-                  </span>
-                )}
-                {status === 'approved_always' && (
-                  <span className="badge badge-sm bg-success/15 text-success border-success/30 gap-1.5 text-[10px] font-medium py-1 px-2.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                    Diizinkan Selamanya
-                  </span>
-                )}
-                {status === 'rejected' && (
-                  <span className="badge badge-sm bg-error/15 text-error border-error/30 gap-1.5 text-[10px] font-medium py-1 px-2.5">
-                    <XCircle className="w-3.5 h-3.5 text-error" />
-                    Eksekusi Ditolak
-                  </span>
-                )}
-              </div>
-              {timestamp && (
-                <span className="text-[10px] text-white/40 font-normal">{timestamp}</span>
-              )}
-            </div>
-          )}
+      {/* Parameter / Command Preview */}
+      <div className="bg-black/30 rounded-lg p-2.5 font-mono text-[11px] text-white/90 space-y-1">
+        {targetInfo.value && (
+          <div className="text-[10px] uppercase font-bold text-warning/70 select-none">
+            {targetInfo.type === 'command' ? 'Perintah Shell' : 'Target Berkas'}
+          </div>
+        )}
+        <div className="text-white/90 whitespace-pre-wrap break-all leading-relaxed">
+          {previewValue}
         </div>
       </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+        <button
+          type="button"
+          onClick={() => handleDecision('reject')}
+          className="btn btn-ghost btn-xs text-error/80 hover:text-error hover:bg-error/10 rounded-lg px-3"
+        >
+          Tolak
+        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => handleDecision('approve_session')}
+            className="btn btn-ghost btn-xs text-warning/80 hover:text-warning hover:bg-warning/10 rounded-lg px-2.5"
+          >
+            Izinkan Sesi Ini
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDecision('approve_always')}
+            className="btn btn-ghost btn-xs text-white/40 hover:text-error hover:bg-error/10 rounded-lg px-2.5"
+          >
+            Izinkan Selamanya
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDecision('approve_once')}
+            className="btn btn-primary btn-xs text-black font-semibold rounded-lg px-3 shadow-sm"
+          >
+            Izinkan Sekali
+          </button>
+        </div>
+      </div>
+
+      {/* Floating Diff Modal */}
+      {isFileTool && (
+        <FileDiffModal
+          isOpen={showDiffModal}
+          onClose={() => setShowDiffModal(false)}
+          tool={tool}
+          query={query}
+          onResolve={handleDecision}
+        />
+      )}
     </div>
   )
 }

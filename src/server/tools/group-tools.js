@@ -576,14 +576,18 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'gdrive-upload',
-          description: 'Mengunggah file teks baru ke Google Drive.',
+          description:
+            'Mengunggah berkas lokal (PDF, dokumen, gambar, zip, dll.) dari komputer ke Google Drive.',
           parameters: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'Nama berkas baru (misal: "laporan.txt")' },
-              content: { type: 'string', description: 'Konten teks berkas' }
+              file_path: {
+                type: 'string',
+                description:
+                  'Path absolut atau relatif berkas lokal yang akan diunggah (misal: "C:\\Users\\...\\laporan.pdf")'
+              }
             },
-            required: ['name', 'content'],
+            required: ['file_path'],
             additionalProperties: false
           }
         }
@@ -636,6 +640,40 @@ export const GROUP_TOOLS_SCHEMA = {
               new_name: { type: 'string', description: 'Nama baru berkas duplikat' }
             },
             required: ['file_id', 'new_name'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'gdrive-share',
+          description:
+            'Mengubah izin akses atau membagikan berkas di Google Drive (misal: publik siapa saja dengan tautan, atau email tertentu).',
+          parameters: {
+            type: 'object',
+            properties: {
+              file_id: {
+                type: 'string',
+                description: 'ID berkas Google Drive yang ingin dibagikan'
+              },
+              role: {
+                type: 'string',
+                enum: ['reader', 'commenter', 'writer'],
+                description: 'Peran akses pengguna (default: "reader")'
+              },
+              type: {
+                type: 'string',
+                enum: ['anyone', 'user', 'group'],
+                description:
+                  'Cakupan akses: "anyone" (publik dengan tautan), "user" (spesifik email), atau "group" (default: "anyone")'
+              },
+              email: {
+                type: 'string',
+                description: 'Alamat email pengguna jika type adalah "user" atau "group"'
+              }
+            },
+            required: ['file_id'],
             additionalProperties: false
           }
         }
@@ -874,18 +912,33 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'tg-send',
-          description: 'Mengirim pesan teks atau file ke chat Telegram.',
+          description:
+            'Mengirim pesan teks, gambar/foto, atau berkas ke chat Telegram. Jika chat_id tidak diisi atau bernilai "admin", otomatis dikirim ke akun Telegram admin pemilik MARK.',
           parameters: {
             type: 'object',
             properties: {
-              chat_id: { type: 'string', description: 'ID Chat Telegram tujuan' },
-              type: { type: 'string', enum: ['text', 'file'], description: 'Tipe kiriman' },
+              chat_id: {
+                type: 'string',
+                description:
+                  'ID Chat Telegram tujuan. Bersifat opsional; jika dikosongkan atau diisi "admin", otomatis dikirim ke akun Telegram admin pemilik MARK.'
+              },
+              type: {
+                type: 'string',
+                enum: ['auto', 'text', 'photo', 'file'],
+                description:
+                  'Tipe kiriman: "auto" (otomatis deteksi), "text" (pesan teks), "photo" (gambar/foto yang dirender langsung di chat), atau "file" (dokumen berkas)'
+              },
               content: {
                 type: 'string',
-                description: 'Isi teks pesan atau path berkas yang dikirim'
+                description:
+                  'Isi teks pesan, path berkas lokal (contoh: "C:\\Users\\...\\image.png"), atau URL berkas yang ingin dikirim.'
+              },
+              caption: {
+                type: 'string',
+                description: 'Keterangan/caption opsional jika mengirim gambar atau berkas.'
               }
             },
-            required: ['chat_id', 'type', 'content'],
+            required: ['content'],
             additionalProperties: false
           }
         }
@@ -1061,6 +1114,30 @@ export const GROUP_TOOL_GROUP_NAMES = Object.keys(GROUP_TOOLS_SCHEMA)
 export const GROUP_TOOL_DESCRIPTIONS = Object.fromEntries(
   Object.entries(GROUP_TOOLS_SCHEMA).map(([key, group]) => [key, group.description])
 )
+
+// Injeksi parameter reason ke seluruh tool schema di GROUP_TOOLS_SCHEMA
+for (const group of Object.values(GROUP_TOOLS_SCHEMA)) {
+  if (Array.isArray(group.tools)) {
+    for (const t of group.tools) {
+      if (t.function?.parameters?.properties) {
+        if (!t.function.parameters.properties.reason) {
+          t.function.parameters.properties.reason = {
+            type: 'string',
+            description:
+              'Penjelasan ringkas dalam bahasa manusia mengenai alasan atau tujuan aksi ini (contoh: "Membuka tab Instagram di browser").'
+          }
+        }
+        if (Array.isArray(t.function.parameters.required)) {
+          if (!t.function.parameters.required.includes('reason')) {
+            t.function.parameters.required.push('reason')
+          }
+        } else {
+          t.function.parameters.required = ['reason']
+        }
+      }
+    }
+  }
+}
 
 // Legacy dictionary representation for backwards-compatibility
 export const GROUP_TOOLS_DEFINITION = Object.entries(GROUP_TOOLS_SCHEMA).reduce(

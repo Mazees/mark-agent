@@ -123,6 +123,26 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
     }
   }
 
+  // Pastikan seluruh schema tool memiliki parameter reason wajib
+  for (const t of activeSchemas) {
+    if (t.function?.parameters?.properties) {
+      if (!t.function.parameters.properties.reason) {
+        t.function.parameters.properties.reason = {
+          type: 'string',
+          description:
+            'Penjelasan ringkas dalam bahasa manusia mengenai alasan atau tujuan aksi ini (contoh: "Membuka tab Instagram di browser").'
+        }
+      }
+      if (Array.isArray(t.function.parameters.required)) {
+        if (!t.function.parameters.required.includes('reason')) {
+          t.function.parameters.required.push('reason')
+        }
+      } else {
+        t.function.parameters.required = ['reason']
+      }
+    }
+  }
+
   return activeSchemas
 }
 

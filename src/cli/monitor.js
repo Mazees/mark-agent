@@ -1,8 +1,9 @@
 import readline from 'readline'
 import http from 'http'
 import { WebSocket } from 'ws'
-import { colors as c, drawLeftRail } from './theme.js'
+import { colors as c, drawLeftRail, drawDivider, resolveWidth, stripAnsi } from './theme.js'
 import { launchUI, closeUI } from '../server/launcher.js'
+import { checkForUpdate, getCurrentVersion } from '../server/services/updater.js'
 
 const SERVER_URL = process.env.MARK_SERVER_URL || 'http://localhost:3000'
 const WS_URL = process.env.MARK_WS_URL || 'ws://localhost:3000/stream'
@@ -12,6 +13,16 @@ let isUiActive = false
 let currentConfig = {}
 let lastFetchPayload = null
 let isJsonInspectorOpen = false
+let updateInfo = null
+let isUpdateModalOpen = false
+
+export function setUpdateInfo(info) {
+  updateInfo = info
+}
+
+export function getUpdateInfo() {
+  return updateInfo
+}
 
 function getTimeString() {
   return new Date().toLocaleTimeString('id-ID', {
@@ -38,8 +49,6 @@ async function fetchConfig() {
     const res = await fetch(`${SERVER_URL}/api/config`)
     const data = await res.json()
     return data.config || {}
-    const json = await res.json()
-    return json.data || json.config || {}
   } catch (_) {
     return {}
   }
@@ -54,35 +63,66 @@ export function printMonitorHeader(config = {}, uiActive = false) {
         ? config.customModel || 'default-model'
         : config.model || 'local-model'
   const cwd = process.cwd()
+  const termWidth = resolveWidth(null, 78)
 
   const agentStatus = uiActive
     ? `${c.green}● Aktif${c.reset} ${c.darkGray}(Siap Digunakan)${c.reset}`
     : `${c.yellow}○ Standby${c.reset} ${c.darkGray}(Jendela Ditutup)${c.reset}`
 
+  const maxCwd = Math.max(15, termWidth - 18)
+  const displayCwd = cwd.length > maxCwd ? '...' + cwd.slice(-(maxCwd - 3)) : cwd
+
+  const serverLine =
+    termWidth < 68
+      ? ` ${c.darkGray}Core Server:${c.reset} ${c.blue}http://localhost:${activeServerPort}${c.reset}`
+      : ` ${c.darkGray}Core Server:${c.reset} ${c.blue}http://localhost:${activeServerPort}${c.reset}  ${c.darkGray}|${c.reset}  ${c.darkGray}Status:${c.reset} ${c.teal}Online${c.reset}`
+
   const lines = [
-    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v5.0.0 Engine]${c.reset}`,
-    ` ${c.darkGray}Workspace  :${c.reset} ${c.gray}${cwd}${c.reset}`,
-    ` ${c.darkGray}Core Server:${c.reset} ${c.blue}http://localhost:${activeServerPort}${c.reset}  ${c.darkGray}|${c.reset}  ${c.darkGray}Status:${c.reset} ${c.teal}Online${c.reset}`,
+    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v${getCurrentVersion()}]${c.reset}`,
+    ` ${c.darkGray}Workspace  :${c.reset} ${c.gray}${displayCwd}${c.reset}`,
+    serverLine,
     ` ${c.darkGray}Status MARK:${c.reset} ${agentStatus}`,
     ` ${c.darkGray}AI Model   :${c.reset} ${c.cyan}${provider}${c.reset} ${c.darkGray}(${model})${c.reset}`
   ]
 
+  if (updateInfo && updateInfo.hasUpdate) {
+    lines.push('')
+    const updateTitle =
+      termWidth < 70
+        ? `▲ UPDATE: v${updateInfo.currentVersion} → v${updateInfo.latestVersion} [p]`
+        : `▲ UPDATE TERSEDIA: v${updateInfo.currentVersion} → v${updateInfo.latestVersion}  (Tekan [p] untuk info)`
+    lines.push(` ${c.bold}${c.yellow}${updateTitle}${c.reset}`)
+    lines.push(
+      ` ${c.darkGray}Perintah   :${c.reset} ${c.green}${updateInfo.instruction || 'npm i -g @mazees/mark'}${c.reset}`
+    )
+  }
+
   if (!uiActive) {
     lines.push('')
-    lines.push(
-      ` ${c.yellow}MARK sedang standby. Tekan ${c.green}[u]${c.yellow} untuk membuka MARK.${c.reset}`
-    )
+    const standbyMsg =
+      termWidth < 65
+        ? 'MARK standby. Tekan [u] untuk buka.'
+        : 'MARK sedang standby. Tekan [u] untuk membuka MARK.'
+    lines.push(` ${c.yellow}${standbyMsg}${c.reset}`)
   }
 
   // Bersihkan layar & reset scrolling region sementara untuk render header
   process.stdout.write('\x1b[r\x1b[2J\x1b[1;1H')
-  drawLeftRail('', lines, 74, uiActive ? c.darkGray : c.yellow)
-  console.log(
-    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka MARK${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[j]${c.reset} ${c.gray}Inspect Data${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Bersihkan Layar${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}\n`
-  )
-  console.log(
-    ` ${c.darkGray}── Live Activity ─────────────────────────────────────────────────────────────${c.reset}`
-  )
+  drawLeftRail('', lines, termWidth, uiActive ? c.darkGray : c.yellow)
+
+  let shortcutsText = ''
+  if (termWidth < 60) {
+    shortcutsText = ` ${c.darkGray}Keys:${c.reset} ${c.green}[u]${c.reset}${c.gray}UI${c.reset}${updateInfo?.hasUpdate ? ` ${c.green}[p]${c.reset}${c.yellow}Upd${c.reset}` : ''} ${c.green}[c]${c.reset}${c.gray}Clr${c.reset} ${c.green}[q]${c.reset}${c.gray}Quit${c.reset}`
+  } else if (termWidth < 76) {
+    shortcutsText = ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka${c.reset}${updateInfo?.hasUpdate ? ` | ${c.green}[p]${c.reset} ${c.yellow}Update${c.reset}` : ''} | ${c.green}[c]${c.reset} ${c.gray}Bersih${c.reset} | ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}`
+  } else {
+    const updateShortcut = updateInfo?.hasUpdate
+      ? `  ${c.darkGray}|${c.reset}  ${c.green}[p]${c.reset} ${c.yellow}Update Info${c.reset}`
+      : ''
+    shortcutsText = ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka MARK${c.reset}${updateShortcut}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Bersihkan Layar${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}`
+  }
+  console.log(shortcutsText + '\n')
+  console.log(' ' + drawDivider('Live Activity', termWidth - 1, c.darkGray))
 
   // Kunci baris 1 s/d headerHeight agar tidak tertimbun oleh scroll log
   const headerHeight = lines.length + 5
@@ -103,11 +143,64 @@ export function logActivity(type, title, detail = '') {
   else if (type === 'fetch') badge = `${c.blue}📡 Fetch  ${c.reset}`
   else if (type === 'error') badge = `${c.red}● Error  ${c.reset}`
 
-  const cleanDetail = detail
-    ? ` ${c.darkGray}›${c.reset} ${c.gray}${String(detail).replace(/\n/g, ' ').slice(0, 110)}${c.reset}`
-    : ''
+  const cols = process.stdout.columns || 80
+  const prefixWidth = 1 + 8 + 2 + 8 + 2 // 1 space + time (8) + 2 spaces + badge (8) + 2 spaces = 21
+
+  let displayTitle = String(title || '')
+    .replace(/\n/g, ' ')
+    .trim()
+  const maxTitleLen = Math.max(15, cols - prefixWidth - (detail ? 20 : 3))
+  if (displayTitle.length > maxTitleLen) {
+    displayTitle = displayTitle.slice(0, Math.max(0, maxTitleLen - 3)) + '...'
+  }
+
+  const remainingForDetail = Math.max(10, cols - prefixWidth - displayTitle.length - 5)
+  const rawDetail = String(detail || '')
+    .replace(/\n/g, ' ')
+    .trim()
+  const safeDetail =
+    rawDetail.length > remainingForDetail
+      ? rawDetail.slice(0, Math.max(0, remainingForDetail - 3)) + '...'
+      : rawDetail
+
+  const cleanDetail = safeDetail ? ` ${c.darkGray}›${c.reset} ${c.gray}${safeDetail}${c.reset}` : ''
   console.log(
-    ` ${c.darkGray}${time}${c.reset}  ${badge}  ${c.white}${title}${c.reset}${cleanDetail}`
+    ` ${c.darkGray}${time}${c.reset}  ${badge}  ${c.white}${displayTitle}${c.reset}${cleanDetail}`
+  )
+}
+
+export function toggleUpdateModal(config) {
+  isUpdateModalOpen = !isUpdateModalOpen
+  if (!isUpdateModalOpen) {
+    printMonitorHeader(config, isUiActive)
+    logActivity('agent', 'Info update ditutup. Monitor kembali ke mode live.')
+  } else {
+    process.stdout.write('\x1b[r')
+    printUpdateModal(updateInfo)
+  }
+}
+
+export function printUpdateModal(info) {
+  const modalWidth = resolveWidth(null, 76)
+  const latest = info?.latestVersion || 'terbaru'
+  const curr = info?.currentVersion || getCurrentVersion()
+  const instruction = info?.instruction || 'npm install -g @mazees/mark@latest'
+
+  console.log(`\n ${c.bold}${drawDivider('[INFO UPDATE MARK]', modalWidth, c.green)}\n`)
+  console.log(
+    ` Versi terbaru ${c.bold}${c.cyan}@mazees/mark${c.reset} (${c.green}v${latest}${c.reset}) telah dirilis di npm!`
+  )
+  console.log(` Versi yang terpasang saat ini: ${c.yellow}v${curr}${c.reset}\n`)
+  console.log(
+    ` ${c.white}Untuk memperbarui ke versi terbaru, jalankan perintah berikut di terminal:${c.reset}`
+  )
+  console.log(`\n   ${c.bold}${c.green}${instruction}${c.reset}\n`)
+  console.log(
+    ` ${c.darkGray}Petunjuk: Matikan MARK terlebih dahulu ([q]) sebelum menjalankan perintah update.${c.reset}`
+  )
+  console.log(`\n ${c.bold}${drawDivider('', modalWidth, c.green)}`)
+  console.log(
+    ` ${c.gray}Tekan ${c.green}[p]${c.gray} atau ${c.green}[Enter]${c.gray} untuk kembali ke dashboard live...${c.reset}\n`
   )
 }
 
@@ -123,25 +216,32 @@ export function toggleJsonInspector(config) {
 }
 
 export function printJsonInspector(payload) {
-  if (!payload) {
+  const inspectorWidth = resolveWidth(null, 76)
+  console.log(
+    `\n ${c.bold}${drawDivider('[INFO] AI Request Inspector', inspectorWidth, c.green)}\n`
+  )
+  console.log(
+    ` ${c.gray}Untuk performa maksimal dan bebas lag, payload raksasa kini diinspeksi via:${c.reset}`
+  )
+  console.log(` ${c.cyan}WebUI DevTools Console (F12) › window.__LAST_AI__${c.reset}\n`)
+  if (payload) {
+    console.log(` ${c.white}Metadata Permintaan Terakhir:${c.reset}`)
     console.log(
-      `\n ${c.yellow}●${c.reset} ${c.gray}Belum ada payload request JSON yang di-fetch. Menunggu aksi dari MARK...${c.reset}\n`
+      ` ${c.darkGray}Provider      :${c.reset} ${c.teal}${payload.provider || '-'}${c.reset}`
     )
-    return
+    console.log(
+      ` ${c.darkGray}Model         :${c.reset} ${c.teal}${payload.model || '-'}${c.reset}`
+    )
+    console.log(
+      ` ${c.darkGray}Messages Count:${c.reset} ${c.teal}${payload.messagesCount ?? '-'}${c.reset}`
+    )
+    console.log(
+      ` ${c.darkGray}Has Tools     :${c.reset} ${c.teal}${payload.hasTools ? 'Ya' : 'Tidak'}${c.reset}`
+    )
+  } else {
+    console.log(` ${c.yellow}● Belum ada riwayat aktivitas request AI.${c.reset}`)
   }
-
-  const jsonStr = JSON.stringify(payload, null, 2)
-  const lines = jsonStr.split('\n')
-
-  console.log(
-    `\n ${c.bold}${c.green}── [INSPECT] AI Request JSON Payload (${lines.length} lines) ── [Tekan 'j' untuk tutup/kembali] ──${c.reset}\n`
-  )
-  for (let i = 0; i < lines.length; i++) {
-    console.log(` ${c.cyan}${lines[i]}${c.reset}`)
-  }
-  console.log(
-    `\n ${c.bold}${c.green}────────────────────────────────────────────────────────────────────────────────────────${c.reset}\n`
-  )
+  console.log(`\n ${c.bold}${drawDivider('', inspectorWidth, c.green)}\n`)
 }
 
 export async function runMonitor(portOverride) {
@@ -182,6 +282,23 @@ export async function runMonitor(portOverride) {
   logActivity('agent', `MARK Server aktif di port ${serverPort}`)
   logActivity('agent', 'Membuka antarmuka MARK...')
 
+  // Pengecekan update versi terbaru di latar belakang (non-blocking)
+  checkForUpdate()
+    .then((info) => {
+      if (info && info.hasUpdate) {
+        updateInfo = info
+        if (!isJsonInspectorOpen && !isUpdateModalOpen) {
+          printMonitorHeader(currentConfig, isUiActive)
+          logActivity(
+            'agent',
+            'Update Tersedia',
+            `v${info.currentVersion} → v${info.latestVersion} (Tekan [p] utk perintah update)`
+          )
+        }
+      }
+    })
+    .catch(() => {})
+
   // Connect WebSocket live streaming
   try {
     const ws = new WebSocket(wsUrl)
@@ -218,11 +335,7 @@ export async function runMonitor(portOverride) {
         } else if (event === 'ai:fetch') {
           lastFetchPayload = payload
           const info = `[${payload.provider}/${payload.model}] ${payload.messagesCount || 0} msgs${payload.hasTools ? `, ${payload.toolsCount || 0} tools` : ''}`
-          logActivity(
-            'fetch',
-            `AI Request (${payload.type || 'fetch'})`,
-            `${info} (Tekan [j] utk inspect)`
-          )
+          logActivity('fetch', `AI Request (${payload.type || 'fetch'})`, info)
         } else if (event === 'agent:thought') {
           logActivity('thought', `Turn ${payload.turn}`, payload.thought)
         } else if (event === 'tool:call') {
@@ -242,7 +355,13 @@ export async function runMonitor(portOverride) {
 
   // Restore scroll region saat resize terminal
   process.stdout.on('resize', () => {
-    if (!isJsonInspectorOpen) {
+    if (isUpdateModalOpen) {
+      process.stdout.write('\x1b[r\x1b[2J\x1b[1;1H')
+      printUpdateModal(updateInfo)
+    } else if (isJsonInspectorOpen) {
+      process.stdout.write('\x1b[r\x1b[2J\x1b[1;1H')
+      printJsonInspector(lastFetchPayload)
+    } else {
       printMonitorHeader(currentConfig, isUiActive)
     }
   })
@@ -272,6 +391,9 @@ export async function runMonitor(portOverride) {
     } else if (key.name === 'u' || key.name === 'o') {
       logActivity('agent', 'Membuka MARK...')
       await launchUI({ port: serverPort, mode: 'app' })
+    } else if (key.name === 'p') {
+      currentConfig = await fetchConfig()
+      toggleUpdateModal(currentConfig)
     } else if (key.name === 'j' || key.name === 'd') {
       currentConfig = await fetchConfig()
       toggleJsonInspector(currentConfig)
@@ -279,6 +401,8 @@ export async function runMonitor(portOverride) {
       currentConfig = await fetchConfig()
       printMonitorHeader(currentConfig, isUiActive)
       logActivity('agent', 'Layar dibersihkan.')
+    } else if (isUpdateModalOpen && (key.name === 'return' || key.name === 'escape')) {
+      toggleUpdateModal(currentConfig)
     }
   })
 }

@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer/src'),
+      '@shared': resolve(__dirname, 'src/shared'),
       'lucide-react': resolve(__dirname, 'node_modules/lucide-react/dist/cjs/lucide-react.js')
     }
   },
@@ -31,11 +32,7 @@ export default defineConfig({
     outDir: resolve(__dirname, 'out/renderer'),
     emptyOutDir: true,
     rollupOptions: {
-      external: [
-        'onnxruntime-web',
-        'onnxruntime-web/webgpu',
-        '@huggingface/transformers'
-      ]
+      external: ['onnxruntime-web', 'onnxruntime-web/webgpu', '@huggingface/transformers']
     }
   }
 })

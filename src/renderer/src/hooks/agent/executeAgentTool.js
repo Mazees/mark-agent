@@ -1,4 +1,9 @@
-import { createAgentTask, startAgentTaskStep } from '../../api/taskStore.js'
+import {
+  createAgentTask,
+  startAgentTaskStep,
+  getAgentTaskWithSteps,
+  checkpointAgentTaskStep
+} from '../../api/taskStore.js'
 import { webApi } from '../../api/web-bridge.js'
 
 /**
@@ -11,13 +16,14 @@ import { webApi } from '../../api/web-bridge.js'
  */
 export async function executeAgentTool({
   tool,
-  rawArgs,
+  rawArgs: incomingArgs,
   config,
   context,
   activeSessionNum,
   activeTopic,
   userInput,
   durableTask,
+  durableActiveStep: incomingDurableActiveStep = null,
   agenticProcessId,
   targetPushProcess,
   targetSetChatData,
@@ -28,7 +34,31 @@ export async function executeAgentTool({
 }) {
   let res
   let updatedDurableTask = durableTask
-  let durableActiveStep = null
+  let durableActiveStep = incomingDurableActiveStep
+
+  // Sanitasi parameter reason: simpan untuk timeline UI dan buang sebelum dikirim ke fungsi native
+  let rawArgs = incomingArgs
+  let execReason = null
+  if (incomingArgs && typeof incomingArgs === 'object' && !Array.isArray(incomingArgs)) {
+    rawArgs = { ...incomingArgs }
+    if (rawArgs.reason) {
+      execReason = String(rawArgs.reason).trim()
+      delete rawArgs.reason
+    }
+  } else if (typeof incomingArgs === 'string') {
+    try {
+      const parsed = JSON.parse(incomingArgs)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.reason) {
+        execReason = String(parsed.reason).trim()
+        delete parsed.reason
+        rawArgs = JSON.stringify(parsed)
+      }
+    } catch (_) {}
+  }
+
+  if (currentSignal?.aborted) {
+    throw new Error('AbortError')
+  }
 
   if (tool === 'spawn_subagent') {
     const { subagentStore } = await import('../../api/subagent/subagentStore.js')
@@ -82,6 +112,14 @@ export async function executeAgentTool({
       }
     }
   } else if (tool === 'create_agent_task') {
+    if (durableTask) {
+      res = {
+        success: false,
+        error: `[DILARANG]: Alur kerja '${durableTask.title}' (${durableTask.id}) sudah aktif dalam giliran ini. DILARANG membuat task baru dengan 'create_agent_task'! Fokus selesaikan tahapan alur kerja yang sedang berjalan menggunakan 'mark_done_task' atau berikan respon jawaban akhir jika seluruh tahap sudah selesai.`
+      }
+      return { res, durableTask, durableActiveStep }
+    }
+
     const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
     const title = a.title || 'Workflow'
     const objective = a.objective || userInput
@@ -94,6 +132,7 @@ export async function executeAgentTool({
       }
     } else {
       const stepsInput = a.steps
+      const newTaskId = `task-${Date.now()}`
 
       let artifactRoot = null
       try {
@@ -101,7 +140,7 @@ export async function executeAgentTool({
         if (resp?.success && resp?.data) {
           const cleanBase = resp.data.replace(/[\\/]+$/, '')
           const sep = cleanBase.includes('\\') ? '\\' : '/'
-          artifactRoot = `${cleanBase}${sep}task-${Date.now()}`
+          artifactRoot = `${cleanBase}${sep}${newTaskId}`
           await fetch('/api/tasks/ensure-dir', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -115,7 +154,7 @@ export async function executeAgentTool({
       if (!artifactRoot && context?.workspaceRoot) {
         const cleanWs = context.workspaceRoot.replace(/[\\/]+$/, '')
         const sep = cleanWs.includes('\\') ? '\\' : '/'
-        artifactRoot = `${cleanWs}${sep}.mark${sep}tasks${sep}task-${Date.now()}`
+        artifactRoot = `${cleanWs}${sep}.mark${sep}tasks${sep}${newTaskId}`
         await fetch('/api/tasks/ensure-dir', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -126,6 +165,7 @@ export async function executeAgentTool({
       const pathSep = (artifactRoot || '').includes('\\') ? '\\' : '/'
 
       updatedDurableTask = await createAgentTask({
+        id: newTaskId,
         title,
         objective,
         mode: 'durable',
@@ -208,7 +248,298 @@ export async function executeAgentTool({
 
       res = {
         success: true,
-        data: `[TASK WORKFLOW DIAKTIFKAN - TUGAS BERHASIL DIBUAT]:\n- Task ID: ${updatedDurableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\nLangkah aktif saat ini: "${durableActiveStep?.title}". Sekarang fokus eksekusi langkah ini menggunakan tools yang sesuai!`
+        data: `[TASK WORKFLOW DIAKTIFKAN - TUGAS BERHASIL DIBUAT]:\n- Task ID: ${updatedDurableTask.id}\n- Judul: "${title}"\n- Total Steps: ${stepsInput.length}\n\n>>> TAHAP AKTIF SAAT INI (Tahap 1): "${durableActiveStep?.title}"\n- Sasaran: ${durableActiveStep?.objective}\n- Target Deliverable: ${durableActiveStep?.deliverable}\n\nPETUNJUK EKSEKUSI TAHAP 1:\n1. Kerjakan sasaran Tahap 1 terlebih dahulu di direktori workspace menggunakan tool yang relevan (seperti 'write-file' untuk membuat file, susun arsitektur, buat aset/kode). DILARANG LANGSUNG MEMANGGIL 'mark_done_task' SEBELUM PEKERJAAN ATAU FILE DELIVERABLE TAHAP INI SELESAI DIBUAT DI WORKSPACE!\n2. DILARANG mencari atau membaca kode internal aplikasi MARK!\n3. WAJIB UJI & VERIFIKASI SEBELUM TANDAI SELESAI: Lakukan pengujian/verifikasi hasil kerja terlebih dahulu (cek file/kode, uji jalan script/sintaks). Setelah teruji berhasil, barulah PANGGIL TOOL 'mark_done_task' dengan parameter stepIndex: 1, artifactContent, dan verificationProof (bukti hasil uji konkret)!`
+      }
+    }
+  } else if (tool === 'mark_done_task') {
+    const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+    const taskId = a.taskId || durableTask?.id
+
+    if (!taskId) {
+      res = {
+        success: false,
+        error: "Parameter 'taskId' wajib disertakan atau harus ada alur kerja aktif."
+      }
+    } else {
+      const taskWithSteps = await getAgentTaskWithSteps(taskId)
+      if (!taskWithSteps) {
+        res = { success: false, error: `Task dengan ID '${taskId}' tidak ditemukan.` }
+      } else {
+        const steps = taskWithSteps.steps || []
+
+        // 1. Resolusi stepNum: jika tidak disertakan atau NaN, otomatis ambil step aktif saat ini
+        let parsedStep = parseInt(
+          a.stepIndex ?? a.step_index ?? a.step ?? a.stepNumber ?? a.index,
+          10
+        )
+
+        let currentStep = null
+        if (!isNaN(parsedStep) && parsedStep >= 1) {
+          currentStep =
+            steps.find((s) => (s.stepIndex ?? s.index ?? 0) === parsedStep - 1) ||
+            steps[parsedStep - 1]
+        }
+
+        // Jika stepNum belum ketemu atau tidak valid, cari step yang sedang aktif atau belum selesai
+        if (!currentStep) {
+          currentStep =
+            steps.find((s) => s.status === 'running' && s.status !== 'completed') ||
+            steps.find((s) => s.status !== 'completed') ||
+            steps.find((s) => s.id === taskWithSteps.activeStepId) ||
+            steps[0]
+        }
+
+        if (!currentStep) {
+          res = {
+            success: false,
+            error: `Tidak ada tahap yang dapat diselesaikan di alur kerja '${taskId}'.`
+          }
+        } else {
+          const stepNum =
+            (currentStep.stepIndex ??
+              currentStep.step_index ??
+              currentStep.index ??
+              steps.indexOf(currentStep)) + 1
+
+          // 2. Cegah Re-Mark Done / Cicilan Draf: Tahap yang sudah selesai dilarang di-mark_done_task ulang
+          if (currentStep.status === 'completed') {
+            const nextPending = steps.find((s) => s.status !== 'completed')
+            if (nextPending) {
+              const nextIdx = (nextPending.stepIndex ?? nextPending.index ?? 0) + 1
+              res = {
+                success: false,
+                error: `[DITOLAK - TAHAP ${stepNum} SUDAH SELESAI]: Tahap ${stepNum} ("${currentStep.title}") SUDAH SELESAI sebelumnya! DILARANG memanggil 'mark_done_task' berulang kali untuk tahap yang sama. 'mark_done_task' BUKAN alat untuk menyimpan draf atau cicilan progress. Kamu WAJIB LANGSUNG berpindah mengerjakan Tahap ${nextIdx}: "${nextPending.title}"!`
+              }
+              return {
+                res,
+                durableTask: updatedDurableTask,
+                durableActiveStep
+              }
+            }
+          }
+
+          // 3. Validasi verifikasi dan pengujian sebelum menandai tahap selesai
+          const verificationProof =
+            typeof a.verificationProof === 'string' && a.verificationProof.trim()
+              ? a.verificationProof.trim()
+              : typeof a.testResult === 'string' && a.testResult.trim()
+                ? a.testResult.trim()
+                : typeof a.proof === 'string' && a.proof.trim()
+                  ? a.proof.trim()
+                  : ''
+
+          if (!verificationProof || verificationProof.length < 15) {
+            res = {
+              success: false,
+              error: `[VERIFIKASI WAJIB]: Tahap ${stepNum} ("${currentStep.title}") DITOLAK untuk ditandai selesai karena belum diverifikasi atau diuji! Kamu wajib menjalankan pengujian/verifikasi hasil pekerjaan terlebih dahulu di workspace (seperti memeriksa file dengan read-file, mengecek sintaks, atau menjalankan test dengan run-powershell). Setelah pengujian berhasil, panggil kembali 'mark_done_task' dengan parameter 'verificationProof' yang merangkum bukti uji konkret.`
+            }
+            return {
+              res,
+              durableTask: updatedDurableTask,
+              durableActiveStep
+            }
+          }
+
+          // 3. Resolusi konten deliverable artefak dan ringkasan
+          let summary = typeof a.summary === 'string' ? a.summary.trim() : ''
+          let artifactContent =
+            typeof a.artifactContent === 'string' && a.artifactContent.trim()
+              ? a.artifactContent
+              : typeof a.artifact === 'string' && a.artifact.trim()
+                ? a.artifact
+                : typeof a.content === 'string' && a.content.trim()
+                  ? a.content
+                  : ''
+
+          if (!artifactContent && summary) {
+            artifactContent = `# Deliverable: ${currentStep.title}\n\n**Sasaran:** ${currentStep.objective || '-'}\n**Target Deliverable:** ${currentStep.deliverable || '-'}\n\n### Ringkasan Pengerjaan:\n${summary}\n\n### Bukti Pengujian & Verifikasi:\n${verificationProof}`
+          } else if (!artifactContent) {
+            artifactContent = `# Deliverable: ${currentStep.title}\n\n**Sasaran:** ${currentStep.objective || '-'}\n**Target Deliverable:** ${currentStep.deliverable || '-'}\n\nTahap telah diselesaikan dan diverifikasi sesuai kriteria penerimaan.\n\n### Bukti Pengujian & Verifikasi:\n${verificationProof}`
+            if (!summary) summary = `Tahap ${stepNum} selesai & terverifikasi: ${currentStep.title}`
+          } else if (
+            !artifactContent.includes('Bukti Pengujian') &&
+            !artifactContent.includes('Verifikasi')
+          ) {
+            artifactContent += `\n\n### Bukti Pengujian & Verifikasi:\n${verificationProof}`
+          }
+
+          if (!summary) {
+            summary = `Tahap ${stepNum} selesai & terverifikasi: ${currentStep.title}`
+          }
+
+          // 3. Tulis file artefak markdown ke disk jika artifactRoot ada
+          let finalArtifactPath = currentStep.artifactPath
+          const artifactRoot = taskWithSteps.artifactRoot
+          if (artifactRoot && window.api?.executeNativeTool) {
+            const pathSep = artifactRoot.includes('\\') ? '\\' : '/'
+            finalArtifactPath = `${artifactRoot}${pathSep}step_${stepNum}.md`
+            try {
+              await window.api.executeNativeTool(
+                'write-file',
+                { path: finalArtifactPath, content: artifactContent },
+                { workspaceRoot: context?.workspaceRoot }
+              )
+            } catch (err) {
+              console.warn('[executeAgentTool] Gagal menulis artefak:', err)
+            }
+          }
+
+          // 4. Auto-complete semua tahap SEBELUM tahap ini jika ada yang terlewat
+          for (let i = 0; i < steps.length; i++) {
+            const priorStep = steps[i]
+            const priorIdx = priorStep.stepIndex ?? priorStep.step_index ?? priorStep.index ?? i
+            if (priorIdx < stepNum - 1 && priorStep.status !== 'completed') {
+              try {
+                await checkpointAgentTaskStep(taskId, priorStep.id, {
+                  status: 'completed',
+                  outputSummary:
+                    priorStep.outputSummary || `Tahap ${priorIdx + 1} selesai: ${priorStep.title}`
+                })
+              } catch (pErr) {
+                console.warn('[executeAgentTool] Gagal checkpoint tahap sebelumnya:', pErr)
+              }
+            }
+          }
+
+          // 5. Checkpoint step saat ini menjadi completed
+          const checkpointed = await checkpointAgentTaskStep(taskId, currentStep.id, {
+            status: 'completed',
+            artifactPath: finalArtifactPath,
+            outputSummary: summary
+          })
+
+          updatedDurableTask = checkpointed
+          const nextStep = checkpointed?.steps?.find((s) => s.id === checkpointed.activeStepId)
+          durableActiveStep = nextStep || null
+          if (activeTaskObjectiveRef) {
+            activeTaskObjectiveRef.current = nextStep ? nextStep.objective : null
+          }
+
+          // 6. Perbarui tampilan ChatData secara real-time
+          const nextStepIdx = nextStep
+            ? (nextStep.stepIndex ?? nextStep.step_index ?? nextStep.index ?? stepNum)
+            : null
+
+          if (targetSetChatData) {
+            targetSetChatData((prev) =>
+              prev.map((msg) => {
+                if (!msg.isPlanSteps || msg.taskId !== taskId) return msg
+                const updatedPlan = (msg.plan || []).map((s, idx) => {
+                  const sIdx = s.stepIndex ?? s.step_index ?? s.index ?? idx
+                  // Jika ini tahap yang diselesaikan ATAU tahap sebelumnya: tandai completed!
+                  if (s.id === currentStep.id || sIdx <= stepNum - 1) {
+                    return {
+                      ...s,
+                      status: 'completed',
+                      artifactPath:
+                        s.id === currentStep.id || sIdx === stepNum - 1
+                          ? finalArtifactPath
+                          : s.artifactPath || null,
+                      outputSummary:
+                        s.id === currentStep.id || sIdx === stepNum - 1
+                          ? summary
+                          : s.outputSummary || `Tahap ${sIdx + 1} selesai`
+                    }
+                  }
+                  if (nextStep && (s.id === nextStep.id || sIdx === nextStepIdx)) {
+                    return { ...s, status: 'running' }
+                  }
+                  return s
+                })
+                return {
+                  ...msg,
+                  taskStatus: nextStep ? 'running' : 'completed',
+                  currentStep: nextStep ? nextStepIdx : (msg.plan || []).length,
+                  plan: updatedPlan
+                }
+              })
+            )
+          }
+
+          if (nextStep) {
+            const nextIdx = nextStepIdx + 1
+            res = {
+              success: true,
+              data: `[TAHAP ${stepNum} BERHASIL DISELESAIKAN]: Artefak telah disimpan ke '${finalArtifactPath || 'database'}'.\n\n>>> TAHAP AKTIF SELANJUTNYA (Tahap ${nextIdx}): "${nextStep.title}"\n- Sasaran: ${nextStep.objective}\n- Target Deliverable: ${nextStep.deliverable}\nSekarang fokus kerjakan tahap ${nextIdx} menggunakan tools yang sesuai di workspace. Uji dan verifikasi hasil sebelum memanggil 'mark_done_task' dengan parameter 'verificationProof'!`
+            }
+          } else {
+            res = {
+              success: true,
+              data: `[SELURUH TAHAPAN ALUR KERJA TELAH TUNTAS]: Semua ${steps.length} langkah dalam alur kerja '${taskWithSteps.title}' berhasil diselesaikan dengan sempurna! Sekarang berikan jawaban akhir ringkasan menyeluruh kepada pengguna.`
+            }
+          }
+        }
+      }
+    }
+  } else if (tool === 'read_task') {
+    const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+    const requestedId = a.taskId || durableTask?.id
+    const stepNum =
+      a.stepIndex !== undefined && a.stepIndex !== null ? parseInt(a.stepIndex, 10) : null
+
+    let taskWithSteps = null
+    if (requestedId) {
+      taskWithSteps = await getAgentTaskWithSteps(requestedId)
+    }
+    if (!taskWithSteps && durableTask?.id) {
+      taskWithSteps = await getAgentTaskWithSteps(durableTask.id)
+    }
+    if (!taskWithSteps) {
+      const running = await listAgentTasks({ status: 'running', limit: 1 })
+      if (running && running[0]) {
+        taskWithSteps = await getAgentTaskWithSteps(running[0].id)
+      }
+    }
+
+    if (!taskWithSteps) {
+      res = {
+        success: false,
+        error: `Task dengan ID '${requestedId || 'aktif'}' tidak ditemukan di sistem.`
+      }
+    } else {
+      const steps = taskWithSteps.steps || []
+      if (stepNum !== null && !isNaN(stepNum)) {
+        const step =
+          steps.find((s) => (s.stepIndex ?? s.index ?? 0) === stepNum - 1) || steps[stepNum - 1]
+        if (!step) {
+          res = {
+            success: false,
+            error: `Tahap ke-${stepNum} tidak ditemukan di task '${taskId}'.`
+          }
+        } else {
+          let artifactText = ''
+          if (step.artifactPath && window.api?.executeNativeTool) {
+            try {
+              const readRes = await window.api.executeNativeTool('read-file', {
+                path: step.artifactPath,
+                raw: true
+              })
+              if (readRes && readRes.success) {
+                artifactText = readRes.content || ''
+              }
+            } catch (err) {
+              console.warn('[read_task] Gagal membaca artefak dari disk:', err)
+            }
+          }
+
+          res = {
+            success: true,
+            data: `[ARTEFAK TAHAP ${stepNum}: "${step.title}"]\n- Status: ${step.status}\n- Sasaran: ${step.objective}\n- Deliverable: ${step.deliverable}\n- File Path: ${step.artifactPath || 'N/A'}\n\n--- ISI ARTEFAK DOKUMEN ---\n${artifactText || step.outputSummary || '(Artefak belum tersedia atau kosong)'}`
+          }
+        }
+      } else {
+        // Ringkasan semua step
+        const stepsSummary = steps
+          .map(
+            (s, i) =>
+              `${i + 1}. [${s.status.toUpperCase()}] ${s.title}\n   - Sasaran: ${s.objective}\n   - Deliverable: ${s.deliverable}\n   - Artefak: ${s.artifactPath || 'N/A'}`
+          )
+          .join('\n\n')
+
+        res = {
+          success: true,
+          data: `[INFORMASI ALUR KERJA: "${taskWithSteps.title}"]\n- Task ID: ${taskWithSteps.id}\n- Sasaran Utama: ${taskWithSteps.objective}\n- Status: ${taskWithSteps.status}\n- Progres: ${steps.filter((s) => s.status === 'completed').length}/${steps.length} selesai\n\nDAFTAR TAHAP:\n${stepsSummary}\n\n[PERINGATAN ALUR KERJA]: DILARANG memanggil 'read_task' berulang kali untuk membaca pekerjaanmu sendiri! Kamu WAJIB langsung fokus membuat deliverable fisik tahap aktif berikutnya di workspace!`
+        }
       }
     }
   } else if (tool === 'message_agent') {
@@ -290,7 +621,7 @@ export async function executeAgentTool({
       let finalAgents = []
 
       while (Date.now() - startTime < maxWaitSeconds * 1000) {
-        if (abortControllerRef?.current?.signal?.aborted) break
+        if (currentSignal?.aborted) break
         const agents = await Promise.all(targetIds.map((id) => subagentStore.getSubagent(id)))
         finalAgents = agents.filter(Boolean)
 
@@ -558,6 +889,7 @@ export async function executeAgentTool({
   return {
     res,
     durableTask: updatedDurableTask,
-    durableActiveStep
+    durableActiveStep,
+    reason: execReason
   }
 }

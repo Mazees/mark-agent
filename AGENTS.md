@@ -104,6 +104,8 @@
 | DOM Parser Elements        | **80 max**                | `browser-agent.js`       | Max interactive elements tagged     |
 | RAG Chunk Size             | **500 chars, 50 overlap** | `ragPipeline.js`         | Document chunking params            |
 | YT Summary Chunk           | **4000 chars**            | `tools.js`               | Transcript chunk boundary           |
+| Context Window Capacity    | **256.000 tokens**        | `contextManager.js`      | BPE Tokenizer / API usage threshold |
+| DeepSeek Max Turns/Session | **10 turns**              | `deepseek-web.js`        | Web RPC session rotation boundary   |
 | VAD Speech Threshold       | **RMS > 0.015**           | `useVAD.js`              | Voice detection sensitivity         |
 | VAD Silence Timeout        | **2000ms**                | `useVAD.js`              | Auto-cut after silence              |
 

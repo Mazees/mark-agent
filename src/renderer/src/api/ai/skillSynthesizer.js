@@ -8,7 +8,9 @@ import { saveLearnedSkill, getAllLearnedSkills } from '../db'
 function isWorthLearning(executedTools = []) {
   if (!executedTools || executedTools.length === 0) return false
 
-  const toolNames = executedTools.map((t) => t.tool || t.task || '')
+  const toolNames = executedTools
+    .filter((t) => t && !t.type && (t.tool || t.task))
+    .map((t) => t.tool || t.task || '')
 
   // Abaikan jika hanya memanggil read-skill atau hanya 1 tool sepele
   const trivialSingleTools = [
@@ -63,6 +65,7 @@ export async function synthesizeSkillAndSave({
 
     // Susun ringkasan riwayat aksi & tool yang berhasil
     const toolsTrajectory = executedTools
+      .filter((t) => t && !t.type && (t.tool || t.task))
       .slice(0, 12)
       .map((t, idx) => {
         const toolName = t.tool || t.task || 'unknown_tool'
