@@ -3,6 +3,7 @@ import http from 'http'
 import { WebSocket } from 'ws'
 import { colors as c, drawLeftRail } from './theme.js'
 import { launchUI, closeUI } from '../server/launcher.js'
+import { checkForUpdate, getCurrentVersion } from '../server/services/updater.js'
 
 const SERVER_URL = process.env.MARK_SERVER_URL || 'http://localhost:3000'
 const WS_URL = process.env.MARK_WS_URL || 'ws://localhost:3000/stream'
@@ -12,6 +13,16 @@ let isUiActive = false
 let currentConfig = {}
 let lastFetchPayload = null
 let isJsonInspectorOpen = false
+let updateInfo = null
+let isUpdateModalOpen = false
+
+export function setUpdateInfo(info) {
+  updateInfo = info
+}
+
+export function getUpdateInfo() {
+  return updateInfo
+}
 
 function getTimeString() {
   return new Date().toLocaleTimeString('id-ID', {
@@ -60,12 +71,22 @@ export function printMonitorHeader(config = {}, uiActive = false) {
     : `${c.yellow}○ Standby${c.reset} ${c.darkGray}(Jendela Ditutup)${c.reset}`
 
   const lines = [
-    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v5.0.0 Engine]${c.reset}`,
+    ` ${c.bold}${c.green}● MARK${c.reset} ${c.white}Autonomous Companion${c.reset}  ${c.darkGray}[v${getCurrentVersion()}]${c.reset}`,
     ` ${c.darkGray}Workspace  :${c.reset} ${c.gray}${cwd}${c.reset}`,
     ` ${c.darkGray}Core Server:${c.reset} ${c.blue}http://localhost:${activeServerPort}${c.reset}  ${c.darkGray}|${c.reset}  ${c.darkGray}Status:${c.reset} ${c.teal}Online${c.reset}`,
     ` ${c.darkGray}Status MARK:${c.reset} ${agentStatus}`,
     ` ${c.darkGray}AI Model   :${c.reset} ${c.cyan}${provider}${c.reset} ${c.darkGray}(${model})${c.reset}`
   ]
+
+  if (updateInfo && updateInfo.hasUpdate) {
+    lines.push('')
+    lines.push(
+      ` ${c.bold}${c.yellow}▲ UPDATE TERSEDIA:${c.reset} ${c.yellow}v${updateInfo.currentVersion} → v${updateInfo.latestVersion}${c.reset}  ${c.darkGray}(Tekan [p] untuk info)${c.reset}`
+    )
+    lines.push(
+      ` ${c.darkGray}Perintah   :${c.reset} ${c.green}${updateInfo.instruction || 'npm i -g @mazees/mark'}${c.reset}`
+    )
+  }
 
   if (!uiActive) {
     lines.push('')
@@ -77,8 +98,11 @@ export function printMonitorHeader(config = {}, uiActive = false) {
   // Bersihkan layar & reset scrolling region sementara untuk render header
   process.stdout.write('\x1b[r\x1b[2J\x1b[1;1H')
   drawLeftRail('', lines, 74, uiActive ? c.darkGray : c.yellow)
+  const updateShortcut = updateInfo?.hasUpdate
+    ? `  ${c.darkGray}|${c.reset}  ${c.green}[p]${c.reset} ${c.yellow}Update Info${c.reset}`
+    : ''
   console.log(
-    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka MARK${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Bersihkan Layar${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}\n`
+    ` ${c.darkGray}Shortcuts:${c.reset} ${c.green}[u]${c.reset} ${c.gray}Buka MARK${c.reset}${updateShortcut}  ${c.darkGray}|${c.reset}  ${c.green}[c]${c.reset} ${c.gray}Bersihkan Layar${c.reset}  ${c.darkGray}|${c.reset}  ${c.green}[q]${c.reset} ${c.gray}Keluar${c.reset}\n`
   )
   console.log(
     ` ${c.darkGray}── Live Activity ─────────────────────────────────────────────────────────────${c.reset}`
@@ -108,6 +132,44 @@ export function logActivity(type, title, detail = '') {
     : ''
   console.log(
     ` ${c.darkGray}${time}${c.reset}  ${badge}  ${c.white}${title}${c.reset}${cleanDetail}`
+  )
+}
+
+export function toggleUpdateModal(config) {
+  isUpdateModalOpen = !isUpdateModalOpen
+  if (!isUpdateModalOpen) {
+    printMonitorHeader(config, isUiActive)
+    logActivity('agent', 'Info update ditutup. Monitor kembali ke mode live.')
+  } else {
+    process.stdout.write('\x1b[r')
+    printUpdateModal(updateInfo)
+  }
+}
+
+export function printUpdateModal(info) {
+  const latest = info?.latestVersion || 'terbaru'
+  const curr = info?.currentVersion || getCurrentVersion()
+  const instruction = info?.instruction || 'npm install -g @mazees/mark@latest'
+
+  console.log(
+    `\n ${c.bold}${c.green}── [INFO UPDATE MARK] ───────────────────────────────────────────────────────${c.reset}\n`
+  )
+  console.log(
+    ` Versi terbaru ${c.bold}${c.cyan}@mazees/mark${c.reset} (${c.green}v${latest}${c.reset}) telah dirilis di npm!`
+  )
+  console.log(` Versi yang terpasang saat ini: ${c.yellow}v${curr}${c.reset}\n`)
+  console.log(
+    ` ${c.white}Untuk memperbarui ke versi terbaru, jalankan perintah berikut di terminal:${c.reset}`
+  )
+  console.log(`\n   ${c.bold}${c.green}${instruction}${c.reset}\n`)
+  console.log(
+    ` ${c.darkGray}Petunjuk: Matikan MARK terlebih dahulu ([q]) sebelum menjalankan perintah update.${c.reset}`
+  )
+  console.log(
+    `\n ${c.bold}${c.green}─────────────────────────────────────────────────────────────────────────────${c.reset}`
+  )
+  console.log(
+    ` ${c.gray}Tekan ${c.green}[p]${c.gray} atau ${c.green}[Enter]${c.gray} untuk kembali ke dashboard live...${c.reset}\n`
   )
 }
 
@@ -189,6 +251,23 @@ export async function runMonitor(portOverride) {
 
   logActivity('agent', `MARK Server aktif di port ${serverPort}`)
   logActivity('agent', 'Membuka antarmuka MARK...')
+
+  // Pengecekan update versi terbaru di latar belakang (non-blocking)
+  checkForUpdate()
+    .then((info) => {
+      if (info && info.hasUpdate) {
+        updateInfo = info
+        if (!isJsonInspectorOpen && !isUpdateModalOpen) {
+          printMonitorHeader(currentConfig, isUiActive)
+          logActivity(
+            'agent',
+            'Update Tersedia',
+            `v${info.currentVersion} → v${info.latestVersion} (Tekan [p] utk perintah update)`
+          )
+        }
+      }
+    })
+    .catch(() => {})
 
   // Connect WebSocket live streaming
   try {
@@ -276,6 +355,9 @@ export async function runMonitor(portOverride) {
     } else if (key.name === 'u' || key.name === 'o') {
       logActivity('agent', 'Membuka MARK...')
       await launchUI({ port: serverPort, mode: 'app' })
+    } else if (key.name === 'p') {
+      currentConfig = await fetchConfig()
+      toggleUpdateModal(currentConfig)
     } else if (key.name === 'j' || key.name === 'd') {
       currentConfig = await fetchConfig()
       toggleJsonInspector(currentConfig)
@@ -283,6 +365,8 @@ export async function runMonitor(portOverride) {
       currentConfig = await fetchConfig()
       printMonitorHeader(currentConfig, isUiActive)
       logActivity('agent', 'Layar dibersihkan.')
+    } else if (isUpdateModalOpen && (key.name === 'return' || key.name === 'escape')) {
+      toggleUpdateModal(currentConfig)
     }
   })
 }

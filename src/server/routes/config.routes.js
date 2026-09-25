@@ -32,3 +32,10 @@ configRouter.post('/config', (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to save config' })
   }
 })
+
+// 3. Update Check API
+configRouter.get('/version/check', async (_req, res) => {
+  const { checkForUpdate } = await import('../services/updater.js')
+  const info = await checkForUpdate()
+  res.json({ success: true, data: info })
+})
