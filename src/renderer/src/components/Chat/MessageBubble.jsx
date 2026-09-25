@@ -32,7 +32,6 @@ export const MessageBubble = React.memo(
     const { activeApproval } = useApproval()
     const [isCopied, setIsCopied] = useState(false)
     const [isProcessOpen, setIsProcessOpen] = useState(Boolean(isThinking))
-    const steps = executionSteps || executedTools || []
 
     useEffect(() => {
       if (isThinking) {
@@ -136,7 +135,7 @@ export const MessageBubble = React.memo(
         )}
 
         {/* Executed Tools & Reasoning Activity Trace (Antigravity Style) */}
-        {((steps && steps.length > 0) || reasoning) && (
+        {((executedTools && executedTools.length > 0) || reasoning) && (
           <div className="my-2.5 space-y-1.5 select-none">
             {/* Thinking / Reasoning Accordion */}
             {reasoning && (
@@ -155,7 +154,7 @@ export const MessageBubble = React.memo(
             )}
 
             {/* Executed Tools Folded Process Accordion */}
-            {steps && steps.length > 0 && (
+            {executedTools && executedTools.length > 0 && (
               <details
                 className="group/process outline-none"
                 open={isProcessOpen}
@@ -165,28 +164,12 @@ export const MessageBubble = React.memo(
                   <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
                   <span className="font-semibold text-white/90">Proses</span>
                   <span className="text-[10px] text-white/40 font-normal">
-                    ({steps.length} langkah)
+                    ({executedTools.length} langkah)
                   </span>
                   <ChevronRight className="w-3.5 h-3.5 text-white/40 transition-transform duration-150 group-open/process:rotate-90 ml-auto shrink-0" />
                 </summary>
                 <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
-                  {steps.map((t, idx) => {
-                    if (t.type === 'narration' || (!t.tool && t.text)) {
-                      return (
-                        <div
-                          key={idx}
-                          className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
-                        >
-                          <Markdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[[rehypeExternalLinks, { target: '_blank', rel: ['nofollow', 'noopener', 'noreferrer'] }]]}
-                          >
-                            {t.text}
-                          </Markdown>
-                        </div>
-                      )
-                    }
-
+                  {executedTools.map((t, idx) => {
                     const isRunning = t.status === 'running'
                     const isPendingApproval = Boolean(
                       activeApproval &&
@@ -219,7 +202,6 @@ export const MessageBubble = React.memo(
                         : 'text-error'
 
                     const toolLabel = t.tool || t.task || 'tool'
-                    const displayReason = t.reason || null
                     let shortSummary = ''
                     if (hasQuery) {
                       try {
@@ -245,14 +227,7 @@ export const MessageBubble = React.memo(
                             ) : (
                               <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
                             )}
-                            <span className="font-semibold text-white/90">
-                              {displayReason || toolLabel}
-                            </span>
-                            {displayReason && t.tool && (
-                              <span className="text-[10px] text-primary/70 font-mono">
-                                ({t.tool})
-                              </span>
-                            )}
+                            <span className="font-semibold text-white/90">{toolLabel}</span>
                             {isPendingApproval ? (
                               <span className="text-[10px] text-warning font-normal animate-pulse">
                                 (menunggu persetujuan...)
@@ -294,14 +269,7 @@ export const MessageBubble = React.memo(
                             ) : (
                               <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
                             )}
-                            <span className="font-semibold text-white/90">
-                              {displayReason || toolLabel}
-                            </span>
-                            {displayReason && t.tool && (
-                              <span className="text-[10px] text-primary/70 font-mono">
-                                ({t.tool})
-                              </span>
-                            )}
+                            <span className="font-semibold text-white/90">{toolLabel}</span>
                             {isPendingApproval ? (
                               <span className="text-[10px] text-warning font-normal animate-pulse">
                                 (menunggu persetujuan...)
@@ -315,7 +283,7 @@ export const MessageBubble = React.memo(
                                 (dihentikan)
                               </span>
                             ) : null}
-                            {!displayReason && shortSummary && (
+                            {shortSummary && (
                               <span className="text-white/40 truncate max-w-md">
                                 {String(shortSummary).slice(0, 80)}
                               </span>
@@ -323,12 +291,6 @@ export const MessageBubble = React.memo(
                             <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
                           </summary>
                           <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
-                            {displayReason && (
-                              <div>
-                                <div className="text-info/80 font-semibold mb-0.5">Tujuan:</div>
-                                <div className="text-white/90 font-sans">{displayReason}</div>
-                              </div>
-                            )}
                             {hasQuery && (
                               <div>
                                 <div className="text-primary/70 font-semibold mb-0.5">Input:</div>

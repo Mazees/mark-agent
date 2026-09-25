@@ -1,7 +1,7 @@
 /* eslint-disable react/prop-types */
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, XCircle, Ban, Music, Brain, ChevronRight, Terminal } from 'lucide-react'
+import { Check, XCircle, Ban, Music, Brain, ChevronRight, Terminal, Loader2 } from 'lucide-react'
 import { FaYoutube } from 'react-icons/fa'
 import { useApproval } from '../../contexts/ApprovalContext'
 import { ApprovalBubble } from './ApprovalBubble'
@@ -105,9 +105,7 @@ export const ThinkingBubble = ({
                         key={idx}
                         className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
                       >
-                        <Markdown remarkPlugins={[remarkGfm]}>
-                          {step.text}
-                        </Markdown>
+                        <Markdown remarkPlugins={[remarkGfm]}>{step.text}</Markdown>
                       </div>
                     )
                   }
@@ -163,15 +161,15 @@ export const ThinkingBubble = ({
                       <div key={idx} className="flex flex-col py-0.5">
                         <div className="flex items-center gap-2 text-xs font-mono text-white/60">
                           {isPendingApproval ? (
-                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
                           ) : isRunning ? (
-                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
                           ) : isStopped ? (
                             <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
                           ) : isFailed ? (
                             <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
                           ) : (
-                            <Check className="w-3.5 h-3.5 text-success shrink-0" />
+                            <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
                           )}
                           <span className="font-semibold text-white/90">
                             {displayReason || toolLabel}
@@ -184,10 +182,6 @@ export const ThinkingBubble = ({
                           {isPendingApproval ? (
                             <span className="text-[10px] text-warning font-normal animate-pulse">
                               (menunggu persetujuan...)
-                            </span>
-                          ) : isRunning ? (
-                            <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                              (mengeksekusi...)
                             </span>
                           ) : isStopped ? (
                             <span className="text-[10px] text-warning/80 font-normal">
@@ -218,15 +212,15 @@ export const ThinkingBubble = ({
                       >
                         <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
                           {isPendingApproval ? (
-                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
                           ) : isRunning ? (
-                            <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
                           ) : isStopped ? (
                             <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
                           ) : isFailed ? (
                             <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
                           ) : (
-                            <Check className="w-3.5 h-3.5 text-success shrink-0" />
+                            <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
                           )}
                           <span className="font-semibold text-white/90">
                             {displayReason || toolLabel}
@@ -239,10 +233,6 @@ export const ThinkingBubble = ({
                           {isPendingApproval ? (
                             <span className="text-[10px] text-warning font-normal animate-pulse">
                               (menunggu persetujuan...)
-                            </span>
-                          ) : isRunning ? (
-                            <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                              (mengeksekusi...)
                             </span>
                           ) : isStopped ? (
                             <span className="text-[10px] text-warning/80 font-normal">
