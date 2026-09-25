@@ -257,11 +257,6 @@ export const MessageBubble = React.memo(
                                 <span className="font-semibold text-white/90">
                                   {displayReason || toolLabel}
                                 </span>
-                                {displayReason && t.tool && (
-                                  <span className="text-[10px] text-primary/70 font-mono">
-                                    ({t.tool})
-                                  </span>
-                                )}
                                 {isPendingApproval ? (
                                   <span className="text-[10px] text-warning font-normal animate-pulse">
                                     (menunggu persetujuan...)
@@ -308,11 +303,6 @@ export const MessageBubble = React.memo(
                                 <span className="font-semibold text-white/90">
                                   {displayReason || toolLabel}
                                 </span>
-                                {displayReason && t.tool && (
-                                  <span className="text-[10px] text-primary/70 font-mono">
-                                    ({t.tool})
-                                  </span>
-                                )}
                                 {isPendingApproval ? (
                                   <span className="text-[10px] text-warning font-normal animate-pulse">
                                     (menunggu persetujuan...)
@@ -330,6 +320,16 @@ export const MessageBubble = React.memo(
                                 <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
                               </summary>
                               <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
+                                {t.tool && (
+                                  <div>
+                                    <div className="text-primary/70 font-semibold mb-0.5">
+                                      Tool:
+                                    </div>
+                                    <div className="text-white/90 font-mono text-[11px]">
+                                      {t.tool}
+                                    </div>
+                                  </div>
+                                )}
                                 {displayReason && (
                                   <div>
                                     <div className="text-info/80 font-semibold mb-0.5">Tujuan:</div>
