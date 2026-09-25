@@ -113,21 +113,41 @@ export const DurableTaskBubble = ({
         ? 'text-success'
         : 'text-error'
 
-    const toolLabel = t.tool || t.task || 'tool'
-    let shortSummary = ''
+    let parsedArgs = null
     if (hasQuery) {
       try {
-        const parsed = JSON.parse(queryString)
-        shortSummary =
-          parsed.command ||
-          parsed.path ||
-          parsed.query ||
-          parsed.prompt ||
-          parsed.skill_name ||
-          queryString
-      } catch (_) {
-        shortSummary = queryString
-      }
+        parsedArgs =
+          typeof t.query === 'object' && t.query !== null ? t.query : JSON.parse(queryString)
+      } catch (_) {}
+    }
+
+    const toolLabel = t.tool || t.task || 'tool'
+    const displayReason =
+      t.reason ||
+      parsedArgs?.reason ||
+      parsedArgs?.description ||
+      parsedArgs?.task ||
+      parsedArgs?.title ||
+      null
+
+    let shortSummary = ''
+    if (parsedArgs && typeof parsedArgs === 'object') {
+      shortSummary =
+        parsedArgs.command ||
+        parsedArgs.path ||
+        parsedArgs.file ||
+        parsedArgs.filePath ||
+        parsedArgs.url ||
+        parsedArgs.query ||
+        parsedArgs.prompt ||
+        parsedArgs.message ||
+        parsedArgs.skill_name ||
+        parsedArgs.text ||
+        (parsedArgs.script ? parsedArgs.script.trim().replace(/\s+/g, ' ').slice(0, 80) : '') ||
+        ''
+    }
+    if (!shortSummary && hasQuery) {
+      shortSummary = queryString
     }
 
     if (!hasQuery && !hasResult) {
@@ -135,18 +155,23 @@ export const DurableTaskBubble = ({
         <div key={idx} className="flex flex-col py-0.5">
           <div className="flex items-center gap-2 text-xs font-mono text-white/60">
             {isPendingApproval ? (
-              <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
+            ) : isToolRunning ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
+            ) : isStoppedTool ? (
+              <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+            ) : hasError ? (
+              <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
             ) : (
-              <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
+              <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
             )}
-            <span className="font-semibold text-white/90">{toolLabel}</span>
+            <span className="font-semibold text-white/90">{displayReason || toolLabel}</span>
+            {displayReason && t.tool && (
+              <span className="text-[10px] text-primary/70 font-mono">({t.tool})</span>
+            )}
             {isPendingApproval ? (
               <span className="text-[10px] text-warning font-normal animate-pulse">
                 (menunggu persetujuan...)
-              </span>
-            ) : isToolRunning ? (
-              <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                (mengeksekusi...)
               </span>
             ) : isStoppedTool ? (
               <span className="text-[10px] text-warning/80 font-normal">(dihentikan)</span>
@@ -172,23 +197,28 @@ export const DurableTaskBubble = ({
         <details className="group/toolitem outline-none text-xs font-mono" open={isToolRunning}>
           <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
             {isPendingApproval ? (
-              <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
+            ) : isToolRunning ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
+            ) : isStoppedTool ? (
+              <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+            ) : hasError ? (
+              <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
             ) : (
-              <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
+              <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
             )}
-            <span className="font-semibold text-white/90">{toolLabel}</span>
+            <span className="font-semibold text-white/90">{displayReason || toolLabel}</span>
+            {displayReason && t.tool && (
+              <span className="text-[10px] text-primary/70 font-mono">({t.tool})</span>
+            )}
             {isPendingApproval ? (
               <span className="text-[10px] text-warning font-normal animate-pulse">
                 (menunggu persetujuan...)
               </span>
-            ) : isToolRunning ? (
-              <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                (mengeksekusi...)
-              </span>
             ) : isStoppedTool ? (
               <span className="text-[10px] text-warning/80 font-normal">(dihentikan)</span>
             ) : null}
-            {shortSummary && (
+            {!displayReason && shortSummary && (
               <span className="text-white/40 truncate max-w-md">
                 {String(shortSummary).slice(0, 80)}
               </span>
@@ -196,6 +226,12 @@ export const DurableTaskBubble = ({
             <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
           </summary>
           <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
+            {displayReason && (
+              <div>
+                <div className="text-info/80 font-semibold mb-0.5">Tujuan:</div>
+                <div className="text-white/90 font-sans">{displayReason}</div>
+              </div>
+            )}
             {hasQuery && (
               <div>
                 <div className="text-primary/70 font-semibold mb-0.5">Input:</div>

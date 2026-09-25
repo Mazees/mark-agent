@@ -179,25 +179,37 @@ export const useMarkPlan = ({
         ? Number(targetSessionId)
         : activeRunningSessionIdRef.current || 1
 
+    const interventionItem = {
+      type: 'intervention',
+      text: displayMsg,
+      timestamp: Date.now()
+    }
+
     const session = activeSessionsRef.current.get(sId)
     if (session) {
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
+      if (session.executedToolsList) {
+        session.executedToolsList.push(interventionItem)
+      }
     }
 
     const updater = activeSessionUpdatersRef.current.get(sId) || (sId === 1 ? setChatData : null)
     if (updater) {
       updater((prev) => {
-        const thinkingItem = prev.find((item) => item.isThinking)
-        const filtered = prev.filter((item) => !item.isThinking)
-        const item = {
-          role: 'user',
-          content: displayMsg,
-          timestamp: getCurrentTimeInfo(),
-          created_at: Date.now(),
-          isIntervention: true
+        const thinkingIndex = prev.findIndex((item) => item.isThinking)
+        if (thinkingIndex === -1) return prev
+        const thinkingItem = prev[thinkingIndex]
+        const currentTools = Array.isArray(thinkingItem.executedTools)
+          ? thinkingItem.executedTools
+          : []
+        const updatedThinking = {
+          ...thinkingItem,
+          executedTools: [...currentTools, interventionItem]
         }
-        return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
+        const newArr = [...prev]
+        newArr[thinkingIndex] = updatedThinking
+        return newArr
       })
     }
   }
@@ -1370,6 +1382,7 @@ export const useMarkPlan = ({
       let isDone = false
       let stepCount = 0
       executedToolsList = []
+      sessionRecord.executedToolsList = executedToolsList
       let lastToolExecution = null
       accumulatedThoughts = []
       let currentActiveMood = 'neutral'
@@ -1439,22 +1452,16 @@ export const useMarkPlan = ({
           const interventions = sessionRecord.interventions.splice(0).join('\n')
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
 
-          targetSetChatData((prev) => {
-            const alreadyPresent = prev.some(
-              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
-            )
-            if (alreadyPresent) return prev
-            const thinkingItem = prev.find((m) => m.isThinking)
-            const filtered = prev.filter((m) => !m.isThinking)
-            const item = {
-              role: 'user',
-              content: interventions,
-              timestamp: getCurrentTimeInfo(),
-              created_at: Date.now(),
-              isIntervention: true
-            }
-            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
-          })
+          const alreadyInList = executedToolsList.some(
+            (t) => t.type === 'intervention' && t.text === interventions
+          )
+          if (!alreadyInList) {
+            executedToolsList.push({
+              type: 'intervention',
+              text: interventions,
+              timestamp: Date.now()
+            })
+          }
 
           execSteps.push({ task: `Intervensi User: ${interventions}` })
           targetPushProcess({
@@ -1467,6 +1474,17 @@ export const useMarkPlan = ({
               reasoning: 'Menerima arahan baru dari user di tengah proses.'
             }
           })
+
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isThinking
+                ? {
+                    ...msg,
+                    executedTools: [...executedToolsList]
+                  }
+                : msg
+            )
+          )
         }
 
         stepCount++
@@ -1856,9 +1874,17 @@ export const useMarkPlan = ({
               }
             })
 
+            const toolReason =
+              parsedArgs.reason ||
+              parsedArgs.description ||
+              parsedArgs.task ||
+              parsedArgs.title ||
+              null
+
             currentInFlightTool = {
               tool: toolName,
               query: JSON.stringify(parsedArgs),
+              reason: toolReason,
               status: 'running'
             }
             const currentLiveTools = [...executedToolsList, currentInFlightTool]
@@ -1969,6 +1995,7 @@ export const useMarkPlan = ({
             executedToolsList.push({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
+              reason: toolReason,
               status: executionSucceeded ? 'done' : 'failed',
               preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
               fullResult:
@@ -2250,22 +2277,16 @@ export const useMarkPlan = ({
           }
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
 
-          targetSetChatData((prev) => {
-            const alreadyPresent = prev.some(
-              (m) => m.role === 'user' && m.isIntervention && m.content === interventions
-            )
-            if (alreadyPresent) return prev
-            const thinkingItem = prev.find((m) => m.isThinking)
-            const filtered = prev.filter((m) => !m.isThinking)
-            const item = {
-              role: 'user',
-              content: interventions,
-              timestamp: getCurrentTimeInfo(),
-              created_at: Date.now(),
-              isIntervention: true
-            }
-            return thinkingItem ? [...filtered, item, thinkingItem] : [...prev, item]
-          })
+          const alreadyInList = executedToolsList.some(
+            (t) => t.type === 'intervention' && t.text === interventions
+          )
+          if (!alreadyInList) {
+            executedToolsList.push({
+              type: 'intervention',
+              text: interventions,
+              timestamp: Date.now()
+            })
+          }
 
           execSteps.push({ task: `Intervensi User: ${interventions}` })
           targetPushProcess({
@@ -2278,6 +2299,17 @@ export const useMarkPlan = ({
               reasoning: 'Menerima arahan baru dari user saat penyelesaian giliran.'
             }
           })
+
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isThinking
+                ? {
+                    ...msg,
+                    executedTools: [...executedToolsList]
+                  }
+                : msg
+            )
+          )
 
           continue
         }

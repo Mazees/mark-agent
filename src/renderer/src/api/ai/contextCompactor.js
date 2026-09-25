@@ -51,8 +51,15 @@ export const buildOptimizedChatSession = (sourceChatData) => {
       if (item.executedTools && item.executedTools.length > 0) {
         toolLog = item.executedTools
           .map((t) => {
+            if (t.type === 'intervention') {
+              return `  * [Intervensi Pengguna]: "${t.text || ''}"`
+            }
+            if (t.type === 'narration' || (!t.tool && t.text)) {
+              return `  * [Catatan Narasi AI]: "${t.text || ''}"`
+            }
             const res = t.fullResult || t.resultSummary || 'OK'
             return `  * [Tool: ${t.tool}] query: "${t.query || ''}"\n    Hasil:\n${res}`
+            return `  * [Tool: ${t.tool || t.task || 'tool'}] query: "${t.query || ''}"\n    Hasil:\n${res}`
           })
           .join('\n\n')
       }

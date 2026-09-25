@@ -99,6 +99,20 @@ export const ThinkingBubble = ({
               </summary>
               <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
                 {steps.map((step, idx) => {
+                  if (step.type === 'intervention') {
+                    const interventionText = step.text || step.content || step.task || ''
+                    return (
+                      <div key={idx} className="flex items-start gap-2 py-0.5 text-xs">
+                        <span className="font-bold text-primary font-mono shrink-0 select-none">
+                          You :
+                        </span>
+                        <span className="text-white/90 font-sans select-text whitespace-pre-wrap leading-relaxed">
+                          {interventionText}
+                        </span>
+                      </div>
+                    )
+                  }
+
                   if (step.type === 'narration' || (!step.tool && step.text)) {
                     return (
                       <div

@@ -12,7 +12,8 @@ import {
   Check,
   XCircle,
   Ban,
-  Terminal
+  Terminal,
+  Loader2
 } from 'lucide-react'
 import { useApproval } from '../../contexts/ApprovalContext'
 import { ApprovalBubble } from './ApprovalBubble'
@@ -154,189 +155,238 @@ export const MessageBubble = React.memo(
             )}
 
             {/* Executed Tools Folded Process Accordion */}
-            {executedTools && executedTools.length > 0 && (
-              <details
-                className="group/process outline-none"
-                open={isProcessOpen}
-                onToggle={(e) => setIsProcessOpen(e.currentTarget.open)}
-              >
-                <summary className="list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
-                  <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                  <span className="font-semibold text-white/90">Proses</span>
-                  <span className="text-[10px] text-white/40 font-normal">
-                    ({executedTools.length} langkah)
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-white/40 transition-transform duration-150 group-open/process:rotate-90 ml-auto shrink-0" />
-                </summary>
-                <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
-                  {executedTools.map((t, idx) => {
-                    const isRunning = t.status === 'running'
-                    const isPendingApproval = Boolean(
-                      activeApproval &&
-                      activeApproval.status === 'pending' &&
-                      isRunning &&
-                      (activeApproval.tool === t.tool || !t.tool)
-                    )
-                    const hasQuery = t.query !== undefined && t.query !== null && t.query !== ''
-                    const queryString =
-                      typeof t.query === 'string' ? t.query : JSON.stringify(t.query, null, 2)
-                    const textResult = String(t.fullResult || t.resultSummary || '')
-                    const hasResult = Boolean(textResult.trim())
-                    const isStopped = t.status === 'stopped' || t.status === 'cancelled'
-                    const hasError =
-                      !isStopped &&
-                      (t.status === 'failed' ||
-                        t.status === 'error' ||
-                        textResult.startsWith('[ERROR]') ||
-                        textResult.includes(' crash:') ||
-                        textResult.toLowerCase().includes(' gagal:'))
-                    const isSuccessful =
-                      !isStopped &&
-                      !hasError &&
-                      (t.status === 'done' || t.status === 'success' || t.status !== 'error')
-                    const StatusIcon = isStopped ? Ban : isSuccessful ? Check : XCircle
-                    const statusClass = isStopped
-                      ? 'text-warning'
-                      : isSuccessful
-                        ? 'text-success'
-                        : 'text-error'
-
-                    const toolLabel = t.tool || t.task || 'tool'
-                    let shortSummary = ''
-                    if (hasQuery) {
-                      try {
-                        const parsed = JSON.parse(queryString)
-                        shortSummary =
-                          parsed.command ||
-                          parsed.path ||
-                          parsed.query ||
-                          parsed.prompt ||
-                          parsed.skill_name ||
-                          queryString
-                      } catch (_) {
-                        shortSummary = queryString
-                      }
-                    }
-
-                    if (!hasQuery && !hasResult) {
-                      return (
-                        <div key={idx} className="flex flex-col py-0.5">
-                          <div className="flex items-center gap-2 text-xs font-mono text-white/60">
-                            {isPendingApproval ? (
-                              <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
-                            ) : (
-                              <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
-                            )}
-                            <span className="font-semibold text-white/90">{toolLabel}</span>
-                            {isPendingApproval ? (
-                              <span className="text-[10px] text-warning font-normal animate-pulse">
-                                (menunggu persetujuan...)
+            {((executedTools && executedTools.length > 0) ||
+              (executionSteps && executionSteps.length > 0)) &&
+              (() => {
+                const toolsToRender =
+                  executedTools && executedTools.length > 0 ? executedTools : executionSteps || []
+                return (
+                  <details
+                    className="group/process outline-none"
+                    open={isProcessOpen}
+                    onToggle={(e) => setIsProcessOpen(e.currentTarget.open)}
+                  >
+                    <summary className="list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
+                      <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
+                      <span className="font-semibold text-white/90">Proses</span>
+                      <span className="text-[10px] text-white/40 font-normal">
+                        ({toolsToRender.length} langkah)
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-white/40 transition-transform duration-150 group-open/process:rotate-90 ml-auto shrink-0" />
+                    </summary>
+                    <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
+                      {toolsToRender.map((t, idx) => {
+                        if (t.type === 'intervention') {
+                          const interventionText = t.text || t.content || t.task || ''
+                          return (
+                            <div key={idx} className="flex items-start gap-2 py-0.5 text-xs">
+                              <span className="font-bold text-primary font-mono shrink-0 select-none">
+                                You :
                               </span>
-                            ) : isRunning ? (
-                              <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                                (mengeksekusi...)
+                              <span className="text-white/90 font-sans select-text whitespace-pre-wrap leading-relaxed">
+                                {interventionText}
                               </span>
-                            ) : isStopped ? (
-                              <span className="text-[10px] text-warning/80 font-normal">
-                                (dihentikan)
-                              </span>
-                            ) : null}
-                          </div>
-                          {isPendingApproval && (
-                            <div className="pl-3 pr-1">
-                              <ApprovalBubble
-                                approvalId={activeApproval.id}
-                                tool={activeApproval.tool}
-                                query={activeApproval.query}
-                                message={activeApproval.message}
-                                status={activeApproval.status}
-                              />
                             </div>
-                          )}
-                        </div>
-                      )
-                    }
+                          )
+                        }
 
-                    return (
-                      <div key={idx} className="flex flex-col py-0.5">
-                        <details
-                          className="group/toolitem outline-none text-xs font-mono"
-                          open={isRunning}
-                        >
-                          <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
-                            {isPendingApproval ? (
-                              <span className="w-2 h-2 rounded-full bg-warning animate-ping shrink-0" />
-                            ) : (
-                              <StatusIcon className={`w-3.5 h-3.5 ${statusClass} shrink-0`} />
-                            )}
-                            <span className="font-semibold text-white/90">{toolLabel}</span>
-                            {isPendingApproval ? (
-                              <span className="text-[10px] text-warning font-normal animate-pulse">
-                                (menunggu persetujuan...)
-                              </span>
-                            ) : isRunning ? (
-                              <span className="text-[10px] text-warning/80 animate-pulse font-normal">
-                                (mengeksekusi...)
-                              </span>
-                            ) : isStopped ? (
-                              <span className="text-[10px] text-warning/80 font-normal">
-                                (dihentikan)
-                              </span>
-                            ) : null}
-                            {shortSummary && (
-                              <span className="text-white/40 truncate max-w-md">
-                                {String(shortSummary).slice(0, 80)}
-                              </span>
-                            )}
-                            <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
-                          </summary>
-                          <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
-                            {hasQuery && (
-                              <div>
-                                <div className="text-primary/70 font-semibold mb-0.5">Input:</div>
-                                <div className="text-white/90">{queryString}</div>
+                        if (t.type === 'narration' || (!t.tool && t.text)) {
+                          return (
+                            <div
+                              key={idx}
+                              className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
+                            >
+                              <Markdown remarkPlugins={[remarkGfm]}>{t.text}</Markdown>
+                            </div>
+                          )
+                        }
+
+                        const isRunning = t.status === 'running'
+                        const isStopped = t.status === 'stopped' || t.status === 'cancelled'
+                        const isPendingApproval = Boolean(
+                          activeApproval &&
+                          activeApproval.status === 'pending' &&
+                          isRunning &&
+                          (activeApproval.tool === t.tool || !t.tool)
+                        )
+                        const hasQuery = t.query !== undefined && t.query !== null && t.query !== ''
+                        const queryString =
+                          typeof t.query === 'string' ? t.query : JSON.stringify(t.query, null, 2)
+                        const textResult = String(t.fullResult || t.resultSummary || '')
+                        const hasResult = Boolean(textResult.trim())
+                        const isFailed =
+                          t.status === 'failed' ||
+                          t.status === 'error' ||
+                          textResult.startsWith('[ERROR]') ||
+                          textResult.includes(' crash:') ||
+                          textResult.toLowerCase().includes(' gagal:')
+
+                        const toolLabel = t.tool || t.task || 'tool'
+                        const displayReason = t.reason || null
+                        let shortSummary = ''
+                        if (hasQuery) {
+                          try {
+                            const parsed = JSON.parse(queryString)
+                            shortSummary =
+                              parsed.command ||
+                              parsed.path ||
+                              parsed.query ||
+                              parsed.prompt ||
+                              parsed.skill_name ||
+                              queryString
+                          } catch (_) {
+                            shortSummary = queryString
+                          }
+                        }
+
+                        if (!hasQuery && !hasResult) {
+                          return (
+                            <div key={idx} className="flex flex-col py-0.5">
+                              <div className="flex items-center gap-2 text-xs font-mono text-white/60">
+                                {isPendingApproval ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
+                                ) : isRunning ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
+                                ) : isStopped ? (
+                                  <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                                ) : isFailed ? (
+                                  <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
+                                )}
+                                <span className="font-semibold text-white/90">
+                                  {displayReason || toolLabel}
+                                </span>
+                                {displayReason && t.tool && (
+                                  <span className="text-[10px] text-primary/70 font-mono">
+                                    ({t.tool})
+                                  </span>
+                                )}
+                                {isPendingApproval ? (
+                                  <span className="text-[10px] text-warning font-normal animate-pulse">
+                                    (menunggu persetujuan...)
+                                  </span>
+                                ) : isStopped ? (
+                                  <span className="text-[10px] text-warning/80 font-normal">
+                                    (dihentikan)
+                                  </span>
+                                ) : null}
                               </div>
-                            )}
-                            {hasResult && (
-                              <div>
-                                <div className="text-success/70 font-semibold mb-0.5">Output:</div>
-                                <div className="text-white/80">{textResult}</div>
-                              </div>
-                            )}
-                            {t.preview && (
-                              <div className="mt-2 pt-1 border-t border-white/10">
-                                <div className="text-primary/70 font-semibold mb-1">
-                                  Pratinjau Visual:
-                                </div>
-                                <div className="relative group/preview rounded-lg overflow-hidden border border-white/20 bg-black/40 max-w-sm">
-                                  <img
-                                    src={t.preview}
-                                    alt="Tool Visual Output"
-                                    className="max-h-48 w-auto object-contain cursor-pointer transition-transform duration-200 group-hover/preview:scale-105"
-                                    onClick={() => window.open(t.preview, '_blank')}
+                              {isPendingApproval && (
+                                <div className="pl-3 pr-1">
+                                  <ApprovalBubble
+                                    approvalId={activeApproval.id}
+                                    tool={activeApproval.tool}
+                                    query={activeApproval.query}
+                                    message={activeApproval.message}
+                                    status={activeApproval.status}
                                   />
                                 </div>
+                              )}
+                            </div>
+                          )
+                        }
+
+                        return (
+                          <div key={idx} className="flex flex-col py-0.5">
+                            <details
+                              className="group/toolitem outline-none text-xs font-mono"
+                              open={isRunning}
+                            >
+                              <summary className="list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
+                                {isPendingApproval ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
+                                ) : isRunning ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
+                                ) : isStopped ? (
+                                  <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                                ) : isFailed ? (
+                                  <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
+                                )}
+                                <span className="font-semibold text-white/90">
+                                  {displayReason || toolLabel}
+                                </span>
+                                {displayReason && t.tool && (
+                                  <span className="text-[10px] text-primary/70 font-mono">
+                                    ({t.tool})
+                                  </span>
+                                )}
+                                {isPendingApproval ? (
+                                  <span className="text-[10px] text-warning font-normal animate-pulse">
+                                    (menunggu persetujuan...)
+                                  </span>
+                                ) : isStopped ? (
+                                  <span className="text-[10px] text-warning/80 font-normal">
+                                    (dihentikan)
+                                  </span>
+                                ) : null}
+                                {!displayReason && shortSummary && (
+                                  <span className="text-white/40 truncate max-w-md">
+                                    {String(shortSummary).slice(0, 80)}
+                                  </span>
+                                )}
+                                <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/toolitem:rotate-90 ml-auto shrink-0" />
+                              </summary>
+                              <div className="mt-1 pl-3 my-1.5 text-[11px] font-mono border-l-2 border-white/20 text-white/80 whitespace-pre-wrap break-all max-h-56 overflow-y-auto custom-scrollbar bg-base-300/40 p-2.5 rounded-lg space-y-1.5 select-text">
+                                {displayReason && (
+                                  <div>
+                                    <div className="text-info/80 font-semibold mb-0.5">Tujuan:</div>
+                                    <div className="text-white/90 font-sans">{displayReason}</div>
+                                  </div>
+                                )}
+                                {hasQuery && (
+                                  <div>
+                                    <div className="text-primary/70 font-semibold mb-0.5">
+                                      Input:
+                                    </div>
+                                    <div className="text-white/90">{queryString}</div>
+                                  </div>
+                                )}
+                                {hasResult && (
+                                  <div>
+                                    <div className="text-success/70 font-semibold mb-0.5">
+                                      Output:
+                                    </div>
+                                    <div className="text-white/80">{textResult}</div>
+                                  </div>
+                                )}
+                                {t.preview && (
+                                  <div className="mt-2 pt-1 border-t border-white/10">
+                                    <div className="text-primary/70 font-semibold mb-1">
+                                      Pratinjau Visual:
+                                    </div>
+                                    <div className="relative group/preview rounded-lg overflow-hidden border border-white/20 bg-black/40 max-w-sm">
+                                      <img
+                                        src={t.preview}
+                                        alt="Tool Visual Output"
+                                        className="max-h-48 w-auto object-contain cursor-pointer transition-transform duration-200 group-hover/preview:scale-105"
+                                        onClick={() => window.open(t.preview, '_blank')}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </details>
+                            {isPendingApproval && (
+                              <div className="pl-3 pr-1">
+                                <ApprovalBubble
+                                  approvalId={activeApproval.id}
+                                  tool={activeApproval.tool}
+                                  query={activeApproval.query}
+                                  message={activeApproval.message}
+                                  status={activeApproval.status}
+                                />
                               </div>
                             )}
                           </div>
-                        </details>
-                        {isPendingApproval && (
-                          <div className="pl-3 pr-1">
-                            <ApprovalBubble
-                              approvalId={activeApproval.id}
-                              tool={activeApproval.tool}
-                              query={activeApproval.query}
-                              message={activeApproval.message}
-                              status={activeApproval.status}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </details>
-            )}
+                        )
+                      })}
+                    </div>
+                  </details>
+                )
+              })()}
           </div>
         )}
 

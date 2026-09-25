@@ -776,6 +776,9 @@ export function formatMessageWithToolLogs(msg) {
     if (Array.isArray(steps) && steps.length > 0) {
       const toolLog = steps
         .map((t) => {
+          if (t.type === 'intervention') {
+            return `  * [Intervensi Pengguna]: "${t.text || ''}"`
+          }
           if (t.type === 'narration' || (!t.tool && t.text)) {
             return `  * [Catatan Narasi AI]: "${t.text || ''}"`
           }
@@ -809,6 +812,9 @@ export function formatMessageWithToolLogs(msg) {
   if (Array.isArray(steps) && steps.length > 0) {
     const toolLog = steps
       .map((t) => {
+        if (t.type === 'intervention') {
+          return `  * [Intervensi Pengguna]: "${t.text || ''}"`
+        }
         if (t.type === 'narration' || (!t.tool && t.text)) {
           return `  * [Catatan Narasi AI]: "${t.text || ''}"`
         }
