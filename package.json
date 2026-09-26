@@ -1,6 +1,6 @@
 {
   "name": "@mazees/mark",
-  "version": "5.0.3",
+  "version": "5.0.4",
   "description": "Mark: Metacognitive Artificial Relational Knowledge AI",
   "main": "./src/server/index.js",
   "type": "module",
