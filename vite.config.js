@@ -13,7 +13,11 @@ export default defineConfig({
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer/src'),
       '@shared': resolve(__dirname, 'src/shared'),
-      'lucide-react': resolve(__dirname, 'node_modules/lucide-react/dist/cjs/lucide-react.js')
+      'lucide-react': resolve(__dirname, 'node_modules/lucide-react/dist/cjs/lucide-react.js'),
+      'micromark-util-sanitize-uri': resolve(
+        __dirname,
+        'node_modules/micromark-util-sanitize-uri/index.js'
+      )
     }
   },
   plugins: [react(), tailwindcss()],

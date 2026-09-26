@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { CodeBlock } from '../Chat/CodeBlock'
 import {
   Bot,
@@ -145,9 +146,7 @@ function InlineToolExecution({ toolCall, observation }) {
             <span className="text-base-content/60">Ran</span>
             <span className="text-primary font-semibold">{toolName}</span>
             {cliArgs && (
-              <span className="text-base-content/50 text-[10px] truncate max-w-sm">
-                {cliArgs}
-              </span>
+              <span className="text-base-content/50 text-[10px] truncate max-w-sm">{cliArgs}</span>
             )}
           </div>
         </div>
@@ -169,7 +168,9 @@ function InlineToolExecution({ toolCall, observation }) {
         <div className="p-3 bg-black/40 border-t border-base-content/10 space-y-2 text-[10px] text-base-content/85">
           {rawArgs && (
             <div>
-              <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">Arguments:</div>
+              <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">
+                Arguments:
+              </div>
               <pre className="p-2 rounded-lg bg-base-100/50 overflow-x-auto text-warning font-mono whitespace-pre-wrap border border-base-content/5">
                 {typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs, null, 2)}
               </pre>
@@ -178,9 +179,14 @@ function InlineToolExecution({ toolCall, observation }) {
 
           {observation && (
             <div>
-              <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">Output:</div>
+              <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">
+                Output:
+              </div>
               <pre className="p-2 rounded-lg bg-base-100/50 overflow-x-auto text-base-content/90 font-mono whitespace-pre-wrap max-h-56 overflow-y-auto border border-base-content/5">
-                {(typeof observation === 'string' ? observation : JSON.stringify(observation)).replace(/^\[OBSERVATION\]:\s*/, '')}
+                {(typeof observation === 'string'
+                  ? observation
+                  : JSON.stringify(observation)
+                ).replace(/^\[OBSERVATION\]:\s*/, '')}
               </pre>
             </div>
           )}
@@ -198,7 +204,11 @@ function IncomingMessageBubble({ message }) {
   const isPeer = message.sender === 'peer'
 
   const senderBadge = isMark ? 'LEAD AGENT' : isPeer ? 'PEER AGENT' : 'CREATOR'
-  const badgeColor = isMark ? 'bg-primary/20 text-primary border-primary/30' : isPeer ? 'bg-accent/20 text-accent border-accent/30' : 'bg-secondary/20 text-secondary border-secondary/30'
+  const badgeColor = isMark
+    ? 'bg-primary/20 text-primary border-primary/30'
+    : isPeer
+      ? 'bg-accent/20 text-accent border-accent/30'
+      : 'bg-secondary/20 text-secondary border-secondary/30'
 
   // Bersihkan tag awalan jika ada
   const cleanContent = extractTextContent(message.content)
@@ -213,7 +223,10 @@ function IncomingMessageBubble({ message }) {
           {senderBadge}
         </span>
         <span>
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(message.timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
         </span>
       </div>
 

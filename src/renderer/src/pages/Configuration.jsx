@@ -33,6 +33,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
     awarenessEnabled: true,
     cameraDeviceId: 'default',
     cameraEnabled: true,
+    superEffortEnabled: false,
     bgOverlayOpacity: 65
   })
   const [videoDevices, setVideoDevices] = useState([])

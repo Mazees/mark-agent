@@ -1,4 +1,5 @@
 import './assets/main.css'
+import 'katex/dist/katex.min.css'
 import './api/web-bridge.js'
 
 import { StrictMode } from 'react'

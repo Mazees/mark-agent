@@ -35,6 +35,7 @@ import {
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import { useConfirm } from '../hooks/useConfirm'
+import { useApproval, extractToolTarget } from '../contexts/ApprovalContext'
 import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 /**
@@ -95,6 +96,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     inputSource,
     setCurrentActiveSessionId
   } = chatContext || {}
+
+  const { activeApproval, resolveApproval } = useApproval() || {}
 
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
@@ -279,6 +282,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       workspaceRoot: currentSession?.workspaceRoot || null,
       displayPrompt: rawDisplay,
       attachedFiles: sendOptions?.attachedFiles,
+      ...sendOptions,
       ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
     }
 
@@ -341,7 +345,26 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     if (isAutoScrollEnabledRef.current && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
-  }, [currentDisplayMessages.length, lastMessageContent, lastMessageIsThinking, isCurrentLoading])
+  }, [
+    currentDisplayMessages.length,
+    lastMessageContent,
+    lastMessageIsThinking,
+    isCurrentLoading,
+    activeApproval?.status,
+    activeApproval?.id
+  ])
+
+  // Pastikan auto-scroll ketika ada permintaan izin baru
+  useEffect(() => {
+    if (activeApproval && activeApproval.status === 'pending') {
+      isAutoScrollEnabledRef.current = true
+      scrollToBottom('smooth')
+      const t = setTimeout(() => {
+        scrollToBottom('smooth')
+      }, 100)
+      return () => clearTimeout(t)
+    }
+  }, [activeApproval?.id, activeApproval?.status])
 
   const handleCreateNewChat = async () => {
     try {
@@ -885,13 +908,74 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                       })
                     })()
                   )}
-                  <div ref={messagesEndRef} className="h-2" />
+                  {/* Spacer besar dan anti-shrink agar pesan paling bawah (termasuk tombol ApprovalBubble) tidak pernah terpotong saat scroll mentok */}
+                  <div
+                    ref={messagesEndRef}
+                    className="h-32 min-h-32 shrink-0 w-full pointer-events-none"
+                    aria-hidden="true"
+                  />
                 </div>
               </div>
 
               {/* Bottom Input Area */}
-              <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0">
+              <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0 z-20">
                 <div className="max-w-6xl mx-auto w-full h-full">
+                  {/* Sticky Quick Approval Bar jika ada izin tertunda */}
+                  {activeApproval && activeApproval.status === 'pending' && (
+                    <div className="mb-2.5 p-2.5 bg-warning/15 border border-warning/40 rounded-xl flex items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md animate-[response-fade-in_0.15s_ease-out_forwards]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="badge badge-warning badge-xs font-mono font-bold uppercase shrink-0">
+                          Persetujuan
+                        </span>
+                        <span className="font-semibold text-white/95 truncate">
+                          {activeApproval.tool || 'Operasi'}
+                        </span>
+                        <span className="text-white/60 truncate hidden sm:inline text-[11px] font-mono">
+                          {extractToolTarget(activeApproval.tool, activeApproval.query).value ||
+                            activeApproval.message}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resolveApproval && resolveApproval(activeApproval.id, 'reject')
+                          }
+                          className="btn btn-ghost btn-xs text-error/90 hover:text-error hover:bg-error/15 rounded-lg px-2.5 font-medium"
+                        >
+                          Tolak
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resolveApproval && resolveApproval(activeApproval.id, 'approve_session')
+                          }
+                          className="btn btn-ghost btn-xs text-warning/90 hover:text-warning hover:bg-warning/15 rounded-lg px-2.5 font-medium"
+                        >
+                          Sesi Ini
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resolveApproval && resolveApproval(activeApproval.id, 'approve_always')
+                          }
+                          className="btn btn-ghost btn-xs text-white/50 hover:text-error hover:bg-error/15 rounded-lg px-2 font-medium hidden md:inline-flex"
+                        >
+                          Selamanya
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resolveApproval && resolveApproval(activeApproval.id, 'approve_once')
+                          }
+                          className="btn btn-primary btn-xs text-black font-semibold rounded-lg px-3 shadow-sm"
+                        >
+                          Izinkan Sekali
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <InputBar
                     sessionId={String(activeSessionId)}
                     inline={true}

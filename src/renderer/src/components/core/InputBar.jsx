@@ -14,7 +14,7 @@ import {
   FaLock,
   FaFolder
 } from 'react-icons/fa'
-import { Zap, Folder, Wrench, ChevronLeft } from 'lucide-react'
+import { Zap, Sparkles, Folder, Wrench, ChevronLeft } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import { NATIVE_SKILLS } from './native-skills'
 import { calculateSessionTokens, MAX_CONTEXT_TOKENS } from '../../api/ai/contextManager'
@@ -145,11 +145,24 @@ const InputBar = ({
   })
 
   const [isAutoMode, setIsAutoMode] = useState(false)
+  const [isSuperEffort, setIsSuperEffort] = useState(false)
 
   useEffect(() => {
     let isMounted = true
     getSessionAutoMode(sessionId).then((val) => {
       if (isMounted) setIsAutoMode(Boolean(val))
+    })
+
+    // Cek konfigurasi default global dari database
+    import('../../api/db').then(({ getAllConfig }) => {
+      getAllConfig()
+        .then((configs) => {
+          const conf = configs?.[0] || {}
+          if (isMounted && conf.superEffortEnabled) {
+            setIsSuperEffort(true)
+          }
+        })
+        .catch(() => {})
     })
 
     const handleAutoModeUpdate = (e) => {
@@ -158,10 +171,18 @@ const InputBar = ({
       }
     }
 
+    const handleConfigUpdate = (e) => {
+      if (e.detail?.superEffortEnabled !== undefined) {
+        setIsSuperEffort(Boolean(e.detail.superEffortEnabled))
+      }
+    }
+
     window.addEventListener('session-auto-mode-updated', handleAutoModeUpdate)
+    window.addEventListener('config-updated', handleConfigUpdate)
     return () => {
       isMounted = false
       window.removeEventListener('session-auto-mode-updated', handleAutoModeUpdate)
+      window.removeEventListener('config-updated', handleConfigUpdate)
     }
   }, [sessionId])
 
@@ -505,6 +526,14 @@ const InputBar = ({
   const handleFormSubmit = async () => {
     let finalPrompt = inputText
     let userText = inputText
+
+    // INTERCEPT SUPER EFFORT SLASH COMMANDS: /super, /effort, /boost
+    const isSlashEffort = Boolean(inputText.match(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/i))
+    if (isSlashEffort) {
+      userText = userText.replace(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/gi, ' ').trim()
+      finalPrompt = userText
+    }
+
     const skillMatches = inputText.match(/(?:\s|^)\/([a-zA-Z0-9_-]+)/g)
 
     if (skillMatches && skillMatches.length > 0 && window.api && window.api.readSkill) {
@@ -513,6 +542,11 @@ const InputBar = ({
 
       for (const match of skillMatches) {
         const skillName = match.trim().substring(1) // Hilangkan spasi dan '/'
+
+        // Skip jika nama skill adalah keyword slash super effort
+        if (['super', 'effort', 'boost'].includes(skillName.toLowerCase())) {
+          continue
+        }
 
         // INTERCEPT BUILT-IN SKILLS
         const nativeSkill = NATIVE_SKILLS.find(
@@ -574,7 +608,8 @@ const InputBar = ({
       if (typeof onSubmit === 'function') {
         onSubmit(finalPrompt, {
           displayPrompt: rawUserText,
-          attachedFiles: currentAttachments
+          attachedFiles: currentAttachments,
+          isSuperEffort: isSuperEffort || isSlashEffort
         })
       }
     }
@@ -894,23 +929,36 @@ const InputBar = ({
         </div>
       )}
 
-      {/* Workspace Root Active Indicator Pill */}
-      {workspaceRoot && (
-        <div className="mb-2 flex items-center gap-2 px-3 py-1 bg-base-200/80 border border-primary/30 rounded-lg text-xs text-white/80 w-fit backdrop-blur-md animate-fade-in shadow-md">
-          <FaFolder className="text-primary text-xs" />
-          <span className="text-[10px] text-primary uppercase font-bold tracking-wider">
-            Workspace:
-          </span>
-          <span className="font-mono text-[11px] truncate max-w-xs">{workspaceRoot}</span>
-          {onSelectWorkspace && (
-            <button
-              type="button"
-              onClick={onSelectWorkspace}
-              className="ml-1 text-[10px] text-white/50 hover:text-primary transition-colors cursor-pointer underline"
-              title="Ganti folder proyek"
-            >
-              Ganti
-            </button>
+      {/* Pills Container (Workspace Root + Super Effort) */}
+      {(workspaceRoot || isSuperEffort) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          {workspaceRoot && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-base-200/80 border border-primary/30 rounded-lg text-xs text-white/80 w-fit backdrop-blur-md animate-fade-in shadow-md">
+              <FaFolder className="text-primary text-xs" />
+              <span className="text-[10px] text-primary uppercase font-bold tracking-wider">
+                Workspace:
+              </span>
+              <span className="font-mono text-[11px] truncate max-w-xs">{workspaceRoot}</span>
+              {onSelectWorkspace && (
+                <button
+                  type="button"
+                  onClick={onSelectWorkspace}
+                  className="ml-1 text-[10px] text-white/50 hover:text-primary transition-colors cursor-pointer underline"
+                  title="Ganti folder proyek"
+                >
+                  Ganti
+                </button>
+              )}
+            </div>
+          )}
+
+          {isSuperEffort && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/15 border border-primary/40 rounded-lg text-xs text-primary font-medium w-fit backdrop-blur-md animate-fade-in shadow-md select-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="text-[10px] uppercase font-bold tracking-wider">
+                Super Effort Active
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -1161,6 +1209,26 @@ const InputBar = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Super Effort Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsSuperEffort((prev) => !prev)}
+            className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
+              isSuperEffort
+                ? 'bg-primary/25 text-primary border border-primary/50 font-semibold shadow-sm shadow-primary/20'
+                : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
+            }`}
+            title={
+              isSuperEffort
+                ? 'Super Effort: AKTIF. ReAct loop pantang menyerah & wajib verifikasi mandiri sebelum selesai.'
+                : 'Super Effort: NONAKTIF. Klik untuk mengaktifkan persistensi otonom & pengujian mandiri.'
+            }
+          >
+            <Sparkles
+              className={`w-3.5 h-3.5 ${isSuperEffort ? 'fill-primary text-primary' : ''}`}
+            />
+          </button>
+
           {/* Auto Mode Toggle Button */}
           <button
             type="button"

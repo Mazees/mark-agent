@@ -3,8 +3,10 @@ import { FaLightbulb } from 'react-icons/fa'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { CodeBlock } from '../Chat/CodeBlock'
 import PluginExecutionBubble from '../Chat/PluginExecutionBubble'
+import { stripMarkTags } from '../../../../shared/parsers/mark-tag-parser'
 
 const ResponseArea = ({ currentResponse }) => {
   const [animState, setAnimState] = useState('idle') // 'fade-out', 'fade-in', 'idle'
@@ -121,11 +123,11 @@ const ResponseArea = ({ currentResponse }) => {
       <div className="w-full">
         <div className="p-3.5 rounded-xl bg-white/[0.03] text-left text-xs md:text-sm font-mono leading-relaxed text-white/90">
           <Markdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[[rehypeExternalLinks, { target: '_blank' }]]}
+            remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+            rehypePlugins={[...mathRehypePlugins, [rehypeExternalLinks, { target: '_blank' }]]}
             components={markdownComponents}
           >
-            {text}
+            {preprocessLaTeX(stripMarkTags(text))}
           </Markdown>
         </div>
       </div>
