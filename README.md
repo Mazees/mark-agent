@@ -170,8 +170,11 @@ mark/
 Pasang MARK secara global di sistem Windows Anda melalui PowerShell atau Command Prompt:
 
 ```bash
-npm install -g @mazees/mark
+npm install -g @mazees/mark --ignore-scripts
 ```
+
+> [!TIP]
+> **Penting:** Selalu sertakan flag `--ignore-scripts` saat instalasi untuk mencegah gangguan skrip preinstall/postinstall pustaka pihak ketiga (seperti pemblokir `pnpm` pada pustaka TTS atau pemeriksaan dependensi Python eksternal).
 
 Setelah instalasi selesai, luncurkan MARK kapan saja dari folder mana pun di terminal:
 
@@ -184,13 +187,13 @@ _MARK Core Server akan langsung aktif, membuka Live Activity Monitor di terminal
 #### Menjalankan Instan Tanpa Instalasi (via npx):
 
 ```bash
-npx @mazees/mark
+npx --ignore-scripts @mazees/mark
 ```
 
 #### Memperbarui ke Versi Terbaru:
 
 ```bash
-npm install -g @mazees/mark@latest
+npm install -g @mazees/mark@latest --ignore-scripts
 ```
 
 ---
@@ -209,7 +212,7 @@ Jika Anda ingin memodifikasi kode sumber atau berkontribusi pada pengembangan MA
 2. **Instalasi dependensi:**
 
    ```bash
-   npm install
+   npm install --ignore-scripts
    ```
 
 3. **Build antarmuka WebUI:**
@@ -243,7 +246,7 @@ Jika Anda ingin memodifikasi kode sumber atau berkontribusi pada pengembangan MA
 ---
 
 ## Panduan Migrasi Basis Data
- 
+
 Bagi pengguna MARK versi sebelumnya (berbasis Electron/Dexie) yang ingin memindahkan seluruh memori, dokumen, dan riwayat obrolan ke MARK (berbasis SQLite), silakan baca panduan lengkap di [docs/MIGRATION_GUIDE.md](./docs/MIGRATION_GUIDE.md).
 
 ---

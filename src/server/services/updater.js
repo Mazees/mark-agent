@@ -25,6 +25,7 @@ export function getCurrentVersion() {
 
 export function getUpdateInstruction() {
   return `npm install -g ${PACKAGE_NAME}@latest`
+  return `npm install -g ${PACKAGE_NAME}@latest --ignore-scripts`
 }
 
 export function parseSemver(v) {
