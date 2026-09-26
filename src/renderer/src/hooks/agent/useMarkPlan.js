@@ -81,6 +81,38 @@ const convertFilePathToBase64 = async (filePath) => {
   }
 }
 
+const MUTATION_TOOLS = new Set([
+  'write-file',
+  'replace-content',
+  'edit-file',
+  'append-file',
+  'delete-file',
+  'os-click',
+  'os-type',
+  'os-key',
+  'os-scroll',
+  'open-app',
+  'browser-click',
+  'browser-type',
+  'browser-select',
+  'gitCommit',
+  'gitRevert'
+])
+
+const VERIFICATION_TOOLS = new Set([
+  'run-powershell',
+  'read-file',
+  'grep-search',
+  'file-outline',
+  'list-directory',
+  'get-git-diff',
+  'get-git-status',
+  'browser-fetch',
+  'browser-screenshot',
+  'readDesktop',
+  'takeScreenshot'
+])
+
 // ============================================================================
 // MAIN HOOK: useMarkPlan
 // ============================================================================
@@ -839,20 +871,29 @@ export const useMarkPlan = ({
       !tgContextOrOptions.chatId &&
       !tgContextOrOptions.from
     ) {
-      opts = tgContextOrOptions
       opts = { ...opts, ...tgContextOrOptions }
       tgContext = null
-    } else if (
+    }
+    if (
       autonomousInitialMessage &&
       typeof autonomousInitialMessage === 'object' &&
-      (autonomousInitialMessage.sessionId ||
-        autonomousInitialMessage.customChatData ||
-        autonomousInitialMessage.customSetChatData ||
-        autonomousInitialMessage.onSaveSession)
+      !Array.isArray(autonomousInitialMessage)
     ) {
       opts = { ...opts, ...autonomousInitialMessage }
       autonomousInitialMessage = null
     }
+    if (options && typeof options === 'object') {
+      opts = { ...opts, ...options }
+    }
+
+    // Deteksi pemicu Super Effort (slash command /super, /effort, /boost, opts, atau config)
+    const isSlashSuperEffort =
+      typeof userInput === 'string' && /^\/(super|effort|boost)\b/i.test(userInput.trim())
+
+    const isSuperEffort = Boolean(
+      opts.isSuperEffort || config?.superEffortEnabled || isSlashSuperEffort
+    )
+    opts.isSuperEffort = isSuperEffort
 
     // ------------------------------------------------------------------------
     // FASE 1: VALIDASI INPUT & PER-SESSION LOCKING
@@ -921,7 +962,12 @@ export const useMarkPlan = ({
     // FASE 2: FORMATTING PROMPT & VISION PAYLOAD
     // ------------------------------------------------------------------------
     let finalContent = userInput
-    if (userInput.startsWith('/')) {
+    if (isSlashSuperEffort) {
+      finalContent = finalContent.replace(/^\/(super|effort|boost)\s*/i, '').trim()
+      if (!finalContent) {
+        finalContent = 'Lakukan analisis dan selesaikan tugas ini dengan mode Super Effort.'
+      }
+    } else if (userInput.startsWith('/')) {
       const skillName = userInput.slice(1).split(' ')[0].trim()
       try {
         const skillData = await window.api.readSkill(skillName)
@@ -983,6 +1029,13 @@ export const useMarkPlan = ({
 
     let uiDisplayContent = opts.displayPrompt !== undefined ? opts.displayPrompt : userInput
     if (
+      isSlashSuperEffort &&
+      typeof uiDisplayContent === 'string' &&
+      /^\/(super|effort|boost)\b/i.test(uiDisplayContent.trim())
+    ) {
+      uiDisplayContent = uiDisplayContent.replace(/^\/(super|effort|boost)\s*/i, '').trim()
+      if (!uiDisplayContent) uiDisplayContent = 'Mode Super Effort Diaktifkan'
+    } else if (
       typeof uiDisplayContent === 'string' &&
       uiDisplayContent.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')
     ) {
@@ -1421,6 +1474,7 @@ export const useMarkPlan = ({
 
       let consecutiveErrors = 0
       const maxConsecutiveErrorRetries = 50
+      let verificationGateCount = 0
 
       while (!isDone && !sessionAbortController.signal.aborted) {
         // Cek Abort Signal
@@ -2246,8 +2300,8 @@ export const useMarkPlan = ({
             streamResult?.meta?.hasTag || turnStreamMeta?.hasTag || parsedTextMeta?.hasTag || false,
           hasExplicitDone: Boolean(
             streamResult?.meta?.hasExplicitDone ||
-              turnStreamMeta?.hasExplicitDone ||
-              parsedTextMeta?.hasExplicitDone
+            turnStreamMeta?.hasExplicitDone ||
+            parsedTextMeta?.hasExplicitDone
           )
         }
 
@@ -2373,6 +2427,105 @@ export const useMarkPlan = ({
           })
 
           continue
+        }
+
+        // ======================================================================
+        // SUPER EFFORT VERIFICATION GATEKEEPER (Autonomous Deep-Persistence)
+        // ======================================================================
+        if (isSuperEffort && !opts.disableTools && !isSystem) {
+          // 1. Cari index tool mutasi terakhir yang dieksekusi
+          let lastMutationIndex = -1
+          for (let i = executedToolsList.length - 1; i >= 0; i--) {
+            const item = executedToolsList[i]
+            const toolName = item.tool || item.action
+            if (toolName && MUTATION_TOOLS.has(toolName)) {
+              lastMutationIndex = i
+              break
+            }
+          }
+
+          // 2. Cek apakah ada tool verifikasi yang berhasil dijalankan setelah mutasi terakhir
+          let hasVerificationAfterMutation = false
+          if (lastMutationIndex !== -1) {
+            for (let i = lastMutationIndex + 1; i < executedToolsList.length; i++) {
+              const item = executedToolsList[i]
+              const toolName = item.tool || item.action
+              const isError =
+                item.status === 'failed' ||
+                (typeof item.result === 'string' && item.result.startsWith('[ERROR]'))
+              if (toolName && VERIFICATION_TOOLS.has(toolName) && !isError) {
+                hasVerificationAfterMutation = true
+                break
+              }
+            }
+          }
+
+          // 3. Cek apakah ini coding/task intent tapi model berhenti di turn awal tanpa tool sama sekali
+          const ACTIONABLE_KEYWORDS =
+            /\b(buat|bikin|tulis|edit|perbaiki|fix|refactor|test|implement|uji|jalankan|run|build|coding|proyek|file|berkas|komponen|bug|error)\b/i
+          const isActionableIntent =
+            typeof userInput === 'string' &&
+            (ACTIONABLE_KEYWORDS.test(userInput) || isSlashSuperEffort)
+          const isZeroTurnComplacency =
+            executedToolsList.length === 0 && isActionableIntent && verificationGateCount === 0
+
+          const needsVerification =
+            (lastMutationIndex !== -1 && !hasVerificationAfterMutation) || isZeroTurnComplacency
+
+          if (needsVerification && verificationGateCount < 3) {
+            verificationGateCount++
+            console.log(
+              `[useMarkPlan] Verification Gatekeeper aktif (Iterasi ${verificationGateCount}/3). Mencegah isDone = true.`
+            )
+
+            if (rawTurnAnswer && rawTurnAnswer.trim()) {
+              loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
+            }
+
+            loopMessages.push({
+              role: 'user',
+              content: `[SUPER EFFORT VERIFICATION GATE]:
+Kamu bermaksud mengakhiri tugas dan memberikan laporan penyelesaian.
+Sebagai Super Effort Agent, kamu DILARANG berasumsi bahwa pekerjaanmu sudah berfungsi tanpa pembuktian nyata.
+
+Lakukan pemeriksaan mandiri sekarang:
+1. Uji pekerjaanmu menggunakan tool yang relevan (jalankan test runner, compile/build check dengan 'run-powershell', linter, atau periksa isi berkas dengan 'read-file').
+2. Jika ditemukan kegagalan atau galat baru, analisis dan perbaiki langsung hingga tuntas.
+3. HANYA jika seluruhnya telah terbukti bekerja 100% berdasarkan output tool nyata (atau jika instruksi pengguna murni pertanyaan konseptual yang tidak membutuhkan eksekusi tool), barulah kamu memberikan teks jawaban final beserta ringkasan bukti verifikasi tersebut.`
+            })
+
+            execSteps.push({ task: 'Verifikasi Hasil (Super Effort)...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning:
+                  'Super Effort: Memvalidasi & menguji hasil pekerjaan sebelum penyelesaian...'
+              }
+            })
+
+            targetSetChatData((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [
+                ...filtered,
+                {
+                  role: 'ai',
+                  content: 'Memvalidasi & Menguji Hasil Pekerjaan...',
+                  isThinking: true,
+                  executedTools: executedToolsList.length > 0 ? [...executedToolsList] : null
+                }
+              ]
+            })
+
+            continue
+          } else if (verificationGateCount >= 3) {
+            console.warn(
+              '[useMarkPlan] Super Effort Circuit Breaker tercapai (3x percobaan verifikasi). Mengizinkan penyelesaian tugas.'
+            )
+          }
         }
 
         isDone = true

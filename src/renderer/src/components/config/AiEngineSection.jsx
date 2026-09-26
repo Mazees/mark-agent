@@ -323,6 +323,27 @@ export const AiEngineSection = ({ config, setConfig }) => {
         </div>
       </div>
 
+      {/* Super Effort Toggle */}
+      <div className="space-y-1.5 p-2 -mx-2 rounded-lg bg-base-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold">Super Effort (Autonomous Deep-Persistence)</p>
+            <p className="text-xs opacity-50 mt-1">
+              Mengaktifkan doktrin kerja tuntas dan Verification Gatekeeper mandiri. Mark tidak akan
+              berhenti sebelum membuktikan hasil pekerjaannya berhasil diuji melalui tool.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            className="toggle toggle-primary"
+            checked={Boolean(config.superEffortEnabled)}
+            onChange={(e) =>
+              setConfig((prev) => ({ ...prev, superEffortEnabled: e.target.checked }))
+            }
+          />
+        </div>
+      </div>
+
       {/* System Persona */}
       <div id="tour-persona" className="space-y-1.5 p-2 -mx-2 rounded-lg">
         <p className="text-sm font-semibold">Gaya Bicara dan Kepribadian</p>

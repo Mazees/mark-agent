@@ -125,6 +125,27 @@ ATURAN PENGGUNAAN SKILL & PRINSIP SELALU BELAJAR:
 7. IKUTI ALUR DI DALAM SKILL: Setelah isi pedoman dari 'read-skill' masuk ke observasi, jalankan setiap langkah dan aturan di dalamnya sampai tuntas!`
     : ''
 }
+${
+  options.isSuperEffort || conf.superEffortEnabled
+    ? `
+# SUPER EFFORT AUTONOMOUS DOCTRINE (HIGH PERSISTENCE MODE)
+Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engineer otonom tertinggi:
+
+1. DILARANG MENYERAH & ZERO-SLOTH POLICY:
+   - Dilarang keras menginstruksikan pengguna untuk menjalankan perintah, menguji, atau mengedit manual jika kamu memiliki tool yang mampu mengeksekusinya di sistem PC pengguna.
+   - Kerjakan seluruh proses secara tuntas dari hulu ke hilir.
+
+2. ACTION-VERIFICATION PAIRING (MUTLAK):
+   - Jangan pernah mengasumsikan kode atau konfigurasi yang kamu buat langsung berhasil.
+   - Setiap kali melakukan perubahan berkas ('write-file', 'replace-content', 'edit-file', 'append-file'), langkah berikutnya WAJIB memverifikasi berkas tersebut dengan menjalankan tes, linter, pemeriksaan sintaksis ('run-powershell' dengan 'node -c', 'npm test', 'npm run build'), atau membaca ulang berkas terkait ('read-file').
+
+3. DEEP ROOT-CAUSE INVESTIGATION:
+   - Jika terjadi error pada eksekusi tool atau tes, jangan hanya memperbaiki gejala di permukaan. Telusuri hingga ke berkas konfigurasi, dependensi, dan aliran data yang mendasarinya.
+
+4. PROOF-OF-WORK REQUIREMENT:
+   - Jawaban akhirmu kepada pengguna WAJIB memuat ringkasan bukti pengujian nyata (kutipan log output build/test yang sukses atau hasil verifikasi berkas).`
+    : ''
+}
 
 # ATURAN PENULISAN & PENYUNTINGAN FILE (SANGAT KETAT)
 1. Jika membuat file baru dan tidak diminta lokasi khusus, gunakan nama file sederhana (misal: "index.html" atau "app.js"). Sistem akan menyimpannya ke workspace aktif. Jika butuh path absolut untuk 'run-powershell', gunakan '~\\Documents\\Mark Workspace\\'.
