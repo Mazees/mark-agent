@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
 import { CodeBlock } from '../Chat/CodeBlock'
 import PluginExecutionBubble from '../Chat/PluginExecutionBubble'
+import { stripMarkTags } from '../../../../shared/parsers/mark-tag-parser'
 
 const ResponseArea = ({ currentResponse }) => {
   const [animState, setAnimState] = useState('idle') // 'fade-out', 'fade-in', 'idle'
@@ -125,7 +126,7 @@ const ResponseArea = ({ currentResponse }) => {
             rehypePlugins={[[rehypeExternalLinks, { target: '_blank' }]]}
             components={markdownComponents}
           >
-            {text}
+            {stripMarkTags(text)}
           </Markdown>
         </div>
       </div>

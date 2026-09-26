@@ -347,6 +347,7 @@ export async function executeOpenAIProvider({
         content: accumulatedContent,
         reasoning: accumulatedReasoning,
         mood: finalMood,
+        meta: parsedFull.meta || null,
         toolCalls: toolCallsList.length > 0 ? toolCallsList : null,
         finishReason,
         usage: serverUsage

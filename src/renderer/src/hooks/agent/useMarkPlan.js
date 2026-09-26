@@ -1537,6 +1537,7 @@ export const useMarkPlan = ({
 
         currentTurnReasoning = ''
         let currentTurnContent = ''
+        let turnStreamMeta = null
         let sentenceBuffer = ''
 
         // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai batas kapasitas,
@@ -1616,6 +1617,7 @@ export const useMarkPlan = ({
             )
           },
           onMeta: (meta) => {
+            turnStreamMeta = meta
             if (meta?.mood) {
               currentActiveMood = meta.mood
               targetSetChatData((prev) =>
@@ -2222,9 +2224,34 @@ export const useMarkPlan = ({
         // ======================================================================
         // CABANG 2: SELESAI / DIRECT TEXT RESPONSE (Stop / Selesai)
         // ======================================================================
-        const rawTurnAnswer = streamResult.content || currentTurnContent || ''
-        const { meta: turnMeta, cleanContent: turnAnswer } = parseMarkTag(rawTurnAnswer)
-        if (turnMeta?.mood && turnMeta.mood !== 'neutral') {
+        const rawTurnAnswer = streamResult?.content || currentTurnContent || ''
+        const { meta: parsedTextMeta, cleanContent: turnAnswer } = parseMarkTag(rawTurnAnswer)
+
+        // Gabungkan metadata dari streamResult, onMeta stream, atau parsed text
+        const turnMeta = {
+          mood:
+            streamResult?.mood ||
+            streamResult?.meta?.mood ||
+            turnStreamMeta?.mood ||
+            parsedTextMeta?.mood ||
+            'neutral',
+          done: streamResult?.meta?.hasExplicitDone
+            ? streamResult.meta.done
+            : turnStreamMeta?.hasExplicitDone
+              ? turnStreamMeta.done
+              : parsedTextMeta?.hasExplicitDone
+                ? parsedTextMeta.done
+                : true,
+          hasTag:
+            streamResult?.meta?.hasTag || turnStreamMeta?.hasTag || parsedTextMeta?.hasTag || false,
+          hasExplicitDone: Boolean(
+            streamResult?.meta?.hasExplicitDone ||
+              turnStreamMeta?.hasExplicitDone ||
+              parsedTextMeta?.hasExplicitDone
+          )
+        }
+
+        if (turnMeta.mood && turnMeta.mood !== 'neutral') {
           currentActiveMood = turnMeta.mood
         }
 
@@ -2314,9 +2341,17 @@ export const useMarkPlan = ({
           continue
         }
 
-        // Strict Explicit Done: AI harus menuliskan done="true" untuk mengakhiri loop.
-        // Jika done === false, teruskan loop ke turn berikutnya agar AI bisa mengeksekusi langkah lanjutan.
-        if (!turnMeta.done) {
+        // Strict Explicit Done: Hanya teruskan loop ke turn berikutnya jika:
+        // 1. Tools TIDAK didisable (bukan sapaan boot / direct chat tanpa tools)
+        // 2. Bukan instruksi sistem internal (isSystem === false)
+        // 3. AI secara EKSPLISIT menyatakan done="false" (membutuhkan turn lanjutan untuk eksekusi)
+        const shouldContinueStep =
+          !opts.disableTools &&
+          !isSystem &&
+          turnMeta.hasExplicitDone === true &&
+          turnMeta.done === false
+
+        if (shouldContinueStep) {
           if (rawTurnAnswer && rawTurnAnswer.trim()) {
             loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
           }

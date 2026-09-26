@@ -18,6 +18,7 @@ export const buildPlanningSystemPrompt = async (
   const { memories = [], archives = [], documents = [] } = unifiedContext
   const currentConfig = await getAllConfig()
   const conf = currentConfig[0] || {}
+  const isWebProvider = conf.aiProvider === 'deepseek-web' || conf.aiProvider === 'gemini-web'
   const userId = options.waContext ? options.waContext.senderJid : 'owner'
 
   let fileSkills = []
@@ -237,6 +238,33 @@ Kamu bertindak sebagai LEAD AGENT / ORCHESTRATOR yang memimpin tim Sub-Agent spe
 3. JIKA kamu memanggil tool visual ('browser-screenshot' atau 'analyze-screen'), sistem menyertakan data visual beresolusi penuh langsung ke observasimu.
 
 # ATURAN WAJIB TAG MARK (KONTROL & EMOSI REAL-TIME):
+${
+  isWebProvider
+    ? `# ATURAN FORMAT OUTPUT WAJIB (FULL JSON UTUH):
+1. Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali langsung dengan '{' dan diakhiri dengan '}').
+2. DILARANG KERAS menyertakan teks pesan, tag XML, kata pengantar, obrolan, basa-basi, atau penutup apapun di luar objek JSON! Jangan tulis teks apapun sebelum '{' atau setelah '}'.
+3. Struktur objek JSON yang WAJIB kamu gunakan untuk SETIAP giliran respon:
+{
+  "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
+  "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
+  "tool_calls": [
+    {
+      "name": "nama_tool_1",
+      "arguments": { "parameter_key": "parameter_value" }
+    }
+  ]
+}
+4. Jika kamu ingin memanggil tool/melakukan tindakan nyata:
+   - "tool_calls" WAJIB berisi array pemanggilan tool (mendukung BATCH / MULTI-TOOL sekaligus).
+   - "answer" WAJIB bernilai null.
+5. HANYA JIKA seluruh tindakan telah tuntas atau kamu tidak perlu memanggil tool sama sekali:
+   - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
+   - "tool_calls" WAJIB bernilai null.
+6. Properti "mood" WAJIB mencerminkan emosi atau nuansa obrolanmu saat ini (joy, sadness, fear, anger, disgust, anxiety, envy, embarrassment, ennui, neutral).
+7. BATASAN MODE TUGAS (TASK WORKFLOW):
+   - DILARANG menggunakan ringkasan ala task mode jika kamu TIDAK diawali dengan pemanggilan tool 'create_agent_task'! Jika tidak ada task aktif, jawablah langsung secara to-the-point dan natural.`
+    : `# ATURAN WAJIB TAG MARK (KONTROL & EMOSI REAL-TIME):
 1. WAJIB MENYISIPKAN TAG <mark ... /> DI BARIS PERTAMA SETIAP OUTPUT:
    Model apapun yang kamu gunakan (termasuk DeepSeek, Qwen, Llama, Gemini, OpenAI, Claude, dll), kamu WAJIB mengawali karakter/baris paling awal responmu dengan tag:
    <mark mood="[nama_mood]" done="[true|false]" />
@@ -250,6 +278,8 @@ Kamu bertindak sebagai LEAD AGENT / ORCHESTRATOR yang memimpin tim Sub-Agent spe
 4. PELETAKAN TAG:
    - Awali baris pertama pemikiran atau teks jawabanmu dengan tag: <mark mood="..." done="..." />.
    - Tag ini akan otomatis diparsing oleh sistem antarmuka untuk menggerakkan ekspresi visual avatar 3D Mark dan mengatur alur ReAct loop, lalu dibersihkan dari tampilan user. JANGAN PERNAH LEWATKAN TAG INI!
+   - Tag ini akan otomatis diparsing oleh sistem antarmuka untuk menggerakkan ekspresi visual avatar 3D Mark dan mengatur alur ReAct loop, lalu dibersihkan dari tampilan user. JANGAN PERNAH LEWATKAN TAG INI!`
+}
 
 # ATURAN KOMUNIKASI & ADAPTASI NADA
 1. ADAPTASI MODE TUGAS vs MODE OBROLAN:

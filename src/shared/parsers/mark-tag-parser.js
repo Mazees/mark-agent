@@ -58,6 +58,9 @@ export const MARK_TAG_SCHEMA = {
 }
 
 const MARK_TAG_REGEX = /<mark\b([^>]*)\/?>/i
+const INCOMPLETE_MARK_TAG_REGEX =
+  /^\s*<mark\b(?:\s+[a-zA-Z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?>|\r?\n|(?=\s+[A-Za-z0-9])|$)/i
+const TRAILING_INCOMPLETE_MARK_TAG_REGEX = /<mark\b[^>]*$/i
 const THINK_BLOCK_REGEX = /<think>([\s\S]*?)<\/think>/i
 const LEGACY_MOOD_REGEX = /(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi
 const LEGACY_DONE_REGEX = /<\/?done\s*\/?>/gi
@@ -107,10 +110,13 @@ export function stripMarkTags(text) {
   return text
     .replace(THINK_BLOCK_REGEX, '')
     .replace(MARK_TAG_REGEX, '')
+    .replace(INCOMPLETE_MARK_TAG_REGEX, '')
+    .replace(TRAILING_INCOMPLETE_MARK_TAG_REGEX, '')
     .replace(/<\/mark>/gi, '')
     .replace(LEGACY_MOOD_REGEX, '')
     .replace(LEGACY_DONE_REGEX, '')
     .replace(/^\s+/, '')
+    .trim()
 }
 
 /**
@@ -139,7 +145,7 @@ export function parseMarkTag(rawText) {
     reasoning = thinkMatch[1].trim()
   }
 
-  // 2. Ekstraksi Tag <mark ... />
+  // 2. Ekstraksi Tag <mark ... /> (termasuk tag tidak lengkap / terpotong)
   let meta = {
     mood: MARK_TAG_SCHEMA.mood.default,
     done: MARK_TAG_SCHEMA.done.default,
@@ -147,7 +153,7 @@ export function parseMarkTag(rawText) {
     hasExplicitDone: false
   }
 
-  const markMatch = rawText.match(MARK_TAG_REGEX)
+  const markMatch = rawText.match(MARK_TAG_REGEX) || rawText.match(/^\s*<mark\b([^>\r\n]*)/i)
   if (markMatch) {
     const attrString = markMatch[1]
     const parsedAttrs = parseAttributes(attrString)
@@ -258,17 +264,28 @@ export function createMarkStreamFilter({ onMeta, onChunk } = {}) {
         if (afterTag.length > 0) {
           emitChunk(afterTag)
         }
-      } else {
-        emitMeta({
-          mood: MARK_TAG_SCHEMA.mood.default,
-          done: MARK_TAG_SCHEMA.done.default
-        })
+        return
+      }
+
+      // Deteksi tag <mark ... yang tidak lengkap di akhir buffer
+      const incompleteMatch = buffer.match(/^\s*<mark\b([^>]*)$/i)
+      if (incompleteMatch) {
+        const meta = parseAttributes(incompleteMatch[1])
+        emitMeta(meta)
         flushed = true
-        const out = buffer
         buffer = ''
-        if (out.length > 0) {
-          emitChunk(out)
-        }
+        return
+      }
+
+      emitMeta({
+        mood: MARK_TAG_SCHEMA.mood.default,
+        done: MARK_TAG_SCHEMA.done.default
+      })
+      flushed = true
+      const out = buffer
+      buffer = ''
+      if (out.length > 0) {
+        emitChunk(out)
       }
     }
   }

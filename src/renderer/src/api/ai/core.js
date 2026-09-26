@@ -28,6 +28,7 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     onToken = null,
     onReasoning = null,
     onMood = null,
+    onMeta = null,
     onToolCall = null,
     sessionId = null
   } = actualOptions
@@ -72,9 +73,16 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
       })
     }
 
+    let unsubMeta = null
     if (window.api?.onAiMood && onMood) {
       unsubMood = window.api.onAiMood((payload) => {
         if (payload?.mood) onMood(payload.mood)
+      })
+    }
+
+    if (window.api?.onAiMarkMeta && onMeta) {
+      unsubMeta = window.api.onAiMarkMeta((payload) => {
+        if (payload) onMeta(payload)
       })
     }
 
@@ -94,6 +102,7 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     } finally {
       unsubToken?.()
       unsubMood?.()
+      unsubMeta?.()
     }
   }
 

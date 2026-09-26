@@ -150,11 +150,17 @@ function buildDynamicStateAnchor(sysMsgs, lastAssistant, hasTools = false) {
 
   return `[DYNAMIC STATE ANCHOR - MARK AI OS]
 Kamu adalah MARK (Metacognitive Artificial Relational Knowledge). Tetap konsisten dengan kepribadian santai/cerdas tongkrongan, bukan robot kaku.
-ATURAN KONTROL & EMOSI MUTLAK:
-Awali baris pertama responmu dengan tag: <mark mood="[nama_mood]" done="[true|false]" />
-- Atribut mood: neutral, happy, thinking, sarcasm, focused, excited, sad, confused, annoyed, calm.
-- Atribut done: false jika sedang memanggil tool atau berencana melanjutkan langkah berikutnya. true HANYA jika seluruh tugas/pertanyaan pengguna telah selesai tuntas dijawab.
-Status giliran sebelumnya: <mark mood="${lastMood || 'neutral'}" done="true" />. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
+ATURAN FORMAT OUTPUT WAJIB (FULL JSON UTUH):
+Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali '{' dan diakhiri '}'):
+{
+  "thought": "Penalaran ringkas atau rencana tindakan",
+  "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "answer": "Teks balasan langsung ke pengguna (isi jika selesai/tidak memanggil tool, atau null jika memanggil tool)",
+  "tool_calls": [ { "name": "nama_tool", "arguments": { ... } } ]
+}
+- Jika memanggil aksi/tool: isi array "tool_calls", dan isi "answer": null.
+- Jika obrolan santai/selesai: isi "answer" dengan jawaban teks lengkap, dan isi "tool_calls": null.
+Status emosi giliran sebelumnya: ${lastMood || 'neutral'}. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
 }
 
 export async function executeWebProvider({
@@ -176,24 +182,8 @@ export async function executeWebProvider({
   const conf = { ...activeConf, ...(config || {}) }
   const isGemini = conf.aiProvider === 'gemini-web'
   const hasTools = Array.isArray(tools) && tools.length > 0
-  const shouldStreamContent = stream && !hasTools && !jsonSchema
-
-  let streamedAnyToken = false
-  const moodFilter =
-    shouldStreamContent && onToken
-      ? createMoodStreamFilter(
-          (token) => {
-            streamedAnyToken = true
-            onToken(token)
-          },
-          (mood) => {
-            onMood?.(mood)
-          },
-          (meta) => {
-            onMeta?.(meta)
-          }
-        )
-      : null
+  const shouldStreamContent = false
+  const moodFilter = null
 
   await checkCloudThrottle(isSmallTask, onStatus)
 
@@ -261,34 +251,33 @@ Kamu memiliki akses ke kapabilitas sistem berikut:
 
 ${toolSections.join('\n\n')}
 
-# ATURAN EKSEKUSI TOOL (PENTING MUTLAK):
-1. Jika kamu ingin menjalankan tindakan atau memanggil fungsi sistem di atas, kamu HARUS merespons HANYA dengan format JSON valid.
-2. Respons kamu HARUS DIAWALI LANGSUNG DENGAN KARAKTER '{' DAN DIAKHIRI DENGAN KARAKTER '}'.
-3. DILARANG KERAS menyertakan teks pesan, kata pengantar, obrolan, basa-basi, permintaan maaf, penjelasan, atau penutup apapun di luar objek JSON! Jangan tulis teks apapun sebelum '{' atau setelah '}'.
-4. Format JSON untuk memanggil tool WAJIB persis seperti ini (mendukung BATCH / MULTI-TOOL sekaligus):
+# ATURAN EKSEKUSI & FORMAT RESPON WAJIB (FULL JSON UTUH):
+1. Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali langsung dengan '{' dan diakhiri dengan '}').
+2. DILARANG KERAS menyertakan teks pesan, tag XML, kata pengantar, obrolan, basa-basi, atau penutup apapun di luar objek JSON! Jangan tulis teks apapun sebelum '{' atau setelah '}'.
+3. Struktur objek JSON yang WAJIB kamu gunakan untuk SETIAP giliran respon:
 {
+  "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
+  "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
   "tool_calls": [
     {
       "name": "nama_tool_1",
       "arguments": { "parameter_key": "parameter_value" }
-    },
-    {
-      "name": "nama_tool_2",
-      "arguments": { "parameter_key": "parameter_value" }
     }
   ]
 }
-5. ATURAN BATCH & PARALLEL ACTIONS (EFISIENSI MAKSIMAL):
+4. Jika kamu ingin memanggil tool/melakukan tindakan nyata:
+   - "tool_calls" WAJIB berisi array pemanggilan tool (mendukung BATCH / MULTI-TOOL sekaligus).
+   - "answer" WAJIB bernilai null.
+5. HANYA JIKA seluruh tindakan telah tuntas atau kamu tidak perlu memanggil tool sama sekali:
+   - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
+   - "tool_calls" WAJIB bernilai null.
+6. ATURAN BATCH & PARALLEL ACTIONS (EFISIENSI MAKSIMAL):
    - Kamu SANGAT DIANJURKAN menyertakan beberapa tool sekaligus di dalam array "tool_calls" dalam satu giliran jika aksi-aksi tersebut sekuensial dan sudah pasti (misal otomasi PC: klik + ketik + key combo, riset web: multi-fetch beberapa URL, atau membaca beberapa berkas sekaligus).
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
-6. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
-7. ATURAN WAJIB TAG MARK (done="true" PADA JAWABAN TEKS - SANGAT KRUSIAL):
-   - HANYA JIKA kamu TIDAK memanggil tool sama sekali (seluruh proses tool telah selesai atau tidak memerlukan tool), barulah kamu memberikan teks jawaban kepada pengguna.
-   - PENTING MUTLAK: SETIAP KALI memberikan teks jawaban/penyelesaian tugas, baris PERTAMA WAJIB diawali dengan tag:
-     <mark mood="[nama_mood]" done="true" />
-   - Atribut done="true" adalah SINYAL RESMI bagi sistem bahwa tugasmu SUDAH TUNTAS dan loop eksekusi boleh berhenti! DILARANG KERAS merespons teks tanpa atribut done="true"!
-   - DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
-8. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
+7. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
+8. DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
+9. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
@@ -384,13 +373,9 @@ ${toolSections.join('\n\n')}
         : `\`\`\`json\n${callsStr}\n\`\`\``
     }
 
-    // Sisipkan riwayat mood pada pesan asisten terdahulu agar model memahami kesinambungan emosinya
-    if (
-      (roleName === 'ASSISTANT' || roleName === 'AI' || roleName === 'MODEL') &&
-      m.mood &&
-      !/<mark\b/i.test(textBody.trim())
-    ) {
-      textBody = `<mark mood="${m.mood}" done="true" /> ${textBody}`
+    // Bersihkan sisa tag XML dari riwayat pesan asisten agar model web tidak bingung
+    if (roleName === 'ASSISTANT' || roleName === 'AI' || roleName === 'MODEL') {
+      textBody = stripMarkTags(textBody)
     }
 
     fullPrompt += `[${roleName}]: ${textBody}\n`
@@ -532,198 +517,206 @@ ${toolSections.join('\n\n')}
   // 7. Jika Streaming Mode (Agent ReAct Gateway)
   let cleanContent = answer || ''
   let cleanReasoning = reasoning || ''
-
-  if (cleanReasoning) {
-    const parsedReasoning = parseMarkTag(cleanReasoning)
-    if (parsedReasoning.meta?.mood && parsedReasoning.meta.mood !== 'neutral') {
-      onMood?.(parsedReasoning.meta.mood)
-    }
-    cleanReasoning = parsedReasoning.cleanContent
-    onReasoning?.(cleanReasoning)
-  }
-
-  // Deteksi pemanggilan tool
   let extractedToolCalls = null
-  let candidateStr = cleanContent.trim()
+  let extractedMood = 'neutral'
 
+  let candidateStr = cleanContent.trim()
   const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
   if (jsonMatch) {
     candidateStr = jsonMatch[1].trim()
   }
 
-  // Ekstrak substring murni antara '{' pertama dan '}' terakhir untuk membuang teks sebelum/sesudah JSON
+  // Cari blok JSON antara '{' pertama dan '}' terakhir
   const firstBrace = candidateStr.indexOf('{')
   const lastBrace = candidateStr.lastIndexOf('}')
+  let parsedJson = null
+
   if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const prelude = candidateStr.substring(0, firstBrace)
-    const parsedPrelude = parseMarkTag(prelude)
-    const parsedContent = parseMarkTag(cleanContent)
-    const foundMood =
-      (parsedPrelude.meta?.mood !== 'neutral' ? parsedPrelude.meta.mood : null) ||
-      (parsedContent.meta?.mood !== 'neutral' ? parsedContent.meta.mood : null)
-    if (foundMood) {
-      onMood?.(foundMood)
-    }
-    candidateStr = candidateStr.substring(firstBrace, lastBrace + 1).trim()
-  }
-
-  if (
-    candidateStr.includes('"tool_calls"') ||
-    candidateStr.includes('"action"') ||
-    candidateStr.includes('"tool"') ||
-    (candidateStr.includes('"name"') &&
-      (candidateStr.includes('"arguments"') ||
-        candidateStr.includes('"query"') ||
-        candidateStr.includes('"parameters"')))
-  ) {
+    const jsonCandidate = candidateStr.substring(firstBrace, lastBrace + 1).trim()
     try {
-      const parsed = cleanAndParse(candidateStr)
-      if (parsed) {
-        if (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
-          extractedToolCalls = parsed.tool_calls.map((tc, idx) => ({
-            id: tc.id || `call_${Date.now()}_${idx}`,
-            type: 'function',
-            function: {
-              name: tc.name || tc.function?.name,
-              arguments:
-                typeof tc.arguments === 'object'
-                  ? JSON.stringify(tc.arguments)
-                  : String(tc.arguments || '{}')
-            }
-          }))
-        } else if (Array.isArray(parsed.action) && parsed.action.length > 0) {
-          // Dukungan format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
-          extractedToolCalls = parsed.action
-            .filter((act) => act && (act.tool || act.name))
-            .map((act, idx) => ({
-              id: `call_${Date.now()}_${idx}`,
-              type: 'function',
-              function: {
-                name: act.tool || act.name,
-                arguments:
-                  typeof act.arguments === 'object'
-                    ? JSON.stringify(act.arguments)
-                    : typeof act.query === 'object'
-                      ? JSON.stringify(act.query)
-                      : JSON.stringify(
-                          act.query !== undefined
-                            ? { query: act.query }
-                            : act.arguments !== undefined
-                              ? { query: act.arguments }
-                              : {}
-                        )
-              }
-            }))
-        } else if (Array.isArray(parsed) && parsed.length > 0) {
-          // Dukungan format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
-          extractedToolCalls = parsed
-            .filter((item) => item && (item.name || item.tool || item.function?.name))
-            .map((item, idx) => ({
-              id: item.id || `call_${Date.now()}_${idx}`,
-              type: 'function',
-              function: {
-                name: item.name || item.tool || item.function?.name,
-                arguments:
-                  typeof item.arguments === 'object'
-                    ? JSON.stringify(item.arguments)
-                    : typeof item.query === 'object'
-                      ? JSON.stringify(item.query)
-                      : String(
-                          item.arguments ||
-                            (item.query !== undefined
-                              ? JSON.stringify({ query: item.query })
-                              : '{}')
-                        )
-              }
-            }))
-        } else if (parsed.action && (parsed.action.tool || parsed.action.name)) {
-          extractedToolCalls = [
-            {
-              id: `call_${Date.now()}_0`,
-              type: 'function',
-              function: {
-                name: parsed.action.tool || parsed.action.name,
-                arguments:
-                  typeof parsed.action.arguments === 'object'
-                    ? JSON.stringify(parsed.action.arguments)
-                    : typeof parsed.action.query === 'object'
-                      ? JSON.stringify(parsed.action.query)
-                      : JSON.stringify(
-                          parsed.action.query !== undefined ? { query: parsed.action.query } : {}
-                        )
-              }
-            }
-          ]
-        } else if (parsed.tool) {
-          extractedToolCalls = [
-            {
-              id: `call_${Date.now()}_0`,
-              type: 'function',
-              function: {
-                name: parsed.tool,
-                arguments:
-                  typeof parsed.query === 'object'
-                    ? JSON.stringify(parsed.query)
-                    : JSON.stringify(
-                        parsed.query ? { query: parsed.query } : parsed.arguments || {}
-                      )
-              }
-            }
-          ]
-        } else if (parsed.name && (parsed.arguments || parsed.query || parsed.parameters)) {
-          extractedToolCalls = [
-            {
-              id: `call_${Date.now()}_0`,
-              type: 'function',
-              function: {
-                name: parsed.name,
-                arguments:
-                  typeof parsed.arguments === 'object'
-                    ? JSON.stringify(parsed.arguments)
-                    : String(
-                        parsed.arguments ||
-                          JSON.stringify(
-                            parsed.query ? { query: parsed.query } : parsed.parameters || {}
-                          )
-                      )
-              }
-            }
-          ]
-        }
-      }
-    } catch {
-      // JSON repair fallback ignored
+      parsedJson = cleanAndParse(jsonCandidate)
+    } catch (_) {
+      parsedJson = null
     }
   }
 
+  if (parsedJson && typeof parsedJson === 'object') {
+    // 1. Ekstraksi Mood dari properti JSON
+    if (parsedJson.mood && typeof parsedJson.mood === 'string') {
+      extractedMood = parsedJson.mood.toLowerCase().trim()
+      onMood?.(extractedMood)
+    }
+
+    // 2. Ekstraksi Thought / Reasoning
+    if (parsedJson.thought && typeof parsedJson.thought === 'string' && parsedJson.thought.trim()) {
+      cleanReasoning = cleanReasoning
+        ? `${cleanReasoning}\n\n${parsedJson.thought.trim()}`
+        : parsedJson.thought.trim()
+      onReasoning?.(cleanReasoning)
+    }
+
+    // 3. Ekstraksi Tool Calls
+    if (Array.isArray(parsedJson.tool_calls) && parsedJson.tool_calls.length > 0) {
+      extractedToolCalls = parsedJson.tool_calls.map((tc, idx) => ({
+        id: tc.id || `call_${Date.now()}_${idx}`,
+        type: 'function',
+        function: {
+          name: tc.name || tc.function?.name,
+          arguments:
+            typeof tc.arguments === 'object'
+              ? JSON.stringify(tc.arguments)
+              : String(tc.arguments || '{}')
+        }
+      }))
+    } else if (Array.isArray(parsedJson.action) && parsedJson.action.length > 0) {
+      // Dukungan format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
+      extractedToolCalls = parsedJson.action
+        .filter((act) => act && (act.tool || act.name))
+        .map((act, idx) => ({
+          id: `call_${Date.now()}_${idx}`,
+          type: 'function',
+          function: {
+            name: act.tool || act.name,
+            arguments:
+              typeof act.arguments === 'object'
+                ? JSON.stringify(act.arguments)
+                : typeof act.query === 'object'
+                  ? JSON.stringify(act.query)
+                  : JSON.stringify(
+                      act.query !== undefined
+                        ? { query: act.query }
+                        : act.arguments !== undefined
+                          ? { query: act.arguments }
+                          : {}
+                    )
+          }
+        }))
+    } else if (Array.isArray(parsedJson) && parsedJson.length > 0) {
+      // Dukungan format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
+      extractedToolCalls = parsedJson
+        .filter((item) => item && (item.name || item.tool || item.function?.name))
+        .map((item, idx) => ({
+          id: item.id || `call_${Date.now()}_${idx}`,
+          type: 'function',
+          function: {
+            name: item.name || item.tool || item.function?.name,
+            arguments:
+              typeof item.arguments === 'object'
+                ? JSON.stringify(item.arguments)
+                : typeof item.query === 'object'
+                  ? JSON.stringify(item.query)
+                  : String(
+                      item.arguments ||
+                        (item.query !== undefined ? JSON.stringify({ query: item.query }) : '{}')
+                    )
+          }
+        }))
+    } else if (parsedJson.action && (parsedJson.action.tool || parsedJson.action.name)) {
+      extractedToolCalls = [
+        {
+          id: `call_${Date.now()}_0`,
+          type: 'function',
+          function: {
+            name: parsedJson.action.tool || parsedJson.action.name,
+            arguments:
+              typeof parsedJson.action.arguments === 'object'
+                ? JSON.stringify(parsedJson.action.arguments)
+                : typeof parsedJson.action.query === 'object'
+                  ? JSON.stringify(parsedJson.action.query)
+                  : JSON.stringify(
+                      parsedJson.action.query !== undefined
+                        ? { query: parsedJson.action.query }
+                        : {}
+                    )
+          }
+        }
+      ]
+    } else if (parsedJson.tool) {
+      extractedToolCalls = [
+        {
+          id: `call_${Date.now()}_0`,
+          type: 'function',
+          function: {
+            name: parsedJson.tool,
+            arguments:
+              typeof parsedJson.query === 'object'
+                ? JSON.stringify(parsedJson.query)
+                : JSON.stringify(
+                    parsedJson.query ? { query: parsedJson.query } : parsedJson.arguments || {}
+                  )
+          }
+        }
+      ]
+    } else if (
+      parsedJson.name &&
+      (parsedJson.arguments || parsedJson.query || parsedJson.parameters)
+    ) {
+      extractedToolCalls = [
+        {
+          id: `call_${Date.now()}_0`,
+          type: 'function',
+          function: {
+            name: parsedJson.name,
+            arguments:
+              typeof parsedJson.arguments === 'object'
+                ? JSON.stringify(parsedJson.arguments)
+                : String(
+                    parsedJson.arguments ||
+                      JSON.stringify(
+                        parsedJson.query ? { query: parsedJson.query } : parsedJson.parameters || {}
+                      )
+                  )
+          }
+        }
+      ]
+    }
+
+    // 4. Ekstraksi Answer
+    if (parsedJson.answer !== undefined && parsedJson.answer !== null) {
+      cleanContent = String(parsedJson.answer)
+    } else if (extractedToolCalls && extractedToolCalls.length > 0) {
+      cleanContent = ''
+    }
+  }
+
+  // Jika memanggil tool
   if (extractedToolCalls && extractedToolCalls.length > 0) {
     onToolCall?.(extractedToolCalls)
     return {
       content: null,
       reasoning: cleanReasoning,
       toolCalls: extractedToolCalls,
-      finishReason: 'tool_calls'
+      finishReason: 'tool_calls',
+      mood: extractedMood,
+      meta: {
+        mood: extractedMood,
+        done: false,
+        hasExplicitDone: true,
+        hasTag: false
+      }
     }
   }
 
-  if (cleanContent) {
-    cleanContent = cleanContent
-      .replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '')
-      .trim()
-    const parsedContent = parseMarkTag(cleanContent)
-    if (parsedContent.meta?.mood && parsedContent.meta.mood !== 'neutral') {
-      onMood?.(parsedContent.meta.mood)
-    }
-    cleanContent = parsedContent.cleanContent
-    if (!streamedAnyToken) {
-      onToken?.(cleanContent)
-    }
+  // Jika bukan pemanggilan tool (teks balasan final)
+  cleanContent = stripMarkTags(cleanContent)
+    .replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '')
+    .trim()
+
+  if (stream) {
+    onToken?.(cleanContent)
   }
 
   return {
     content: cleanContent,
     reasoning: cleanReasoning,
     toolCalls: null,
-    finishReason: 'stop'
+    finishReason: 'stop',
+    mood: extractedMood,
+    meta: {
+      mood: extractedMood,
+      done: true,
+      hasExplicitDone: true,
+      hasTag: false
+    }
   }
 }
