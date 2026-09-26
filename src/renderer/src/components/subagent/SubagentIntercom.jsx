@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { CodeBlock } from '../Chat/CodeBlock'
 import { subagentStore } from '../../api/subagent/subagentStore'
 import {
@@ -66,9 +67,7 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
             >
               <div className="flex items-center gap-2 font-semibold text-accent text-[11px]">
                 <Brain className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Pemikiran Sub-Agent
-                </span>
+                <span>Pemikiran Sub-Agent</span>
               </div>
               <div className="flex items-center gap-1 text-[10px] text-base-content/50">
                 <span>{isThoughtOpen ? 'Tutup' : 'Lihat'}</span>
@@ -142,7 +141,10 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
 
                       {isObsOpen && step.observation && (
                         <div className="p-2.5 bg-black/40 rounded-lg text-base-content/80 whitespace-pre-wrap break-all text-[10px] max-h-44 overflow-y-auto mt-1 border border-base-content/10 font-mono">
-                          {(typeof step.observation === 'string' ? step.observation : JSON.stringify(step.observation)).replace(/^\[OBSERVATION\]:\s*/, '')}
+                          {(typeof step.observation === 'string'
+                            ? step.observation
+                            : JSON.stringify(step.observation)
+                          ).replace(/^\[OBSERVATION\]:\s*/, '')}
                         </div>
                       )}
                     </div>
@@ -156,10 +158,16 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
         {/* 3. Final Content / Answer or Loading */}
         {turn.answer ? (
           <div className="prose prose-invert prose-sm max-w-none text-xs leading-relaxed font-normal pt-1 text-base-content/95">
-            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {turn.answer
-                .replace(/^\[DARI LEAD AGENT \(MARK\)\]:\s*/, '')
-                .replace(/^\[DARI CREATOR \/ USER \(MADA\)\]:\s*/, '')}
+            <Markdown
+              remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+              rehypePlugins={[...mathRehypePlugins]}
+              components={markdownComponents}
+            >
+              {preprocessLaTeX(
+                turn.answer
+                  .replace(/^\[DARI LEAD AGENT \(MARK\)\]:\s*/, '')
+                  .replace(/^\[DARI CREATOR \/ USER \(MADA\)\]:\s*/, '')
+              )}
             </Markdown>
           </div>
         ) : isRunning ? (

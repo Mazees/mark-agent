@@ -1,6 +1,7 @@
 /* eslint-disable react/prop-types */
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { Check, XCircle, Ban, Music, Brain, ChevronRight, Terminal, Loader2 } from 'lucide-react'
 import { FaYoutube } from 'react-icons/fa'
 import { useApproval } from '../../contexts/ApprovalContext'
@@ -79,8 +80,13 @@ export const ThinkingBubble = ({
                 <ChevronRight className="w-3 h-3 group-open/details:rotate-90 transition-transform text-white/40 ml-auto shrink-0" />
               </summary>
               <div className="mt-1 pl-3 my-1 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-56 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
-                <Markdown remarkPlugins={[remarkGfm]}>
-                  {typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)}
+                <Markdown
+                  remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                  rehypePlugins={[...mathRehypePlugins]}
+                >
+                  {preprocessLaTeX(
+                    typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)
+                  )}
                 </Markdown>
               </div>
             </details>
@@ -119,7 +125,12 @@ export const ThinkingBubble = ({
                         key={idx}
                         className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
                       >
-                        <Markdown remarkPlugins={[remarkGfm]}>{step.text}</Markdown>
+                        <Markdown
+                          remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                          rehypePlugins={[...mathRehypePlugins]}
+                        >
+                          {preprocessLaTeX(step.text)}
+                        </Markdown>
                       </div>
                     )
                   }

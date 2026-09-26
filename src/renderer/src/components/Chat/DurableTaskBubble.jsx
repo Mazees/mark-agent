@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import {
   Check,
   FolderOpen,
@@ -86,7 +87,7 @@ export const DurableTaskBubble = ({
     const isPendingApproval = Boolean(
       activeApproval &&
       activeApproval.status === 'pending' &&
-      isToolRunning &&
+      (isToolRunning || idx === toolsToDisplay.length - 1) &&
       (activeApproval.tool === t.tool || !t.tool)
     )
     const hasQuery = t.query !== undefined && t.query !== null && t.query !== ''
@@ -247,7 +248,7 @@ export const DurableTaskBubble = ({
           </div>
         </details>
         {isPendingApproval && (
-          <div className="pl-3 pr-1 my-1">
+          <div className="pl-3 pr-1 my-2 pb-2">
             <ApprovalBubble
               approvalId={activeApproval.id}
               tool={activeApproval.tool}
@@ -379,10 +380,15 @@ export const DurableTaskBubble = ({
                 <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/thought:rotate-90 ml-auto shrink-0" />
               </summary>
               <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
-                <Markdown remarkPlugins={[remarkGfm]}>
-                  {typeof displayReasoning === 'string'
-                    ? displayReasoning
-                    : JSON.stringify(displayReasoning, null, 2)}
+                <Markdown
+                  remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                  rehypePlugins={[...mathRehypePlugins]}
+                >
+                  {preprocessLaTeX(
+                    typeof displayReasoning === 'string'
+                      ? displayReasoning
+                      : JSON.stringify(displayReasoning, null, 2)
+                  )}
                 </Markdown>
               </div>
             </details>
@@ -392,7 +398,11 @@ export const DurableTaskBubble = ({
           {toolsToDisplay && toolsToDisplay.length > 0 && (
             <details
               className="group/process outline-none"
-              open={isRunning || isProcessOpen}
+              open={
+                isRunning ||
+                isProcessOpen ||
+                Boolean(activeApproval && activeApproval.status === 'pending')
+              }
               onToggle={(e) => setIsProcessOpen(e.currentTarget.open)}
             >
               <summary className="list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
@@ -405,6 +415,25 @@ export const DurableTaskBubble = ({
               </summary>
               <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
                 {toolsToDisplay.map((t, idx) => renderToolItem(t, idx))}
+                {Boolean(
+                  activeApproval &&
+                  activeApproval.status === 'pending' &&
+                  !toolsToDisplay.some(
+                    (t, idx) =>
+                      (t.status === 'running' || idx === toolsToDisplay.length - 1) &&
+                      (activeApproval.tool === t.tool || !t.tool)
+                  )
+                ) && (
+                  <div className="pl-3 pr-1 my-2 pb-2">
+                    <ApprovalBubble
+                      approvalId={activeApproval.id}
+                      tool={activeApproval.tool}
+                      query={activeApproval.query}
+                      message={activeApproval.message}
+                      status={activeApproval.status}
+                    />
+                  </div>
+                )}
               </div>
             </details>
           )}

@@ -4,6 +4,7 @@ import { FaTelegram, FaPlug, FaStop, FaCog, FaSave, FaTimes } from 'react-icons/
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../utils/latexHelper'
 import { CodeBlock } from '../components/Chat/CodeBlock'
 import { useNavigate } from 'react-router-dom'
 import { getAllConfig, saveConfiguration } from '../api/db'
@@ -119,7 +120,9 @@ const TelegramBot = () => {
                     <span className="capitalize text-xs">{status}</span>
                   </div>
                 </div>
-                <p className="opacity-50 text-sm mt-1">Kelola dan pantau interaksi Mark via Telegram.</p>
+                <p className="opacity-50 text-sm mt-1">
+                  Kelola dan pantau interaksi Mark via Telegram.
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -160,107 +163,115 @@ const TelegramBot = () => {
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto w-full flex flex-col gap-4">
-        {status === 'disconnected' && (
-          <div className="card bg-base-200 shadow-xl border border-white/10 p-6 max-w-md mx-auto my-auto text-center space-y-4">
-            <FaTelegram className="text-6xl text-info mx-auto" />
-            <h2 className="text-xl font-bold">Sambungkan Telegram Bot</h2>
-            <p className="text-sm opacity-70">
-              Masukkan API Bot Token dari <b>@BotFather</b> di Telegram.
-            </p>
-            <div className="space-y-3 text-left">
-              <div>
-                <label className="text-xs font-semibold opacity-70 block mb-1">Bot Token</label>
-                <input
-                  type="password"
-                  placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ..."
-                  value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  className="input input-bordered w-full font-mono text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold opacity-70 block mb-1">
-                  Telegram Admin Usernames
-                </label>
-                <input
-                  type="text"
-                  placeholder="@username1, @username2"
-                  value={adminIdsInput}
-                  onChange={(e) => setAdminIdsInput(e.target.value)}
-                  className="input input-bordered w-full font-mono text-sm"
-                />
-                <span className="text-[10px] opacity-60 block mt-1">
-                  Masukkan username Telegram (@username). Pisahkan dengan koma jika lebih dari satu.
-                </span>
-              </div>
-            </div>
-            <button onClick={handleSaveConfigAndConnect} className="btn btn-info text-white w-full">
-              <FaPlug /> Simpan & Hubungkan Bot
-            </button>
-          </div>
-        )}
-
-        {status === 'connected' && messages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center opacity-40 select-none">
-            <FaTelegram className="text-6xl mb-4 text-info" />
-            <p className="text-lg font-semibold">Menunggu Pesan Masuk</p>
-            <p className="text-sm">Bot terhubung. Pantau aktivitas Telegram di sini.</p>
-          </div>
-        )}
-
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`chat ${msg.type === 'outgoing' ? 'chat-end' : 'chat-start'} animate-fade-in`}
-          >
-            <div className="chat-header opacity-50 text-xs mb-1">
-              {msg.sender}
-              <time className="text-xs ml-2">{msg.time}</time>
-            </div>
-            <div
-              className={`chat-bubble flex flex-col gap-1 ${msg.type === 'outgoing' ? 'chat-bubble-info text-info-content' : 'bg-base-300 text-base-content'}`}
-            >
-              <div className="text-sm custom-markdown overflow-x-hidden">
-                <Markdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[
-                    [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
-                  ]}
-                  components={{
-                    code: CodeBlock
-                  }}
-                >
-                  {msg.type === 'outgoing' ? msg.reply : msg.text}
-                </Markdown>
-                {msg.type === 'outgoing' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {msg.toolsUsed.map((tool, i) => (
-                      <span
-                        key={i}
-                        className="badge badge-sm text-white badge-accent badge-outline text-[10px] font-mono ml-auto"
-                      >
-                        {tool}
-                      </span>
-                    ))}
+            {status === 'disconnected' && (
+              <div className="card bg-base-200 shadow-xl border border-white/10 p-6 max-w-md mx-auto my-auto text-center space-y-4">
+                <FaTelegram className="text-6xl text-info mx-auto" />
+                <h2 className="text-xl font-bold">Sambungkan Telegram Bot</h2>
+                <p className="text-sm opacity-70">
+                  Masukkan API Bot Token dari <b>@BotFather</b> di Telegram.
+                </p>
+                <div className="space-y-3 text-left">
+                  <div>
+                    <label className="text-xs font-semibold opacity-70 block mb-1">Bot Token</label>
+                    <input
+                      type="password"
+                      placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ..."
+                      value={tokenInput}
+                      onChange={(e) => setTokenInput(e.target.value)}
+                      className="input input-bordered w-full font-mono text-sm"
+                    />
                   </div>
-                )}
+                  <div>
+                    <label className="text-xs font-semibold opacity-70 block mb-1">
+                      Telegram Admin Usernames
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="@username1, @username2"
+                      value={adminIdsInput}
+                      onChange={(e) => setAdminIdsInput(e.target.value)}
+                      className="input input-bordered w-full font-mono text-sm"
+                    />
+                    <span className="text-[10px] opacity-60 block mt-1">
+                      Masukkan username Telegram (@username). Pisahkan dengan koma jika lebih dari
+                      satu.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleSaveConfigAndConnect}
+                  className="btn btn-info text-white w-full"
+                >
+                  <FaPlug /> Simpan & Hubungkan Bot
+                </button>
               </div>
-            </div>
-          </div>
-        ))}
+            )}
 
-        {isThinking && (
-          <div className="chat chat-end animate-fade-in">
-            <div className="chat-header opacity-50 text-xs mb-1">
-              Mark sedang memproses pesan {currentSender}...
-            </div>
-            <div className="chat-bubble chat-bubble-info bg-info/20 text-info border border-info/30">
-              <span className="loading loading-dots loading-sm"></span>
-            </div>
-          </div>
-        )}
+            {status === 'connected' && messages.length === 0 && (
+              <div className="flex-1 flex flex-col items-center justify-center opacity-40 select-none">
+                <FaTelegram className="text-6xl mb-4 text-info" />
+                <p className="text-lg font-semibold">Menunggu Pesan Masuk</p>
+                <p className="text-sm">Bot terhubung. Pantau aktivitas Telegram di sini.</p>
+              </div>
+            )}
 
-        <div ref={messagesEndRef} />
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`chat ${msg.type === 'outgoing' ? 'chat-end' : 'chat-start'} animate-fade-in`}
+              >
+                <div className="chat-header opacity-50 text-xs mb-1">
+                  {msg.sender}
+                  <time className="text-xs ml-2">{msg.time}</time>
+                </div>
+                <div
+                  className={`chat-bubble flex flex-col gap-1 ${msg.type === 'outgoing' ? 'chat-bubble-info text-info-content' : 'bg-base-300 text-base-content'}`}
+                >
+                  <div className="text-sm custom-markdown overflow-x-hidden">
+                    <Markdown
+                      remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                      rehypePlugins={[
+                        [
+                          rehypeExternalLinks,
+                          { target: '_blank', rel: ['noopener', 'noreferrer'] }
+                        ],
+                        ...mathRehypePlugins
+                      ]}
+                      components={{
+                        code: CodeBlock
+                      }}
+                    >
+                      {preprocessLaTeX(msg.type === 'outgoing' ? msg.reply : msg.text)}
+                    </Markdown>
+                    {msg.type === 'outgoing' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {msg.toolsUsed.map((tool, i) => (
+                          <span
+                            key={i}
+                            className="badge badge-sm text-white badge-accent badge-outline text-[10px] font-mono ml-auto"
+                          >
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {isThinking && (
+              <div className="chat chat-end animate-fade-in">
+                <div className="chat-header opacity-50 text-xs mb-1">
+                  Mark sedang memproses pesan {currentSender}...
+                </div>
+                <div className="chat-bubble chat-bubble-info bg-info/20 text-info border border-info/30">
+                  <span className="loading loading-dots loading-sm"></span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
         </div>
       </div>
@@ -310,7 +321,8 @@ const TelegramBot = () => {
                   className="input input-bordered w-full font-mono text-sm"
                 />
                 <span className="text-xs opacity-60 mt-1">
-                  Daftar username Telegram (@username) yang diizinkan mengontrol Mark. Pisahkan dengan koma.
+                  Daftar username Telegram (@username) yang diizinkan mengontrol Mark. Pisahkan
+                  dengan koma.
                 </span>
               </div>
 

@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useApproval, extractToolTarget } from '../../contexts/ApprovalContext'
 import FileDiffModal from './FileDiffModal'
 
@@ -14,6 +14,17 @@ export const ApprovalBubble = ({
 }) => {
   const { resolveApproval } = useApproval()
   const [showDiffModal, setShowDiffModal] = useState(false)
+  const bubbleRef = useRef(null)
+
+  // Auto-scroll ke bubble persetujuan jika status pending
+  useEffect(() => {
+    if (status === 'pending' && bubbleRef.current) {
+      const scrollTimer = setTimeout(() => {
+        bubbleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 60)
+      return () => clearTimeout(scrollTimer)
+    }
+  }, [status, approvalId])
 
   // Hilang seketika setelah di-acc atau ditolak
   if (status !== 'pending') {
@@ -35,7 +46,10 @@ export const ApprovalBubble = ({
   }
 
   return (
-    <div className="my-2 p-3 rounded-xl bg-base-300/50 border border-white/5 space-y-2.5 text-xs text-base-content select-text shadow-sm">
+    <div
+      ref={bubbleRef}
+      className="my-2.5 p-3.5 pb-4 rounded-xl bg-base-300/60 border border-white/10 space-y-3 text-xs text-base-content select-text shadow-md"
+    >
       {/* Header persetujuan */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -77,7 +91,7 @@ export const ApprovalBubble = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 pb-1">
         <button
           type="button"
           onClick={() => handleDecision('reject')}

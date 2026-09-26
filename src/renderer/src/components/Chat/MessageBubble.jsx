@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { CodeBlock } from './CodeBlock'
 import {
   Brain,
@@ -147,8 +148,13 @@ export const MessageBubble = React.memo(
                   <ChevronRight className="w-3 h-3 text-white/40 transition-transform duration-150 group-open/thought:rotate-90 ml-auto shrink-0" />
                 </summary>
                 <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
-                  <Markdown remarkPlugins={[remarkGfm]}>
-                    {typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)}
+                  <Markdown
+                    remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                    rehypePlugins={[...mathRehypePlugins]}
+                  >
+                    {preprocessLaTeX(
+                      typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)
+                    )}
                   </Markdown>
                 </div>
               </details>
@@ -196,7 +202,12 @@ export const MessageBubble = React.memo(
                               key={idx}
                               className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
                             >
-                              <Markdown remarkPlugins={[remarkGfm]}>{t.text}</Markdown>
+                              <Markdown
+                                remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                                rehypePlugins={[...mathRehypePlugins]}
+                              >
+                                {preprocessLaTeX(t.text)}
+                              </Markdown>
                             </div>
                           )
                         }
@@ -421,15 +432,16 @@ export const MessageBubble = React.memo(
           ) : (
             <div className="prose prose-sm max-w-none text-inherit prose-pre:p-0 prose-pre:bg-transparent prose-headings:text-inherit prose-strong:text-inherit">
               <Markdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
                 rehypePlugins={[
+                  ...mathRehypePlugins,
                   [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
                 ]}
                 components={{
                   code: CodeBlock
                 }}
               >
-                {stringContent}
+                {preprocessLaTeX(stringContent)}
               </Markdown>
             </div>
           ))}
