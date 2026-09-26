@@ -185,7 +185,6 @@ export function printUpdateModal(info) {
   const modalWidth = resolveWidth(null, 76)
   const latest = info?.latestVersion || 'terbaru'
   const curr = info?.currentVersion || getCurrentVersion()
-  const instruction = info?.instruction || 'npm install -g @mazees/mark@latest'
   const instruction = info?.instruction || 'npm install -g @mazees/mark@latest --ignore-scripts'
 
   console.log(`\n ${c.bold}${drawDivider('[INFO UPDATE MARK]', modalWidth, c.green)}\n`)
