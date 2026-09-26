@@ -8,7 +8,7 @@
     "mark": "./bin/mark.js"
   },
   "author": "Mazees",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0",
   "homepage": "https://github.com/Mazees/mark-agent/",
   "repository": {
     "type": "git",
