@@ -1,6 +1,6 @@
 {
   "name": "@mazees/mark",
-  "version": "5.0.3",
+  "version": "5.0.6",
   "description": "Mark: Metacognitive Artificial Relational Knowledge AI",
   "main": "./src/server/index.js",
   "type": "module",
@@ -8,7 +8,7 @@
     "mark": "./bin/mark.js"
   },
   "author": "Mazees",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0",
   "homepage": "https://github.com/Mazees/mark-agent/",
   "repository": {
     "type": "git",

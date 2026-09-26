@@ -94,6 +94,7 @@ export function printMonitorHeader(config = {}, uiActive = false) {
     lines.push(` ${c.bold}${c.yellow}${updateTitle}${c.reset}`)
     lines.push(
       ` ${c.darkGray}Perintah   :${c.reset} ${c.green}${updateInfo.instruction || 'npm i -g @mazees/mark'}${c.reset}`
+      ` ${c.darkGray}Perintah   :${c.reset} ${c.green}${updateInfo.instruction || 'npm i -g @mazees/mark --ignore-scripts'}${c.reset}`
     )
   }
 
@@ -184,7 +185,7 @@ export function printUpdateModal(info) {
   const modalWidth = resolveWidth(null, 76)
   const latest = info?.latestVersion || 'terbaru'
   const curr = info?.currentVersion || getCurrentVersion()
-  const instruction = info?.instruction || 'npm install -g @mazees/mark@latest'
+  const instruction = info?.instruction || 'npm install -g @mazees/mark@latest --ignore-scripts'
 
   console.log(`\n ${c.bold}${drawDivider('[INFO UPDATE MARK]', modalWidth, c.green)}\n`)
   console.log(
