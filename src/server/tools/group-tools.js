@@ -217,193 +217,171 @@ export const GROUP_TOOLS_SCHEMA = {
       }
     ]
   },
-  pc_automation: {
+  computer_use: {
     description:
-      'Tool untuk interaksi fisik dengan desktop OS Windows, mouse click, keyboard typing, dan window management.',
+      'Tool kendali visual tingkat OS (Visual Computer Use / VLA) dan otomasi desktop Windows melalui screenshot layar kanonikal 1280x720, injeksi mouse click, drag, keyboard typing, shortcut, dan window management.',
     tools: [
       {
         type: 'function',
         function: {
-          name: 'os-control-open',
+          name: 'computer_use',
           description:
-            'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-control-close',
-          description: 'WAJIB DIPANGGIL TERAKHIR setelah semua tugas otomatisasi PC selesai.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-read',
-          description: 'Membaca elemen GUI desktop.',
+            'Kendali visual tingkat OS untuk otomasi desktop Windows melalui screenshot layar kanonikal 1280x720 dan injeksi keyboard/mouse presisi tinggi. Mendukung satu aksi tunggal maupun rangkaian aksi berurutan (batch).',
           parameters: {
             type: 'object',
             properties: {
-              mode: {
-                type: 'string',
-                enum: ['all', 'focus'],
+              actions: {
+                type: 'array',
                 description:
-                  '"all" untuk scan seluruh layar atau "focus" untuk membaca 1 elemen aktif'
-              }
-            },
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-click',
-          description:
-            'Klik mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
-          parameters: {
-            type: 'object',
-            properties: {
+                  'Daftar satu atau lebih aksi computer use yang akan dieksekusi berurutan (contoh untuk 1 aksi: [{ action: "click", coordinate: [500, 300] }]).',
+                items: {
+                  type: 'object',
+                  properties: {
+                    action: {
+                      type: 'string',
+                      enum: [
+                        'screenshot',
+                        'click',
+                        'double_click',
+                        'right_click',
+                        'middle_click',
+                        'mouse_down',
+                        'mouse_up',
+                        'move',
+                        'drag',
+                        'burst_click',
+                        'type',
+                        'key',
+                        'key_down',
+                        'key_up',
+                        'hotkey',
+                        'scroll',
+                        'wait',
+                        'list_windows',
+                        'focus_window',
+                        'maximize_window',
+                        'open_app'
+                      ],
+                      description: 'Jenis aksi yang akan dieksekusi'
+                    },
+                    coordinate: {
+                      type: 'array',
+                      items: { type: 'integer' },
+                      description:
+                        '[x, y] koordinat kanvas kanonikal 1280x720 (untuk click/move/mouse_down)'
+                    },
+                    start_coordinate: {
+                      type: 'array',
+                      items: { type: 'integer' },
+                      description: '[x, y] koordinat awal untuk aksi drag'
+                    },
+                    end_coordinate: {
+                      type: 'array',
+                      items: { type: 'integer' },
+                      description: '[x, y] koordinat akhir untuk aksi drag'
+                    },
+                    text: {
+                      type: 'string',
+                      description: 'Teks yang akan diketikkan (action: type)'
+                    },
+                    key: {
+                      type: 'string',
+                      description: 'Tombol keyboard (Return, Space, Tab, Escape, dll)'
+                    },
+                    modifiers: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Tombol modifikasi untuk hotkey (ctrl, shift, alt, win)'
+                    },
+                    title: {
+                      type: 'string',
+                      description: 'Judul window untuk focus_window atau maximize_window'
+                    },
+                    target: {
+                      type: 'string',
+                      description: 'Judul window (focus_window) atau path/nama program (open_app)'
+                    },
+                    maximize: {
+                      type: 'boolean',
+                      description:
+                        'Apakah window otomatis dimaksimalkan ke fullscreen saat difokuskan (default: true)'
+                    },
+                    count: {
+                      type: 'integer',
+                      description: 'Jumlah repetisi untuk burst_click'
+                    },
+                    interval_ms: {
+                      type: 'integer',
+                      description: 'Jeda antar klik pada burst_click (ms)'
+                    },
+                    duration_ms: {
+                      type: 'integer',
+                      description: 'Durasi tahanan tombol atau delay (ms)'
+                    },
+                    delay_after_ms: {
+                      type: 'integer',
+                      description:
+                        'Jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya (ms)'
+                    }
+                  },
+                  required: ['action']
+                }
+              },
+              action: {
+                type: 'string',
+                enum: [
+                  'screenshot',
+                  'click',
+                  'double_click',
+                  'right_click',
+                  'middle_click',
+                  'mouse_down',
+                  'mouse_up',
+                  'move',
+                  'drag',
+                  'burst_click',
+                  'type',
+                  'key',
+                  'key_down',
+                  'key_up',
+                  'hotkey',
+                  'scroll',
+                  'wait',
+                  'list_windows',
+                  'focus_window',
+                  'maximize_window',
+                  'open_app'
+                ],
+                description:
+                  '(Alternatif single action) Jenis aksi tunggal jika tidak menggunakan array actions'
+              },
+              coordinate: {
+                type: 'array',
+                items: { type: 'integer' },
+                description: '(Alternatif single action) [x, y] kanvas kanonikal 1280x720'
+              },
+              text: {
+                type: 'string',
+                description: '(Alternatif single action) Teks untuk pengetikan (action: type)'
+              },
+              key: {
+                type: 'string',
+                description: '(Alternatif single action) Tombol keyboard'
+              },
+              title: {
+                type: 'string',
+                description: '(Alternatif single action) Judul window'
+              },
               target: {
                 type: 'string',
-                description: 'ID elemen dari os-read atau koordinat "x||y"'
+                description: '(Alternatif single action) Judul window atau path program'
+              },
+              maximize: {
+                type: 'boolean',
+                description:
+                  '(Alternatif single action) Apakah otomatis dimaksimalkan (default: true)'
               }
-            },
-            required: ['target'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-double-click',
-          description:
-            'Double click mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
-          parameters: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'ID elemen dari os-read atau koordinat "x||y"'
-              }
-            },
-            required: ['target'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-type',
-          description: 'Ketik teks ke aplikasi Windows yang sedang aktif.',
-          parameters: {
-            type: 'object',
-            properties: {
-              text: { type: 'string', description: 'Teks yang akan diketikkan' }
-            },
-            required: ['text'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-key',
-          description: 'Tekan kombinasi tombol keyboard shortcut (misal: ctrl+c, alt+tab, enter).',
-          parameters: {
-            type: 'object',
-            properties: {
-              combo: { type: 'string', description: 'Kombinasi tombol keyboard' }
-            },
-            required: ['combo'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-scroll',
-          description: 'Scroll mouse wheel di aplikasi aktif.',
-          parameters: {
-            type: 'object',
-            properties: {
-              direction: { type: 'string', enum: ['up', 'down'], description: 'Arah scroll' },
-              amount: { type: 'number', description: 'Jumlah baris scroll' }
-            },
-            required: ['direction'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-delay',
-          description: 'Menunggu beberapa milidetik (jeda) saat menjalankan otomatisasi UI.',
-          parameters: {
-            type: 'object',
-            properties: {
-              ms: { type: 'number', description: 'Durasi jeda dalam milidetik (contoh: 1000)' }
-            },
-            required: ['ms'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-search',
-          description: 'Mencari aplikasi di Start Menu Windows dengan tombol Windows.',
-          parameters: {
-            type: 'object',
-            properties: {
-              keyword: { type: 'string', description: 'Kata kunci nama aplikasi' }
-            },
-            required: ['keyword'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-list-windows',
-          description: 'Menampilkan daftar semua window aplikasi yang terbuka beserta judulnya.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-focus-window',
-          description:
-            'Fokus sebuah window aplikasi berdasarkan judul yang ada di os-list-windows.',
-          parameters: {
-            type: 'object',
-            properties: {
-              title: { type: 'string', description: 'Judul window aplikasi persis' }
-            },
-            required: ['title'],
-            additionalProperties: false
+            }
           }
         }
       }

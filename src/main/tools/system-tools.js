@@ -14,7 +14,11 @@ import {
   focusWindow,
   openPCSession,
   closePCSession,
-  isPCSessionOpen
+  isPCSessionOpen,
+  executeComputerUse,
+  captureScreen,
+  executeBurstClick,
+  executeDrag
 } from '../../server/tools/pc-agent.js'
 
 const execPromise = util.promisify(exec)
@@ -50,7 +54,7 @@ const DANGEROUS_KEYWORDS = [
 ]
 
 export const isDangerousCommand = (cmd) => {
-  const str = typeof cmd === 'object' ? (cmd?.command || '') : String(cmd || '')
+  const str = typeof cmd === 'object' ? cmd?.command || '' : String(cmd || '')
   return DANGEROUS_KEYWORDS.some((k) => str.toLowerCase().includes(k.toLowerCase()))
 }
 
@@ -62,10 +66,13 @@ export const systemTools = {
       return `Mark ingin mengeksekusi perintah PowerShell yang berpotensi BERBAHAYA:\n\n${cmd}`
     },
     handler: async (args, config) => {
-      const command = (typeof args === 'object' && args !== null ? args.command : String(args || '')).trim()
+      const command = (
+        typeof args === 'object' && args !== null ? args.command : String(args || '')
+      ).trim()
       if (!command) return { success: false, message: 'Tidak ada perintah yang diberikan.' }
       try {
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
 
         // Gunakan Base64 EncodedCommand (UTF-16LE) agar karakter khusus ($_, quotes, pipe, regex) 100% aman
         const encodedCmd = Buffer.from(command, 'utf16le').toString('base64')
@@ -77,7 +84,11 @@ export const systemTools = {
             timeout: 60000 // 60 detik timeout
           }
         )
-        const outputText = stdout.trim() || (stderr.trim() ? `[STDERR]: ${stderr.trim()}` : 'Perintah berhasil dieksekusi tanpa output teks.')
+        const outputText =
+          stdout.trim() ||
+          (stderr.trim()
+            ? `[STDERR]: ${stderr.trim()}`
+            : 'Perintah berhasil dieksekusi tanpa output teks.')
         return {
           success: true,
           data: outputText,
@@ -102,7 +113,8 @@ export const systemTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const mode = typeof args === 'object' && args !== null ? (args.mode || 'all') : String(args || 'all')
+        const mode =
+          typeof args === 'object' && args !== null ? args.mode || 'all' : String(args || 'all')
         const result = await readDesktop({}, mode)
         return { success: true, data: result }
       } catch (e) {
@@ -115,7 +127,8 @@ export const systemTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+        const target =
+          typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
         const result = await executeClick(target)
         return { success: true, data: result }
       } catch (e) {
@@ -128,7 +141,8 @@ export const systemTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const text = typeof args === 'object' && args !== null ? (args.text ?? '') : String(args ?? '')
+        const text =
+          typeof args === 'object' && args !== null ? (args.text ?? '') : String(args ?? '')
         const result = await executeType(text)
         return { success: true, data: result }
       } catch (e) {
@@ -148,7 +162,8 @@ export const systemTools = {
     },
     handler: async (args) => {
       try {
-        const combo = typeof args === 'object' && args !== null ? (args.combo ?? '') : String(args ?? '')
+        const combo =
+          typeof args === 'object' && args !== null ? (args.combo ?? '') : String(args ?? '')
         const result = await executeKey(combo)
         return { success: true, data: result }
       } catch (e) {
@@ -179,11 +194,12 @@ export const systemTools = {
     }
   },
 
-  'open': {
+  open: {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+        const target =
+          typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
         await execPromise(`start "" "${target}"`)
         return { success: true, data: `Opened: ${target}` }
       } catch (e) {
@@ -196,7 +212,9 @@ export const systemTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const target = (typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')).trim()
+        const target = (
+          typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+        ).trim()
         await execPromise(`start "" "${target}"`)
         return { success: true, data: `Opened: ${target}` }
       } catch (e) {
@@ -209,7 +227,8 @@ export const systemTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const query = typeof args === 'object' && args !== null ? (args.keyword || '') : String(args || '')
+        const query =
+          typeof args === 'object' && args !== null ? args.keyword || '' : String(args || '')
         await executeKey('win')
         await new Promise((r) => setTimeout(r, 800))
         const result = await executeType(query)
@@ -226,7 +245,8 @@ export const systemTools = {
   'os-double-click': {
     needsApproval: false,
     handler: async (args) => {
-      const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+      const target =
+        typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
       return await executeDoubleClick(target)
     }
   },
@@ -234,7 +254,8 @@ export const systemTools = {
   'os-delay': {
     needsApproval: false,
     handler: async (args) => {
-      let ms = typeof args === 'object' && args !== null ? parseInt(args.ms, 10) : parseInt(args, 10)
+      let ms =
+        typeof args === 'object' && args !== null ? parseInt(args.ms, 10) : parseInt(args, 10)
       if (isNaN(ms) || ms < 0) ms = 1000
       if (ms > 10000) ms = 10000
       await new Promise((r) => setTimeout(r, ms))
@@ -258,7 +279,8 @@ export const systemTools = {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const title = typeof args === 'object' && args !== null ? (args.title || '') : String(args || '')
+        const title =
+          typeof args === 'object' && args !== null ? args.title || '' : String(args || '')
         const result = await focusWindow(title)
         return { success: true, data: result }
       } catch (e) {
@@ -287,6 +309,112 @@ export const systemTools = {
       try {
         const result = await closePCSession()
         return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  computer_use: {
+    needsApproval: (args) => {
+      if (Array.isArray(args?.actions)) {
+        return args.actions.some((a) => {
+          const act = a?.action || ''
+          const combo = a?.key || a?.combo || (Array.isArray(a?.keys) ? a.keys.join('+') : '')
+          if (act === 'key' || act === 'hotkey' || act === 'key_down') {
+            return isDangerousKeyCombo(combo)
+          }
+          return false
+        })
+      }
+      const act = typeof args === 'object' && args !== null ? args.action : ''
+      const combo =
+        typeof args === 'object' && args !== null
+          ? args.key || args.combo || (Array.isArray(args?.keys) ? args.keys.join('+') : '')
+          : ''
+      if (act === 'key' || act === 'hotkey' || act === 'key_down') {
+        return isDangerousKeyCombo(combo)
+      }
+      return false
+    },
+    approvalMessage: (args) => {
+      let combo = ''
+      if (Array.isArray(args?.actions)) {
+        const found = args.actions.find((a) => {
+          const act = a?.action || ''
+          const c = a?.key || a?.combo || (Array.isArray(a?.keys) ? a.keys.join('+') : '')
+          return (act === 'key' || act === 'hotkey' || act === 'key_down') && isDangerousKeyCombo(c)
+        })
+        combo = found
+          ? found.key || found.combo || (Array.isArray(found.keys) ? found.keys.join('+') : '')
+          : ''
+      } else if (typeof args === 'object' && args !== null) {
+        combo = args.key || args.combo || (Array.isArray(args?.keys) ? args.keys.join('+') : '')
+      }
+      return `Mark ingin menekan shortcut keyboard berpotensi bahaya via Computer Use:\n\n${combo}`
+    },
+    handler: async (args) => {
+      try {
+        const result = await executeComputerUse(args)
+        if (result?.image || result?.dataUrl) {
+          const img = result.dataUrl || result.image
+          return {
+            success: result.success !== false,
+            data:
+              result.message ||
+              (result.action === 'batch'
+                ? `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`
+                : `Screenshot desktop berhasil diambil (${result.viewport || '1280x720'}).`),
+            message: result.message,
+            dataUrl: img,
+            image: img,
+            viewport: result.viewport,
+            host_resolution: result.host_resolution,
+            action: result.action || 'screenshot',
+            results: result.results || undefined
+          }
+        }
+        if (result?.action === 'batch') {
+          return {
+            success: result.success !== false,
+            data: `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`,
+            ...result
+          }
+        }
+        return { success: result.success !== false, data: result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }
+  },
+
+  'computer-use': {
+    needsApproval: (args) => systemTools['computer_use'].needsApproval(args),
+    approvalMessage: (args) => systemTools['computer_use'].approvalMessage(args),
+    handler: async (args) => systemTools['computer_use'].handler(args)
+  },
+
+  'computer-screenshot': {
+    needsApproval: false,
+    handler: async (args) => {
+      try {
+        const result = await executeComputerUse({ action: 'screenshot', ...(args || {}) })
+        if (result?.image || result?.dataUrl) {
+          const img = result.dataUrl || result.image
+          return {
+            success: result.success !== false,
+            data:
+              result.message ||
+              `Screenshot desktop berhasil diambil (${result.viewport || '1280x720'}).`,
+            message: result.message,
+            dataUrl: img,
+            image: img,
+            viewport: result.viewport,
+            host_resolution: result.host_resolution,
+            action: 'screenshot'
+          }
+        }
+        return { success: result.success !== false, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }

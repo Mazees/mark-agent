@@ -87,6 +87,7 @@ const MUTATION_TOOLS = new Set([
   'edit-file',
   'append-file',
   'delete-file',
+  'computer_use',
   'os-click',
   'os-type',
   'os-key',
@@ -676,9 +677,43 @@ export const useMarkPlan = ({
 
         const res = executionResult.res
 
+        // Ekstraksi dataUrl/image jika ada dari tool apapun (computer_use, screenshot, read-image, dll)
+        const extractedImageUrl =
+          res?.dataUrl ||
+          res?.image ||
+          res?.screenshot ||
+          res?.imageUrl ||
+          res?.data?.dataUrl ||
+          res?.data?.image ||
+          res?.data?.screenshot ||
+          (typeof res?.data === 'string' && res.data.startsWith('data:image/') ? res.data : null)
+
         if (res && res.success) {
           if (res.data !== undefined) {
-            resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+            if (typeof res.data === 'string') {
+              resultString = res.data.startsWith('data:image/')
+                ? '[Tangkapan Layar Gambar Diteruskan ke Observasi Visual]'
+                : res.data
+            } else if (typeof res.data === 'object' && res.data !== null) {
+              const cleanData = { ...res.data }
+              if (
+                cleanData.image &&
+                typeof cleanData.image === 'string' &&
+                cleanData.image.startsWith('data:image/')
+              ) {
+                cleanData.image = `[VISUAL_ATTACHED: ${cleanData.viewport || '1280x720'}]`
+              }
+              if (
+                cleanData.dataUrl &&
+                typeof cleanData.dataUrl === 'string' &&
+                cleanData.dataUrl.startsWith('data:image/')
+              ) {
+                cleanData.dataUrl = `[VISUAL_ATTACHED]`
+              }
+              resultString = JSON.stringify(cleanData)
+            } else {
+              resultString = JSON.stringify(res.data)
+            }
           } else if (res.output !== undefined) {
             resultString = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
           } else if (res.result !== undefined) {
@@ -705,7 +740,8 @@ export const useMarkPlan = ({
           }
 
           // Analisis visual untuk read-image
-          if (tool === 'read-image' && res.dataUrl) {
+          if (tool === 'read-image' && (res.dataUrl || extractedImageUrl)) {
+            const activeImg = res.dataUrl || extractedImageUrl
             const promptText =
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               (typeof rawArgs === 'string' ? rawArgs : '') ||
@@ -725,7 +761,7 @@ export const useMarkPlan = ({
                     role: 'user',
                     content: [
                       { type: 'text', text: promptText },
-                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                      { type: 'image_url', image_url: { url: activeImg } }
                     ]
                   }
                 ],
@@ -743,7 +779,12 @@ export const useMarkPlan = ({
           }
 
           // Analisis visual untuk browser-screenshot jika query disertakan
-          if (tool === 'browser-screenshot' && res.dataUrl && (rawArgs?.query || res.query)) {
+          if (
+            tool === 'browser-screenshot' &&
+            (res.dataUrl || extractedImageUrl) &&
+            (rawArgs?.query || res.query)
+          ) {
+            const activeImg = res.dataUrl || extractedImageUrl
             const promptText =
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               res.query ||
@@ -759,7 +800,7 @@ export const useMarkPlan = ({
                     role: 'user',
                     content: [
                       { type: 'text', text: promptText },
-                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                      { type: 'image_url', image_url: { url: activeImg } }
                     ]
                   }
                 ],
@@ -779,8 +820,8 @@ export const useMarkPlan = ({
           resultString = `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
         }
 
-        const toolImageUrls = res?.dataUrl ? [res.dataUrl] : null
-        const toolPreviewUrl = res?.dataUrl || null
+        const toolImageUrls = extractedImageUrl ? [extractedImageUrl] : null
+        const toolPreviewUrl = extractedImageUrl || null
 
         return {
           res,
@@ -935,6 +976,7 @@ export const useMarkPlan = ({
     const sessionAbortController = new AbortController()
     const sessionRecord = {
       abortController: sessionAbortController,
+      thinkingId: `thinking_${activeSessionNum}_${Date.now()}`,
       startTime: Date.now(),
       lastActivityTime: Date.now(),
       prompt: userInput,
@@ -1008,7 +1050,7 @@ export const useMarkPlan = ({
     }
 
     if (isAutonomous) {
-      finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'os-*' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
+      finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'computer_use' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
     }
 
     let imageVisionPayloads = []
@@ -1603,6 +1645,7 @@ export const useMarkPlan = ({
           return [
             ...filtered,
             {
+              id: sessionRecord.thinkingId,
               role: 'ai',
               content: loadingText,
               isThinking: true,
@@ -1679,6 +1722,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: currentTurnContent,
                   isThinking: true,
@@ -1733,6 +1777,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: currentTurnContent,
                   isThinking: true,
@@ -1999,6 +2044,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: streamResult.content || `Mengeksekusi [${toolName}]...`,
                   isThinking: true,
@@ -2109,6 +2155,25 @@ export const useMarkPlan = ({
                   : execResult.resultString
             })
             currentInFlightTool = null
+
+            targetSetChatData((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [
+                ...filtered,
+                {
+                  role: 'ai',
+                  content:
+                    streamResult.content ||
+                    `Selesai mengeksekusi [${toolName}]. Menganalisis hasil observasi...`,
+                  isThinking: true,
+                  reasoning: liveReasoning || undefined,
+                  executedTools: [...executedToolsList],
+                  mood: currentActiveMood,
+                  usage: lastServerUsage || undefined,
+                  tokens: lastServerUsage?.completion_tokens || undefined
+                }
+              ]
+            })
 
             if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
               for (const u of execResult.imageUrls) {
@@ -2603,6 +2668,7 @@ Lakukan pemeriksaan mandiri sekarang:
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: 'Memvalidasi & Menguji Hasil Pekerjaan...',
                   isThinking: true,
@@ -2845,9 +2911,9 @@ Lakukan pemeriksaan mandiri sekarang:
       }
     } catch (error) {
       const isAbort =
-        error.name === 'AbortError' ||
-        error.message?.includes('AbortError') ||
-        Boolean(sessionAbortController?.signal?.aborted)
+        Boolean(sessionAbortController?.signal?.aborted) ||
+        error.message?.includes('User Aborted') ||
+        error.message?.includes('The user aborted a request')
 
       if (!isAbort) {
         console.error('[useMarkPlan] Critical ReAct Loop Error:', error)

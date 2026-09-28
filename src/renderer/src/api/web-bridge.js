@@ -395,7 +395,18 @@ export const webApi = {
     addWebListener('browser:preview', cb)
   },
 
-  // Windows Desktop OS Tools Bridges
+  // Windows Desktop OS Tools Bridges (Computer Use)
+  computerUse: async (params) => webApi.executeNativeTool('computer_use', params),
+  computerScreenshot: async (params) =>
+    webApi.executeNativeTool('computer_use', { action: 'screenshot', ...(params || {}) }),
+  onComputerPreview: (cb) => {
+    addWebListener('computer:preview', cb)
+    return () => removeWebListener('computer:preview', cb)
+  },
+  onComputerClick: (cb) => {
+    addWebListener('computer:click', cb)
+    return () => removeWebListener('computer:click', cb)
+  },
   osRead: async () => webApi.executeNativeTool('os-read', ''),
   osClick: async (query) => webApi.executeNativeTool('os-click', query),
   osType: async (query) => webApi.executeNativeTool('os-type', query),

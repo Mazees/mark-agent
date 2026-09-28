@@ -6,6 +6,7 @@ import { Check, XCircle, Ban, Music, Brain, ChevronRight, Terminal, Loader2 } fr
 import { FaYoutube } from 'react-icons/fa'
 import { useApproval } from '../../contexts/ApprovalContext'
 import { ApprovalBubble } from './ApprovalBubble'
+import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 
 export const ThinkingBubble = ({
   isSummarizing = false,
@@ -91,6 +92,9 @@ export const ThinkingBubble = ({
               </div>
             </details>
           )}
+
+          {/* Live Desktop Viewport Preview (Computer Use) - Di atas list proses */}
+          <DesktopPreviewWidget />
 
           {/* Executed Tools Step-by-Step List */}
           {steps && steps.length > 0 && (

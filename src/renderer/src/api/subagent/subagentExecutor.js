@@ -201,30 +201,13 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         let cand = (rawMatch ? rawMatch[1] : checkText).trim()
         const firstBrace = cand.indexOf('{')
         const lastBrace = cand.lastIndexOf('}')
-        let cand = checkText
-        const firstBrace = checkText.indexOf('{')
-        const lastBrace = checkText.lastIndexOf('}')
         if (firstBrace !== -1 && lastBrace > firstBrace) {
           cand = cand.substring(firstBrace, lastBrace + 1).trim()
-          cand = checkText.substring(firstBrace, lastBrace + 1).trim()
-        } else {
-          const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-          if (rawMatch) {
-            const inner = rawMatch[1].trim()
-            const innerFirst = inner.indexOf('{')
-            const innerLast = inner.lastIndexOf('}')
-            if (innerFirst !== -1 && innerLast > innerFirst) {
-              cand = inner.substring(innerFirst, innerLast + 1).trim()
-            } else {
-              cand = inner
-            }
-          }
         }
         if (
           cand.includes('"tool_calls"') ||
           cand.includes('"action"') ||
           cand.includes('"tool"') ||
-          cand.includes('"name"')
           cand.includes('"name"') ||
           cand.includes('"answer"') ||
           cand.includes('"thought"')
@@ -235,21 +218,21 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
             try {
               pObj = JSON.parse(cand)
             } catch (_) {
-              pObj = JSON.parse(jsonrepair(cand))
               try {
                 pObj = JSON.parse(jsonrepair(cand))
               } catch (_) {}
             }
-            if (pObj) {
             if (pObj && typeof pObj === 'object') {
               if (pObj.thought && !turnReasoning) {
                 turnReasoning = String(pObj.thought)
               }
               if (pObj.answer !== undefined && pObj.answer !== null) {
-                turnContent = typeof pObj.answer === 'string' ? pObj.answer : JSON.stringify(pObj.answer)
+                turnContent =
+                  typeof pObj.answer === 'string' ? pObj.answer : JSON.stringify(pObj.answer)
                 if (streamResult) streamResult.content = turnContent
               } else if (pObj.content !== undefined && pObj.content !== null) {
-                turnContent = typeof pObj.content === 'string' ? pObj.content : JSON.stringify(pObj.content)
+                turnContent =
+                  typeof pObj.content === 'string' ? pObj.content : JSON.stringify(pObj.content)
                 if (streamResult) streamResult.content = turnContent
               }
               if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
@@ -468,10 +451,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               if (!groupName) {
                 res = {
                   success: false,
-                  error: 'Harap sebutkan nama_grup (misal: "advanced_browser").'
+                  error: 'Harap sebutkan nama_grup (misal: "computer_use", "advanced_browser").'
                 }
               } else if (groups[groupName]) {
-                const formatted = Object.entries(groups[groupName].tools)
+                const formatted = Object.entries(groups[groupName].tools || {})
                   .map(([k, v]) => `- ${k}: ${v}`)
                   .join('\n')
                 res = {
@@ -561,7 +544,19 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               res = await window.api.executeNativeTool(toolName, parsedArgs, {
                 sessionId: subagentId
               })
-              if (res && res.success && res.dataUrl) {
+              const extractedImg =
+                res?.dataUrl ||
+                res?.image ||
+                res?.screenshot ||
+                res?.imageUrl ||
+                res?.data?.dataUrl ||
+                res?.data?.image ||
+                res?.data?.screenshot ||
+                (typeof res?.data === 'string' && res.data.startsWith('data:image/')
+                  ? res.data
+                  : null)
+
+              if (res && res.success && extractedImg) {
                 if (toolName === 'read-image') {
                   const promptText =
                     parsedArgs?.query ||
@@ -574,7 +569,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                           role: 'user',
                           content: [
                             { type: 'text', text: promptText },
-                            { type: 'image_url', image_url: { url: res.dataUrl } }
+                            { type: 'image_url', image_url: { url: extractedImg } }
                           ]
                         }
                       ],
@@ -599,7 +594,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                           role: 'user',
                           content: [
                             { type: 'text', text: promptText },
-                            { type: 'image_url', image_url: { url: res.dataUrl } }
+                            { type: 'image_url', image_url: { url: extractedImg } }
                           ]
                         }
                       ],
@@ -615,7 +610,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
                     res.data = `${res.message || 'Screenshot berhasil diambil.'} (Analisis teks awal dilewati: ${vErr.message}). Gambar visual diteruskan ke observasi.`
                   }
                 }
-                res.imageUrls = [res.dataUrl]
+                res.imageUrls = [extractedImg]
               }
             } else {
               res = { success: false, error: 'IPC executeNativeTool tidak tersedia.' }
@@ -623,7 +618,30 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
 
             if (res && res.success) {
               if (res.data !== undefined) {
-                resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+                if (typeof res.data === 'string') {
+                  resultString = res.data.startsWith('data:image/')
+                    ? '[Tangkapan Layar Gambar Diteruskan ke Observasi Visual]'
+                    : res.data
+                } else if (typeof res.data === 'object' && res.data !== null) {
+                  const cleanData = { ...res.data }
+                  if (
+                    cleanData.image &&
+                    typeof cleanData.image === 'string' &&
+                    cleanData.image.startsWith('data:image/')
+                  ) {
+                    cleanData.image = `[VISUAL_ATTACHED: ${cleanData.viewport || '1280x720'}]`
+                  }
+                  if (
+                    cleanData.dataUrl &&
+                    typeof cleanData.dataUrl === 'string' &&
+                    cleanData.dataUrl.startsWith('data:image/')
+                  ) {
+                    cleanData.dataUrl = `[VISUAL_ATTACHED]`
+                  }
+                  resultString = JSON.stringify(cleanData)
+                } else {
+                  resultString = JSON.stringify(res.data)
+                }
               } else if (res.output !== undefined) {
                 resultString =
                   typeof res.output === 'string' ? res.output : JSON.stringify(res.output)

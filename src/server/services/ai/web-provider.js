@@ -527,18 +527,9 @@ ${toolSections.join('\n\n')}
     candidateStr = jsonMatch[1].trim()
   }
 
-  // Cari blok JSON antara '{' pertama dan '}' terakhir
-  const firstBrace = candidateStr.indexOf('{')
-  const lastBrace = candidateStr.lastIndexOf('}')
   let parsedJson = null
   const trimmedContent = cleanContent.trim()
 
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const jsonCandidate = candidateStr.substring(firstBrace, lastBrace + 1).trim()
-    try {
-      parsedJson = cleanAndParse(jsonCandidate)
-    } catch (_) {
-      parsedJson = null
   // 1. Coba parse langsung jika cleanContent adalah JSON valid utuh
   try {
     parsedJson = cleanAndParse(trimmedContent)
@@ -710,11 +701,55 @@ ${toolSections.join('\n\n')}
       ]
     }
 
-    // 4. Ekstraksi Answer
-    if (parsedJson.answer !== undefined && parsedJson.answer !== null) {
-      cleanContent = String(parsedJson.answer)
+    // 4. Ekstraksi Answer / Response
+    const possibleAnswer =
+      parsedJson.answer !== undefined
+        ? parsedJson.answer
+        : parsedJson.response !== undefined
+          ? parsedJson.response
+          : parsedJson.reply !== undefined
+            ? parsedJson.reply
+            : parsedJson.message !== undefined
+              ? parsedJson.message
+              : parsedJson.text !== undefined
+                ? parsedJson.text
+                : parsedJson.content !== undefined
+                  ? parsedJson.content
+                  : null
+
+    if (possibleAnswer !== null && possibleAnswer !== undefined) {
+      cleanContent =
+        typeof possibleAnswer === 'string'
+          ? possibleAnswer
+          : JSON.stringify(possibleAnswer, null, 2)
     } else if (extractedToolCalls && extractedToolCalls.length > 0) {
       cleanContent = ''
+    }
+  }
+
+  // 5. Fallback Regex jika parsing JSON gagal namun model menghasilkan format JSON raw di cleanContent
+  if (
+    !parsedJson &&
+    cleanContent.includes('"thought"') &&
+    (cleanContent.includes('"answer"') ||
+      cleanContent.includes('"response"') ||
+      cleanContent.includes('"content"') ||
+      cleanContent.includes('"tool_calls"'))
+  ) {
+    const thoughtMatch = cleanContent.match(
+      /"thought"\s*:\s*"([\s\S]*?)(?=",\s*"(?:answer|response|content|action|tool_calls|mood)")/
+    )
+    if (thoughtMatch) {
+      cleanReasoning = cleanReasoning
+        ? `${cleanReasoning}\n\n${thoughtMatch[1].trim()}`
+        : thoughtMatch[1].trim()
+      onReasoning?.(cleanReasoning)
+    }
+    const answerMatch = cleanContent.match(
+      /"(?:answer|response|content)"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"[^"]+"\s*:|\}\s*$)/
+    )
+    if (answerMatch) {
+      cleanContent = answerMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
     }
   }
 
