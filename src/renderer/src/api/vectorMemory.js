@@ -20,12 +20,16 @@ export const generateVector = async (text) => {
     const res = await fetch(`${API_BASE}/api/vector`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(8000)
     })
     const json = await res.json()
     return json.vector || null
   } catch (error) {
-    console.error('Gagal generate vector via server API:', error)
+    console.warn(
+      '[vectorMemory] Gagal generate vector via server API (timeout/error):',
+      error?.message
+    )
     return null
   }
 }

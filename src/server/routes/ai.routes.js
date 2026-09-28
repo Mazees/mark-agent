@@ -46,6 +46,8 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       isSmallTask,
       jsonSchema,
       sessionId
+      sessionId,
+      signal: req.signal
     })
     res.json(result)
   } catch (err) {
@@ -89,6 +91,7 @@ aiRouter.post('/ai/stream', async (req, res) => {
       config: finalConfig,
       isSmallTask,
       sessionId,
+      signal: req.signal,
       onToken: (token) => {
         wsHub.streamToken(token, 'answer')
       },

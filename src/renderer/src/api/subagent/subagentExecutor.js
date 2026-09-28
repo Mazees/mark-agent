@@ -201,14 +201,33 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         let cand = (rawMatch ? rawMatch[1] : checkText).trim()
         const firstBrace = cand.indexOf('{')
         const lastBrace = cand.lastIndexOf('}')
+        let cand = checkText
+        const firstBrace = checkText.indexOf('{')
+        const lastBrace = checkText.lastIndexOf('}')
         if (firstBrace !== -1 && lastBrace > firstBrace) {
           cand = cand.substring(firstBrace, lastBrace + 1).trim()
+          cand = checkText.substring(firstBrace, lastBrace + 1).trim()
+        } else {
+          const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+          if (rawMatch) {
+            const inner = rawMatch[1].trim()
+            const innerFirst = inner.indexOf('{')
+            const innerLast = inner.lastIndexOf('}')
+            if (innerFirst !== -1 && innerLast > innerFirst) {
+              cand = inner.substring(innerFirst, innerLast + 1).trim()
+            } else {
+              cand = inner
+            }
+          }
         }
         if (
           cand.includes('"tool_calls"') ||
           cand.includes('"action"') ||
           cand.includes('"tool"') ||
           cand.includes('"name"')
+          cand.includes('"name"') ||
+          cand.includes('"answer"') ||
+          cand.includes('"thought"')
         ) {
           try {
             const { jsonrepair } = await import('jsonrepair')
@@ -217,8 +236,22 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               pObj = JSON.parse(cand)
             } catch (_) {
               pObj = JSON.parse(jsonrepair(cand))
+              try {
+                pObj = JSON.parse(jsonrepair(cand))
+              } catch (_) {}
             }
             if (pObj) {
+            if (pObj && typeof pObj === 'object') {
+              if (pObj.thought && !turnReasoning) {
+                turnReasoning = String(pObj.thought)
+              }
+              if (pObj.answer !== undefined && pObj.answer !== null) {
+                turnContent = typeof pObj.answer === 'string' ? pObj.answer : JSON.stringify(pObj.answer)
+                if (streamResult) streamResult.content = turnContent
+              } else if (pObj.content !== undefined && pObj.content !== null) {
+                turnContent = typeof pObj.content === 'string' ? pObj.content : JSON.stringify(pObj.content)
+                if (streamResult) streamResult.content = turnContent
+              }
               if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
                 effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
                   id: tc.id || `call_subagent_${Date.now()}_${idx}`,
@@ -655,6 +688,46 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
 
       // KONDISI 2: Sub-Agent Menyelesaikan Misi (Direct text answer / Finish reason: stop)
       latestSubagentReply = streamResult.content || turnContent || 'Misi teknis selesai.'
+      if (
+        typeof latestSubagentReply === 'string' &&
+        latestSubagentReply.includes('{') &&
+        latestSubagentReply.includes('}')
+      ) {
+        const firstB = latestSubagentReply.indexOf('{')
+        const lastB = latestSubagentReply.lastIndexOf('}')
+        if (firstB !== -1 && lastB > firstB) {
+          const cand = latestSubagentReply.substring(firstB, lastB + 1).trim()
+          if (cand.includes('"answer"') || cand.includes('"thought"')) {
+            try {
+              const { jsonrepair } = await import('jsonrepair')
+              let parsed = null
+              try {
+                parsed = JSON.parse(cand)
+              } catch (_) {
+                try {
+                  parsed = JSON.parse(jsonrepair(cand))
+                } catch (_) {}
+              }
+              if (parsed && typeof parsed === 'object') {
+                if (parsed.thought && !turnReasoning) {
+                  turnReasoning = String(parsed.thought)
+                }
+                if (parsed.answer !== undefined && parsed.answer !== null) {
+                  latestSubagentReply =
+                    typeof parsed.answer === 'string'
+                      ? parsed.answer
+                      : JSON.stringify(parsed.answer)
+                } else if (parsed.content !== undefined && parsed.content !== null) {
+                  latestSubagentReply =
+                    typeof parsed.content === 'string'
+                      ? parsed.content
+                      : JSON.stringify(parsed.content)
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      }
       await subagentStore.addMessage(subagentId, {
         sender: 'subagent',
         role: 'assistant',
