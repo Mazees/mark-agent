@@ -197,15 +197,10 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         (streamResult.content || turnContent)
       ) {
         const checkText = (streamResult.content || turnContent || '').trim()
-        const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-        let cand = (rawMatch ? rawMatch[1] : checkText).trim()
-        const firstBrace = cand.indexOf('{')
-        const lastBrace = cand.lastIndexOf('}')
         let cand = checkText
         const firstBrace = checkText.indexOf('{')
         const lastBrace = checkText.lastIndexOf('}')
         if (firstBrace !== -1 && lastBrace > firstBrace) {
-          cand = cand.substring(firstBrace, lastBrace + 1).trim()
           cand = checkText.substring(firstBrace, lastBrace + 1).trim()
         } else {
           const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
@@ -224,7 +219,6 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
           cand.includes('"tool_calls"') ||
           cand.includes('"action"') ||
           cand.includes('"tool"') ||
-          cand.includes('"name"')
           cand.includes('"name"') ||
           cand.includes('"answer"') ||
           cand.includes('"thought"')
@@ -235,21 +229,21 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
             try {
               pObj = JSON.parse(cand)
             } catch (_) {
-              pObj = JSON.parse(jsonrepair(cand))
               try {
                 pObj = JSON.parse(jsonrepair(cand))
               } catch (_) {}
             }
-            if (pObj) {
             if (pObj && typeof pObj === 'object') {
               if (pObj.thought && !turnReasoning) {
                 turnReasoning = String(pObj.thought)
               }
               if (pObj.answer !== undefined && pObj.answer !== null) {
-                turnContent = typeof pObj.answer === 'string' ? pObj.answer : JSON.stringify(pObj.answer)
+                turnContent =
+                  typeof pObj.answer === 'string' ? pObj.answer : JSON.stringify(pObj.answer)
                 if (streamResult) streamResult.content = turnContent
               } else if (pObj.content !== undefined && pObj.content !== null) {
-                turnContent = typeof pObj.content === 'string' ? pObj.content : JSON.stringify(pObj.content)
+                turnContent =
+                  typeof pObj.content === 'string' ? pObj.content : JSON.stringify(pObj.content)
                 if (streamResult) streamResult.content = turnContent
               }
               if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {

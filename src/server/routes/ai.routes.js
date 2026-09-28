@@ -45,7 +45,6 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       config: finalConfig,
       isSmallTask,
       jsonSchema,
-      sessionId
       sessionId,
       signal: req.signal
     })

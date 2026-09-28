@@ -521,24 +521,9 @@ ${toolSections.join('\n\n')}
   let extractedToolCalls = null
   let extractedMood = 'neutral'
 
-  let candidateStr = cleanContent.trim()
-  const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) {
-    candidateStr = jsonMatch[1].trim()
-  }
-
-  // Cari blok JSON antara '{' pertama dan '}' terakhir
-  const firstBrace = candidateStr.indexOf('{')
-  const lastBrace = candidateStr.lastIndexOf('}')
   let parsedJson = null
   const trimmedContent = cleanContent.trim()
 
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const jsonCandidate = candidateStr.substring(firstBrace, lastBrace + 1).trim()
-    try {
-      parsedJson = cleanAndParse(jsonCandidate)
-    } catch (_) {
-      parsedJson = null
   // 1. Coba parse langsung jika cleanContent adalah JSON valid utuh
   try {
     parsedJson = cleanAndParse(trimmedContent)
