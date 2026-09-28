@@ -146,19 +146,13 @@ export const cleanAndParse = (rawResponse) => {
       return JSON.parse(text)
     } catch (_) {}
 
-    // 2. Bersihkan blok markdown ```json ... ```
-    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-    const candidate = (codeBlockMatch ? codeBlockMatch[1] : text).trim()
-
-    try {
-      return JSON.parse(candidate)
-    } catch (_) {}
-
-    // 3. Cari batas kurung terluar { ... }
-    const firstBrace = candidate.indexOf('{')
-    const lastBrace = candidate.lastIndexOf('}')
+    // 2. Cari batas kurung terluar { ... } dari teks asli
+    // Ini krusial agar markdown code block di dalam properti string JSON (misal ```powershell ... ```)
+    // tidak membajak (hijack) ekstraksi JSON utama.
+    const firstBrace = text.indexOf('{')
+    const lastBrace = text.lastIndexOf('}')
     if (firstBrace !== -1 && lastBrace > firstBrace) {
-      const sub = candidate.substring(firstBrace, lastBrace + 1)
+      const sub = text.substring(firstBrace, lastBrace + 1)
       try {
         return JSON.parse(sub)
       } catch (_) {
@@ -168,7 +162,15 @@ export const cleanAndParse = (rawResponse) => {
       }
     }
 
-    // 4. Fallback jsonrepair
+    // 3. Fallback jika seluruh teks dibungkus blok markdown ```json ... ```
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+    const candidate = (codeBlockMatch ? codeBlockMatch[1] : text).trim()
+
+    try {
+      return JSON.parse(candidate)
+    } catch (_) {}
+
+    // 4. Fallback jsonrepair pada candidate
     return JSON.parse(jsonrepair(candidate))
   } catch (_) {
     return null

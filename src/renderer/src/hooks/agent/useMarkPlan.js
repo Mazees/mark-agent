@@ -219,6 +219,7 @@ export const useMarkPlan = ({
 
     const session = activeSessionsRef.current.get(sId)
     if (session) {
+      session.lastActivityTime = Date.now()
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
       if (session.executedToolsList) {
@@ -836,7 +837,13 @@ export const useMarkPlan = ({
         }
       }
     } catch (toolError) {
-      if (toolError.name === 'AbortError' || toolError.message?.includes('AbortError')) {
+      if (
+        toolError.name === 'AbortError' ||
+        toolError.message?.includes('AbortError') ||
+        toolError.message?.includes('aborted') ||
+        toolError.message?.includes('Aborted') ||
+        Boolean(sessionAbortController?.signal?.aborted)
+      ) {
         throw toolError
       }
       resultString = `[ERROR] Tool ${tool} crash: ${toolError.message}`
@@ -906,14 +913,36 @@ export const useMarkPlan = ({
     activeRunningSessionIdRef.current = activeSessionNum
 
     if (activeSessionsRef.current.has(activeSessionNum)) {
-      handleIntervention(userInput, activeSessionNum, { displayPrompt: opts.displayPrompt })
-      return
+      const existingSession = activeSessionsRef.current.get(activeSessionNum)
+      const now = Date.now()
+      const inactiveDuration =
+        now - (existingSession?.lastActivityTime || existingSession?.startTime || now)
+      const MAX_INACTIVE_SESSION_MS = 90000 // 90 detik tanpa aktivitas apa pun
+
+      if (existingSession && inactiveDuration > MAX_INACTIVE_SESSION_MS) {
+        console.warn(
+          `[useMarkPlan] Terdeteksi Ghost Session ${activeSessionNum} macet/tidak aktif selama ${Math.round(inactiveDuration / 1000)} detik. Melakukan auto-recovery.`
+        )
+        try {
+          existingSession.abortController?.abort(
+            new Error(
+              'Ghost Session Auto-Recovery: Sesi lama dibatalkan karena tidak ada aktivitas.'
+            )
+          )
+        } catch (_) {}
+        activeSessionsRef.current.delete(activeSessionNum)
+        activeSessionUpdatersRef.current.delete(activeSessionNum)
+      } else {
+        handleIntervention(userInput, activeSessionNum, { displayPrompt: opts.displayPrompt })
+        return
+      }
     }
 
     const sessionAbortController = new AbortController()
     const sessionRecord = {
       abortController: sessionAbortController,
       startTime: Date.now(),
+      lastActivityTime: Date.now(),
       prompt: userInput,
       interventions: []
     }
@@ -1542,6 +1571,7 @@ export const useMarkPlan = ({
         }
 
         stepCount++
+        sessionRecord.lastActivityTime = Date.now()
 
         const isDurableTaskCompleted = Boolean(
           durableTask &&
@@ -1643,6 +1673,7 @@ export const useMarkPlan = ({
           tools: isDurableTaskCompleted ? null : activeTools,
           signal: sessionAbortController.signal,
           onReasoning: (chunk) => {
+            sessionRecord.lastActivityTime = Date.now()
             currentTurnReasoning += chunk
             const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
               .map((t) => (typeof t === 'string' ? t.trim() : ''))
@@ -1680,6 +1711,7 @@ export const useMarkPlan = ({
             }
           },
           onToken: (token) => {
+            sessionRecord.lastActivityTime = Date.now()
             currentTurnContent += token
             finalContentAccumulator = currentTurnContent
 
@@ -1766,19 +1798,32 @@ export const useMarkPlan = ({
         // Fallback Interceptor: Jika model mengembalikan teks JSON (tool_calls, mood, atau structured answer)
         let effectiveToolCalls = streamResult.toolCalls
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && currentTurnContent) {
-          const rawMatch = currentTurnContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-          let cand = (rawMatch ? rawMatch[1] : currentTurnContent).trim()
-          const firstBrace = cand.indexOf('{')
-          const lastBrace = cand.lastIndexOf('}')
+          const rawText = currentTurnContent.trim()
+          let cand = rawText
+          const firstBrace = rawText.indexOf('{')
+          const lastBrace = rawText.lastIndexOf('}')
           if (firstBrace !== -1 && lastBrace > firstBrace) {
-            cand = cand.substring(firstBrace, lastBrace + 1).trim()
+            cand = rawText.substring(firstBrace, lastBrace + 1).trim()
+          } else {
+            const rawMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+            if (rawMatch) {
+              const inner = rawMatch[1].trim()
+              const innerFirst = inner.indexOf('{')
+              const innerLast = inner.lastIndexOf('}')
+              if (innerFirst !== -1 && innerLast > innerFirst) {
+                cand = inner.substring(innerFirst, innerLast + 1).trim()
+              } else {
+                cand = inner
+              }
+            }
           }
           if (
             cand.includes('"tool_calls"') ||
             cand.includes('"action"') ||
             cand.includes('"tool"') ||
             cand.includes('"mood"') ||
-            cand.includes('"answer"')
+            cand.includes('"answer"') ||
+            cand.includes('"thought"')
           ) {
             try {
               const { jsonrepair } = await import('jsonrepair')
@@ -1786,11 +1831,16 @@ export const useMarkPlan = ({
               try {
                 pObj = JSON.parse(cand)
               } catch (_) {
-                pObj = JSON.parse(jsonrepair(cand))
+                try {
+                  pObj = JSON.parse(jsonrepair(cand))
+                } catch (_) {}
               }
-              if (pObj) {
+              if (pObj && typeof pObj === 'object') {
                 if (pObj.mood) {
                   currentActiveMood = String(pObj.mood).toLowerCase().trim()
+                }
+                if (pObj.thought && !currentTurnReasoning) {
+                  currentTurnReasoning = String(pObj.thought)
                 }
                 if (pObj.answer !== undefined || pObj.content !== undefined) {
                   currentTurnContent = pObj.answer !== undefined ? pObj.answer : pObj.content
@@ -2048,6 +2098,7 @@ export const useMarkPlan = ({
               }
             }
 
+            sessionRecord.lastActivityTime = Date.now()
             executedToolsList.push({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
@@ -2278,7 +2329,53 @@ export const useMarkPlan = ({
         // ======================================================================
         // CABANG 2: SELESAI / DIRECT TEXT RESPONSE (Stop / Selesai)
         // ======================================================================
-        const rawTurnAnswer = streamResult?.content || currentTurnContent || ''
+        let rawTurnAnswer = streamResult?.content || currentTurnContent || ''
+
+        // Safety Unpacker: Jika rawTurnAnswer masih berwujud string JSON (misal { "thought": ..., "answer": ... })
+        if (
+          typeof rawTurnAnswer === 'string' &&
+          rawTurnAnswer.includes('{') &&
+          rawTurnAnswer.includes('}')
+        ) {
+          const firstB = rawTurnAnswer.indexOf('{')
+          const lastB = rawTurnAnswer.lastIndexOf('}')
+          if (firstB !== -1 && lastB > firstB) {
+            const cand = rawTurnAnswer.substring(firstB, lastB + 1).trim()
+            if (cand.includes('"answer"') || cand.includes('"thought"')) {
+              try {
+                const { jsonrepair } = await import('jsonrepair')
+                let parsed = null
+                try {
+                  parsed = JSON.parse(cand)
+                } catch (_) {
+                  try {
+                    parsed = JSON.parse(jsonrepair(cand))
+                  } catch (_) {}
+                }
+                if (parsed && typeof parsed === 'object') {
+                  if (parsed.mood && parsed.mood !== 'neutral') {
+                    currentActiveMood = String(parsed.mood).toLowerCase().trim()
+                  }
+                  if (parsed.thought && !currentTurnReasoning) {
+                    currentTurnReasoning = String(parsed.thought)
+                  }
+                  if (parsed.answer !== undefined && parsed.answer !== null) {
+                    rawTurnAnswer =
+                      typeof parsed.answer === 'string'
+                        ? parsed.answer
+                        : JSON.stringify(parsed.answer)
+                  } else if (parsed.content !== undefined && parsed.content !== null) {
+                    rawTurnAnswer =
+                      typeof parsed.content === 'string'
+                        ? parsed.content
+                        : JSON.stringify(parsed.content)
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+        }
+
         const { meta: parsedTextMeta, cleanContent: turnAnswer } = parseMarkTag(rawTurnAnswer)
 
         // Gabungkan metadata dari streamResult, onMeta stream, atau parsed text
@@ -2754,9 +2851,12 @@ Lakukan pemeriksaan mandiri sekarang:
       }
     } catch (error) {
       const isAbort =
+        Boolean(sessionAbortController?.signal?.aborted) ||
         error.name === 'AbortError' ||
         error.message?.includes('AbortError') ||
-        Boolean(sessionAbortController?.signal?.aborted)
+        error.message?.includes('aborted') ||
+        error.message?.includes('Aborted') ||
+        error.message?.includes('The user aborted')
 
       if (!isAbort) {
         console.error('[useMarkPlan] Critical ReAct Loop Error:', error)

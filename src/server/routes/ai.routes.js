@@ -41,11 +41,19 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       hasTools: false
     })
 
+    const clientAbortController = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        clientAbortController.abort()
+      }
+    })
+
     const result = await fetchAI(messages, false, {
       config: finalConfig,
       isSmallTask,
       jsonSchema,
-      sessionId
+      sessionId,
+      signal: clientAbortController.signal
     })
     res.json(result)
   } catch (err) {
@@ -84,11 +92,19 @@ aiRouter.post('/ai/stream', async (req, res) => {
       toolsCount: Array.isArray(tools) ? tools.length : 0
     })
 
+    const clientAbortController = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        clientAbortController.abort()
+      }
+    })
+
     const result = await fetchAI(messages, true, {
       tools,
       config: finalConfig,
       isSmallTask,
       sessionId,
+      signal: clientAbortController.signal,
       onToken: (token) => {
         wsHub.streamToken(token, 'answer')
       },

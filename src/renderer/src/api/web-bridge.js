@@ -150,7 +150,15 @@ export const webApi = {
   // 2. Chat & AI
   fetchAI: async (params, signal = null) => {
     const endpoint = params?.stream ? `${API_BASE}/api/ai/stream` : `${API_BASE}/api/ai/fetch`
-    const effectiveSignal = resolveAbortSignal(signal) || resolveAbortSignal(params?.signal)
+    const callerSignal = resolveAbortSignal(signal) || resolveAbortSignal(params?.signal)
+    const timeoutSignal =
+      typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(300000) : null
+    const effectiveSignal = callerSignal
+      ? timeoutSignal && typeof AbortSignal?.any === 'function'
+        ? AbortSignal.any([callerSignal, timeoutSignal])
+        : callerSignal
+      : timeoutSignal || undefined
+
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

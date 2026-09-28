@@ -515,28 +515,52 @@ ${toolSections.join('\n\n')}
   }
 
   // 7. Jika Streaming Mode (Agent ReAct Gateway)
+  // 6. Parsing & Normalisasi Format Respon (Streaming & Non-Streaming)
   let cleanContent = answer || ''
   let cleanReasoning = reasoning || ''
   let extractedToolCalls = null
   let extractedMood = 'neutral'
 
-  let candidateStr = cleanContent.trim()
-  const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) {
-    candidateStr = jsonMatch[1].trim()
+  let parsedJson = null
+  const trimmedContent = cleanContent.trim()
+
+  // 1. Coba parse langsung jika cleanContent adalah JSON valid utuh
+  try {
+    parsedJson = cleanAndParse(trimmedContent)
+  } catch (_) {}
+
+  // 2. Coba cari blok JSON terluar (outermost braces '{' ... '}')
+  // Ini mencegah code blocks markdown di dalam properti "answer" merusak batas parsing JSON utama
+  if (!parsedJson || typeof parsedJson !== 'object') {
+    const firstBrace = trimmedContent.indexOf('{')
+    const lastBrace = trimmedContent.lastIndexOf('}')
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const jsonCandidate = trimmedContent.substring(firstBrace, lastBrace + 1).trim()
+      try {
+        parsedJson = cleanAndParse(jsonCandidate)
+      } catch (_) {
+        parsedJson = null
+      }
+    }
   }
 
-  // Cari blok JSON antara '{' pertama dan '}' terakhir
-  const firstBrace = candidateStr.indexOf('{')
-  const lastBrace = candidateStr.lastIndexOf('}')
-  let parsedJson = null
-
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const jsonCandidate = candidateStr.substring(firstBrace, lastBrace + 1).trim()
-    try {
-      parsedJson = cleanAndParse(jsonCandidate)
-    } catch (_) {
-      parsedJson = null
+  // 3. Fallback jika model membungkus seluruh respons dalam markdown fence (```json ... ```)
+  if (!parsedJson || typeof parsedJson !== 'object') {
+    const jsonFences = [...cleanContent.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)]
+    for (const fence of jsonFences) {
+      const inside = fence[1]?.trim() || ''
+      if (
+        inside.startsWith('{') ||
+        inside.includes('"thought"') ||
+        inside.includes('"answer"') ||
+        inside.includes('"tool_calls"') ||
+        inside.includes('"action"')
+      ) {
+        try {
+          parsedJson = cleanAndParse(inside)
+          if (parsedJson && typeof parsedJson === 'object') break
+        } catch (_) {}
+      }
     }
   }
 

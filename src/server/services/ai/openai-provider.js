@@ -133,11 +133,40 @@ export async function executeOpenAIProvider({
 
     if (signal) {
       if (signal.aborted) {
-        abortController.abort()
+        abortController.abort(signal.reason || new Error('User Aborted'))
       } else {
-        signal.addEventListener('abort', () => abortController.abort())
+        signal.addEventListener('abort', () =>
+          abortController.abort(signal.reason || new Error('User Aborted'))
+        )
       }
     }
+
+    let isStreamDone = false
+    let streamWatchdogTimer = null
+    const STREAM_INACTIVITY_TIMEOUT_MS = 60000 // 60 detik tanpa chunk/data baru
+
+    const resetStreamWatchdog = () => {
+      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
+      if (isStreamDone) return
+      streamWatchdogTimer = setTimeout(() => {
+        if (!isStreamDone) {
+          abortController.abort(
+            new Error(
+              `Stream Inactivity Timeout: Tidak ada data dari server (${endpoint}) selama ${STREAM_INACTIVITY_TIMEOUT_MS / 1000} detik.`
+            )
+          )
+        }
+      }, STREAM_INACTIVITY_TIMEOUT_MS)
+    }
+
+    const CONNECT_TIMEOUT_MS = 60000
+    let connectTimeoutTimer = setTimeout(() => {
+      abortController.abort(
+        new Error(
+          `Connection Timeout: Server API (${endpoint}) tidak merespons dalam ${CONNECT_TIMEOUT_MS / 1000} detik.`
+        )
+      )
+    }, CONNECT_TIMEOUT_MS)
 
     let moodExtracted = false
     const extractMood = (text) => {
@@ -163,6 +192,10 @@ export async function executeOpenAIProvider({
         body: JSON.stringify(body),
         signal: abortController.signal
       })
+      if (connectTimeoutTimer) {
+        clearTimeout(connectTimeoutTimer)
+        connectTimeoutTimer = null
+      }
 
       if (!response.ok && body.stream_options && response.status === 400) {
         const errCloned = response.clone()
@@ -195,6 +228,9 @@ export async function executeOpenAIProvider({
         throw new Error(`API Error (${response.status}): ${errorMsg}`)
       }
 
+      // Mulai pantau inaktivitas stream setelah koneksi HTTP 200 OK berhasil terbuka
+      resetStreamWatchdog()
+
       const sseMoodFilter = createMoodStreamFilter(
         onToken,
         (mood) => {
@@ -212,7 +248,12 @@ export async function executeOpenAIProvider({
       }
 
       const handleChunkText = (jsonStr) => {
-        if (!jsonStr || jsonStr === '[DONE]') return
+        if (!jsonStr) return
+        if (jsonStr === '[DONE]') {
+          isStreamDone = true
+          return
+        }
+        resetStreamWatchdog()
         try {
           const parsed = JSON.parse(jsonStr)
           if (parsed.usage) {
@@ -267,6 +308,7 @@ export async function executeOpenAIProvider({
           const decoder = new TextDecoder()
           let lineBuffer = ''
           for await (const chunk of response.body) {
+            resetStreamWatchdog()
             lineBuffer +=
               typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
             const lines = lineBuffer.split('\n')
@@ -274,18 +316,31 @@ export async function executeOpenAIProvider({
             for (const line of lines) {
               const trimmed = line.trim()
               if (trimmed.startsWith('data:')) {
-                handleChunkText(trimmed.slice(5).trim())
+                const dataPayload = trimmed.slice(5).trim()
+                if (dataPayload === '[DONE]') {
+                  isStreamDone = true
+                  break
+                }
+                handleChunkText(dataPayload)
               }
             }
+            if (isStreamDone) break
           }
-          if (lineBuffer.trim().startsWith('data:')) {
-            handleChunkText(lineBuffer.trim().slice(5).trim())
+          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
+            const dataPayload = lineBuffer.trim().slice(5).trim()
+            if (dataPayload === '[DONE]') {
+              isStreamDone = true
+            } else {
+              handleChunkText(dataPayload)
+            }
           }
+          sseMoodFilter.flush()
         } else {
           const reader = response.body.getReader()
           const decoder = new TextDecoder()
           let lineBuffer = ''
           while (true) {
+            resetStreamWatchdog()
             const { done, value } = await reader.read()
             if (done) break
             lineBuffer +=
@@ -295,12 +350,26 @@ export async function executeOpenAIProvider({
             for (const line of lines) {
               const trimmed = line.trim()
               if (trimmed.startsWith('data:')) {
-                handleChunkText(trimmed.slice(5).trim())
+                const dataPayload = trimmed.slice(5).trim()
+                if (dataPayload === '[DONE]') {
+                  isStreamDone = true
+                  break
+                }
+                handleChunkText(dataPayload)
               }
             }
+            if (isStreamDone) {
+              await reader.cancel().catch(() => {})
+              break
+            }
           }
-          if (lineBuffer.trim().startsWith('data:')) {
-            handleChunkText(lineBuffer.trim().slice(5).trim())
+          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
+            const dataPayload = lineBuffer.trim().slice(5).trim()
+            if (dataPayload === '[DONE]') {
+              isStreamDone = true
+            } else {
+              handleChunkText(dataPayload)
+            }
           }
           sseMoodFilter.flush()
         }
@@ -358,6 +427,8 @@ export async function executeOpenAIProvider({
       }
       throw error
     } finally {
+      if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer)
+      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
       activeAbortControllers.delete(abortController)
     }
   }
@@ -398,8 +469,11 @@ export async function executeOpenAIProvider({
   activeAbortControllers.add(parentAbortController)
 
   if (signal) {
-    if (signal.aborted) parentAbortController.abort()
-    else signal.addEventListener('abort', () => parentAbortController.abort())
+    if (signal.aborted) parentAbortController.abort(signal.reason || new Error('User Aborted'))
+    else
+      signal.addEventListener('abort', () =>
+        parentAbortController.abort(signal.reason || new Error('User Aborted'))
+      )
   }
 
   const executeFetch = async (currentBody, isRetry = false, trafficRetryCount = 0) => {
