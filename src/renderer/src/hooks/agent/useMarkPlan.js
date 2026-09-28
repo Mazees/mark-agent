@@ -837,7 +837,13 @@ export const useMarkPlan = ({
         }
       }
     } catch (toolError) {
-      if (toolError.name === 'AbortError' || toolError.message?.includes('AbortError')) {
+      if (
+        toolError.name === 'AbortError' ||
+        toolError.message?.includes('AbortError') ||
+        toolError.message?.includes('aborted') ||
+        toolError.message?.includes('Aborted') ||
+        Boolean(sessionAbortController?.signal?.aborted)
+      ) {
         throw toolError
       }
       resultString = `[ERROR] Tool ${tool} crash: ${toolError.message}`
@@ -2845,9 +2851,12 @@ Lakukan pemeriksaan mandiri sekarang:
       }
     } catch (error) {
       const isAbort =
+        Boolean(sessionAbortController?.signal?.aborted) ||
         error.name === 'AbortError' ||
         error.message?.includes('AbortError') ||
-        Boolean(sessionAbortController?.signal?.aborted)
+        error.message?.includes('aborted') ||
+        error.message?.includes('Aborted') ||
+        error.message?.includes('The user aborted')
 
       if (!isAbort) {
         console.error('[useMarkPlan] Critical ReAct Loop Error:', error)

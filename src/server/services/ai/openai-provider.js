@@ -133,9 +133,11 @@ export async function executeOpenAIProvider({
 
     if (signal) {
       if (signal.aborted) {
-        abortController.abort()
+        abortController.abort(signal.reason || new Error('User Aborted'))
       } else {
-        signal.addEventListener('abort', () => abortController.abort())
+        signal.addEventListener('abort', () =>
+          abortController.abort(signal.reason || new Error('User Aborted'))
+        )
       }
     }
 
@@ -467,8 +469,11 @@ export async function executeOpenAIProvider({
   activeAbortControllers.add(parentAbortController)
 
   if (signal) {
-    if (signal.aborted) parentAbortController.abort()
-    else signal.addEventListener('abort', () => parentAbortController.abort())
+    if (signal.aborted) parentAbortController.abort(signal.reason || new Error('User Aborted'))
+    else
+      signal.addEventListener('abort', () =>
+        parentAbortController.abort(signal.reason || new Error('User Aborted'))
+      )
   }
 
   const executeFetch = async (currentBody, isRetry = false, trafficRetryCount = 0) => {
