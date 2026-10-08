@@ -521,12 +521,6 @@ ${toolSections.join('\n\n')}
   let extractedToolCalls = null
   let extractedMood = 'neutral'
 
-  let candidateStr = cleanContent.trim()
-  const jsonMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) {
-    candidateStr = jsonMatch[1].trim()
-  }
-
   let parsedJson = null
   const trimmedContent = cleanContent.trim()
 

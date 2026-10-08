@@ -197,12 +197,23 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         (streamResult.content || turnContent)
       ) {
         const checkText = (streamResult.content || turnContent || '').trim()
-        const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-        let cand = (rawMatch ? rawMatch[1] : checkText).trim()
-        const firstBrace = cand.indexOf('{')
-        const lastBrace = cand.lastIndexOf('}')
+        let cand = checkText
+        const firstBrace = checkText.indexOf('{')
+        const lastBrace = checkText.lastIndexOf('}')
         if (firstBrace !== -1 && lastBrace > firstBrace) {
-          cand = cand.substring(firstBrace, lastBrace + 1).trim()
+          cand = checkText.substring(firstBrace, lastBrace + 1).trim()
+        } else {
+          const rawMatch = checkText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+          if (rawMatch) {
+            const inner = rawMatch[1].trim()
+            const innerFirst = inner.indexOf('{')
+            const innerLast = inner.lastIndexOf('}')
+            if (innerFirst !== -1 && innerLast > innerFirst) {
+              cand = inner.substring(innerFirst, innerLast + 1).trim()
+            } else {
+              cand = inner
+            }
+          }
         }
         if (
           cand.includes('"tool_calls"') ||
