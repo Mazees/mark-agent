@@ -142,24 +142,8 @@ export async function executeOpenAIProvider({
     }
 
     let isStreamDone = false
-    let streamWatchdogTimer = null
-    const STREAM_INACTIVITY_TIMEOUT_MS = 60000 // 60 detik tanpa chunk/data baru
 
-    const resetStreamWatchdog = () => {
-      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
-      if (isStreamDone) return
-      streamWatchdogTimer = setTimeout(() => {
-        if (!isStreamDone) {
-          abortController.abort(
-            new Error(
-              `Stream Inactivity Timeout: Tidak ada data dari server (${endpoint}) selama ${STREAM_INACTIVITY_TIMEOUT_MS / 1000} detik.`
-            )
-          )
-        }
-      }, STREAM_INACTIVITY_TIMEOUT_MS)
-    }
-
-    const CONNECT_TIMEOUT_MS = 60000
+    const CONNECT_TIMEOUT_MS = 120000 // 2 menit untuk handshaking / HTTP response headers awal
     let connectTimeoutTimer = setTimeout(() => {
       abortController.abort(
         new Error(
@@ -228,9 +212,6 @@ export async function executeOpenAIProvider({
         throw new Error(`API Error (${response.status}): ${errorMsg}`)
       }
 
-      // Mulai pantau inaktivitas stream setelah koneksi HTTP 200 OK berhasil terbuka
-      resetStreamWatchdog()
-
       const sseMoodFilter = createMoodStreamFilter(
         onToken,
         (mood) => {
@@ -253,7 +234,6 @@ export async function executeOpenAIProvider({
           isStreamDone = true
           return
         }
-        resetStreamWatchdog()
         try {
           const parsed = JSON.parse(jsonStr)
           if (parsed.usage) {
@@ -308,7 +288,6 @@ export async function executeOpenAIProvider({
           const decoder = new TextDecoder()
           let lineBuffer = ''
           for await (const chunk of response.body) {
-            resetStreamWatchdog()
             lineBuffer +=
               typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
             const lines = lineBuffer.split('\n')
@@ -340,7 +319,6 @@ export async function executeOpenAIProvider({
           const decoder = new TextDecoder()
           let lineBuffer = ''
           while (true) {
-            resetStreamWatchdog()
             const { done, value } = await reader.read()
             if (done) break
             lineBuffer +=
@@ -428,7 +406,6 @@ export async function executeOpenAIProvider({
       throw error
     } finally {
       if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer)
-      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
       activeAbortControllers.delete(abortController)
     }
   }
