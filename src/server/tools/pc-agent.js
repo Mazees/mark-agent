@@ -916,6 +916,12 @@ export async function executeComputerUse(params = {}) {
       return executeComputerUse({ actions })
     }
 
+    case 'close':
+    case 'close_session': {
+      const raw = await closePCSession()
+      return { success: true, action: 'close', result: raw }
+    }
+
     default:
       return { success: false, error: `Action '${action}' tidak dikenali pada computer_use.` }
   }

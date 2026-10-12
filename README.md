@@ -55,8 +55,7 @@
 - **Google Workspace Suite (`google-*` / `gdrive-*` / `gcal-*` / `gmail-*`):** `gdrive-search`, `gdrive-list`, `gdrive-read`, `gdrive-upload`, `gdrive-create`, `gdrive-move`, `gdrive-copy`, `gdrive-share`, `gdrive-info`, `gcal-list`, `gcal-create`, `gcal-delete`, `gmail-search`, `gmail-read`, `gmail-send`, `gmail-mark-read`.
 - **Memory & Recall Tools (`memory-search`):** Pencarian semantik memori, preferensi, catatan teknis, dan pasangan percakapan asli (Turn Pairs) dengan _similarity threshold_ dinamis (`keyword||threshold||limit`, default threshold `0.5`, limit `5`).
 - **Multi-Session Web Browsing (`browser-*`):** `browser-navigate`, `browser-read`, `browser-click`, `browser-type`, `browser-scroll`, `browser-extract`, `browser-ask-user`, `browser-close`.
-- **Desktop Automation (`os-*`):** `os-read`, `os-click`, `os-type`, `os-key`, `os-scroll`, `os-open`, `os-list-windows`, `os-focus-window`.
-- **Computer Use & Desktop Automation (`computer_use`, `os-*`):** `computer_use` (primitif visual VLA terpadu: screenshot, click, double_click, right_click, middle_click, mouse_down, mouse_up, move, drag, burst_click, type, key, key_down, key_up, hotkey, scroll, wait, batch) dan `os-*` (legacy Win32 UIAutomation).
+- **Computer Use & Desktop Automation (`computer_use`):** `computer_use` (primitif visual VLA terpadu: screenshot, click, double_click, right_click, middle_click, mouse_down, mouse_up, move, drag, burst_click, type, key, key_down, key_up, hotkey, scroll, wait, batch, open_app, list_windows, focus_window, maximize_window).
 - **Native File Handling & PowerShell:** `read-file`, `write-file`, `replace-content`, `delete-file`, `list-dir`, `grep-search`, `run-powershell`.
 - **Background Tasks Engine:** `run-task`, `read-task-output`, `kill-task`, `list-tasks`.
 - **Vision Awareness:** `analyze-screen` (analisis layar multi-monitor) dan `camera-look` (observasi visual webcam).
@@ -143,18 +142,18 @@ mark/
 
 ## Teknologi Terkait
 
-| Kategori               | Teknologi                                                                               |
-| :--------------------- | :-------------------------------------------------------------------------------------- |
-| **Arsitektur Core**    | Node.js 20+, Express 4, WebSocket Hub (`ws`)                                            |
-| **Antarmuka (UI)**     | React 19, Vite 7, Tailwind CSS 4, DaisyUI 5, Monaco Editor, Lucide Icons                |
-| **Desktop Launcher**   | Node.js CLI Live Monitor (`mark`), Microsoft Edge App Mode                              |
-| **Database & Storage** | Centralized SQLite (`better-sqlite3` WAL Mode), REST Proxy Layer                        |
-| **Pencarian & Vektor** | `@orama/orama` WASM, Transformers.js (`@huggingface/transformers`, 384d)                |
-| **Mesin AI**           | Google Gemini (Bawaan Gratis) / Custom Open AI API Format / LM Studio (Offline)         |
-| **Browser Automation** | `puppeteer-core` (Multi-Session Chromium Isolation)                                     |
-| **Desktop Automation** | Win32 UIAutomation, persistent PowerShell C# Daemon, WinRT OCR                          |
-| **Computer Use & Desktop** | Win32 UIAutomation, persistent PowerShell C# Daemon, GDI JPEG VLA Capture |
-| **Suara & Audio**      | Groq Whisper-Large-v3 / Local Whisper, Edge-TTS (`id-ID-ArdiNeural`), Web Audio API VAD |
+| Kategori                   | Teknologi                                                                               |
+| :------------------------- | :-------------------------------------------------------------------------------------- |
+| **Arsitektur Core**        | Node.js 20+, Express 4, WebSocket Hub (`ws`)                                            |
+| **Antarmuka (UI)**         | React 19, Vite 7, Tailwind CSS 4, DaisyUI 5, Monaco Editor, Lucide Icons                |
+| **Desktop Launcher**       | Node.js CLI Live Monitor (`mark`), Microsoft Edge App Mode                              |
+| **Database & Storage**     | Centralized SQLite (`better-sqlite3` WAL Mode), REST Proxy Layer                        |
+| **Pencarian & Vektor**     | `@orama/orama` WASM, Transformers.js (`@huggingface/transformers`, 384d)                |
+| **Mesin AI**               | Google Gemini (Bawaan Gratis) / Custom Open AI API Format / LM Studio (Offline)         |
+| **Browser Automation**     | `puppeteer-core` (Multi-Session Chromium Isolation)                                     |
+| **Desktop Automation**     | Win32 UIAutomation, persistent PowerShell C# Daemon, WinRT OCR                          |
+| **Computer Use & Desktop** | Win32 UIAutomation, persistent PowerShell C# Daemon, GDI JPEG VLA Capture               |
+| **Suara & Audio**          | Groq Whisper-Large-v3 / Local Whisper, Edge-TTS (`id-ID-ArdiNeural`), Web Audio API VAD |
 
 ---
 

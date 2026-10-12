@@ -2966,6 +2966,7 @@ Lakukan pemeriksaan mandiri sekarang:
       try {
         if (window.api && window.api.executeNativeTool) {
           window.api.executeNativeTool('os-control-close').catch(() => {})
+          window.api.executeNativeTool('computer_use', { action: 'close' }).catch(() => {})
         }
       } catch {
         /* ignore */
