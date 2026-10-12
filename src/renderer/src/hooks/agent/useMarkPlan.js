@@ -1544,6 +1544,7 @@ export const useMarkPlan = ({
       }
 
       let consecutiveErrors = 0
+      let consecutiveEmptyTurns = 0
       const maxConsecutiveErrorRetries = 50
       let verificationGateCount = 0
 
@@ -1673,15 +1674,23 @@ export const useMarkPlan = ({
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
         // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
         try {
-          const inLoopResult = await checkAndCompressInLoop({
-            loopMessages,
-            sessionId: String(activeSessionNum || 1),
-            maxTokens: MAX_CONTEXT_TOKENS,
-            thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
-            protectLastN: 6,
-            protectFirstN: 2,
-            activeConfig: config[0] || {},
-            systemPrompt
+          const inLoopResult = await Promise.race([
+            checkAndCompressInLoop({
+              loopMessages,
+              sessionId: String(activeSessionNum || 1),
+              maxTokens: MAX_CONTEXT_TOKENS,
+              thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
+              protectLastN: 6,
+              protectFirstN: 2,
+              activeConfig: config[0] || {},
+              systemPrompt
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('In-loop compaction timeout (20s)')), 20000)
+            )
+          ]).catch((err) => {
+            console.warn('[useMarkPlan] In-loop compaction warning/timeout:', err?.message)
+            return { compressed: false, loopMessages }
           })
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
@@ -1991,6 +2000,7 @@ export const useMarkPlan = ({
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+          consecutiveEmptyTurns = 0
           sentenceBuffer = ''
           speechQueue.reset()
           const assistantMsg = {
@@ -2471,6 +2481,46 @@ export const useMarkPlan = ({
           currentActiveMood = turnMeta.mood
         }
 
+        // Safeguard untuk respon kosong / terputus:
+        // Jika model tidak memanggil tool dan tidak memberikan teks output (misal hanya berpikir atau turn terputus)
+        if (!turnAnswer.trim() && !opts.disableTools && !isSystem) {
+          if (consecutiveEmptyTurns < 2) {
+            consecutiveEmptyTurns++
+            console.warn(
+              `[useMarkPlan] Model mengembalikan respon kosong tanpa tool call (percobaan ${consecutiveEmptyTurns}/2). Melanjutkan loop...`
+            )
+
+            if (currentTurnReasoning && currentTurnReasoning.trim()) {
+              loopMessages.push({
+                role: 'assistant',
+                content: currentTurnReasoning.trim()
+              })
+            }
+
+            loopMessages.push({
+              role: 'user',
+              content:
+                '[Instruksi Lanjutan]: Berdasarkan analisis pemikiran di atas, segera panggil tool yang relevan atau berikan output/jawaban lengkap kepada pengguna sekarang.'
+            })
+
+            execSteps.push({ task: 'Meminta respon lanjutan model...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning: 'Model belum memberikan output, melanjutkan loop...'
+              }
+            })
+
+            continue
+          }
+        } else if (turnAnswer.trim()) {
+          consecutiveEmptyTurns = 0
+        }
+
         // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
         if (durableTask && !isDurableTaskCompleted) {
           const activeStep =
@@ -2692,7 +2742,12 @@ Lakukan pemeriksaan mandiri sekarang:
         }
 
         isDone = true
-        finalContentAccumulator = turnAnswer || 'Selesai.'
+        finalContentAccumulator =
+          turnAnswer.trim() ||
+          currentTurnReasoning?.trim() ||
+          (executedToolsList.length > 0
+            ? 'Seluruh tindakan tool telah selesai dieksekusi.'
+            : 'Tidak ada respon yang dihasilkan oleh model.')
 
         execSteps.push({ task: 'Selesai' })
         targetPushProcess({

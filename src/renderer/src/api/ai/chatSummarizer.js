@@ -21,6 +21,7 @@ Aturan:
     .join('\n')
 
   try {
+    const activeConf = config?.[0] || config || {}
     const response = await fetchAI(
       [
         { role: 'system', content: systemPrompt },
@@ -29,7 +30,7 @@ Aturan:
       false,
       {
         isSmallTask: true,
-        configOverride: { aiProvider: 'gemini-web', geminiWebModel: 'gemini-3.5-flash-thinking' }
+        config: activeConf
       }
     )
 

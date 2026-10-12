@@ -200,8 +200,7 @@ ${toolsetSection}
     ]
     const aiResponse = await fetchAI(messages, false, {
       signal,
-      jsonSchema: awarenessSchema,
-      configOverride: { aiProvider: 'gemini-web' }
+      jsonSchema: awarenessSchema
     })
     if (aiResponse && aiResponse.content) {
       try {
@@ -283,7 +282,7 @@ ${timeInfo}
     ]
     const response = await fetchAI(messages, false, {
       isSmallTask: true,
-      configOverride: { aiProvider: 'gemini-web' }
+      config: conf
     })
     const content = response?.content ? response.content.trim() : ''
     return content.replace(/^["']|["']$/g, '').trim()

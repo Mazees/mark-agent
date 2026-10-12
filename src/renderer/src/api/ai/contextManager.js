@@ -542,38 +542,29 @@ ${messagesText}`
     { role: 'user', content: userPrompt }
   ]
 
-  // 1. Coba Gemini Web terlebih dahulu (gratis, hemat kuota)
+  // Panggil model AI dengan activeConfig sesi langsung dan batas timeout 15 detik
   try {
-    const response = await fetchAI(promptPayload, false, {
-      isSmallTask: true,
-      configOverride: { aiProvider: 'gemini-web', geminiWebModel: 'gemini-3.5-flash-thinking' }
-    })
+    const response = await Promise.race([
+      fetchAI(promptPayload, false, {
+        isSmallTask: true,
+        config: activeConfig
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Context summarizer timeout (15s)')), 15000)
+      )
+    ])
 
     if (response && response.content && !response.error) {
       return response.content.trim()
     }
   } catch (err) {
     console.warn(
-      '[contextManager] Gemini Web summarizer gagal, beralih ke active provider:',
+      '[contextManager] AI summarizer gagal atau timeout, gunakan stub ringkasan darurat:',
       err?.message
     )
   }
 
-  // 2. Fallback ke active provider sesi jika offline / Gemini Web gagal
-  try {
-    const response = await fetchAI(promptPayload, false, {
-      isSmallTask: true,
-      config: activeConfig
-    })
-
-    if (response && response.content && !response.error) {
-      return response.content.trim()
-    }
-  } catch (err) {
-    console.error('[contextManager] Fallback active provider summarizer gagal:', err?.message)
-  }
-
-  // 3. Jika AI sama sekali tidak dapat dijangkau, buat stub ringkasan darurat berbasis teks
+  // Fallback jika AI tidak dapat dijangkau atau timeout
   return `${existingSummaryBlock ? existingSummaryBlock + '\n\n' : ''}[Arsip percakapan lampau: ${messagesToSummarize.length} pesan telah dikompaksi pada ${new Date().toLocaleString('id-ID')}]`
 }
 
@@ -788,7 +779,10 @@ export function formatMessageWithToolLogs(msg) {
         })
         .join('\n\n')
       if (toolLog) {
-        newContent.push({ type: 'text', text: `\n\n[RIWAYAT LANGKAH EKSEKUSI TURN INI]:\n${toolLog}` })
+        newContent.push({
+          type: 'text',
+          text: `\n\n[RIWAYAT LANGKAH EKSEKUSI TURN INI]:\n${toolLog}`
+        })
       }
     }
     const role = (msg.role || '').toLowerCase()
