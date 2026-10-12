@@ -462,7 +462,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
               if (!groupName) {
                 res = {
                   success: false,
-                  error: 'Harap sebutkan nama_grup (misal: "computer_use", "advanced_browser").'
+                  error: 'Harap sebutkan nama_grup (misal: "advanced_browser", "youtube_music").'
                 }
               } else if (groups[groupName]) {
                 const formatted = Object.entries(groups[groupName].tools || {})

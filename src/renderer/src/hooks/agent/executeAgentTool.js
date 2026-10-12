@@ -746,7 +746,7 @@ export async function executeAgentTool({
       res = {
         success: false,
         message:
-          'Harap sebutkan group_name yang ingin dimuat (misal: "computer_use", "advanced_browser").'
+          'Harap sebutkan group_name yang ingin dimuat (misal: "advanced_browser", "youtube_music").'
       }
     } else if (groups[groupName]) {
       const toolDescriptions = Object.entries(groups[groupName].tools || {})
