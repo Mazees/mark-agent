@@ -1,7 +1,10 @@
 export function normalizeBrowserUrl(value) {
   let input = String(value ?? '').trim()
-  const markdownLink = input.match(/^\[[^\]]+\]\((https?:\/\/[^\s)]+)\)$/i)
-  if (markdownLink) input = markdownLink[1]
+  if (!/^https?:\/\//i.test(input)) {
+    const embeddedUrl = input.match(/https?:\/\/[^\s<>"'`)\]]+/i)
+    if (embeddedUrl) input = embeddedUrl[0]
+  }
+  input = input.replace(/&amp;/gi, '&').replace(/[),.]+$/, '')
   if (input.startsWith('<') && input.endsWith('>')) input = input.slice(1, -1)
   if (!input) throw new Error('URL tujuan tidak boleh kosong.')
   if (/^[a-z][a-z\d+.-]*:\/\//i.test(input) && !/^https?:\/\//i.test(input)) {

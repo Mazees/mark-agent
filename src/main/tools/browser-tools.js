@@ -12,6 +12,106 @@ import {
 } from '../browser-agent.js'
 import { describeBrowserNetworkError, normalizeBrowserUrl } from './browser-url.js'
 
+const isGoogleNewsArticleUrl = (value) => {
+  try {
+    const url = new URL(value)
+    return url.hostname === 'news.google.com' && /\/(?:rss\/)?articles\//.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
+async function resolveGoogleNewsArticleUrl(axios, sourceUrl) {
+  if (!isGoogleNewsArticleUrl(sourceUrl)) return sourceUrl
+
+  const source = new URL(sourceUrl)
+  const articleId = source.pathname.match(/\/(?:rss\/)?articles\/([^/]+)/)?.[1]
+  if (!articleId) throw new Error('ID artikel Google News tidak ditemukan di URL.')
+
+  const userAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
+  const pageResponse = await axios.get(
+    `https://news.google.com/articles/${encodeURIComponent(articleId)}`,
+    {
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        Cookie: 'CONSENT=PENDING+987'
+      },
+      timeout: 12000,
+      maxRedirects: 5
+    }
+  )
+
+  const html = typeof pageResponse.data === 'string' ? pageResponse.data : ''
+  const signature = html.match(/data-n-a-sg="([^"]+)"/)?.[1]
+  const timestamp = Number(html.match(/data-n-a-ts="(\d+)"/)?.[1])
+  if (!signature || !Number.isFinite(timestamp)) {
+    throw new Error('Google News tidak memberikan parameter untuk membuka URL penerbit.')
+  }
+
+  const innerRequest = [
+    'garturlreq',
+    [
+      ['X', 'X', ['X', 'X'], null, null, 1, 1, 'ID:id', null, 1, null, null, null, null, null, 0, 1],
+      'X',
+      'X',
+      1,
+      [1, 1, 1],
+      1,
+      1,
+      null,
+      0,
+      0,
+      null,
+      0
+    ],
+    articleId,
+    timestamp,
+    signature
+  ]
+  const requestBody = `f.req=${encodeURIComponent(JSON.stringify([[['Fbv4je', JSON.stringify(innerRequest)]]]))}`
+  const cookies = (pageResponse.headers['set-cookie'] || [])
+    .map((cookie) => cookie.split(';', 1)[0])
+    .filter(Boolean)
+  const rpcResponse = await axios.post(
+    'https://news.google.com/_/DotsSplashUi/data/batchexecute',
+    requestBody,
+    {
+      headers: {
+        'User-Agent': userAgent,
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        Origin: 'https://news.google.com',
+        Referer: 'https://news.google.com/',
+        'X-Same-Domain': '1',
+        Cookie: ['CONSENT=PENDING+987', ...cookies].join('; ')
+      },
+      timeout: 12000
+    }
+  )
+
+  const responseText = String(rpcResponse.data)
+  const jsonStart = responseText.indexOf('\n\n')
+  if (jsonStart < 0) throw new Error('Respons resolver Google News tidak valid.')
+  const frames = JSON.parse(responseText.slice(jsonStart + 2))
+  const resultFrame = frames.find(
+    (frame) => Array.isArray(frame) && frame[0] === 'wrb.fr' && frame[1] === 'Fbv4je'
+  )
+  if (!resultFrame?.[2]) throw new Error('Google News tidak menemukan URL artikel penerbit.')
+
+  const result = JSON.parse(resultFrame[2])
+  const resolvedUrl = typeof result?.[1] === 'string' ? new URL(result[1]) : null
+  if (!resolvedUrl || !['http:', 'https:'].includes(resolvedUrl.protocol)) {
+    throw new Error('Google News mengembalikan URL artikel yang tidak valid.')
+  }
+  if (resolvedUrl.hostname === 'news.google.com') {
+    throw new Error('Google News masih mengembalikan URL perantara, bukan URL penerbit.')
+  }
+  return resolvedUrl.href
+}
+
 export const browserTools = {
   'browser-search': {
     needsApproval: false,
@@ -27,7 +127,6 @@ export const browserTools = {
         let results = []
         const clean = (s) =>
           (s || '')
-            .replace(/<[^>]+>/g, '')
             .replace(/&amp;/g, '&')
             .replace(/&quot;/g, '"')
             .replace(/&#39;/g, "'")
@@ -35,6 +134,7 @@ export const browserTools = {
             .replace(/&gt;/g, '>')
             .replace(/&nbsp;/g, ' ')
             .replace(/&#0183;/g, '·')
+            .replace(/<[^>]+>/g, '')
             .replace(/\s+/g, ' ')
             .trim()
 
@@ -177,16 +277,31 @@ export const browserTools = {
           }
         }
 
+        await Promise.all(
+          results.filter((result) => isGoogleNewsArticleUrl(result.url)).map(async (result) => {
+            try {
+              result.url = await resolveGoogleNewsArticleUrl(axios, result.url)
+            } catch {
+              // Keep the Google News URL; browser-fetch retries resolution and reports a clear error if unavailable.
+            }
+          })
+        )
+
         const formatted = results
           .map(
             (r, idx) =>
-              `${idx + 1}. [${r.title}](${r.url})\n   Snippet: ${r.snippet ? r.snippet.replace(/\n+/g, ' ') : 'Tidak ada ringkasan.'}`
+              `${idx + 1}. ${r.title}\n   URL: ${r.url}\n   Snippet: ${r.snippet ? r.snippet.replace(/\n+/g, ' ') : 'Tidak ada ringkasan.'}`
           )
           .join('\n\n')
 
+        const hasGoogleNewsRedirect = results.some((result) => isGoogleNewsArticleUrl(result.url))
+        const redirectNote = hasGoogleNewsRedirect
+          ? '\n\nCatatan: URL news.google.com/rss/articles adalah tautan perantara Google News. browser-fetch akan mengikuti redirect jika tersedia dan melaporkan dengan jelas jika Google hanya memberikan halaman perantara.'
+          : ''
+
         return {
           success: true,
-          data: `[DAFTAR URL HASIL PENCARIAN UNTUK: "${searchQuery}"]\n(Gunakan tool "browser-fetch" dengan parameter url jika kamu ingin membaca isi artikel lengkap dari link di bawah)\n\n${formatted}`
+          data: `[DAFTAR URL HASIL PENCARIAN UNTUK: "${searchQuery}"]\n(Gunakan tool "browser-fetch" dengan parameter url jika kamu ingin membaca isi artikel lengkap dari link di bawah)\n\n${formatted}${redirectNote}`
         }
       } catch (err) {
         return { success: false, message: `Gagal melakukan web search: ${err.message}` }
@@ -208,6 +323,7 @@ export const browserTools = {
 
       try {
         const axios = (await import('axios')).default
+        targetUrl = await resolveGoogleNewsArticleUrl(axios, targetUrl)
         const response = await axios.get(targetUrl, {
           headers: {
             'User-Agent':
@@ -218,6 +334,21 @@ export const browserTools = {
           timeout: 12000,
           maxRedirects: 5
         })
+
+        const finalUrl = response.request?.res?.responseUrl || targetUrl
+        const parsedFinalUrl = new URL(finalUrl)
+        const finalHostname = parsedFinalUrl.hostname
+        const finalPathname = parsedFinalUrl.pathname
+
+        if (finalHostname === 'news.google.com' && finalPathname.includes('/rss/articles/')) {
+          return {
+            success: false,
+            url: targetUrl,
+            final_url: finalUrl,
+            error:
+              'Google News mengembalikan halaman perantara, bukan artikel sumber. Redirect ke URL penerbit tidak tersedia untuk tautan ini, jadi konten artikel belum berhasil diambil.'
+          }
+        }
 
         const html =
           typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
@@ -253,8 +384,8 @@ export const browserTools = {
 
         return {
           success: true,
-          url: targetUrl,
-          data: `[KONTEN HASIL FETCH DARI: ${targetUrl}]\n\n${cleanText || 'Halaman kosong atau hanya berisi elemen grafis/JavaScript dinamis.'}`
+          url: finalUrl,
+          data: `[KONTEN HASIL FETCH DARI: ${finalUrl}]\n\n${cleanText || 'Halaman kosong atau hanya berisi elemen grafis/JavaScript dinamis.'}`
         }
       } catch (err) {
         return {

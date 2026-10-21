@@ -898,7 +898,7 @@ export const useMarkPlan = ({
         toolError.message?.includes('AbortError') ||
         toolError.message?.includes('aborted') ||
         toolError.message?.includes('Aborted') ||
-        Boolean(sessionAbortController?.signal?.aborted)
+        Boolean(currentSignal?.aborted)
       ) {
         throw toolError
       }
@@ -1927,10 +1927,21 @@ export const useMarkPlan = ({
                 if (pObj.thought && !currentTurnReasoning) {
                   currentTurnReasoning = String(pObj.thought)
                 }
-                if (pObj.answer !== undefined || pObj.content !== undefined) {
+                const parsedAnswerText =
+                  typeof pObj.answer === 'string' && pObj.answer.trim()
+                    ? pObj.answer.trim()
+                    : typeof pObj.content === 'string' && pObj.content.trim()
+                      ? pObj.content.trim()
+                      : ''
+
+                if (parsedAnswerText) {
+                  currentTurnContent = parsedAnswerText
+                  finalContentAccumulator = parsedAnswerText
+                } else if (pObj.answer !== undefined || pObj.content !== undefined) {
                   currentTurnContent = pObj.answer !== undefined ? pObj.answer : pObj.content
                   finalContentAccumulator = currentTurnContent
                 }
+
                 if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
                   effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
                     id: tc.id || `call_fallback_${Date.now()}_${idx}`,
@@ -1943,7 +1954,9 @@ export const useMarkPlan = ({
                           : String(tc.arguments || '{}')
                     }
                   }))
-                  currentTurnContent = ''
+                  if (!parsedAnswerText) {
+                    currentTurnContent = ''
+                  }
                   finalContentAccumulator = ''
                 } else if (Array.isArray(pObj.action) && pObj.action.length > 0) {
                   // Format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
@@ -1968,7 +1981,9 @@ export const useMarkPlan = ({
                                 )
                       }
                     }))
-                  currentTurnContent = ''
+                  if (!parsedAnswerText) {
+                    currentTurnContent = ''
+                  }
                   finalContentAccumulator = ''
                 } else if (Array.isArray(pObj) && pObj.length > 0) {
                   // Format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
@@ -2014,7 +2029,9 @@ export const useMarkPlan = ({
                       }
                     }
                   ]
-                  currentTurnContent = ''
+                  if (!parsedAnswerText) {
+                    currentTurnContent = ''
+                  }
                   finalContentAccumulator = ''
                 }
               }
@@ -2035,6 +2052,35 @@ export const useMarkPlan = ({
           consecutiveNoToolTurns = 0
           sentenceBuffer = ''
           speechQueue.reset()
+
+          // Rekam pesan narasi / observasi yang ditulis model sebelum mengeksekusi tool (seperti pada Codex)
+          let turnNarration = (currentTurnContent || '').trim()
+          if (!turnNarration && streamResult.content) {
+            const raw = String(streamResult.content).trim()
+            if (raw.startsWith('{')) {
+              try {
+                const parsed = JSON.parse(raw)
+                turnNarration = String(parsed.answer || parsed.content || '').trim()
+              } catch (_) {}
+            } else if (!raw.startsWith('[')) {
+              turnNarration = raw
+            }
+          }
+
+          if (
+            turnNarration &&
+            !turnNarration.startsWith('{') &&
+            !turnNarration.startsWith('[') &&
+            !executedToolsList.some((t) => t.type === 'narration' && t.text === turnNarration)
+          ) {
+            executedToolsList.push({
+              type: 'narration',
+              text: turnNarration,
+              timestamp: Date.now()
+            })
+          }
+          currentTurnContent = ''
+
           const assistantMsg = {
             role: 'assistant',
             content: streamResult.content || null,

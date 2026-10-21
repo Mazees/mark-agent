@@ -302,6 +302,7 @@ ${
   "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
   "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
+  "answer": "Teks balasan kepada pengguna, atau pesan penjelasan singkat jika sedang memanggil tool (atau null jika tanpa teks tambahan)",
   "tool_calls": [
     {
       "name": "nama_tool_1",
@@ -311,7 +312,7 @@ ${
 }
 4. Jika kamu ingin memanggil tool/melakukan tindakan nyata:
    - "tool_calls" WAJIB berisi array pemanggilan tool (mendukung BATCH / MULTI-TOOL sekaligus).
-   - "answer" WAJIB bernilai null.
+   - "answer" dapat berisi pesan penjelasan/pengamatan singkat secara natural kepada pengguna mengenai apa yang sedang kamu selidiki atau kerjakan (seperti pada AI assistant profesional), atau null jika tidak memerlukan teks tambahan.
 5. HANYA JIKA seluruh tindakan telah tuntas atau kamu tidak perlu memanggil tool sama sekali:
    - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
    - "tool_calls" WAJIB bernilai null.
