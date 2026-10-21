@@ -802,8 +802,35 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
               <div
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
+                className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0 relative"
               >
+                {/* Floating Scroll Buttons */}
+                <div className="sticky bottom-4 right-4 z-20 flex flex-col gap-2 float-right ml-auto w-fit">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (messagesContainerRef.current) {
+                        messagesContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+                      }
+                    }}
+                    className="btn btn-circle btn-sm bg-base-300/80 hover:bg-base-300 text-white border border-white/10 shadow-lg backdrop-blur-md cursor-pointer"
+                    title="Scroll ke Atas"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (messagesContainerRef.current) {
+                        messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' })
+                      }
+                    }}
+                    className="btn btn-circle btn-sm bg-base-300/80 hover:bg-base-300 text-white border border-white/10 shadow-lg backdrop-blur-md cursor-pointer"
+                    title="Scroll ke Bawah"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                </div>
                 <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col space-y-8">
                   {currentDisplayMessages.length > visibleMessageCount && (
                     <div className="flex justify-center py-2">

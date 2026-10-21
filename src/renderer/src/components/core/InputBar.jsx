@@ -1370,24 +1370,25 @@ const InputBar = ({
             )
           })()}
 
-          {isLoading && (
+          {isLoading ? (
             <button
               type="button"
               onClick={() => setShowAbortConfirm(true)}
-              className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white transition-all"
+              className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white hover:scale-105 active:scale-95 transition-all shadow-lg"
               title="Stop Generation (Hard Abort)"
             >
               <FaStop size={16} />
             </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={isSendDisabled}
+              className="p-3 rounded-full bg-success text-success-content disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 hover:bg-success/80 hover:scale-105 active:scale-95 transition-all shadow-lg"
+              title="Send Message"
+            >
+              <FaArrowUp size={16} />
+            </button>
           )}
-          <button
-            type="submit"
-            disabled={isSendDisabled}
-            className="p-3 rounded-full bg-success text-success-content disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 hover:bg-success/80 hover:scale-105 active:scale-95 transition-all"
-            title="Send Message"
-          >
-            <FaArrowUp size={16} />
-          </button>
         </div>
       </form>
 

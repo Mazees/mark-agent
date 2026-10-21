@@ -17,3 +17,21 @@ PLUGIN_SYSTEM_SRS.md
 MARK.exe
 src/renderer/public/robot-simulator.html
 tests/
+
+# Local tooling / agent state — never committed
+.freebuff/
+.claude/
+.cursorrules
+CLAUDE.md
+AGENTS.md
+
+# PR-only code: local docs/artifacts excluded from commits and git diff/untracked view
+FINAL-RESOLUTION-REPORT.md
+IMPROVEMENT-PLAN.md
+PACKAGE-INTEGRITY.md
+PERFORMANCE-OPTIMIZATION.md
+PR-READY-GUIDE.md
+PR-SUMMARY.md
+SCROLL-FEATURE-PR.md
+SECURITY-AUDIT.md
+UNIFIED-PR-SUMMARY.md
