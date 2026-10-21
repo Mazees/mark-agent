@@ -212,7 +212,8 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
 5. **BROWSER & RISET WEB (advanced_browser)**:
    - 'browser-search': HANYA untuk mencari dan menemukan daftar URL / link sumber berdasarkan kata kunci (BUKAN untuk membaca isi artikel/konten lengkap).
    - 'browser-fetch': Gunakan untuk membaca/mengambil (curl/fetch) isi teks lengkap dari URL yang ditemukan secara instan dan cepat tanpa membuka browser fisik. Panggil beberapa 'browser-fetch' sekaligus dalam 1 turn jika membaca banyak link.
-   - 'browser-*' (browser-navigate, browser-read, browser-click, browser-type): Gunakan HANYA jika halaman membutuhkan interaksi fisik (klik tombol, form input, atau login).
+   - 'browser-navigate': Gunakan jika pengguna meminta halaman dibuka atau ditampilkan di browser fisik, atau halaman membutuhkan interaksi fisik (klik tombol, form input, atau login). 'browser-search' dan 'browser-fetch' tidak menampilkan jendela Puppeteer.
+   - 'browser-show': Tampilkan kembali jendela Puppeteer yang sudah terbuka jika pengguna meminta melihatnya.
 6. **PANDUAN & SKEMA GROUP TOOLS (BAWAAN SISTEM)**:
    - Kelompok tool bawaan yang tersedia:
 ${groupToolsGuide}

@@ -650,6 +650,7 @@ async function seedAntiBotCookies(page) {
 
 export async function navigateTo(url, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
+  await showBrowserWindow(sessionId)
   let targetUrl = url.trim()
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
     targetUrl = 'https://' + targetUrl
