@@ -27,6 +27,14 @@ process.on('unhandledRejection', (reason) => {
 })
 
 process.on('uncaughtException', (err) => {
+  if (
+    err?.code === 'EPIPE' ||
+    err?.code === 'ECONNRESET' ||
+    err?.code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+    err?.code === 'ERR_STREAM_DESTROYED'
+  ) {
+    return
+  }
   console.error('[Server Error] Handled UncaughtException:', err?.message || err)
 })
 

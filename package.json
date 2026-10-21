@@ -68,7 +68,7 @@
     "katex": "^0.18.9",
     "lucide-react": "^1.25.0",
     "mammoth": "^1.12.0",
-    "msedge-tts": "^2.0.4",
+    "msedge-tts": "^2.1.0",
     "open": "^11.0.0",
     "openai": "^6.17.0",
     "pdf-parse": "^2.4.5",

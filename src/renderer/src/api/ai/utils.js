@@ -76,6 +76,11 @@ class SpeechQueueManager {
     }
 
     this.isPlaying = false
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch (_) {}
+    }
     window.isMarkSpeaking = false
     window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
   }
@@ -157,6 +162,9 @@ class SpeechQueueManager {
       }
 
       if (!audio || item.sessionId !== this.activeSessionId) {
+        if (item.sessionId === this.activeSessionId && item.text) {
+          await speakWithWebSpeech(item.text)
+        }
         this.playNext()
         return
       }
@@ -210,19 +218,105 @@ class SpeechQueueManager {
       }
 
       audio.onended = cleanupAndNext
-      audio.onerror = cleanupAndNext
+      audio.onerror = async (err) => {
+        console.warn('[SpeechQueue] Audio playback error, falling back to Web Speech API:', err)
+        if (animationId) cancelAnimationFrame(animationId)
+        if (this.currentAudio === audio) {
+          this.currentAudio = null
+        }
+        if (item.sessionId === this.activeSessionId && item.text) {
+          await speakWithWebSpeech(item.text)
+        }
+        this.playNext()
+      }
 
       window.isMarkSpeaking = true
       await audio.play()
       if (analyser) updateIntensity()
     } catch (err) {
-      console.warn('[SpeechQueue] Error playing segment:', err)
+      console.warn('[SpeechQueue] Error playing segment, trying Web Speech fallback:', err)
+      if (item?.sessionId === this.activeSessionId && item?.text) {
+        await speakWithWebSpeech(item.text)
+      }
       this.playNext()
     }
   }
 }
 
 export const speechQueue = new SpeechQueueManager()
+
+/**
+ * Fallback Web Speech API untuk browser / Edge App Mode
+ * ketika backend TTS bermasalah atau jaringan terputus.
+ */
+export const speakWithWebSpeech = (text, options = {}) => {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      if (options.onEnd) options.onEnd()
+      return resolve(false)
+    }
+
+    try {
+      window.speechSynthesis.cancel()
+
+      const utterance = new SpeechSynthesisUtterance(text)
+      const voices = window.speechSynthesis.getVoices() || []
+      const idVoice = voices.find(
+        (v) =>
+          v.lang?.toLowerCase().startsWith('id') ||
+          v.name?.toLowerCase().includes('indonesia') ||
+          v.name?.toLowerCase().includes('gadis') ||
+          v.name?.toLowerCase().includes('ardi')
+      )
+      if (idVoice) {
+        utterance.voice = idVoice
+      }
+
+      utterance.rate = 1.05
+      utterance.pitch = 1.1
+
+      let intensityInterval = null
+      const startIntensity = () => {
+        intensityInterval = setInterval(() => {
+          if (!window.isMarkSpeaking) {
+            clearInterval(intensityInterval)
+            return
+          }
+          const simulated = 0.25 + Math.random() * 0.45
+          window.dispatchEvent(new CustomEvent('mark-intensity', { detail: simulated }))
+        }, 100)
+      }
+
+      utterance.onstart = () => {
+        window.isMarkSpeaking = true
+        startIntensity()
+        if (options.onStart) options.onStart()
+      }
+
+      const finish = () => {
+        if (intensityInterval) clearInterval(intensityInterval)
+        window.isMarkSpeaking = false
+        window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+        if (options.onEnd) options.onEnd()
+        resolve(true)
+      }
+
+      utterance.onend = finish
+      utterance.onerror = (e) => {
+        console.warn('[speakWithWebSpeech] Utterance error:', e)
+        finish()
+      }
+
+      window.speechSynthesis.speak(utterance)
+    } catch (err) {
+      console.warn('[speakWithWebSpeech] Exception:', err)
+      window.isMarkSpeaking = false
+      window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
+      if (options.onEnd) options.onEnd()
+      resolve(false)
+    }
+  })
+}
 
 export const playVoice = async (text, onStart, onEnd) => {
   try {
@@ -314,25 +408,29 @@ export const playVoice = async (text, onStart, onEnd) => {
         if (onEnd) onEnd()
       }
 
-      audio.onerror = (e) => {
-        console.warn('[playVoice] Audio playback warning:', e)
+      audio.onerror = async (e) => {
+        console.warn('[playVoice] Audio playback warning, trying Web Speech fallback:', e)
         window.isMarkSpeaking = false
         if (currentAudioElement === audio) {
           currentAudioElement = null
         }
         window.dispatchEvent(new CustomEvent('mark-intensity', { detail: 0 }))
         if (animationId) cancelAnimationFrame(animationId)
-        if (onEnd) onEnd()
+        await speakWithWebSpeech(cleanText, { onStart, onEnd })
       }
 
       // 3. Mainkan audio seketika
       window.isMarkSpeaking = true
-      await audio.play()
-      if (analyser) updateIntensity()
-      if (onStart) onStart()
+      try {
+        await audio.play()
+        if (analyser) updateIntensity()
+        if (onStart) onStart()
+      } catch (playErr) {
+        console.warn('[playVoice] audio.play() failed, trying Web Speech fallback:', playErr)
+        await speakWithWebSpeech(cleanText, { onStart, onEnd })
+      }
     } else {
-      if (onStart) onStart()
-      if (onEnd) onEnd()
+      await speakWithWebSpeech(cleanText, { onStart, onEnd })
     }
   } catch (error) {
     console.error('Gagal memutar suara:', error)
