@@ -6,7 +6,6 @@ import {
   deleteLearnedSkill,
   getAllChatArchives,
   getAllMemory,
-  getAllDocuments,
   deleteMemory,
   deleteChatArchive,
   resetAiDatabase,
@@ -108,10 +107,9 @@ const NeuralCore = () => {
         console.warn('[NeuralCore] Gagal mengambil custom skills dari disk:', err)
       }
 
-      // 3. Peta Memori (Chat, RAG, Dokumen)
+      // Peta memori percakapan dan ingatan tersimpan.
       const archives = await getAllChatArchives()
       const explicitMemories = await getAllMemory()
-      const documents = await getAllDocuments()
 
       const journals = (explicitMemories || [])
         .filter((m) => m.type === 'private_journal' || m.type === 'journal')
@@ -140,7 +138,6 @@ const NeuralCore = () => {
         val: 15,
         color: '#ff00aa'
       })
-      nodes.push({ id: 'doc-root', name: 'Gudang Dokumen', group: 1, val: 15, color: '#ffaa00' })
       nodes.push({
         id: 'skills-root',
         name: 'Skill Yang Dipelajari',
@@ -158,7 +155,6 @@ const NeuralCore = () => {
 
       links.push({ source: coreNodeId, target: 'archives-root', color: 'rgba(255,255,255,0.3)' })
       links.push({ source: coreNodeId, target: 'vector-root', color: 'rgba(255,255,255,0.3)' })
-      links.push({ source: coreNodeId, target: 'doc-root', color: 'rgba(255,255,255,0.3)' })
       links.push({ source: coreNodeId, target: 'skills-root', color: 'rgba(255,255,255,0.3)' })
       links.push({
         source: coreNodeId,
@@ -226,38 +222,6 @@ const NeuralCore = () => {
           typeLabel: 'Memori Tersimpan'
         })
         links.push({ source: typeId, target: `mem-${mem.id}`, color: 'rgba(255,255,255,0.1)' })
-      })
-
-      // 2 & 3. Data Dokumen
-      const docNames = [...new Set(documents.map((d) => d.docName || 'Dokumen Tanpa Judul'))]
-      docNames.forEach((docName) => {
-        nodes.push({
-          id: `docGroup-${docName}`,
-          name: docName,
-          group: 2,
-          val: 12,
-          color: '#ffaa00'
-        })
-        links.push({
-          source: 'doc-root',
-          target: `docGroup-${docName}`,
-          color: 'rgba(255,255,255,0.1)'
-        })
-      })
-
-      documents.forEach((doc) => {
-        const docGroupId = `docGroup-${doc.docName || 'Dokumen Tanpa Judul'}`
-        nodes.push({
-          id: `doc-${doc.id}`,
-          name: `Bagian ${doc.chunkIndex}`,
-          fullText: doc.content,
-          date: doc.timestamp ? new Date(doc.timestamp).toLocaleDateString('id-ID') : 'Dokumen',
-          group: 3,
-          val: 4,
-          color: '#d0b080',
-          typeLabel: 'Potongan Dokumen'
-        })
-        links.push({ source: docGroupId, target: `doc-${doc.id}`, color: 'rgba(255,255,255,0.1)' })
       })
 
       // 2 & 3. Data Skill Yang Di Pelajari (Learned Skills)

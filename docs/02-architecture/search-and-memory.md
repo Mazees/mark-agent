@@ -55,12 +55,15 @@ export async function getExtractor() {
 
 ## 2. Pencarian Hibrida Orama WASM (`orama-store.js`)
 
-Untuk mengindeks dan mencari riwayat percakapan serta berkas dokumen pengguna, MARK menggunakan engine database vektor berbasis in-memory WebAssembly: [`@orama/orama`](https://orama.com/).
+Untuk mengindeks dan mencari memori pengguna serta riwayat percakapan, MARK menggunakan engine pencarian in-memory: [`@orama/orama`](https://orama.com/).
 
-### Dua Indeks Utama:
+### Indeks Aktif:
 
 1. **`archiveIndex`**: Menyimpan dan mengindeks seluruh giliran percakapan yang diarsipkan (`chat_archives`).
-2. **`documentIndex`**: Menyimpan potongan berkas dokumen pengguna untuk Retrieval-Augmented Generation (RAG).
+2. **`memoryIndex`**: Mengindeks memori eksplisit pengguna.
+3. **`turnPairIndex`**: Mengindeks pasangan pesan pengguna dan jawaban AI.
+
+Dokumen Knowledge lama tidak lagi dimuat, dibuatkan embedding, atau dicari. Tabel SQLite `documents` hanya dipertahankan untuk kompatibilitas backup. Tool `read-document` membaca file langsung tanpa memakai indeks Knowledge.
 
 ### Algoritma Pencarian Vektor + BM25:
 
@@ -75,7 +78,7 @@ Orama menggabungkan pencarian teks tradisional (BM25 full-text keyword matching)
 
 ## 3. Alur Pengambilan Konteks Terpadu (_Unified Context_)
 
-Sebelum perintah pengguna diteruskan ke model LLM, sistem mengumpulkan seluruh konteks relevan secara paralel melalui fungsi `getUnifiedContext()`:
+Sebelum perintah pengguna diteruskan ke model LLM, `getUnifiedContext()` mengumpulkan memori profil/preferensi, arsip, dan pasangan percakapan yang relevan:
 
 ```mermaid
 sequenceDiagram
@@ -83,22 +86,21 @@ sequenceDiagram
     participant UI as Chat Engine (useMarkPlan.js)
     participant VM as Vector Memory (vectorMemory.js)
     participant SQLite as SQLite (db.memories)
-    participant Orama as Orama WASM (Server)
+    participant Orama as Orama (Renderer)
     participant Prompt as System Prompt Assembler
 
     UI->>VM: getUnifiedContext(userInput)
 
     par Ambil Memori Kognitif (MMS)
         VM->>SQLite: db.memories.toArray()
-        VM->>VM: Hitung cosineSimilarity(inputVector, memoryVector)
-        VM->>VM: Filter threshold >= 0.30
+        VM->>VM: Pilih profil dan preferensi
     and Cari Arsip Percakapan Lampau
         VM->>Orama: Cari di archiveIndex (Threshold >= 0.25)
-    and Cari Dokumen RAG
-        VM->>Orama: Cari di documentIndex (Threshold >= 0.25)
+    and Cari Pasangan Percakapan
+        VM->>Orama: Cari di turnPairIndex (Threshold >= 0.30)
     end
 
-    VM->>Prompt: Kembalikan { memories, archives, documents }
+    VM->>Prompt: Kembalikan { memories, archives, turnPairs }
     Prompt->>Prompt: Susun blok konteks terpadu ke System Prompt
 ```
 

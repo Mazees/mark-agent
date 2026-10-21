@@ -624,18 +624,6 @@ export const webApi = {
     return () => removeWebListener('plugins:updated', cb)
   },
 
-  // 9. Document RAG Binary Parser
-  parseDocument: async (arrayBuffer, isDocx = false) => {
-    const res = await fetch(`${API_BASE}/api/documents/parse?isDocx=${isDocx}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: arrayBuffer
-    })
-    const json = await res.json()
-    if (!res.ok || !json.success) throw new Error(json.error || 'Parse error')
-    return json.text
-  },
-
   // 10. Awareness & OS Vision
   getActivityBuffer: async () => {
     try {

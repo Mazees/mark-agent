@@ -108,6 +108,7 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
       item.clusterKey = 'subagents'
       subagentTools.push(item)
     } else if (
+      fn.name === 'read-document' ||
       fn.name.includes('file') ||
       fn.name.includes('replace') ||
       fn.name.includes('list-dir') ||

@@ -66,6 +66,7 @@ const getFileIcon = (fileName = '') => {
 const InputBar = ({
   sessionId = '1',
   initialDraft = '',
+  contextManagedExternally = false,
   onSubmit,
   isLoading,
   isRecording,
@@ -246,6 +247,7 @@ const InputBar = ({
 
   // Muat status konteks awal sesi saat mount atau saat sessionId berganti
   useEffect(() => {
+    if (contextManagedExternally) return
     let isCancelled = false
     const loadInitialContext = async () => {
       try {
@@ -275,7 +277,7 @@ const InputBar = ({
     return () => {
       isCancelled = true
     }
-  }, [sessionId])
+  }, [sessionId, contextManagedExternally])
 
   useEffect(() => {
     const handleTrackerUpdate = (e) => {

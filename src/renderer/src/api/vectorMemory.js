@@ -1,6 +1,5 @@
 import {
   searchArchives,
-  searchDocuments,
   searchMemoriesInOrama,
   searchTurnPairsInOrama
 } from './oramaStore'
@@ -129,12 +128,11 @@ export const getUnifiedContext = async (userInput, memoryList) => {
   const memories = await getRelevantMemory(userInput, memoryList)
 
   const output = await generateVector(userInput)
-  if (!output) return { memories, archives: [], documents: [], turnPairs: [] }
+  if (!output) return { memories, archives: [], turnPairs: [] }
   const userVector = Array.from(output)
 
   const archives = await searchArchives(userVector, 3)
-  const documents = await searchDocuments(userInput, userVector, 5)
   const turnPairs = await searchTurnPairsInOrama(userInput, userVector, 3, 0.3)
 
-  return { memories, archives, documents, turnPairs }
+  return { memories, archives, turnPairs }
 }

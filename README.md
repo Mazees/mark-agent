@@ -37,9 +37,9 @@
 - **Integrasi Google Workspace Suite & GDrive Share:** Terhubung dengan ekosistem Google Workspace via OAuth2 untuk mengelola Google Calendar (jadwal/agenda), Google Drive (pencarian, pengunggahan, pembagian berkas / _GDrive Share_), dan Gmail (pembacaan serta pengiriman email).
 - **Workspace Tagging (`@workspace`) & Context Clusters:** Dukungan penandaan konteks direktori kerja secara eksplisit (`@workspace`), pencarian semantik file kerja lokal (_Workspace RAG_), dan pengelompokan tool dinamis (_tool clusters_) sesuai kebutuhan tugas.
 - **Developer-Grade Responsive CLI Live Monitor & Auto-Updater:** Antarmuka terminal interaktif yang beradaptasi secara dinamis dengan lebar layar terminal mana pun (`process.stdout.columns`), notifikasi pembaruan resmi otomatis di latar belakang, zero emoji, dan shortcut kontrol cepat (`[u]` buka UI, `[p]` update info, `[c]` bersihkan layar, `[q]` keluar).
-- **Infinite Memory & Injection Knowledge RAG:** Sistem Vector Retrieval-Augmented Generation (RAG) berjalan secara _offline_. Mark menyimpan riwayat memori obrolan masif tanpa batas dan pengguna dapat menambahkan dokumen (.pdf, .docx, .txt, .md) ke dalam _knowledge base_ tanpa membebani _context window_ LLM.
+- **Infinite Memory:** Sistem Vector Retrieval-Augmented Generation (RAG) berjalan secara _offline_. Mark menyimpan riwayat memori obrolan masif tanpa batas.
 - **Automatic Memory Groomer (Hippocampus Engine):** Sistem pembersihan dan konsolidasi memori mandiri berbasis _Orama Clustering_ dan _LLM Batch Processing_. Hippocampus Engine mendeteksi klaster memori serupa (`profile` & `preference`) lalu menggabungkannya secara kronologis tanpa kehilangan riwayat penting.
-- **Visualisasi Jaringan Otak (Memory Visualizer):** Antarmuka _Live Feed_ "Mark Neural Core" berbasis grafis Neural Network 2D interaktif (`react-force-graph-2d`) untuk menjelajahi jaringan _Chat History_, _Knowledge Base_, hingga _Document Vault_.
+- **Visualisasi Jaringan Otak (Memory Visualizer):** Antarmuka _Live Feed_ "Mark Neural Core" berbasis grafis Neural Network 2D interaktif (`react-force-graph-2d`) untuk menjelajahi riwayat chat, memori pengguna, dan skill yang dipelajari.
 - **Relational Growth System & Tactile Avatar:** Hubungan Anda dengan Mark dievaluasi layaknya manusia sungguhan melalui 4 parameter krusial (_Warmth, Sarcasm, Trust, Energy_) dengan preservasi riwayat mood AI dan respons interaksi visual taktil pada avatar. Tingkat kesopanan, kelancangan (_roasting_), dan kepribadian Mark akan berevolusi organik sesuai gaya komunikasi Anda.
 - **Multi AI Provider (Built-in Gemini / DeepSeek / Local / Cloud):** Mark hadir dengan **Google Gemini Engine (Gratis)** sebagai _provider_ bawaan yang siap pakai tanpa API Key. Anda juga memiliki fleksibilitas penuh untuk menggunakan **DeepSeek Web RPC**, **Local AI** (LM Studio), **Cloud AI** (Groq / Cerebras), maupun _Custom OpenAI-Compatible API_.
 - **Asisten Bot Telegram Mandiri (Telegraf Engine):** Terhubung langsung dengan Telegram Bot API. Mark dapat dikontrol jarak jauh via Telegram, merangkum obrolan, mengunduh MP3 YouTube, mengambil tangkapan layar PC, dan secara otomatis menyinkronkan seluruh balasan & _Awareness Engine_ ke Telegram Admin secara _real-time_.
@@ -252,6 +252,8 @@ Jika Anda ingin memodifikasi kode sumber atau berkontribusi pada pengembangan MA
 ## Panduan Migrasi Basis Data
 
 Bagi pengguna MARK versi sebelumnya (berbasis Electron/Dexie) yang ingin memindahkan seluruh memori, dokumen, dan riwayat obrolan ke MARK (berbasis SQLite), silakan baca panduan lengkap di [docs/MIGRATION_GUIDE.md](./docs/MIGRATION_GUIDE.md).
+
+Fitur Knowledge dan pencarian otomatis dokumen telah dihapus. Tabel `documents` dari backup lama tetap dipertahankan untuk export/restore, tetapi tidak lagi dimuat ke indeks pencarian, ditampilkan di Neural Core, atau dimasukkan ke konteks AI.
 
 ---
 

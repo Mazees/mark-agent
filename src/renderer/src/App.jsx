@@ -5,13 +5,12 @@ import TelegramBot from './pages/TelegramBot'
 import Plugins from './pages/Plugins'
 import Skills from './pages/Skills'
 import SkillEditor from './pages/SkillEditor'
-import Knowledge from './pages/Knowledge'
 import Guidebook from './pages/Guidebook'
 import NeuralCore from './pages/NeuralCore'
 import GoogleWorkspace from './pages/GoogleWorkspace'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
-import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { ChatProvider } from './contexts/ChatContext'
 import { YoutubeMusicProvider } from './contexts/YoutubeMusicContext'
 import { ApprovalProvider } from './contexts/ApprovalContext'
@@ -146,7 +145,7 @@ const MainLayout = () => {
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />
               <Route path="/google-workspace" element={<GoogleWorkspace />} />
-              <Route path="/knowledge" element={<Knowledge />} />
+              <Route path="/knowledge" element={<Navigate to="/" replace />} />
               <Route path="/guidebook" element={<Guidebook />} />
               <Route path="/neural-core" element={<NeuralCore />} />
               <Route path="/subagents" element={<Subagents />} />
@@ -191,7 +190,7 @@ function App() {
 
       // 1. Init Orama and Hydrate from Database (hanya saat config sudah tersedia)
       try {
-        setLoadingText('Memuat Knowledge Base...')
+        setLoadingText('Memuat indeks memori...')
         await initOramaIndices()
         await hydrateFromDb((current, total) => {
           setLoadingText(`Mengindeks memori percakapan lama (${current}/${total})...`)

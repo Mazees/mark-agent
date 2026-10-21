@@ -370,7 +370,6 @@ export const db = {
   session_compact: new TableProxy('/api/session-compact', 'sessionId'),
   chatTurns: new TableProxy('/api/turns', 'pairId'),
   chatArchive: new TableProxy('/api/archives'),
-  documents: new TableProxy('/api/documents'),
   relationships: new TableProxy('/api/relationships', 'userId'),
   subagents: new TableProxy('/api/subagents'),
   subagent_messages: new TableProxy('/api/subagents/messages'),
@@ -431,6 +430,18 @@ export async function getMainThread() {
 }
 
 // --- SESSIONS & CHAT DATA HELPERS ---
+export async function getSessionSummaries() {
+  const data = await apiGet('/api/sessions?summary=true')
+  if (!Array.isArray(data)) throw new Error('Daftar sesi belum dapat dimuat.')
+  return data
+}
+
+export async function getSessionSummary(id) {
+  const cleanId = normalizeDbId(id)
+  const data = await apiGet(`/api/sessions/${encodeURIComponent(cleanId)}?summary=true`)
+  return data?.id ? data : null
+}
+
 export async function getAllSessions() {
   try {
     return await db.sessions.toArray()
@@ -531,7 +542,7 @@ export async function setSessionAutoMode(id, isAutoMode) {
 export async function getSessionAutoMode(id) {
   try {
     const cleanId = normalizeDbId(id)
-    const session = await db.sessions.get(cleanId)
+    const session = await getSessionSummary(cleanId)
     return Boolean(session?.is_auto_mode || session?.isAutoMode)
   } catch {
     return false
@@ -609,38 +620,6 @@ export async function saveChatTurn(turn) {
   } catch (error) {
     console.error('Error saveChatTurn:', error)
     return null
-  }
-}
-
-// Bulk insert documents
-export async function bulkInsertDocuments(documents) {
-  try {
-    if (!Array.isArray(documents) || documents.length === 0) return []
-    const res = await db.documents.bulkPut(documents)
-    return res?.data?.map((d) => d.id) || documents.map((_, i) => i + 1)
-  } catch (error) {
-    console.error('Error bulkInsertDocuments:', error)
-    return []
-  }
-}
-
-export async function deleteDocumentByName(docName) {
-  try {
-    const docs = await db.documents.where('docName').equals(docName).toArray()
-    for (let d of docs) {
-      await db.documents.delete(d.id)
-    }
-  } catch (error) {
-    console.error('Error deleteDocumentByName:', error)
-  }
-}
-
-export async function getAllDocuments() {
-  try {
-    return await db.documents.toArray()
-  } catch (error) {
-    console.error('Error getAllDocuments:', error)
-    return []
   }
 }
 

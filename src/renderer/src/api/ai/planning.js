@@ -12,10 +12,10 @@ import { getActiveToolsSchema, getGroupTools } from '../tools/index'
 export const buildPlanningSystemPrompt = async (
   userInput = '',
   options = {},
-  unifiedContext = { memories: [], archives: [], documents: [] },
+  unifiedContext = { memories: [], archives: [] },
   contextMsg = ''
 ) => {
-  const { memories = [], archives = [], documents = [] } = unifiedContext
+  const { memories = [], archives = [] } = unifiedContext
   const currentConfig = await getAllConfig()
   const conf = currentConfig[0] || {}
   const isWebProvider = conf.aiProvider === 'deepseek-web' || conf.aiProvider === 'gemini-web'
@@ -366,7 +366,6 @@ ${options.existingSubagents ? `\n# DAFTAR SUB-AGENT AKTIF DI DATABASE\n${options
 
 ${memories.length > 0 ? `\n# MEMORY USER (Daftar Ingatan Saat Ini)\n${memories.map((m) => `- [${m.type.toUpperCase()}] (ID:${m.id}) ${m.memory}`).join('\n')}\n` : ''}
 ${archives.length > 0 ? `\n# ARSIP OBROLAN LAMA (Ingatan Jangka Panjang)\n${archives.map((a) => `[${getCurrentTimeInfo(new Date(a.timestamp))}] ${a.summary}`).join('\n')}\n` : ''}
-${documents.length > 0 ? `\n# REFERENSI DOKUMEN (RAG Knowledge Base)\n${documents.map((d) => `[${d.docName}] ${d.content}`).join('\n---\n')}\n` : ''}
 `
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -381,7 +380,7 @@ export const getNextAction = async (
   userInput,
   loopMessages,
   signal,
-  unifiedContext = { memories: [], archives: [], documents: [] },
+  unifiedContext = { memories: [], archives: [] },
   contextMsg = '',
   activeTopic = '',
   options = {}
