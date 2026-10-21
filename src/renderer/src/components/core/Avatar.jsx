@@ -1233,15 +1233,41 @@ const Avatar = ({
     }
   }, [handlePointerUp])
 
-  // Main 60 FPS requestAnimationFrame physics ticker
+  // Keep the idle animation lightweight while preserving full-rate interactions.
   useEffect(() => {
-    let animId
+    let animId = null
+    let timerId = null
     let prevTime = performance.now()
     stateRef.current.lastQuirkTime = performance.now()
 
     renderFace()
 
+    const scheduleFrame = () => {
+      if (document.hidden || animId !== null || timerId !== null) return
+
+      const s = stateRef.current
+      const effectiveStatus = s.tactileState || (s.isSleeping ? 'sleeping' : s.status)
+      const isInteracting =
+        s.isSeeingDesktop ||
+        s.isDragging ||
+        s.dropAnim.active ||
+        s.tactileState ||
+        (effectiveStatus !== 'idle' && effectiveStatus !== 'sleeping')
+
+      if (isInteracting) {
+        animId = requestAnimationFrame(updateFrame)
+        return
+      }
+
+      const interval = effectiveStatus === 'sleeping' ? 1000 / 12 : 1000 / 24
+      timerId = window.setTimeout(() => {
+        timerId = null
+        if (!document.hidden) animId = requestAnimationFrame(updateFrame)
+      }, interval)
+    }
+
     const updateFrame = (now) => {
+      animId = null
       const dt = Math.min(0.05, (now - prevTime) / 1000)
       prevTime = now
       const t = now * 0.001
@@ -1613,11 +1639,30 @@ const Avatar = ({
         renderFace()
       }
 
-      animId = requestAnimationFrame(updateFrame)
+      scheduleFrame()
     }
 
-    animId = requestAnimationFrame(updateFrame)
-    return () => cancelAnimationFrame(animId)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId !== null) cancelAnimationFrame(animId)
+        if (timerId !== null) window.clearTimeout(timerId)
+        animId = null
+        timerId = null
+        return
+      }
+
+      prevTime = performance.now()
+      scheduleFrame()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    scheduleFrame()
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (animId !== null) cancelAnimationFrame(animId)
+      if (timerId !== null) window.clearTimeout(timerId)
+    }
   }, [renderFace, updateAutonomousQuirks])
 
   return (

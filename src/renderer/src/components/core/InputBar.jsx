@@ -105,6 +105,8 @@ const InputBar = ({
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionCursorIndex, setMentionCursorIndex] = useState(0)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const mentionRangeEndRef = useRef(0)
+  const skillRangeRef = useRef({ start: 0, end: 0 })
   const [workspaceFiles, setWorkspaceFiles] = useState([])
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
   const [toolGroups, setToolGroups] = useState([])
@@ -115,17 +117,35 @@ const InputBar = ({
         const data = await window.api.getGroupTools()
         const schema = data?.schema || {}
         const names = data?.names || Object.keys(schema)
-        const list = names.map((key) => {
-          const desc = schema[key]?.description || ''
-          const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-          return {
-            name: key,
-            label,
-            description: desc
-          }
-        })
-        setToolGroups(list)
-        return list
+        const list = names
+          .filter((key) => schema[key])
+          .map((key) => {
+            const desc = schema[key]?.description || ''
+            const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+            return {
+              name: key,
+              label,
+              description: desc,
+              kind: 'group'
+            }
+          })
+        const pluginGroups = (data?.plugins || [])
+          .filter((plugin) => plugin?.isEnabled !== false && plugin?.name)
+          .map((plugin) => ({
+            name: plugin.name,
+            label: plugin.displayName || plugin.name,
+            description: [plugin.description, `${plugin.actionCount || 0} aksi`]
+              .filter(Boolean)
+              .join(' · '),
+            kind: 'plugin'
+          }))
+        const groupNames = new Set(list.map((group) => group.name))
+        const allGroups = [
+          ...list,
+          ...pluginGroups.filter((plugin) => !groupNames.has(plugin.name))
+        ]
+        setToolGroups(allGroups)
+        return allGroups
       } catch (err) {
         console.error('[InputBar] Failed to load tool groups:', err)
       }
@@ -309,6 +329,16 @@ const InputBar = ({
       }, 50)
     }
   }, [isLoading])
+
+  useEffect(() => {
+    const textarea = inputRef.current
+    if (!textarea) return
+
+    const maxHeight = 192
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  }, [inputText])
 
   // Auto-scroll item terpilih ke viewport saat navigasi keyboard
   useEffect(() => {
@@ -646,12 +676,13 @@ const InputBar = ({
           title: 'Files',
           subtitle: 'Cari berkas di workspace'
         },
-        {
-          type: 'category',
-          category: 'tools',
-          title: 'Tool Groups',
-          subtitle: 'Kelompok kapabilitas tool agen'
-        }
+        ...toolGroups.map((group) => ({
+          type: 'tool',
+          name: group.name,
+          label: group.label,
+          description: group.description,
+          kind: group.kind
+        }))
       ]
     }
 
@@ -672,7 +703,8 @@ const InputBar = ({
           type: 'tool',
           name: t.name,
           label: t.label,
-          description: t.description
+          description: t.description,
+          kind: t.kind
         }))
       items.push(...matchedTools)
     }
@@ -714,7 +746,7 @@ const InputBar = ({
 
     const val = inputText
     const beforeAt = val.slice(0, mentionCursorIndex)
-    const afterMention = val.slice(mentionCursorIndex + 1 + mentionQuery.length)
+    const afterMention = val.slice(mentionRangeEndRef.current)
 
     if (item.type === 'file') {
       const insertTag = `@${item.relativePath} `
@@ -773,31 +805,41 @@ const InputBar = ({
     const cursor = e.target.selectionStart ?? val.length
     const textBefore = val.slice(0, cursor)
 
-    // 1. Deteksi Slash Command (/):
-    if (val.startsWith('/')) {
+    // Slash commands can be typed at the beginning or after whitespace, wherever the caret is.
+    const slashIndex = textBefore.lastIndexOf('/')
+    const isSlashCommand =
+      slashIndex !== -1 &&
+      (slashIndex === 0 || /\s/.test(textBefore[slashIndex - 1])) &&
+      !/\s/.test(textBefore.slice(slashIndex + 1))
+
+    if (isSlashCommand) {
+      const tokenAfterCaret = val.slice(cursor).match(/^\S*/)?.[0] || ''
+      skillRangeRef.current = { start: slashIndex, end: cursor + tokenAfterCaret.length }
+      const query = textBefore.slice(slashIndex + 1).toLowerCase()
       const currentSkills = skills && skills.length > 0 ? skills : await reloadSkills()
-      const query = val.slice(1).toLowerCase()
+      if (inputRef.current?.value !== val || inputRef.current?.selectionStart !== cursor) return
       const matches = currentSkills.filter((s) => s.name.toLowerCase().includes(query))
       setFilteredSkills(matches)
       setShowSkillList(true)
       setSelectedSkillIndex(0)
       setShowMentionList(false)
       return
-    } else {
-      setShowSkillList(false)
     }
+    setShowSkillList(false)
 
     // 2. Deteksi Mention Tag (@):
     const atIndex = textBefore.lastIndexOf('@')
     if (atIndex !== -1 && (atIndex === 0 || /\s/.test(textBefore[atIndex - 1]))) {
       const afterAt = textBefore.slice(atIndex + 1)
       if (!/\s/.test(afterAt)) {
+        const tokenAfterCaret = val.slice(cursor).match(/^\S*/)?.[0] || ''
         if (toolGroups.length === 0) {
           loadToolGroups()
         }
         setShowMentionList(true)
         setMentionQuery(afterAt)
         setMentionCursorIndex(atIndex)
+        mentionRangeEndRef.current = cursor + tokenAfterCaret.length
         setSelectedMentionIndex(0)
         fetchWorkspaceFiles(afterAt)
         return
@@ -809,9 +851,18 @@ const InputBar = ({
   }
 
   const selectSkill = (skillObj) => {
-    setInputText(`/${skillObj.name} `)
+    const { start, end } = skillRangeRef.current
+    const insertion = `/${skillObj.name} `
+    const nextText = `${inputText.slice(0, start)}${insertion}${inputText.slice(end)}`
+    setInputText(nextText)
     setShowSkillList(false)
-    if (inputRef.current) inputRef.current.focus()
+    setTimeout(() => {
+      if (inputRef.current) {
+        const cursor = start + insertion.length
+        inputRef.current.focus()
+        inputRef.current.setSelectionRange(cursor, cursor)
+      }
+    }, 0)
   }
 
   const handleKeyDown = (e) => {
@@ -980,7 +1031,7 @@ const InputBar = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative flex items-center bg-[var(--glass-bg)] border rounded-lg p-2 pr-3 shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-colors duration-300 focus-within:border-primary/50 focus-within:shadow-[0_0_20px_oklch(var(--p)/0.2)] ${
+        className={`relative flex flex-col items-stretch gap-1 bg-[var(--glass-bg)] border rounded-2xl p-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-colors duration-300 focus-within:border-primary/50 focus-within:shadow-[0_0_20px_oklch(var(--p)/0.2)] ${
           isDragging
             ? 'border-primary bg-primary/10 shadow-[0_0_30px_oklch(var(--p)/0.3)] scale-[1.02]'
             : 'border-[var(--glass-border)]'
@@ -993,6 +1044,27 @@ const InputBar = ({
             <span>Lepaskan file di sini untuk melampirkan...</span>
           </div>
         )}
+
+        {/* Input grows above the control row and scrolls after reaching its cap. */}
+        <textarea
+          ref={inputRef}
+          rows={1}
+          value={inputText}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder={
+            isLoading
+              ? 'Beri intervensi ke Mark...'
+              : attachedFiles.length > 0
+                ? 'Tambah instruksi untuk file terlampir...'
+                : 'Tanya apapun ke Mark...'
+          }
+          className="w-full min-h-6 max-h-48 resize-none bg-transparent border-none outline-none text-white px-2 py-1.5 text-sm md:text-base leading-normal placeholder:text-white/30 disabled:opacity-50 no-scrollbar"
+        />
+
+        <div className="flex w-full items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
 
         {/* Workspace Root Folder Button */}
         {onSelectWorkspace && (
@@ -1097,6 +1169,8 @@ const InputBar = ({
             </div>
           )}
         </div>
+          </div>
+
         {/* Skill Autocomplete Dropdown */}
         {showSkillList && filteredSkills.length > 0 && (
           <div className="absolute bottom-full left-12 mb-2 w-[400px] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
@@ -1179,7 +1253,9 @@ const InputBar = ({
                           ? item.subtitle
                           : item.type === 'file'
                             ? formatFileSize(item.size)
-                            : item.description || item.label}
+                            : [item.label !== item.name ? item.label : '', item.description]
+                                .filter(Boolean)
+                                .join(' · ')}
                       </div>
                     </div>
                   </div>
@@ -1189,26 +1265,8 @@ const InputBar = ({
           </div>
         )}
 
-        {/* Input Textarea */}
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={inputText}
-          onChange={handleTextChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={
-            isLoading
-              ? 'Beri intervensi ke Mark...'
-              : attachedFiles.length > 0
-                ? 'Tambah instruksi untuk file terlampir...'
-                : 'Tanya apapun ke Mark...'
-          }
-          className="flex-1 resize-none bg-transparent border-none outline-none text-white px-3 py-2.5 text-sm md:text-base leading-normal placeholder:text-white/30 disabled:opacity-50 no-scrollbar"
-        />
-
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex shrink-0 items-center gap-1">
           {/* Super Effort Toggle Button */}
           <button
             type="button"
@@ -1380,6 +1438,7 @@ const InputBar = ({
           >
             <FaArrowUp size={16} />
           </button>
+        </div>
         </div>
       </form>
 
