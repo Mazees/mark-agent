@@ -14,8 +14,9 @@ import {
   FaLock,
   FaFolder
 } from 'react-icons/fa'
-import { Zap, Sparkles, Folder, Wrench, ChevronLeft } from 'lucide-react'
+import { Zap, Sparkles, Folder, Wrench, FileText } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
+import SkillComposer from './SkillComposer'
 import { NATIVE_SKILLS } from './native-skills'
 import { webApi } from '../../api/web-bridge.js'
 import { calculateSessionTokens, MAX_CONTEXT_TOKENS } from '../../api/ai/contextManager'
@@ -64,6 +65,7 @@ const getFileIcon = (fileName = '') => {
 
 const InputBar = ({
   sessionId = '1',
+  initialDraft = '',
   onSubmit,
   isLoading,
   isRecording,
@@ -86,7 +88,7 @@ const InputBar = ({
   const gaugeRef = useRef(null)
   const mentionListRef = useRef(null)
   const skillListRef = useRef(null)
-  const [inputText, setInputText] = useState('')
+  const [inputText, setInputText] = useState(initialDraft)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
   const [showContextPopover, setShowContextPopover] = useState(false)
@@ -305,21 +307,24 @@ const InputBar = ({
   }, [sessionId])
 
   const reloadSkills = async () => {
+    const nativeSkillList = NATIVE_SKILLS.map(({ name, title, icon, description }) => ({
+      name, title, icon, description
+    }))
+    setSkills(nativeSkillList)
     if (window.api && window.api.getSkills) {
       try {
         const loadedSkills = await window.api.getSkills()
-        const nativeSkillList = NATIVE_SKILLS.map((s) => ({
-          name: s.name,
-          description: s.description
-        }))
-        const merged = [...nativeSkillList, ...(loadedSkills || [])]
+        const nativeNames = new Set(nativeSkillList.map((skill) => skill.name.toLowerCase()))
+        const merged = [...nativeSkillList, ...(loadedSkills || []).filter(
+          (skill) => !nativeNames.has(skill.name.toLowerCase())
+        )]
         setSkills(merged)
         return merged
       } catch (err) {
         console.error('[InputBar] Failed to reload skills:', err)
       }
     }
-    return []
+    return nativeSkillList
   }
 
   useEffect(() => {
@@ -341,16 +346,6 @@ const InputBar = ({
       }, 50)
     }
   }, [isLoading])
-
-  useEffect(() => {
-    const textarea = inputRef.current
-    if (!textarea) return
-
-    const maxHeight = 192
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
-  }, [inputText])
 
   // Auto-scroll item terpilih ke viewport saat navigasi keyboard
   useEffect(() => {
@@ -566,19 +561,20 @@ const InputBar = ({
   }
 
   const handleFormSubmit = async () => {
-    let finalPrompt = inputText
-    let userText = inputText
+    const rawPrompt = inputText
+    let finalPrompt = rawPrompt
+    let userText = rawPrompt
 
     // INTERCEPT SUPER EFFORT SLASH COMMANDS: /super, /effort, /boost
-    const isSlashEffort = Boolean(inputText.match(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/i))
+    const isSlashEffort = Boolean(rawPrompt.match(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/i))
     if (isSlashEffort) {
       userText = userText.replace(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/gi, ' ').trim()
       finalPrompt = userText
     }
 
-    const skillMatches = inputText.match(/(?:\s|^)\/([a-zA-Z0-9_-]+)/g)
+    const skillMatches = rawPrompt.match(/(?:\s|^)\/([a-zA-Z0-9_-]+)/g)
 
-    if (skillMatches && skillMatches.length > 0 && window.api && window.api.readSkill) {
+    if (skillMatches && skillMatches.length > 0) {
       let combinedSkillsContent = ''
       const loadedSkills = []
 
@@ -602,7 +598,7 @@ const InputBar = ({
         }
 
         try {
-          const skillData = await window.api.readSkill(skillName)
+          const skillData = await window.api?.readSkill?.(skillName)
           if (skillData) {
             // Support both old string format and new object format
             const content = typeof skillData === 'string' ? skillData : skillData.content
@@ -643,9 +639,9 @@ const InputBar = ({
 
     if (finalPrompt.trim()) {
       if (!isLoading) {
-        lastPromptRef.current = inputText
+        lastPromptRef.current = rawPrompt
       }
-      const rawUserText = inputText.trim()
+      const rawUserText = rawPrompt
       setInputText('')
       if (typeof onSubmit === 'function') {
         onSubmit(finalPrompt, {
@@ -825,7 +821,7 @@ const InputBar = ({
       !/\s/.test(textBefore.slice(slashIndex + 1))
 
     if (isSlashCommand) {
-      const tokenAfterCaret = val.slice(cursor).match(/^\S*/)?.[0] || ''
+      const tokenAfterCaret = val.slice(cursor).match(/^[a-zA-Z0-9_-]*/)?.[0] || ''
       skillRangeRef.current = { start: slashIndex, end: cursor + tokenAfterCaret.length }
       const query = textBefore.slice(slashIndex + 1).toLowerCase()
       const currentSkills = skills && skills.length > 0 ? skills : await reloadSkills()
@@ -1058,9 +1054,9 @@ const InputBar = ({
         )}
 
         {/* Input grows above the control row and scrolls after reaching its cap. */}
-        <textarea
+        <SkillComposer
           ref={inputRef}
-          rows={1}
+          skills={skills.length ? skills : NATIVE_SKILLS}
           value={inputText}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
@@ -1072,7 +1068,7 @@ const InputBar = ({
                 ? 'Tambah instruksi untuk file terlampir...'
                 : 'Tanya apapun ke Mark...'
           }
-          className="w-full min-h-6 max-h-48 resize-none bg-transparent border-none outline-none text-white px-2 py-1.5 text-sm md:text-base leading-normal placeholder:text-white/30 disabled:opacity-50 no-scrollbar"
+          className="w-full min-h-9 max-h-48 overflow-y-auto bg-transparent border-none outline-none text-white px-2 py-1.5 text-sm leading-normal no-scrollbar"
         />
 
         <div className="flex w-full items-center justify-between gap-2">
@@ -1185,29 +1181,36 @@ const InputBar = ({
 
         {/* Skill Autocomplete Dropdown */}
         {showSkillList && filteredSkills.length > 0 && (
-          <div className="absolute bottom-full left-12 mb-2 w-[400px] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
+          <div className="absolute bottom-full left-4 mb-2 w-[400px] max-w-[calc(100%-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
             <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5">
               Available Skills
             </div>
             <div ref={skillListRef} className="max-h-64 overflow-y-auto no-scrollbar">
-              {filteredSkills.map((skillObj, idx) => (
+              {filteredSkills.map((skillObj, idx) => {
+                const Icon = NATIVE_SKILLS.find((item) => item.name === skillObj.name)?.icon || FileText
+                return (
                 <div
                   key={skillObj.name}
                   onClick={() => selectSkill(skillObj)}
                   className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
                     idx === selectedSkillIndex
-                      ? 'bg-primary-500/20 text-primary-400'
+                      ? 'bg-primary/10 text-primary'
                       : 'hover:bg-white/10 text-gray-300'
                   }`}
                 >
-                  <div className="font-semibold text-sm">/{skillObj.name}</div>
+                  <div className="flex items-center gap-2 font-semibold text-sm">
+                    <Icon className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{skillObj.title || skillObj.name}</span>
+                  </div>
+                  <div className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-white/50'}`}>/{skillObj.name}</div>
                   <div
-                    className={`text-xs ${idx === selectedSkillIndex ? 'text-primary-400/80' : 'text-gray-400'} line-clamp-2`}
+                    className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-gray-400'} line-clamp-2`}
                   >
                     {skillObj.description}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

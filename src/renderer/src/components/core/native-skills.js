@@ -1,6 +1,10 @@
+import { Blocks, ListChecks } from 'lucide-react'
+
 export const NATIVE_SKILLS = [
   {
     name: 'create-plugin',
+    title: 'Plugin Creator: Create Plugin',
+    icon: Blocks,
     description:
       'Membuat, memperbarui, dan menguji plugin lokal MARK: plugin.json, handler index.js, dependency, serta group tool.',
     content: `
@@ -80,6 +84,8 @@ Laporkan lokasi plugin, nama group dan tools, cara memakai query, hasil pengujia
   },
   {
     name: 'task',
+    title: 'Task Workflow',
+    icon: ListChecks,
     description:
       'Membuat dan mengeksekusi alur tugas multi-langkah terstruktur (Durable Tasks / Task Workflow)',
     content: `
@@ -111,12 +117,5 @@ Kamu telah diinstruksikan oleh user untuk mengaktifkan fitur **/task** (Task Wor
 6. TAHAP TERAKHIR & RANGKUMAN PENUTUP:
    - Pada TAHAP TERAKHIR dari Task Workflow, saat memanggil 'mark_done_task', kamu WAJIB mengisi parameter 'summary' dengan ringkasan komprehensif seluruh alur kerja proyek dari awal hingga akhir.
    - Begitu tahap terakhir berhasil di-mark_done_task, alur kerja selesai 100% dan sistem langsung memutus proses serta menampilkan rangkuman akhir tersebut kepada pengguna. DILARANG memanggil tool apapun lagi.`
-  },
-  {
-    name: 'plan',
-    description: 'Alias untuk /task: Menjalankan alur pengerjaan tugas terstruktur (Task Workflow)',
-    content: `
-# ALIAS PERINTAH: /plan -> /task
-Alihkan instruksi ini ke sistem Task Workflow. Segera panggil tool 'create_agent_task' sebagai tindakan pertama dengan judul, sasaran menyeluruh, dan 3-5 tahapan eksekusi terstruktur! Setiap tahap dikerjakan di workspace sebelum diselesaikan dengan 'mark_done_task'.`
   }
 ]

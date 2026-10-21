@@ -105,7 +105,7 @@ export default function Plugins() {
           popover: {
             title: '1. Buat Plugin',
             description:
-              'Klik tombol ini untuk membuat fungsi/plugin baru. Fitur baru yang kamu tulis di sini bakal otomatis dipahami oleh Mark.',
+              'Buka chat untuk membuat plugin bersama Mark. Tulis kebutuhanmu setelah /create-plugin, lalu kirim. Gunakan Buat Manual kalau ingin mengisi kode sendiri.',
             side: 'bottom',
             align: 'start'
           }
@@ -172,7 +172,7 @@ export default function Plugins() {
       {/* Main Content Area */}
       <div className="relative z-10 w-full h-full overflow-y-auto custom-scrollbar">
         <div className="max-w-5xl mx-auto px-4 py-8 pb-40 space-y-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -195,10 +195,10 @@ export default function Plugins() {
               </button>
               <div>
                 <h1 className="text-2xl font-bold">Plugin Manager</h1>
-                <p className="opacity-50 text-sm mt-1">Buat dan kelola custom skill lokal buat Mark.</p>
+                <p className="opacity-50 text-sm mt-1">Buat dan kelola plugin lokal buat Mark.</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={startTour}
@@ -224,11 +224,19 @@ export default function Plugins() {
               <button
                 id="btn-tambah-plugin"
                 type="button"
-                onClick={openCreateForm}
+                onClick={() => navigate('/chat', { state: { composerDraft: '/create-plugin ' } })}
                 className="btn btn-primary btn-sm"
                 style={{ WebkitAppRegion: 'no-drag' }}
               >
-                + Tambah Plugin
+                Buat dengan Mark
+              </button>
+              <button
+                type="button"
+                onClick={openCreateForm}
+                className="btn btn-outline btn-sm"
+                style={{ WebkitAppRegion: 'no-drag' }}
+              >
+                Buat Manual
               </button>
               <button
                 id="btn-buka-folder"
@@ -555,7 +563,7 @@ export default function Plugins() {
 
           {plugins.length === 0 && !isFormOpen ? (
             <div className="alert alert-info shadow-lg border border-info/20 bg-info/10 text-info">
-              Belum ada plugin yang terinstall. Buka folder atau klik Tambah Plugin.
+              Belum ada plugin yang terinstall. Pilih Buat dengan Mark atau Buat Manual untuk mulai.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
