@@ -9,7 +9,7 @@
  * - Perakitan payload prompt berformat [ COMPACTED MESSAGE SUMMARY ]
  */
 
-import { encode } from 'gpt-tokenizer'
+import { countTokens as countBpeTokens } from 'gpt-tokenizer'
 import { fetchAI } from './core.js'
 import { getSessionCompact, saveSessionCompact, saveSession } from '../db.js'
 import { compactCodeBlocks } from './contextCompactor.js'
@@ -21,13 +21,37 @@ export const IN_LOOP_COMPACT_THRESHOLD = 0.5 // Ambang pemicu in-loop ReAct (50%
 export const OLD_TOOL_PRUNE_CHAR_LIMIT = 200 // Batas karakter output tool lama untuk dipangkas
 export const CLEARED_TOOL_PLACEHOLDER = '[Old tool output cleared to save context space]'
 
+const tokenCountCache = new Map()
+const TOKEN_CACHE_MAX_ENTRIES = 512
+const TOKEN_CACHE_MAX_CHARACTERS = 2_000_000
+let tokenCacheCharacters = 0
+
 /**
  * Helper menghitung token teks murni via BPE tokenizer (gpt-tokenizer)
  */
 export function countTokens(text) {
   if (!text || typeof text !== 'string') return 0
+  const cached = tokenCountCache.get(text)
+  if (cached !== undefined) {
+    tokenCountCache.delete(text)
+    tokenCountCache.set(text, cached)
+    return cached
+  }
   try {
-    return encode(text).length
+    const tokens = countBpeTokens(text)
+    if (text.length <= TOKEN_CACHE_MAX_CHARACTERS) {
+      while (
+        tokenCountCache.size >= TOKEN_CACHE_MAX_ENTRIES ||
+        tokenCacheCharacters + text.length > TOKEN_CACHE_MAX_CHARACTERS
+      ) {
+        const oldest = tokenCountCache.keys().next().value
+        tokenCountCache.delete(oldest)
+        tokenCacheCharacters -= oldest.length
+      }
+      tokenCountCache.set(text, tokens)
+      tokenCacheCharacters += text.length
+    }
+    return tokens
   } catch {
     return Math.ceil(text.length / 4)
   }

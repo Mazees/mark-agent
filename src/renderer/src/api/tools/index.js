@@ -1,6 +1,5 @@
 import { core_tools, core_tools_schema } from './core-tools'
 import { webApi } from '../web-bridge.js'
-import { buildPluginToolGroups } from '../../../../shared/plugin-schema.js'
 
 let cachedGroupToolsFlat = {}
 let cachedGroupToolsSchema = {}
@@ -41,15 +40,24 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
   const groupToolsSchema = groupToolsData?.schema || cachedGroupToolsSchema || {}
   const groupToolGroupNames = groupToolsData?.names || cachedGroupToolNames || []
   if (groupToolsData?.flat) cachedGroupToolsFlat = groupToolsData.flat
+  cachedGroupToolsSchema = groupToolsSchema
+  cachedGroupToolNames = groupToolGroupNames
+  cachedPluginToolNames = new Set(
+    Object.values(groupToolsSchema)
+      .filter((group) => group.kind === 'plugin')
+      .flatMap((group) => (group.tools || []).map((tool) => tool.function?.name))
+      .filter(Boolean)
+  )
 
   const activeSchemas = [...core_tools_schema]
   const seenToolNames = new Set(core_tools_schema.map((t) => t.function?.name))
   const loadedSet = loadedGroups instanceof Set ? loadedGroups : new Set(loadedGroups || [])
 
   for (const [groupKey, group] of Object.entries(groupToolsSchema)) {
-    if (group.kind === 'plugin') continue
     // Hanya tambah schema group jika user explicit panggil read-tools("group_name")
-    if (loadedSet.has(groupKey) && Array.isArray(group.tools)) {
+    const isLoaded =
+      loadedSet.has(groupKey) || (group.kind === 'plugin' && loadedSet.has('custom_plugins'))
+    if (isLoaded && Array.isArray(group.tools)) {
       for (const t of group.tools) {
         const name = t.function?.name
         if (name && !seenToolNames.has(name)) {
@@ -60,53 +68,11 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
     }
   }
 
-  // Muat dynamic plugin actions jika group plugin aktif tersebut telah dimuat via read-tools
-  let activePluginNames = []
-  try {
-    if (typeof window !== 'undefined' && window.api && window.api.getPlugins) {
-      const plugins = await window.api.getPlugins()
-      if (Array.isArray(plugins)) {
-        const activePlugins = plugins.filter((p) => p.isEnabled !== false)
-        activePluginNames = activePlugins.map((p) => p.name)
-        const nativeGroups = Object.entries(groupToolsSchema).filter(
-          ([, group]) => group.kind !== 'plugin'
-        )
-        const reservedNames = [
-          ...core_tools_schema.map((tool) => tool.function.name),
-          ...nativeGroups.flatMap(([, group]) =>
-            (group.tools || []).map((tool) => tool.function.name)
-          )
-        ]
-        const pluginGroups = buildPluginToolGroups(
-          activePlugins,
-          reservedNames,
-          nativeGroups.map(([key]) => key)
-        )
-        cachedPluginToolNames = new Set(
-          Object.values(pluginGroups).flatMap((group) =>
-            group.tools.map((tool) => tool.function.name)
-          )
-        )
-        for (const [pluginName, group] of Object.entries(pluginGroups)) {
-          if (loadedSet.has(pluginName) || loadedSet.has('custom_plugins')) {
-            for (const tool of group.tools) {
-              if (seenToolNames.has(tool.function.name)) continue
-              seenToolNames.add(tool.function.name)
-              activeSchemas.push(tool)
-            }
-          }
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-
   // Perbarui parameter enum dan description pada read-tools agar mencakup nama plugin aktif
   const readToolsIdx = activeSchemas.findIndex((s) => s.function?.name === 'read-tools')
   if (readToolsIdx >= 0) {
     const orig = activeSchemas[readToolsIdx]
-    const allGroups = [...new Set([...groupToolGroupNames, ...activePluginNames])]
+    const allGroups = [...new Set([...groupToolGroupNames, ...Object.keys(groupToolsSchema)])]
     activeSchemas[readToolsIdx] = {
       ...orig,
       function: {

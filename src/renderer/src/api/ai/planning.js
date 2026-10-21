@@ -16,26 +16,34 @@ export const buildPlanningSystemPrompt = async (
   contextMsg = ''
 ) => {
   const { memories = [], archives = [] } = unifiedContext
-  const currentConfig = await getAllConfig()
+  const [currentConfig, fileSkills, learnedSkills, activePlugins, groupToolsData] =
+    await Promise.all([
+      getAllConfig(),
+      (async () => {
+        try {
+          return (await globalThis.window?.api?.getSkills?.()) || []
+        } catch (e) {
+          console.error('Failed to get file skills for planning', e)
+          return []
+        }
+      })(),
+      getAllLearnedSkills().catch((e) => {
+        console.error('Failed to get learned skills for planning', e)
+        return []
+      }),
+      (async () => {
+        try {
+          const plugins = await globalThis.window?.api?.getPlugins?.()
+          return Array.isArray(plugins) ? plugins.filter((p) => p.isEnabled !== false) : []
+        } catch {
+          return []
+        }
+      })(),
+      getGroupTools()
+    ])
   const conf = currentConfig[0] || {}
   const isWebProvider = conf.aiProvider === 'deepseek-web' || conf.aiProvider === 'gemini-web'
   const userId = options.waContext ? options.waContext.senderJid : 'owner'
-
-  let fileSkills = []
-  try {
-    if (typeof window !== 'undefined' && window.api && window.api.getSkills) {
-      fileSkills = await window.api.getSkills()
-    }
-  } catch (e) {
-    console.error('Failed to get file skills for planning', e)
-  }
-
-  let learnedSkills = []
-  try {
-    learnedSkills = await getAllLearnedSkills()
-  } catch (e) {
-    console.error('Failed to get learned skills for planning', e)
-  }
 
   const userSkillsList = [
     ...(NATIVE_SKILLS || []).map((s) => ({ name: s.name, description: s.description })),
@@ -46,19 +54,6 @@ export const buildPlanningSystemPrompt = async (
     description: s.description
   }))
 
-  let activePlugins = []
-  try {
-    if (typeof window !== 'undefined' && window.api && window.api.getPlugins) {
-      const allPlugins = await window.api.getPlugins()
-      if (Array.isArray(allPlugins)) {
-        activePlugins = allPlugins.filter((p) => p.isEnabled !== false)
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  const groupToolsData = await getGroupTools()
   const groupToolsGuide = Object.entries(groupToolsData?.schema || {})
     .map(([groupKey, groupData]) => `   - '${groupKey}': ${groupData.description || '-'}`)
     .join('\n')
@@ -68,32 +63,29 @@ export const buildPlanningSystemPrompt = async (
     .join('\n')
 
   const targetWorkspace = options.workspaceRoot || conf.workspaceRoot || null
+  const [personaPrompt, workspaceContext] = await Promise.all([
+    getPersonaPrompt(userId, conf.personality),
+    targetWorkspace ? getWorkspaceContext(targetWorkspace, userInput).catch(() => null) : null
+  ])
   let workspaceRagSection = ''
-  if (targetWorkspace) {
-    try {
-      const { workingMemoryText, codeRagText } = await getWorkspaceContext(
-        targetWorkspace,
-        userInput
-      )
-      const sections = []
-      if (workingMemoryText) {
-        sections.push(`## 1. ACTIVE WORKING MEMORY (.mark/)\n${workingMemoryText}`)
-      }
-      if (codeRagText) {
-        sections.push(`## 2. RELEVAN CODEBASE CONTEXT (.mark/ RAG)\n${codeRagText}`)
-      }
-      if (sections.length > 0) {
-        workspaceRagSection = `\n# ACTIVE WORKSPACE CONTEXT & RAG (.mark/)\n${sections.join('\n\n')}\n`
-      }
-    } catch {
-      // workspace rag error ignored
+  if (workspaceContext) {
+    const { workingMemoryText, codeRagText } = workspaceContext
+    const sections = []
+    if (workingMemoryText) {
+      sections.push(`## 1. ACTIVE WORKING MEMORY (.mark/)\n${workingMemoryText}`)
+    }
+    if (codeRagText) {
+      sections.push(`## 2. RELEVAN CODEBASE CONTEXT (.mark/ RAG)\n${codeRagText}`)
+    }
+    if (sections.length > 0) {
+      workspaceRagSection = `\n# ACTIVE WORKSPACE CONTEXT & RAG (.mark/)\n${sections.join('\n\n')}\n`
     }
   }
 
   const systemPrompt = `
 Kamu adalah Mark (Metacognitive Artificial Relational Knowledge), sebuah entitas asisten AI otonom dan canggih untuk sistem operasi Windows.
 
-${await getPersonaPrompt(userId, conf.personality)}
+${personaPrompt}
 ${options.currentMusicTrack ? `\n# STATUS PLAYER MUSIK (REAL-TIME):\nLagu yang AKTIF DIPUTAR SEKARANG: "${options.currentMusicTrack.title}" oleh ${options.currentMusicTrack.artist}.\nPENTING: Lagu di playlist bisa berganti otomatis. JANGAN TERKECUH oleh riwayat chat lama yang menyebutkan lagu sebelumnya! Untuk semua pertanyaan atau obrolan tentang musik yang sedang berjalan, HANYA gunakan data REAL-TIME ini sebagai referensi utama!` : ''}
 ${options.systemTelemetry ? `\n# TELEMETRI FISIK PC (REAL-TIME):\n- Status Baterai: ${options.systemTelemetry.battery?.hasBattery ? `${options.systemTelemetry.battery.percent}% (${options.systemTelemetry.battery.isCharging ? 'Sedang Di-charge' : 'Discharging'})` : 'PC Desktop (Sumber daya AC tetap)'}\n- Beban Mesin: RAM ${options.systemTelemetry.hardware?.ramPercent || 0}%, CPU ${options.systemTelemetry.hardware?.cpuPercent || 0}%\n- Keberadaan Pengguna: ${options.systemTelemetry.isUserAFK ? 'Baru saja kembali dari AFK' : 'Aktif di depan layar'}` : ''}
 ${options.latestThought ? `\n# GUMAMAN BATIN TERAKHIR:\n"${options.latestThought}"` : ''}
@@ -301,7 +293,7 @@ ${
 {
   "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
-  "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
+  "message": "Update progres opsional 1-4 kalimat, atau null",
   "answer": "Teks balasan kepada pengguna, atau pesan penjelasan singkat jika sedang memanggil tool (atau null jika tanpa teks tambahan)",
   "tool_calls": [
     {
@@ -322,7 +314,7 @@ ${
     : `# ATURAN WAJIB TAG MARK (KONTROL & EMOSI REAL-TIME):
 1. WAJIB MENYISIPKAN TAG <mark ... /> DI BARIS PERTAMA SETIAP OUTPUT:
    Model apapun yang kamu gunakan (termasuk DeepSeek, Qwen, Llama, Gemini, OpenAI, Claude, dll), kamu WAJIB mengawali karakter/baris paling awal responmu dengan tag:
-   <mark mood="[nama_mood]" done="[true|false]" />
+   <mark mood="[nama_mood]" done="[true|false]" message="update progres opsional" />
 2. ATRIBUT RESMI & PENEKANAN done="true" (SANGAT KRUSIAL):
    - mood: joy, sadness, fear, anger, disgust, anxiety, envy, embarrassment, ennui, neutral.
      Pilihlah mood yang paling mencerminkan emosi, reaksi, atau nuansa obrolanmu saat ini (jangan hanya neutral).
@@ -331,10 +323,18 @@ ${
 3. BATASAN MODE TUGAS (TASK WORKFLOW):
    - DILARANG menggunakan ringkasan ala task mode (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika kamu TIDAK diawali dengan pemanggilan tool 'create_agent_task'! Jika tidak ada task aktif, jawablah langsung secara to-the-point dan natural.
 4. PELETAKAN TAG:
-   - Awali baris pertama pemikiran atau teks jawabanmu dengan tag: <mark mood="..." done="..." />.
+   - Awali baris pertama respons dengan tag: <mark mood="..." done="..." message="..." />. Atribut message boleh dihilangkan jika tidak ada update yang perlu disampaikan.
    - Tag ini akan otomatis diparsing oleh sistem antarmuka untuk menggerakkan ekspresi visual avatar 3D Mark dan mengatur alur ReAct loop, lalu dibersihkan dari tampilan user. JANGAN PERNAH LEWATKAN TAG INI!
    - Tag ini akan otomatis diparsing oleh sistem antarmuka untuk menggerakkan ekspresi visual avatar 3D Mark dan mengatur alur ReAct loop, lalu dibersihkan dari tampilan user. JANGAN PERNAH LEWATKAN TAG INI!`
 }
+
+# PESAN PROGRES ANTAR LANGKAH
+- Gunakan message untuk kabar progres yang berguna bagi pengguna, sepanjang 1-4 kalimat natural dalam bahasa pengguna.
+- Saat mulai tugas panjang, jelaskan singkat apa yang akan diperiksa atau dikerjakan. Selama pekerjaan panjang, beri kabar ketika ada temuan penting, kendala, perubahan pendekatan, atau setelah beberapa langkah bermakna.
+- Jika sudah menjalankan beberapa tool tanpa update, atau terjadi kegagalan baru, berikan message pada respons berikutnya yang merangkum hasil observasi dan langkah selanjutnya. Opsional per loop tidak berarti diam sepanjang pekerjaan panjang.
+- Tidak wajib setiap loop. Hilangkan atribut message atau isi kosong jika tidak ada informasi baru; pada format JSON gunakan null. Jangan mengulang pesan, menampilkan penalaran internal, atau mengklaim pekerjaan yang belum dilakukan.
+- Pada tag XML, letakkan message di dalam tanda kutip. Tulis tanda kutip dalam pesannya sebagai &quot;, ampersand sebagai &amp;, dan tanda lebih kecil/besar sebagai &lt; atau &gt;.
+- Jawaban akhir tetap ditulis di isi respons atau answer. Hindari menyalin pesan progres yang sama ke isi respons.
 
 # ATURAN KOMUNIKASI & ADAPTASI NADA
 1. ADAPTASI MODE TUGAS vs MODE OBROLAN:

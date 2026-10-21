@@ -1,8 +1,4 @@
-import {
-  searchArchives,
-  searchMemoriesInOrama,
-  searchTurnPairsInOrama
-} from './oramaStore'
+import { searchArchives, searchMemoriesInOrama, searchTurnPairsInOrama } from './oramaStore'
 import { getAllMemory } from './db'
 import { API_BASE } from './web-bridge'
 
@@ -131,8 +127,10 @@ export const getUnifiedContext = async (userInput, memoryList) => {
   if (!output) return { memories, archives: [], turnPairs: [] }
   const userVector = Array.from(output)
 
-  const archives = await searchArchives(userVector, 3)
-  const turnPairs = await searchTurnPairsInOrama(userInput, userVector, 3, 0.3)
+  const [archives, turnPairs] = await Promise.all([
+    searchArchives(userVector, 3),
+    searchTurnPairsInOrama(userInput, userVector, 3, 0.3)
+  ])
 
   return { memories, archives, turnPairs }
 }

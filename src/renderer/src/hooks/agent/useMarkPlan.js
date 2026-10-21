@@ -13,6 +13,7 @@ import {
   updateMemory,
   saveSession,
   getChatData,
+  getSessionSummary,
   getSessionCompact,
   db
 } from '../../api/db'
@@ -37,6 +38,7 @@ import {
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
+import { recordProgressMessage, buildProgressReminder } from '../../utils/processSteps'
 
 // ============================================================================
 // HELPER UTILITIES
@@ -116,11 +118,17 @@ const VERIFICATION_TOOLS = new Set([
   'takeScreenshot'
 ])
 
-const awaitWithTimeout = async (promise, timeoutMs, stage) => {
+const awaitWithTimeout = async (promise, timeoutMs, stage, signal) => {
   let timeoutId
+  let onAbort
   try {
+    if (signal?.aborted) throw new Error('AbortError')
     return await Promise.race([
       promise,
+      new Promise((_, reject) => {
+        onAbort = () => reject(new Error('AbortError'))
+        signal?.addEventListener('abort', onAbort, { once: true })
+      }),
       new Promise((_, reject) => {
         timeoutId = setTimeout(
           () => reject(new Error(`${stage} tidak selesai dalam ${timeoutMs / 1000} detik.`)),
@@ -130,6 +138,7 @@ const awaitWithTimeout = async (promise, timeoutMs, stage) => {
     ])
   } finally {
     clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', onAbort)
   }
 }
 
@@ -1181,7 +1190,7 @@ export const useMarkPlan = ({
     // Ambil workspaceRoot dari database jika belum disertakan di opts
     if (!opts.workspaceRoot) {
       try {
-        const sessionRecord = await db.sessions.get(activeSessionNum)
+        const sessionRecord = await getSessionSummary(activeSessionNum)
         if (sessionRecord?.workspaceRoot) {
           opts.workspaceRoot = sessionRecord.workspaceRoot
         }
@@ -1256,7 +1265,6 @@ export const useMarkPlan = ({
       let durableTask = null
       let durableActiveStep = null
 
-      const allMemory = await awaitWithTimeout(getAllMemory(), 15000, 'Memuat memori')
       let searchQuery = userInput
       if (validHistory.length > 0) {
         const lastMsg = validHistory[validHistory.length - 1]
@@ -1270,17 +1278,47 @@ export const useMarkPlan = ({
         }
       }
 
-      const contextPromise = getUnifiedContext(searchQuery, allMemory)
-      const abortPromise = new Promise((_, reject) => {
-        const onAbort = () => reject(new Error('AbortError'))
-        if (sessionAbortController.signal.aborted) return onAbort()
-        sessionAbortController.signal.addEventListener('abort', onAbort)
-      })
-      const unifiedContext = await awaitWithTimeout(
-        Promise.race([contextPromise, abortPromise]),
-        30000,
-        'Menyiapkan konteks'
-      )
+      const preparationSignal = sessionAbortController.signal
+      const optionalContext = (load, fallback) =>
+        awaitWithTimeout(
+          Promise.resolve().then(load),
+          2000,
+          'Memuat konteks tambahan',
+          preparationSignal
+        ).catch((error) => {
+          if (preparationSignal.aborted) throw error
+          return fallback
+        })
+
+      const [unifiedContext, activityBuffer, allSubs, systemTelemetry, storedCompact] =
+        await Promise.all([
+          (async () => {
+            const allMemory = await awaitWithTimeout(
+              getAllMemory(),
+              15000,
+              'Memuat memori',
+              preparationSignal
+            )
+            return awaitWithTimeout(
+              getUnifiedContext(searchQuery, allMemory),
+              30000,
+              'Menyiapkan konteks',
+              preparationSignal
+            )
+          })(),
+          optionalContext(() => window.api?.getActivityBuffer?.(), []),
+          optionalContext(async () => {
+            const { subagentStore } = await import('../../api/subagent/subagentStore.js')
+            return subagentStore.listSubagents()
+          }, []),
+          optionalContext(() => window.api?.getSystemTelemetry?.(), null),
+          awaitWithTimeout(
+            getSessionCompact(String(activeSessionNum)),
+            10000,
+            'Memuat ringkasan sesi',
+            preparationSignal
+          )
+        ])
 
       let contextMsgStr = ''
       if (tgContext)
@@ -1295,40 +1333,25 @@ export const useMarkPlan = ({
       }
 
       // Inject 5 aktivitas OS terakhir dari window tracker
-      try {
-        const activityBuffer = await window.api.getActivityBuffer()
-        if (activityBuffer && activityBuffer.length > 0) {
-          const recent = activityBuffer.slice(-5)
-          const activitySummary = recent
-            .map((a) => `[${a.time || a.timestamp}] ${a.app}${a.title ? ` — ${a.title}` : ''}`)
-            .join('\n')
-          contextMsgStr += `[AKTIVITAS PC USER (terakhir)]\n${activitySummary}\n`
-        }
-      } catch (_) {}
+      if (activityBuffer && activityBuffer.length > 0) {
+        const recent = activityBuffer.slice(-5)
+        const activitySummary = recent
+          .map((a) => `[${a.time || a.timestamp}] ${a.app}${a.title ? ` — ${a.title}` : ''}`)
+          .join('\n')
+        contextMsgStr += `[AKTIVITAS PC USER (terakhir)]\n${activitySummary}\n`
+      }
 
       // Ambil daftar sub-agent yang tersedia
       let existingSubagents = ''
-      try {
-        const { subagentStore } = await import('../../api/subagent/subagentStore.js')
-        const allSubs = await subagentStore.listSubagents()
-        if (allSubs && allSubs.length > 0) {
-          existingSubagents = allSubs
-            .slice(0, 10)
-            .map(
-              (s) =>
-                `- [ID: ${s.id}] "${s.name}" (${s.role}) | Status: ${s.status} | Turns: ${s.turnCount || 0} | Goal: "${s.goal}"`
-            )
-            .join('\n')
-        }
-      } catch (e) {}
-
-      // Susun System Prompt Mark V5
-      let systemTelemetry = null
-      try {
-        if (window.api && typeof window.api.getSystemTelemetry === 'function') {
-          systemTelemetry = await window.api.getSystemTelemetry()
-        }
-      } catch (_) {}
+      if (allSubs && allSubs.length > 0) {
+        existingSubagents = allSubs
+          .slice(0, 10)
+          .map(
+            (s) =>
+              `- [ID: ${s.id}] "${s.name}" (${s.role}) | Status: ${s.status} | Turns: ${s.turnCount || 0} | Goal: "${s.goal}"`
+          )
+          .join('\n')
+      }
 
       const systemPrompt = await awaitWithTimeout(
         buildPlanningSystemPrompt(
@@ -1345,16 +1368,14 @@ export const useMarkPlan = ({
           contextMsgStr
         ),
         30000,
-        'Menyiapkan instruksi sistem'
+        'Menyiapkan instruksi sistem',
+        preparationSignal
       )
 
       // ------------------------------------------------------------------------
       // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 256.000 Tokens)
       // ------------------------------------------------------------------------
-      let activeSessionCompact = null
-      try {
-        activeSessionCompact = await getSessionCompact(String(activeSessionNum))
-      } catch (_) {}
+      let activeSessionCompact = storedCompact
 
       const activeSummaryBlock =
         activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || ''
@@ -1700,6 +1721,18 @@ export const useMarkPlan = ({
         let currentTurnContent = ''
         let turnStreamMeta = null
         let sentenceBuffer = ''
+        const progressMessageId = `${sessionRecord.thinkingId}-progress-${stepCount}`
+        let hasProgressMessage = false
+        const publishProgressMessage = (message) => {
+          if (!stripMarkTags(message)) return
+          hasProgressMessage = true
+          if (!recordProgressMessage(executedToolsList, message, progressMessageId)) return
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isThinking ? { ...msg, executedTools: [...executedToolsList] } : msg
+            )
+          )
+        }
 
         // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai batas kapasitas,
         // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 256K tokens.
@@ -1751,8 +1784,15 @@ export const useMarkPlan = ({
 
         // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
+        const progressReminder =
+          isSystem || isAutonomous || opts.disableTools
+            ? null
+            : buildProgressReminder(executedToolsList, { initial: stepCount === 1 })
+        const requestMessages = progressReminder
+          ? [...loopMessages, { role: 'system', content: progressReminder }]
+          : loopMessages
         const inFlightTokens =
-          calculatePayloadTokens(loopMessages) +
+          calculatePayloadTokens(requestMessages) +
           (activeTools ? countTokens(JSON.stringify(activeTools)) : 0)
         if (inFlightTokens >= MAX_CONTEXT_TOKENS) {
           throw new Error(
@@ -1772,7 +1812,7 @@ export const useMarkPlan = ({
         )
 
         // Request streaming ke Backend AI Bridge
-        const streamResult = await fetchAI(loopMessages, true, {
+        const streamResult = await fetchAI(requestMessages, true, {
           sessionId: String(activeSessionNum || 1),
           tools: isDurableTaskCompleted ? null : activeTools,
           signal: sessionAbortController.signal,
@@ -1808,6 +1848,7 @@ export const useMarkPlan = ({
           },
           onMeta: (meta) => {
             turnStreamMeta = meta
+            publishProgressMessage(meta?.message)
             if (meta?.mood) {
               currentActiveMood = meta.mood
               targetSetChatData((prev) =>
@@ -1856,6 +1897,10 @@ export const useMarkPlan = ({
             })
           }
         })
+
+        publishProgressMessage(
+          streamResult?.meta?.message || parseMarkTag(streamResult?.content).meta.message
+        )
 
         if (
           currentTurnReasoning &&
@@ -1921,6 +1966,7 @@ export const useMarkPlan = ({
                 } catch (_) {}
               }
               if (pObj && typeof pObj === 'object') {
+                publishProgressMessage(pObj.message)
                 if (pObj.mood) {
                   currentActiveMood = String(pObj.mood).toLowerCase().trim()
                 }
@@ -2054,9 +2100,9 @@ export const useMarkPlan = ({
           speechQueue.reset()
 
           // Rekam pesan narasi / observasi yang ditulis model sebelum mengeksekusi tool (seperti pada Codex)
-          let turnNarration = (currentTurnContent || '').trim()
+          let turnNarration = stripMarkTags(currentTurnContent || '')
           if (!turnNarration && streamResult.content) {
-            const raw = String(streamResult.content).trim()
+            const raw = stripMarkTags(String(streamResult.content))
             if (raw.startsWith('{')) {
               try {
                 const parsed = JSON.parse(raw)
@@ -2067,7 +2113,10 @@ export const useMarkPlan = ({
             }
           }
 
+          turnNarration = stripMarkTags(turnNarration)
+
           if (
+            !hasProgressMessage &&
             turnNarration &&
             !turnNarration.startsWith('{') &&
             !turnNarration.startsWith('[') &&

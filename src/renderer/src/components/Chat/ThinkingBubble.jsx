@@ -8,6 +8,7 @@ import { useApproval } from '../../contexts/ApprovalContext'
 import { ApprovalBubble } from './ApprovalBubble'
 import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 import { ToolShellBox } from './ToolShellBox'
+import { sanitizeProcessSteps, splitProcessTimeline } from '../../utils/processSteps'
 
 export const ThinkingBubble = ({
   isSummarizing = false,
@@ -18,8 +19,7 @@ export const ThinkingBubble = ({
   executedTools = []
 }) => {
   const { activeApproval } = useApproval()
-  const steps = executionSteps || executedTools || []
-  const executingStepCount = steps.length
+  const steps = sanitizeProcessSteps(executionSteps || executedTools)
 
   return (
     <div className="flex flex-col gap-2.5 py-1 text-sm select-text">
@@ -100,124 +100,205 @@ export const ThinkingBubble = ({
           <DesktopPreviewWidget />
 
           {/* Executed Tools Step-by-Step List */}
-          {steps && steps.length > 0 && (
-            <details open className="group/liveprocess outline-none">
-              <summary className="group/row text-xs font-mono cursor-pointer select-none flex items-center gap-2 text-white/70 hover:text-white py-1 list-none [&::-webkit-details-marker]:hidden transition-colors">
-                <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                  Proses
-                </span>
-                <span className="text-[10px] text-white/40 font-normal">
-                  ({executingStepCount} langkah)
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/liveprocess:rotate-90 group-open/liveprocess:opacity-100" />
-              </summary>
-              <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
-                {steps.map((step, idx) => {
-                  if (step.type === 'intervention') {
-                    const interventionText = step.text || step.content || step.task || ''
-                    return (
-                      <div key={idx} className="flex items-start gap-2 py-0.5 text-xs">
-                        <span className="font-bold text-primary font-mono shrink-0 select-none">
-                          You :
-                        </span>
-                        <span className="text-white/90 font-sans select-text whitespace-pre-wrap leading-relaxed">
-                          {interventionText}
-                        </span>
-                      </div>
-                    )
-                  }
-
-                  if (step.type === 'narration' || (!step.tool && step.text)) {
-                    return (
-                      <div
-                        key={idx}
-                        className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
-                      >
-                        <Markdown
-                          remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
-                          rehypePlugins={[...mathRehypePlugins]}
-                        >
-                          {preprocessLaTeX(step.text)}
-                        </Markdown>
-                      </div>
-                    )
-                  }
-
-                  const isRunning = step.status === 'running'
-                  const isStopped = step.status === 'stopped' || step.status === 'cancelled'
-                  const isPendingApproval = Boolean(
-                    activeApproval &&
-                    activeApproval.status === 'pending' &&
-                    isRunning &&
-                    (activeApproval.tool === step.tool || !step.tool)
-                  )
-                  const hasQuery =
-                    step.query !== undefined && step.query !== null && step.query !== ''
-                  const hasResult =
-                    step.resultSummary !== undefined &&
-                    step.resultSummary !== null &&
-                    step.resultSummary !== ''
-                  const queryString =
-                    typeof step.query === 'string'
-                      ? step.query
-                      : JSON.stringify(step.query, null, 2)
-                  const resultString =
-                    typeof step.resultSummary === 'string'
-                      ? step.resultSummary
-                      : JSON.stringify(step.resultSummary, null, 2)
-                  const isFailed =
-                    step.status === 'failed' ||
-                    step.status === 'error' ||
-                    (resultString &&
-                      (resultString.startsWith('[ERROR]') || resultString.includes(' crash:')))
-
-                  const toolLabel = step.tool || step.task || 'tool'
-                  const displayReason = step.reason || null
-                  let shortSummary = ''
-                  if (hasQuery) {
-                    try {
-                      const parsed = JSON.parse(queryString)
-                      shortSummary =
-                        parsed.command ||
-                        parsed.path ||
-                        parsed.query ||
-                        parsed.prompt ||
-                        parsed.skill_name ||
-                        queryString
-                    } catch {
-                      shortSummary = queryString
+          {splitProcessTimeline(steps).map((segment, segmentIndex) => {
+            if (segment.type === 'narration') {
+              return (
+                <div
+                  key={segment.id || `progress-${segmentIndex}`}
+                  className="py-2 text-sm text-white/85 leading-relaxed select-text"
+                >
+                  <Markdown
+                    remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                    rehypePlugins={mathRehypePlugins}
+                  >
+                    {preprocessLaTeX(segment.text)}
+                  </Markdown>
+                </div>
+              )
+            }
+            const toolGroup = segment.steps
+            return (
+              <details
+                key={`tools-${segmentIndex}`}
+                open
+                className="group/liveprocess outline-none"
+              >
+                <summary className="group/row text-xs font-mono cursor-pointer select-none flex items-center gap-2 text-white/70 hover:text-white py-1 list-none [&::-webkit-details-marker]:hidden transition-colors">
+                  <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
+                  <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+                    Proses
+                  </span>
+                  <span className="text-[10px] text-white/40 font-normal">
+                    ({toolGroup.length} langkah)
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/liveprocess:rotate-90 group-open/liveprocess:opacity-100" />
+                </summary>
+                <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
+                  {toolGroup.map((step, idx) => {
+                    if (step.type === 'intervention') {
+                      const interventionText = step.text || step.content || step.task || ''
+                      return (
+                        <div key={idx} className="flex items-start gap-2 py-0.5 text-xs">
+                          <span className="font-bold text-primary font-mono shrink-0 select-none">
+                            You :
+                          </span>
+                          <span className="text-white/90 font-sans select-text whitespace-pre-wrap leading-relaxed">
+                            {interventionText}
+                          </span>
+                        </div>
+                      )
                     }
-                  }
 
-                  if (!hasQuery && !hasResult) {
+                    if (step.type === 'narration' || (!step.tool && step.text)) {
+                      return (
+                        <div
+                          key={idx}
+                          className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
+                        >
+                          <Markdown
+                            remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                            rehypePlugins={[...mathRehypePlugins]}
+                          >
+                            {preprocessLaTeX(step.text)}
+                          </Markdown>
+                        </div>
+                      )
+                    }
+
+                    const isRunning = step.status === 'running'
+                    const isStopped = step.status === 'stopped' || step.status === 'cancelled'
+                    const isPendingApproval = Boolean(
+                      activeApproval &&
+                      activeApproval.status === 'pending' &&
+                      isRunning &&
+                      (activeApproval.tool === step.tool || !step.tool)
+                    )
+                    const hasQuery =
+                      step.query !== undefined && step.query !== null && step.query !== ''
+                    const hasResult =
+                      step.resultSummary !== undefined &&
+                      step.resultSummary !== null &&
+                      step.resultSummary !== ''
+                    const queryString =
+                      typeof step.query === 'string'
+                        ? step.query
+                        : JSON.stringify(step.query, null, 2)
+                    const resultString =
+                      typeof step.resultSummary === 'string'
+                        ? step.resultSummary
+                        : JSON.stringify(step.resultSummary, null, 2)
+                    const isFailed =
+                      step.status === 'failed' ||
+                      step.status === 'error' ||
+                      (resultString &&
+                        (resultString.startsWith('[ERROR]') || resultString.includes(' crash:')))
+
+                    const toolLabel = step.tool || step.task || 'tool'
+                    const displayReason = step.reason || null
+                    let shortSummary = ''
+                    if (hasQuery) {
+                      try {
+                        const parsed = JSON.parse(queryString)
+                        shortSummary =
+                          parsed.command ||
+                          parsed.path ||
+                          parsed.query ||
+                          parsed.prompt ||
+                          parsed.skill_name ||
+                          queryString
+                      } catch {
+                        shortSummary = queryString
+                      }
+                    }
+
+                    if (!hasQuery && !hasResult) {
+                      return (
+                        <div key={idx} className="flex flex-col py-0.5">
+                          <div className="group/row flex items-center gap-2 text-xs font-mono text-white/60">
+                            {isPendingApproval ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
+                            ) : isRunning ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
+                            ) : isStopped ? (
+                              <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                            ) : isFailed ? (
+                              <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
+                            )}
+                            <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+                              {displayReason || toolLabel}
+                            </span>
+                            {isPendingApproval ? (
+                              <span className="text-[10px] text-warning font-normal animate-pulse">
+                                (menunggu persetujuan...)
+                              </span>
+                            ) : isStopped ? (
+                              <span className="text-[10px] text-warning/80 font-normal">
+                                (dihentikan)
+                              </span>
+                            ) : null}
+                          </div>
+                          {isPendingApproval && (
+                            <div className="pl-3 pr-1">
+                              <ApprovalBubble
+                                approvalId={activeApproval.id}
+                                tool={activeApproval.tool}
+                                query={activeApproval.query}
+                                message={activeApproval.message}
+                                status={activeApproval.status}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+
                     return (
                       <div key={idx} className="flex flex-col py-0.5">
-                        <div className="group/row flex items-center gap-2 text-xs font-mono text-white/60">
-                          {isPendingApproval ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
-                          ) : isRunning ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
-                          ) : isStopped ? (
-                            <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
-                          ) : isFailed ? (
-                            <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
-                          ) : (
-                            <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
-                          )}
-                          <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                            {displayReason || toolLabel}
-                          </span>
-                          {isPendingApproval ? (
-                            <span className="text-[10px] text-warning font-normal animate-pulse">
-                              (menunggu persetujuan...)
+                        <details
+                          className="group/livetool outline-none text-xs font-mono"
+                          open={isRunning}
+                        >
+                          <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
+                            {isPendingApproval ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
+                            ) : isRunning ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
+                            ) : isStopped ? (
+                              <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
+                            ) : isFailed ? (
+                              <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
+                            )}
+                            <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+                              {displayReason || toolLabel}
                             </span>
-                          ) : isStopped ? (
-                            <span className="text-[10px] text-warning/80 font-normal">
-                              (dihentikan)
-                            </span>
-                          ) : null}
-                        </div>
+                            {isPendingApproval ? (
+                              <span className="text-[10px] text-warning font-normal animate-pulse">
+                                (menunggu persetujuan...)
+                              </span>
+                            ) : isStopped ? (
+                              <span className="text-[10px] text-warning/80 font-normal">
+                                (dihentikan)
+                              </span>
+                            ) : null}
+                            {!displayReason && shortSummary && (
+                              <span className="text-white/40 truncate max-w-md">
+                                {String(shortSummary).slice(0, 80)}
+                              </span>
+                            )}
+                            <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/livetool:rotate-90 group-open/livetool:opacity-100" />
+                          </summary>
+                          <ToolShellBox
+                            tool={step.tool}
+                            query={step.query}
+                            result={step.fullResult || step.resultSummary || resultString}
+                            preview={step.preview}
+                            reason={displayReason}
+                          />
+                        </details>
                         {isPendingApproval && (
                           <div className="pl-3 pr-1">
                             <ApprovalBubble
@@ -231,70 +312,11 @@ export const ThinkingBubble = ({
                         )}
                       </div>
                     )
-                  }
-
-                  return (
-                    <div key={idx} className="flex flex-col py-0.5">
-                      <details
-                        className="group/livetool outline-none text-xs font-mono"
-                        open={isRunning}
-                      >
-                        <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
-                          {isPendingApproval ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
-                          ) : isRunning ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
-                          ) : isStopped ? (
-                            <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
-                          ) : isFailed ? (
-                            <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
-                          ) : (
-                            <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
-                          )}
-                          <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                            {displayReason || toolLabel}
-                          </span>
-                          {isPendingApproval ? (
-                            <span className="text-[10px] text-warning font-normal animate-pulse">
-                              (menunggu persetujuan...)
-                            </span>
-                          ) : isStopped ? (
-                            <span className="text-[10px] text-warning/80 font-normal">
-                              (dihentikan)
-                            </span>
-                          ) : null}
-                          {!displayReason && shortSummary && (
-                            <span className="text-white/40 truncate max-w-md">
-                              {String(shortSummary).slice(0, 80)}
-                            </span>
-                          )}
-                          <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/livetool:rotate-90 group-open/livetool:opacity-100" />
-                        </summary>
-                        <ToolShellBox
-                          tool={step.tool}
-                          query={step.query}
-                          result={step.fullResult || step.resultSummary || resultString}
-                          preview={step.preview}
-                          reason={displayReason}
-                        />
-                      </details>
-                      {isPendingApproval && (
-                        <div className="pl-3 pr-1">
-                          <ApprovalBubble
-                            approvalId={activeApproval.id}
-                            tool={activeApproval.tool}
-                            query={activeApproval.query}
-                            message={activeApproval.message}
-                            status={activeApproval.status}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </details>
-          )}
+                  })}
+                </div>
+              </details>
+            )
+          })}
         </div>
       )}
     </div>

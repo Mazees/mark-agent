@@ -168,6 +168,7 @@ export async function executeOpenAIProvider({
     const accumulatedToolCalls = {}
     let finishReason = 'stop'
     let serverUsage = null
+    let markStreamActivity = () => {}
 
     try {
       let response = await fetch(endpoint, {
@@ -236,6 +237,16 @@ export async function executeOpenAIProvider({
         }
         try {
           const parsed = JSON.parse(jsonStr)
+          if (parsed.error) {
+            const error = new Error(
+              typeof parsed.error === 'string'
+                ? parsed.error
+                : parsed.error.message || 'AI stream gagal.'
+            )
+            error.code = parsed.error.code || 'AI_STREAM_ERROR'
+            abortController.abort(error)
+            return
+          }
           if (parsed.usage) {
             serverUsage = parsed.usage
             isStreamDone = true
@@ -244,6 +255,14 @@ export async function executeOpenAIProvider({
           if (!choice) return
 
           const delta = choice.delta || {}
+          if (
+            delta.content ||
+            delta.reasoning_content ||
+            delta.reasoning ||
+            delta.tool_calls?.some((call) => call.function?.name || call.function?.arguments)
+          ) {
+            markStreamActivity()
+          }
 
           if (delta.reasoning_content || delta.reasoning) {
             const rToken = delta.reasoning_content || delta.reasoning
@@ -305,24 +324,22 @@ export async function executeOpenAIProvider({
           if (isStreamDone) return
           inactivityTimer = setTimeout(() => {
             if (!isStreamDone) {
-              if (
-                accumulatedContent ||
-                accumulatedReasoning ||
-                Object.keys(accumulatedToolCalls).length > 0
-              ) {
-                console.warn(
-                  `[OpenAI Stream] Stream hening selama ${INACTIVITY_TIMEOUT_MS / 1000}s setelah menerima data. Mengakhiri stream secara aman (graceful completion).`
-                )
-                cancelStream()
-              } else {
-                abortController.abort(
-                  new Error(
-                    `Stream Timeout: Tidak ada data dari server (${endpoint}) selama ${INACTIVITY_TIMEOUT_MS / 1000} detik.`
-                  )
-                )
-              }
+              const error = new Error(
+                `AI berhenti mengirim token atau tool selama ${INACTIVITY_TIMEOUT_MS / 1000} detik sebelum stream selesai. Permintaan dihentikan; tool yang belum lengkap tidak dijalankan.`
+              )
+              error.code = 'AI_STREAM_STALLED'
+              abortController.abort(error)
             }
           }, INACTIVITY_TIMEOUT_MS)
+        }
+
+        markStreamActivity = () => {
+          if (!receivedAnyData) {
+            receivedAnyData = true
+            clearTimeout(ttftTimer)
+            ttftTimer = null
+          }
+          resetInactivityTimer()
         }
 
         // Watchdog hanya untuk koneksi awal / token pertama (Time-To-First-Token)
@@ -391,14 +408,6 @@ export async function executeOpenAIProvider({
             while (!isStreamDone) {
               const { done, value } = await reader.read()
               if (done) break
-              if (!receivedAnyData) {
-                receivedAnyData = true
-                if (ttftTimer) {
-                  clearTimeout(ttftTimer)
-                  ttftTimer = null
-                }
-              }
-              resetInactivityTimer()
               const chunkText =
                 typeof value === 'string' ? value : decoder.decode(value, { stream: true })
               processRawChunk(chunkText)
@@ -409,14 +418,6 @@ export async function executeOpenAIProvider({
             }
           } else if (response.body[Symbol.asyncIterator]) {
             for await (const chunk of response.body) {
-              if (!receivedAnyData) {
-                receivedAnyData = true
-                if (ttftTimer) {
-                  clearTimeout(ttftTimer)
-                  ttftTimer = null
-                }
-              }
-              resetInactivityTimer()
               const chunkText =
                 typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
               processRawChunk(chunkText)

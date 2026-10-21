@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
@@ -20,6 +20,7 @@ import { useApproval } from '../../contexts/ApprovalContext'
 import { ApprovalBubble } from './ApprovalBubble'
 import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 import { ToolShellBox } from './ToolShellBox'
+import { sanitizeProcessSteps, splitProcessTimeline } from '../../utils/processSteps'
 
 export const MessageBubble = React.memo(
   ({
@@ -35,13 +36,10 @@ export const MessageBubble = React.memo(
   }) => {
     const { activeApproval } = useApproval()
     const [isCopied, setIsCopied] = useState(false)
-    const [isProcessOpen, setIsProcessOpen] = useState(Boolean(isThinking))
-
-    useEffect(() => {
-      if (isThinking) {
-        setIsProcessOpen(true)
-      }
-    }, [isThinking])
+    const [openProcessGroups, setOpenProcessGroups] = useState({})
+    const toolsToRender = sanitizeProcessSteps(
+      executedTools && executedTools.length > 0 ? executedTools : executionSteps
+    )
 
     const resolveImageUrl = (url) => {
       if (!url || typeof url !== 'string') return ''
@@ -139,7 +137,7 @@ export const MessageBubble = React.memo(
         )}
 
         {/* Executed Tools & Reasoning Activity Trace (Antigravity Style) */}
-        {((executedTools && executedTools.length > 0) || reasoning) && (
+        {(toolsToRender.length > 0 || reasoning) && (
           <div className="my-2.5 space-y-1.5 select-none">
             {/* Thinking / Reasoning Accordion */}
             {reasoning && (
@@ -165,21 +163,40 @@ export const MessageBubble = React.memo(
             )}
 
             {/* Executed Tools Folded Process Accordion */}
-            {((executedTools && executedTools.length > 0) ||
-              (executionSteps && executionSteps.length > 0)) &&
-              (() => {
-                const toolsToRender =
-                  executedTools && executedTools.length > 0 ? executedTools : executionSteps || []
-                const hasComputerUse = toolsToRender.some(
+            {toolsToRender.length > 0 &&
+              (isThinking ||
+                toolsToRender.some(
                   (t) => t.tool === 'computer_use' || t.action === 'computer_use'
-                )
+                )) && <DesktopPreviewWidget />}
+            {toolsToRender.length > 0 &&
+              splitProcessTimeline(toolsToRender).map((segment, segmentIndex) => {
+                if (segment.type === 'narration') {
+                  return (
+                    <div
+                      key={segment.id || `progress-${segmentIndex}`}
+                      className="py-2 text-sm text-white/85 leading-relaxed select-text"
+                    >
+                      <Markdown
+                        remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                        rehypePlugins={mathRehypePlugins}
+                      >
+                        {preprocessLaTeX(segment.text)}
+                      </Markdown>
+                    </div>
+                  )
+                }
+                const toolGroup = segment.steps
                 return (
-                  <div className="flex flex-col gap-1">
-                    {(isThinking || hasComputerUse) && <DesktopPreviewWidget />}
+                  <div key={`tools-${segmentIndex}`} className="flex flex-col gap-1">
                     <details
                       className="group/process outline-none"
-                      open={isProcessOpen}
-                      onToggle={(e) => setIsProcessOpen(e.currentTarget.open)}
+                      open={openProcessGroups[segmentIndex] ?? Boolean(isThinking)}
+                      onToggle={(e) => {
+                        const open = e.currentTarget.open
+                        setOpenProcessGroups((prev) =>
+                          prev[segmentIndex] === open ? prev : { ...prev, [segmentIndex]: open }
+                        )
+                      }}
                     >
                       <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
                         <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
@@ -187,12 +204,12 @@ export const MessageBubble = React.memo(
                           Proses
                         </span>
                         <span className="text-[10px] text-white/40 font-normal">
-                          ({toolsToRender.length} langkah)
+                          ({toolGroup.length} langkah)
                         </span>
                         <ChevronRight className="w-3.5 h-3.5 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/process:rotate-90 group-open/process:opacity-100" />
                       </summary>
                       <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
-                        {toolsToRender.map((t, idx) => {
+                        {toolGroup.map((t, idx) => {
                           if (t.type === 'intervention') {
                             const interventionText = t.text || t.content || t.task || ''
                             return (
@@ -368,7 +385,7 @@ export const MessageBubble = React.memo(
                     </details>
                   </div>
                 )
-              })()}
+              })}
           </div>
         )}
 

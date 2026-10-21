@@ -54,13 +54,22 @@ export const MARK_TAG_SCHEMA = {
       if (val === true || val === 'true' || val === 1 || val === '1') return true
       return false
     }
+  },
+  message: {
+    type: 'string',
+    default: '',
+    validate: (val) => {
+      if (typeof val !== 'string') return ''
+      const entities = { quot: '"', apos: "'", lt: '<', gt: '>', amp: '&' }
+      return stripMarkTags(val.replace(/&(quot|apos|lt|gt|amp);/g, (_, key) => entities[key]))
+    }
   }
 }
 
-const MARK_TAG_REGEX = /<mark\b([^>]*)\/?>/i
+const MARK_TAG_REGEX = /<mark\b((?:[^"'<>]|"[^"]*"|'[^']*')*)\/?>/i
 const INCOMPLETE_MARK_TAG_REGEX =
   /^\s*<mark\b(?:\s+[a-zA-Z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(?:\/?>|\r?\n|(?=\s+[A-Za-z0-9])|$)/i
-const TRAILING_INCOMPLETE_MARK_TAG_REGEX = /<mark\b[^>]*$/i
+const TRAILING_INCOMPLETE_MARK_TAG_REGEX = /<mark\b[\s\S]*$/i
 const THINK_BLOCK_REGEX = /<think>([\s\S]*?)<\/think>/i
 const LEGACY_MOOD_REGEX = /(?:<|\[)mood:[a-zA-Z0-9_-]+(?:>|\])/gi
 const LEGACY_DONE_REGEX = /<\/?done\s*\/?>/gi
@@ -74,6 +83,7 @@ export function parseAttributes(attrString) {
   const result = {
     mood: MARK_TAG_SCHEMA.mood.default,
     done: MARK_TAG_SCHEMA.done.default,
+    message: MARK_TAG_SCHEMA.message.default,
     hasExplicitDone: false
   }
 
@@ -81,7 +91,7 @@ export function parseAttributes(attrString) {
     return result
   }
 
-  const attrPattern = /([a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g
+  const attrPattern = /([a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/g
   let match
 
   while ((match = attrPattern.exec(attrString)) !== null) {
@@ -109,9 +119,9 @@ export function stripMarkTags(text) {
 
   return text
     .replace(THINK_BLOCK_REGEX, '')
-    .replace(MARK_TAG_REGEX, '')
-    .replace(INCOMPLETE_MARK_TAG_REGEX, '')
+    .replace(new RegExp(MARK_TAG_REGEX.source, 'gi'), '')
     .replace(TRAILING_INCOMPLETE_MARK_TAG_REGEX, '')
+    .replace(INCOMPLETE_MARK_TAG_REGEX, '')
     .replace(/<\/mark>/gi, '')
     .replace(LEGACY_MOOD_REGEX, '')
     .replace(LEGACY_DONE_REGEX, '')
@@ -130,6 +140,7 @@ export function parseMarkTag(rawText) {
       meta: {
         mood: MARK_TAG_SCHEMA.mood.default,
         done: MARK_TAG_SCHEMA.done.default,
+        message: MARK_TAG_SCHEMA.message.default,
         hasTag: false,
         hasExplicitDone: false
       },
@@ -149,6 +160,7 @@ export function parseMarkTag(rawText) {
   let meta = {
     mood: MARK_TAG_SCHEMA.mood.default,
     done: MARK_TAG_SCHEMA.done.default,
+    message: MARK_TAG_SCHEMA.message.default,
     hasTag: false,
     hasExplicitDone: false
   }
@@ -235,7 +247,8 @@ export function createMarkStreamFilter({ onMeta, onChunk } = {}) {
       // Jika buffer melebihi batas atau ada baris baru tanpa awalan tag, flush default
       const trimmed = buffer.trimStart()
       const hasNewlineWithoutTag = trimmed.includes('\n') && !trimmed.startsWith('<')
-      if (buffer.length >= MAX_BUFFER_LENGTH || hasNewlineWithoutTag) {
+      const awaitingMarkTag = /^<mark(?:\s|$)/i.test(trimmed)
+      if ((!awaitingMarkTag && buffer.length >= MAX_BUFFER_LENGTH) || hasNewlineWithoutTag) {
         emitMeta({
           mood: MARK_TAG_SCHEMA.mood.default,
           done: MARK_TAG_SCHEMA.done.default
@@ -268,7 +281,7 @@ export function createMarkStreamFilter({ onMeta, onChunk } = {}) {
       }
 
       // Deteksi tag <mark ... yang tidak lengkap di akhir buffer
-      const incompleteMatch = buffer.match(/^\s*<mark\b([^>]*)$/i)
+      const incompleteMatch = buffer.match(/^\s*<mark\b([\s\S]*)$/i)
       if (incompleteMatch) {
         const meta = parseAttributes(incompleteMatch[1])
         emitMeta(meta)

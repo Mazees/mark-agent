@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer-core'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { wsHub } from '../server/ws-hub.js'
 
 export const _getBrowserSign = () =>
@@ -1013,16 +1013,20 @@ export async function closeBrowser(sessionId = 'default') {
 
 export function forceProcessWindowToForeground(pid) {
   if (os.platform() !== 'win32' || !pid) return Promise.resolve()
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const psScript = `
+$ErrorActionPreference = 'Stop'
 $code = @'
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public class Win32Focus {
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
@@ -1033,12 +1037,14 @@ public class Win32Focus {
     [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 
-    public static void FocusPid(int pid) {
+    public static bool FocusPid(int pid) {
         IntPtr targetHwnd = IntPtr.Zero;
         EnumWindows((hWnd, lParam) => {
             uint procId;
             GetWindowThreadProcessId(hWnd, out procId);
-            if (procId == (uint)pid && IsWindowVisible(hWnd)) {
+            var className = new StringBuilder(128);
+            GetClassName(hWnd, className, className.Capacity);
+            if (procId == (uint)pid && className.ToString() == "Chrome_WidgetWin_1") {
                 targetHwnd = hWnd;
                 return false;
             }
@@ -1047,9 +1053,10 @@ public class Win32Focus {
         if (targetHwnd != IntPtr.Zero) {
             ShowWindow(targetHwnd, 9); // SW_RESTORE
             IntPtr fg = GetForegroundWindow();
-            uint fgThread = GetWindowThreadProcessId(fg, out _);
+            uint ignoredProcessId;
+            uint fgThread = GetWindowThreadProcessId(fg, out ignoredProcessId);
             uint curThread = GetCurrentThreadId();
-            uint targetThread = GetWindowThreadProcessId(targetHwnd, out _);
+            uint targetThread = GetWindowThreadProcessId(targetHwnd, out ignoredProcessId);
             if (fgThread != targetThread) {
                 AttachThreadInput(fgThread, targetThread, true);
                 AttachThreadInput(curThread, targetThread, true);
@@ -1064,53 +1071,65 @@ public class Win32Focus {
                 AttachThreadInput(fgThread, targetThread, false);
                 AttachThreadInput(curThread, targetThread, false);
             }
+            return IsWindowVisible(targetHwnd) && !IsIconic(targetHwnd);
         }
+        return false;
     }
 }
 '@
 Add-Type -TypeDefinition $code -Language CSharp
-[Win32Focus]::FocusPid(${pid})
+if ([Win32Focus]::FocusPid(${Number(pid)})) { 'MARK_BROWSER_VISIBLE' } else { throw 'Jendela browser tidak ditemukan atau gagal dipulihkan.' }
 `
     const enc = Buffer.from(psScript, 'utf16le').toString('base64')
-    exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${enc}`, () => resolve())
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', enc],
+      { windowsHide: true, timeout: 15000 },
+      (error, stdout) => {
+        if (error || !stdout.includes('MARK_BROWSER_VISIBLE')) {
+          reject(new Error('Jendela browser Windows gagal dipulihkan.'))
+        } else resolve()
+      }
+    )
   })
 }
 
 export async function showBrowserWindow(sessionId = 'default') {
   const session = sessions.get(sessionId)
-  if (session && session.page) {
-    try {
-      const client = await session.page.target().createCDPSession()
-      const { windowId } = await client.send('Browser.getWindowForTarget')
-      await client.send('Browser.setWindowBounds', {
-        windowId,
-        bounds: { windowState: 'normal', left: 80, top: 60, width: 1280, height: 800 }
-      })
-      await session.page.bringToFront()
-      session.isForeground = true
-
-      // Bypass Windows Foreground Lock dan paksa window naik ke paling atas
-      const pid = session.browser?.process()?.pid
-      if (pid) {
-        await forceProcessWindowToForeground(pid)
-      }
-
-      return `Berhasil menampilkan jendela browser untuk sesi '${sessionId}'.`
-    } catch (_) {
-      try {
-        await session.page.bringToFront()
-        session.isForeground = true
-        const pid = session.browser?.process()?.pid
-        if (pid) {
-          await forceProcessWindowToForeground(pid)
-        }
-        return `Berhasil membawa browser sesi '${sessionId}' ke depan.`
-      } catch (err) {
-        return `Gagal menampilkan jendela browser: ${err.message}`
-      }
-    }
+  if (!session?.page || session.page.isClosed()) {
+    throw new Error(`Sesi browser '${sessionId}' tidak ditemukan atau sedang tidak aktif.`)
   }
-  return `Sesi browser '${sessionId}' tidak ditemukan atau sedang tidak aktif.`
+
+  let client
+  let restoreError
+  try {
+    client = await session.page.target().createCDPSession()
+    const { windowId } = await client.send('Browser.getWindowForTarget')
+    await client.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { windowState: 'normal' }
+    })
+    await client.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { left: 80, top: 60, width: 1280, height: 800 }
+    })
+  } catch (error) {
+    restoreError = error
+  } finally {
+    await client?.detach().catch(() => {})
+  }
+
+  await session.page.bringToFront()
+  const pid = session.browser?.process()?.pid
+  if (os.platform() === 'win32' && pid) {
+    await forceProcessWindowToForeground(pid)
+  } else if (restoreError) {
+    throw restoreError
+  }
+
+  session.isForeground = true
+  resetSessionIdleTimeout(session)
+  return `Berhasil menampilkan jendela browser untuk sesi '${sessionId}'.`
 }
 
 export async function hideBrowserWindow(sessionId = 'default') {

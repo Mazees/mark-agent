@@ -155,10 +155,12 @@ Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali '{' dan diakh
 {
   "thought": "Penalaran ringkas atau rencana tindakan",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "message": "Update progres opsional 1-4 kalimat, atau null",
   "answer": "Teks balasan langsung ke pengguna (isi jika selesai/tidak memanggil tool, atau null jika memanggil tool)",
   "tool_calls": [ { "name": "nama_tool", "arguments": { ... } } ]
 }
 - Jika memanggil aksi/tool: isi array "tool_calls", dan isi "answer": null.
+- "message" opsional: isi 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala pada pekerjaan panjang; tidak perlu setiap loop dan jangan mengulang update sebelumnya. Jika tidak ada kabar berarti, isi null.
 - Jika obrolan santai/selesai: isi "answer" dengan jawaban teks lengkap, dan isi "tool_calls": null.
 Status emosi giliran sebelumnya: ${lastMood || 'neutral'}. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
 }
@@ -258,6 +260,7 @@ ${toolSections.join('\n\n')}
 {
   "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "message": "Update progres opsional 1-4 kalimat, atau null",
   "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
   "tool_calls": [
     {
@@ -269,6 +272,7 @@ ${toolSections.join('\n\n')}
 4. Jika kamu ingin memanggil tool/melakukan tindakan nyata:
    - "tool_calls" WAJIB berisi array pemanggilan tool (mendukung BATCH / MULTI-TOOL sekaligus).
    - "answer" WAJIB bernilai null.
+   - "message" opsional: berikan 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala selama pekerjaan panjang, tanpa wajib mengisi setiap loop. Jangan mengarang progres atau mengulang pesan. Jika tidak ada informasi baru, isi null.
 5. HANYA JIKA seluruh tindakan telah tuntas atau kamu tidak perlu memanggil tool sama sekali:
    - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
    - "tool_calls" WAJIB bernilai null.
@@ -520,6 +524,7 @@ ${toolSections.join('\n\n')}
   let cleanReasoning = reasoning || ''
   let extractedToolCalls = null
   let extractedMood = 'neutral'
+  let extractedMessage = ''
 
   let parsedJson = null
   const trimmedContent = cleanContent.trim()
@@ -565,6 +570,7 @@ ${toolSections.join('\n\n')}
   }
 
   if (parsedJson && typeof parsedJson === 'object') {
+    extractedMessage = stripMarkTags(parsedJson.message)
     // 1. Ekstraksi Mood dari properti JSON
     if (parsedJson.mood && typeof parsedJson.mood === 'string') {
       extractedMood = parsedJson.mood.toLowerCase().trim()
@@ -748,6 +754,14 @@ ${toolSections.join('\n\n')}
   }
 
   // Jika memanggil tool
+  const progressMeta = {
+    mood: extractedMood,
+    message: extractedMessage,
+    done: !(extractedToolCalls && extractedToolCalls.length > 0),
+    hasExplicitDone: true,
+    hasTag: false
+  }
+  onMeta?.(progressMeta)
   if (extractedToolCalls && extractedToolCalls.length > 0) {
     onToolCall?.(extractedToolCalls)
     return {
@@ -756,12 +770,7 @@ ${toolSections.join('\n\n')}
       toolCalls: extractedToolCalls,
       finishReason: 'tool_calls',
       mood: extractedMood,
-      meta: {
-        mood: extractedMood,
-        done: false,
-        hasExplicitDone: true,
-        hasTag: false
-      }
+      meta: progressMeta
     }
   }
 
@@ -780,11 +789,6 @@ ${toolSections.join('\n\n')}
     toolCalls: null,
     finishReason: 'stop',
     mood: extractedMood,
-    meta: {
-      mood: extractedMood,
-      done: true,
-      hasExplicitDone: true,
-      hasTag: false
-    }
+    meta: progressMeta
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, memo } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, memo } from 'react'
 import { useChat } from '../contexts/ChatContext'
 import Avatar from '../components/core/Avatar'
 import InputBar from '../components/core/InputBar'
@@ -202,7 +202,7 @@ const MarkHome = ({ isHome = true }) => {
   }, [isMainLoading, chatData, isRecording, isProcessing, setOrbStatus])
 
   // Derived currentResponse from chatData
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (chatData && chatData.length > 0) {
       const lastItem = chatData[chatData.length - 1]
 
