@@ -343,7 +343,7 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
   // Handle page close / tab close gracefully (Keep alive in background)
   page.on('close', async () => {
     const s = sessions.get(sessionId)
-    if (s && s.browser && s.browser.isConnected()) {
+    if (s && s.browser && s.browser.connected) {
       try {
         const remainingPages = await s.browser.pages()
         if (remainingPages.length > 0) {
@@ -650,6 +650,7 @@ async function seedAntiBotCookies(page) {
 
 export async function navigateTo(url, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
+  await showBrowserWindow(sessionId)
   let targetUrl = url.trim()
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
     targetUrl = 'https://' + targetUrl
@@ -993,10 +994,10 @@ export async function closeBrowser(sessionId = 'default') {
   const session = sessions.get(sessionId)
   if (session && session.browser) {
     if (session.idleTimeout) clearTimeout(session.idleTimeout)
+    sessions.delete(sessionId)
     try {
       await session.browser.close()
     } catch (_) {}
-    sessions.delete(sessionId)
 
     if (wsHub) {
       wsHub.broadcast('browser:preview', {

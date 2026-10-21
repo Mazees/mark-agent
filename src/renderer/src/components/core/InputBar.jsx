@@ -1337,14 +1337,6 @@ const InputBar = ({
                       />
                     </div>
 
-                    <div className="text-[10px] text-white/40 mb-2 font-mono">
-                      {pct >= 85
-                        ? 'Gateway Hygiene Active (>=85%)'
-                        : pct >= 50
-                          ? 'In-Loop Compressor Guard (>=50%)'
-                          : 'Optimal Context Load'}
-                    </div>
-
                     {/* Compact Conversation Button */}
                     <button
                       type="button"

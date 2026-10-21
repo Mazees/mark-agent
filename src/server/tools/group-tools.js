@@ -44,14 +44,26 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-navigate',
-          description:
-            'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
+            description:
+              'Buka dan tampilkan URL di jendela browser fisik Puppeteer. Gunakan jika pengguna ingin melihat halaman atau perlu interaksi web.',
           parameters: {
             type: 'object',
             properties: {
               url: { type: 'string', description: 'URL lengkap website tujuan' }
             },
             required: ['url'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-show',
+          description: 'Tampilkan kembali jendela browser fisik Puppeteer yang sudah terbuka.',
+          parameters: {
+            type: 'object',
+            properties: {},
             additionalProperties: false
           }
         }

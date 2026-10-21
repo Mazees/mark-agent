@@ -114,6 +114,23 @@ const VERIFICATION_TOOLS = new Set([
   'takeScreenshot'
 ])
 
+const awaitWithTimeout = async (promise, timeoutMs, stage) => {
+  let timeoutId
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`${stage} tidak selesai dalam ${timeoutMs / 1000} detik.`)),
+          timeoutMs
+        )
+      })
+    ])
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 // ============================================================================
 // MAIN HOOK: useMarkPlan
 // ============================================================================
@@ -158,34 +175,30 @@ export const useMarkPlan = ({
 
   // Listener event status AI dari Main Process (IPC)
   useEffect(() => {
+    let unsubStatus = null
     if (window.api && window.api.onAiStatus) {
-      window.api.onAiStatus((msg) => {
-        if (activeSessionUpdatersRef.current.size > 0) {
-          for (const updater of activeSessionUpdatersRef.current.values()) {
-            try {
-              updater((prev) => {
-                const filtered = prev.filter((item) => !item.isThinking)
-                return [...filtered, { role: 'ai', content: msg, isThinking: true }]
-              })
-            } catch (e) {}
-          }
-        } else {
-          setChatData((prev) => {
-            const filtered = prev.filter((item) => !item.isThinking)
-            return [...filtered, { role: 'ai', content: msg, isThinking: true }]
-          })
+      unsubStatus = window.api.onAiStatus((msg) => {
+        for (const updater of activeSessionUpdatersRef.current.values()) {
+          try {
+            updater((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [...filtered, { role: 'ai', content: msg, isThinking: true }]
+            })
+          } catch (e) {}
         }
       })
     }
 
+    let unsubAbort = null
     if (window.api && window.api.onAiAbort) {
-      const unsub = window.api.onAiAbort((payload) => {
+      unsubAbort = window.api.onAiAbort((payload) => {
         console.warn('[useMarkPlan] Sinyal ai:abort diterima:', payload)
         handleStop()
       })
-      return () => {
-        if (typeof unsub === 'function') unsub()
-      }
+    }
+    return () => {
+      if (typeof unsubStatus === 'function') unsubStatus()
+      if (typeof unsubAbort === 'function') unsubAbort()
     }
   }, [setChatData])
 
@@ -1241,7 +1254,7 @@ export const useMarkPlan = ({
       let durableTask = null
       let durableActiveStep = null
 
-      const allMemory = await getAllMemory()
+      const allMemory = await awaitWithTimeout(getAllMemory(), 15000, 'Memuat memori')
       let searchQuery = userInput
       if (validHistory.length > 0) {
         const lastMsg = validHistory[validHistory.length - 1]
@@ -1261,7 +1274,11 @@ export const useMarkPlan = ({
         if (sessionAbortController.signal.aborted) return onAbort()
         sessionAbortController.signal.addEventListener('abort', onAbort)
       })
-      const unifiedContext = await Promise.race([contextPromise, abortPromise])
+      const unifiedContext = await awaitWithTimeout(
+        Promise.race([contextPromise, abortPromise]),
+        30000,
+        'Menyiapkan konteks'
+      )
 
       let contextMsgStr = ''
       if (tgContext)
@@ -1311,18 +1328,22 @@ export const useMarkPlan = ({
         }
       } catch (_) {}
 
-      const systemPrompt = await buildPlanningSystemPrompt(
-        userInput,
-        {
-          ...opts,
-          tgContext,
-          currentMusicTrack,
-          systemTelemetry,
-          activeTaskObjective: activeTaskObjectiveRef.current,
-          existingSubagents
-        },
-        unifiedContext,
-        contextMsgStr
+      const systemPrompt = await awaitWithTimeout(
+        buildPlanningSystemPrompt(
+          userInput,
+          {
+            ...opts,
+            tgContext,
+            currentMusicTrack,
+            systemTelemetry,
+            activeTaskObjective: activeTaskObjectiveRef.current,
+            existingSubagents
+          },
+          unifiedContext,
+          contextMsgStr
+        ),
+        30000,
+        'Menyiapkan instruksi sistem'
       )
 
       // ------------------------------------------------------------------------
@@ -1545,6 +1566,7 @@ export const useMarkPlan = ({
 
       let consecutiveErrors = 0
       let consecutiveEmptyTurns = 0
+      let consecutiveNoToolTurns = 0
       const maxConsecutiveErrorRetries = 50
       let verificationGateCount = 0
 
@@ -1631,9 +1653,13 @@ export const useMarkPlan = ({
         const activeTools =
           opts.disableTools || isDurableTaskCompleted
             ? null
-            : await getActiveToolsSchema(
-                userInput + ' ' + (activeTaskObjectiveRef.current || ''),
-                dynamicallyLoadedToolGroups
+            : await awaitWithTimeout(
+                getActiveToolsSchema(
+                  userInput + ' ' + (activeTaskObjectiveRef.current || ''),
+                  dynamicallyLoadedToolGroups
+                ),
+                15000,
+                'Memuat daftar tool'
               )
 
         // Loading thinking indicator di awal turn (akumulasi semua pemikiran dari langkah sebelumnya)
@@ -2001,6 +2027,7 @@ export const useMarkPlan = ({
         // ======================================================================
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
           consecutiveEmptyTurns = 0
+          consecutiveNoToolTurns = 0
           sentenceBuffer = ''
           speechQueue.reset()
           const assistantMsg = {
@@ -2522,7 +2549,8 @@ export const useMarkPlan = ({
         }
 
         // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
-        if (durableTask && !isDurableTaskCompleted) {
+        let pausedWorkflowMessage = ''
+        if (durableTask && !isDurableTaskCompleted && ++consecutiveNoToolTurns < 3) {
           const activeStep =
             durableActiveStep ||
             durableTask.steps?.find((s) => s.status === 'running') ||
@@ -2542,6 +2570,32 @@ export const useMarkPlan = ({
             content: `[PENGINGAT TAHAP AKTIF]: Kamu saat ini sedang berada di Tahap ${curIdx}: "${curTitle}".\n- Sasaran: ${curObj}\n- Target Deliverable: ${curDeliv}\n\nTahap ini BELUM selesai karena kamu belum memverifikasi hasil dan belum memanggil tool 'mark_done_task'. Kerjakan sasaran ini dengan tools yang relevan di workspace pengguna, lakukan pengujian/verifikasi hasil, lalu PANGGIL TOOL 'mark_done_task' dengan parameter stepIndex: ${curIdx}, artifactContent, dan verificationProof agar alur kerja dapat beralih ke tahap berikutnya!`
           })
           continue
+        }
+
+        if (durableTask && !isDurableTaskCompleted) {
+          pausedWorkflowMessage = `Alur kerja "${durableTask.title}" dijeda karena model tiga kali merespons tanpa menyelesaikan tahap aktif. Progres yang tersimpan dapat dilanjutkan.${turnAnswer.trim() ? `\n\nRespons terakhir: ${turnAnswer.trim()}` : ''}`
+          try {
+            await awaitWithTimeout(
+              transitionAgentTask(
+                durableTask.id,
+                'paused',
+                'Model berulang kali merespons tanpa menyelesaikan tahap aktif.'
+              ),
+              10000,
+              'Menjeda alur kerja'
+            )
+            targetSetChatData((prev) =>
+              prev.map((msg) =>
+                msg.isPlanSteps && msg.taskId === durableTask.id
+                  ? { ...msg, taskStatus: 'paused' }
+                  : msg
+              )
+            )
+          } catch (err) {
+            console.warn('[useMarkPlan] Gagal menjeda alur kerja tanpa kemajuan:', err)
+            pausedWorkflowMessage = `Alur kerja "${durableTask.title}" berhenti setelah tiga respons tanpa penyelesaian tahap. Status jeda belum dapat disimpan: ${err.message}`
+          }
+          activeTaskObjectiveRef.current = null
         }
 
         // Jika seluruh tahapan Durable Task telah tuntas diselesaikan via mark_done_task
@@ -2612,39 +2666,47 @@ export const useMarkPlan = ({
         // 2. Bukan instruksi sistem internal (isSystem === false)
         // 3. AI secara EKSPLISIT menyatakan done="false" (membutuhkan turn lanjutan untuk eksekusi)
         const shouldContinueStep =
+          !pausedWorkflowMessage &&
           !opts.disableTools &&
           !isSystem &&
           turnMeta.hasExplicitDone === true &&
           turnMeta.done === false
 
         if (shouldContinueStep) {
-          if (rawTurnAnswer && rawTurnAnswer.trim()) {
-            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
-          }
-          loopMessages.push({
-            role: 'user',
-            content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
-          })
-
-          execSteps.push({ task: 'Melanjutkan langkah...' })
-          targetPushProcess({
-            id: agenticProcessId,
-            type: 'planning',
-            status: 'active',
-            data: {
-              steps: [...execSteps],
-              currentStep: execSteps.length - 1,
-              reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
+          consecutiveNoToolTurns++
+          if (consecutiveNoToolTurns >= 3) {
+            console.warn(
+              '[useMarkPlan] Tiga respons done=false tanpa tool. Menampilkan respons terakhir.'
+            )
+          } else {
+            if (rawTurnAnswer && rawTurnAnswer.trim()) {
+              loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
             }
-          })
+            loopMessages.push({
+              role: 'user',
+              content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+            })
 
-          continue
+            execSteps.push({ task: 'Melanjutkan langkah...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
+              }
+            })
+
+            continue
+          }
         }
 
         // ======================================================================
         // SUPER EFFORT VERIFICATION GATEKEEPER (Autonomous Deep-Persistence)
         // ======================================================================
-        if (isSuperEffort && !opts.disableTools && !isSystem) {
+        if (!pausedWorkflowMessage && isSuperEffort && !opts.disableTools && !isSystem) {
           // 1. Cari index tool mutasi terakhir yang dieksekusi
           let lastMutationIndex = -1
           for (let i = executedToolsList.length - 1; i >= 0; i--) {
@@ -2743,6 +2805,7 @@ Lakukan pemeriksaan mandiri sekarang:
 
         isDone = true
         finalContentAccumulator =
+          pausedWorkflowMessage ||
           turnAnswer.trim() ||
           currentTurnReasoning?.trim() ||
           (executedToolsList.length > 0

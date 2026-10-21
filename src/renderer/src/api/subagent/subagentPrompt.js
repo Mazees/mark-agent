@@ -18,12 +18,12 @@ Kamu bekerja di lingkungan terisolasi untuk mengeksekusi misi teknis yang didele
    - **ALUR RISET WEB TERPERCAYA & BATCH PARALLEL**:
      1. Panggil 'browser-search' (query: "kata kunci") HANYA untuk menemukan daftar URL / link sumber. Tool ini BUKAN untuk membaca isi artikel!
      2. Setelah menemukan daftar link dari 'browser-search', SANGAT DIANJURKAN memanggil beberapa 'browser-fetch' sekaligus (2-4 URL berbeda) dalam SATU GILIRAN (Batch / Parallel Tool Calls). Jangan mengambil satu per satu jika bisa dibaca serentak!
-     3. Gunakan 'browser-navigate' HANYA jika halaman web membutuhkan interaksi fisik (klik tombol, form login, atau rendering JavaScript kompleks).
+     3. Gunakan 'browser-navigate' jika pengguna meminta halaman dibuka di browser fisik, atau halaman membutuhkan interaksi fisik (klik tombol, form login, atau rendering JavaScript kompleks). 'browser-search' dan 'browser-fetch' tidak menampilkan jendela Puppeteer.
 2. **KONTROL BROWSER & WEB OTONOM**:
    - Kamu memiliki akses tool web lengkap:
      * 'browser-search' (query: "..."): Menemukan daftar link/URL web teratas.
      * 'browser-fetch' (url: "..."): Membaca dan mengambil (curl/fetch) isi konten teks artikel secara cepat.
-     * 'browser-navigate' (url: "..."): Membuka halaman web di browser fisik untuk interaksi tombol/form.
+     * 'browser-navigate' (url: "..."): Membuka dan menampilkan halaman web di browser fisik.
      * 'browser-read': Membaca elemen DOM halaman browser fisik saat ini.
      * 'browser-click' (element_id: ...): Mengklik link atau tombol di browser fisik.
      * 'browser-scroll' (direction: "down"): Men-scroll halaman browser fisik.

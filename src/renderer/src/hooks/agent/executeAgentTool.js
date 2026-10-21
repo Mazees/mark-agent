@@ -878,6 +878,10 @@ export async function executeAgentTool({
       ...(Array.isArray(config) ? config[0] : config),
       workspaceRoot: context?.workspaceRoot
     }
+    if (tool.startsWith('browser-')) {
+      const sessionId = String(context?.sessionId || activeSessionNum || 1)
+      activeConfig.sessionId = sessionId === '1' ? 'main' : `workspace-${sessionId}`
+    }
     const nativePromise = window.api.executeNativeTool(tool, rawArgs, activeConfig)
     const abortPromise = new Promise((_, reject) => {
       const onAbort = () => reject(new Error('AbortError'))
