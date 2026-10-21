@@ -54,7 +54,7 @@ const LiveWaveformBars = memo(() => {
 })
 LiveWaveformBars.displayName = 'LiveWaveformBars'
 
-const MarkHome = () => {
+const MarkHome = ({ isHome = true }) => {
   const navigate = useNavigate()
   const chatContext = useChat()
   const {
@@ -337,12 +337,15 @@ const MarkHome = () => {
       )}
 
       {/* ── 4. CENTER AVATAR (2.5D Cyber-Droid Companion) ── */}
-      <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
+      <div
+        className={`absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center select-none ${!isHome ? 'invisible pointer-events-none' : 'pointer-events-none'}`}
+      >
         <div className="scale-115 md:scale-140 lg:scale-165 xl:scale-180 pointer-events-auto cursor-pointer transition-transform duration-300">
           <Avatar
             status={computedAvatarStatus}
             intensity={audioIntensity}
             mood={mood}
+            isActive={isHome}
             onInteract={handleAvatarInteract}
           />
         </div>
@@ -353,7 +356,7 @@ const MarkHome = () => {
 
       {/* ── 6. RIGHT PANEL: ACTIVE STREAM FEED (Docked Right, Clean Minimalist Glass) ── */}
       <aside className="absolute right-6 top-18 bottom-24 w-80 lg:w-92 z-20 flex flex-col gap-2.5 pointer-events-auto">
-        <div className="flex-1 bg-black/40 backdrop-blur-xl border border-white/5 rounded-2xl p-3.5 shadow-2xl flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 bg-[#0e1614]/85 backdrop-blur-md border border-white/5 rounded-2xl p-3.5 shadow-2xl flex flex-col min-h-0 overflow-hidden">
           {/* Header */}
           <div className="flex flex-col gap-2 pb-2 mb-2 border-b border-white/5">
             <div className="flex items-center justify-between">

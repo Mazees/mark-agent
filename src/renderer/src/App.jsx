@@ -130,7 +130,7 @@ const MainLayout = () => {
     <div className="relative h-screen w-screen overflow-hidden bg-[#0f1715] text-[#cac9c9]">
       {/* Base Home Page - Always Mounted so AI Agent & Telegram Listeners Never Die */}
       <div className="h-full w-full">
-        <MarkHome />
+        <MarkHome isHome={isHome} />
       </div>
 
       {/* Floating Glass Sub-page Overlay */}

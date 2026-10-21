@@ -46,7 +46,7 @@ export async function launchUI(options = {}) {
       'mark-agent',
       isDev ? 'ui-profile-dev' : 'ui-profile'
     )
-    const cmd = `start "" ${edgeExe} --app="${url}" --user-data-dir="${profileDir}" --no-first-run --no-default-browser-check`
+    const cmd = `start "" ${edgeExe} --app="${url}" --user-data-dir="${profileDir}" --no-first-run --no-default-browser-check --enable-gpu-rasterization --enable-zero-copy`
     exec(cmd, (err) => {
       if (err) {
         open(url).catch(() => {})
