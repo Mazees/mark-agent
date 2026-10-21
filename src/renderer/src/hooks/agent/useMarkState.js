@@ -47,8 +47,9 @@ export const useMarkState = () => {
   }
 
   useEffect(() => {
+    let cancelled = false
     loadConfig()
-    loadMainThread()
+    loadMainThread(() => cancelled)
 
     const handleConfigUpdate = (e) => {
       if (e.detail) {
@@ -68,17 +69,22 @@ export const useMarkState = () => {
     window.addEventListener('config-updated', handleConfigUpdate)
     window.addEventListener('ai-reset-complete', handleAiReset)
     return () => {
+      cancelled = true
       window.removeEventListener('config-updated', handleConfigUpdate)
       window.removeEventListener('ai-reset-complete', handleAiReset)
     }
   }, [])
 
-  const loadMainThread = async () => {
-    const data = await getMainThread()
-    if (data && data.length > 0) {
-      setChatData(data)
+  const loadMainThread = async (isCancelled) => {
+    try {
+      const data = await getMainThread()
+      if (isCancelled()) return
+      if (data && data.length > 0) {
+        setChatData(data)
+      }
+    } finally {
+      if (!isCancelled()) setIsChatLoaded(true)
     }
-    setIsChatLoaded(true)
   }
 
   useEffect(() => {

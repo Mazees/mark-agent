@@ -18,3 +18,4 @@ MARK.exe
 src/renderer/public/robot-simulator.html
 tests/
 graphify-out/
+.agents/

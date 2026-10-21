@@ -199,7 +199,7 @@ export const browserTools = {
     handler: async (args) => {
       let targetUrl
       const maxChars =
-        typeof args === 'object' && args !== null ? parseInt(args.max_chars, 10) || 4000 : 4000
+        typeof args === 'object' && args !== null ? parseInt(args.max_chars, 10) || 8000 : 8000
       try {
         targetUrl = normalizeBrowserUrl(typeof args === 'object' && args !== null ? args.url : args)
       } catch (err) {
