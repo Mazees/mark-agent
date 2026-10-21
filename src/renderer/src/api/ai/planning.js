@@ -162,6 +162,8 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
     - **COMPUTER USE & OTOMASI DESKTOP ('computer_use')**:
       * Tool 'computer_use' adalah tool terpadu satu-satunya untuk kendali OS desktop Windows.
       * Parameter utama WAJIB menggunakan array 'actions': '[{ action: "...", ... }]'. Seluruh aksi tunggal maupun rangkaian aksi berurutan dimasukkan ke dalam 'actions'!
+      * DOKTRIN BATCH EXECUTION (SANGAT KRITIS): DILARANG KERAS memecah aksi sekuensial deterministik menjadi banyak giliran terpisah! Jika alur aksi sudah pasti (misal: fokus window -> klik form input -> ketik kata kunci -> tekan Return), kamu WAJIB menyatukannya dalam satu panggilan array 'actions' (misal: '[{ action: "click", coordinate: [500, 300] }, { action: "type", text: "query" }, { action: "key", key: "Return", wait_ms: 500 }]') demi efisiensi round-trip dan token.
+      * AUTO-SCREENSHOT & PARAMETER 'wait_ms': Setiap pemanggilan 'computer_use' OTOMATIS mengembalikan screenshot observasi visual kanonikal 1280x720 tepat setelah jeda 'wait_ms' selesai (default 300ms, isi 0 jika tanpa jeda). Kamu TIDAK perlu memanggil action: "screenshot" secara terpisah setelah aksi klik/ketik!
       * Daftar aksi yang didukung:
         - "screenshot": mengambil tangkapan layar (resolusi canonical 1280x720).
         - "click", "double_click", "right_click", "middle_click": klik mouse pada coordinate: [x, y].
@@ -176,7 +178,6 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
         - "focus_window": mengaktifkan jendela ke latar depan dan otomatis memaksimalkannya (fullscreen) via title: "kata kunci judul".
         - "maximize_window": memaksimalkan jendela ke fullscreen via title: "kata kunci judul" (atau jendela aktif saat ini).
         - "open_app": meluncurkan aplikasi Windows via name: "notepad".
-        - "wait": jeda waktu antar aksi via ms: N.
       * Format koordinat kanvas visual adalah [x, y] dalam resolusi canonical 1280x720.
       * PENGUKURAN KOORDINAT VISUAL & KALIBRASI (SANGAT KRITIS):
         - ANTI-HALUSINASI VISUAL (WAJIB DIBACA): DILARANG KERAS mengasumsikan, menebak, atau mengarang koordinat dan status aplikasi berdasarkan memori! SELALU amati screenshot observasi visual aktual dari tool sebelumnya.

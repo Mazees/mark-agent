@@ -458,14 +458,14 @@ export const core_tools_schema = [
     function: {
       name: 'computer_use',
       description:
-        'Kendali visual tingkat OS untuk otomasi desktop Windows melalui screenshot layar kanonikal 1280x720 dan injeksi keyboard/mouse presisi tinggi. Mendukung satu aksi tunggal maupun rangkaian aksi berurutan (batch).',
+        'Kendali visual tingkat OS untuk otomasi desktop Windows melalui screenshot kanonikal 1280x720 dan injeksi mouse/keyboard presisi tinggi. SANGAT DIANJURKAN menggunakan array "actions" (Batch Execution) untuk merangkai beberapa aksi sekuensial sekaligus dalam satu panggilan (misal: klik input -> ketik teks -> tekan Return) demi efisiensi round-trip dan token. Setiap pemanggilan otomatis mengembalikan screenshot pasca-aksi setelah jeda wait_ms.',
       parameters: {
         type: 'object',
         properties: {
           actions: {
             type: 'array',
             description:
-              'Daftar satu atau lebih aksi computer use yang akan dieksekusi berurutan (contoh untuk 1 aksi: [{ action: "click", coordinate: [500, 300] }]).',
+              'Daftar satu atau lebih aksi yang akan dieksekusi berurutan (Batch Execution). Sangat disarankan menggabungkan aksi sekuensial ke sini (misal: [{ action: "click", coordinate: [500, 300] }, { action: "type", text: "query" }, { action: "key", key: "Return", wait_ms: 500 }]).',
             items: {
               type: 'object',
               properties: {
@@ -488,7 +488,6 @@ export const core_tools_schema = [
                     'key_up',
                     'hotkey',
                     'scroll',
-                    'wait',
                     'list_windows',
                     'focus_window',
                     'maximize_window',
@@ -550,10 +549,15 @@ export const core_tools_schema = [
                   type: 'integer',
                   description: 'Durasi tahanan tombol atau delay (ms)'
                 },
+                wait_ms: {
+                  type: 'integer',
+                  description:
+                    'Jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya atau sebelum auto-screenshot diambil (ms, default: 300, isi 0 jika tanpa jeda)'
+                },
                 delay_after_ms: {
                   type: 'integer',
                   description:
-                    'Jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya (ms)'
+                    'Alias jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya (ms)'
                 }
               },
               required: ['action']
@@ -578,7 +582,6 @@ export const core_tools_schema = [
               'key_up',
               'hotkey',
               'scroll',
-              'wait',
               'list_windows',
               'focus_window',
               'maximize_window',
@@ -610,8 +613,12 @@ export const core_tools_schema = [
           },
           maximize: {
             type: 'boolean',
+            description: '(Alternatif single action) Apakah otomatis dimaksimalkan (default: true)'
+          },
+          wait_ms: {
+            type: 'integer',
             description:
-              '(Alternatif single action) Apakah otomatis dimaksimalkan (default: true)'
+              '(Alternatif single action) Jeda waktu sebelum auto-screenshot diambil (ms, default: 300, isi 0 jika tanpa jeda)'
           }
         }
       }

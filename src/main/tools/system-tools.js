@@ -144,9 +144,14 @@ export const systemTools = {
       }
       return `Mark ingin menekan shortcut keyboard berpotensi bahaya via Computer Use:\n\n${combo}`
     },
-    handler: async (args) => {
+    handler: async (args, config) => {
       try {
-        const result = await executeComputerUse(args)
+        const payload = {
+          sessionId: config?.sessionId || args?.sessionId || 'default',
+          agentName: config?.agentName || args?.agentName || 'Mark Utama',
+          ...(typeof args === 'object' && args !== null ? args : {})
+        }
+        const result = await executeComputerUse(payload)
         if (result?.image || result?.dataUrl) {
           const img = result.dataUrl || result.image
           return {
@@ -155,10 +160,12 @@ export const systemTools = {
               result.message ||
               (result.action === 'batch'
                 ? `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`
-                : `Screenshot desktop berhasil diambil (${result.viewport || '1280x720'}).`),
+                : `Aksi ${result.action || 'computer_use'} berhasil dieksekusi (${result.viewport || '1280x720'}).`),
             message: result.message,
             dataUrl: img,
             image: img,
+            cursor: result.cursor,
+            cursor_host: result.cursor_host,
             viewport: result.viewport,
             host_resolution: result.host_resolution,
             action: result.action || 'screenshot',

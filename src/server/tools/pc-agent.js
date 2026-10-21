@@ -3,6 +3,14 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { wsHub } from '../ws-hub.js'
+import {
+  startHud,
+  stopHud,
+  updateHudAction,
+  setHudStatus,
+  isHudActive,
+  setServerPort
+} from './overlay-manager.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -63,9 +71,7 @@ function processNextCommand() {
   }
 }
 
-let overlayProcess = null
-let overlayReady = false
-
+// --- Overlay Process Management (Delegated to HTML Overlay Manager) ---
 function getScriptPath(scriptName) {
   const candidates = [
     path.resolve(__dirname, `../../../src/main/pc-agent-scripts/${scriptName}`),
@@ -83,78 +89,82 @@ function getDaemonScriptPath() {
   return getScriptPath('pc-daemon.ps1')
 }
 
-function getOverlayScriptPath() {
-  return getScriptPath('pc-overlay.ps1')
-}
-
 export function isOverlayAlive() {
-  return overlayProcess && !overlayProcess.killed
+  return isHudActive()
 }
 
-export function startOverlay() {
-  if (isOverlayAlive()) return
+export function startOverlay(sessionName = 'Mark Utama') {
+  startHud({ sessionName, detail: 'Computer Use Siap' })
+}
 
-  const scriptPath = getOverlayScriptPath()
-  if (!fs.existsSync(scriptPath)) {
-    console.warn('[PC-Agent] Skrip overlay tidak ditemukan:', scriptPath)
-    return
+export function updateOverlayText(sessionName = '', action = '') {
+  updateHudAction({ sessionName, detail: action })
+}
+
+export function stopOverlay(force = false) {
+  stopHud(force)
+}
+
+export { updateHudAction, setHudStatus, isHudActive, setServerPort }
+
+export function sendVirtualCursor(_cmdObj) {
+  // Compatibility no-op
+}
+
+export function startVirtualCursor() {
+  // Compatibility no-op
+}
+
+export function stopVirtualCursor() {
+  // Compatibility no-op
+}
+
+// --- Concurrency Mutex Queue ---
+let currentLockHolder = null
+const lockQueue = []
+
+export async function acquirePcLock(sessionId = 'default', agentName = 'Mark Utama') {
+  startOverlay(agentName)
+
+  if (!currentLockHolder) {
+    currentLockHolder = { sessionId, agentName }
+    updateHudAction({
+      sessionName: agentName,
+      detail: 'Memulai aksi...',
+      queueCount: lockQueue.length
+    })
+    return releasePcLock
   }
 
-  try {
-    overlayProcess = spawn('powershell.exe', [
-      '-NoProfile',
-      '-STA',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      scriptPath
-    ])
-
-    overlayReady = false
-
-    overlayProcess.stdout.on('data', (chunk) => {
-      const text = chunk.toString().trim()
-      if (text.includes('READY')) {
-        overlayReady = true
-      }
-      if (text.includes('"event":"abort"') || text.includes('{"event":"abort"}')) {
-        console.warn('[PC-Agent] Sinyal ABORT diterima dari Overlay (Ctrl+Shift+S / Tombol Batal)!')
-        // Hentikan sesi dan picu abort di WebSocket hub
-        stopDaemon()
-        stopOverlay()
-        wsHub.broadcast('ai:abort', {
-          source: 'pc-overlay',
-          reason: 'User pressed Ctrl+Shift+S or clicked Cancel'
+  return new Promise((resolve) => {
+    lockQueue.push({
+      sessionId,
+      agentName,
+      grant: () => {
+        currentLockHolder = { sessionId, agentName }
+        updateHudAction({
+          sessionName: agentName,
+          detail: 'Giliran sesi aktif',
+          queueCount: lockQueue.length
         })
+        resolve(releasePcLock)
       }
     })
-
-    overlayProcess.stderr.on('data', (chunk) => {
-      console.warn('[PC-Agent Overlay Error]:', chunk.toString())
+    updateHudAction({
+      sessionName: currentLockHolder.agentName,
+      detail: `Sesi ${agentName} antre`,
+      queueCount: lockQueue.length
     })
-
-    overlayProcess.on('close', () => {
-      overlayProcess = null
-      overlayReady = false
-    })
-
-    overlayProcess.on('error', (err) => {
-      console.error('[PC-Agent] Gagal spawn overlay:', err)
-      overlayProcess = null
-      overlayReady = false
-    })
-  } catch (err) {
-    console.error('[PC-Agent] Error menjalankan overlay:', err)
-  }
+  })
 }
 
-export function stopOverlay() {
-  if (overlayProcess && !overlayProcess.killed) {
-    try {
-      overlayProcess.kill()
-    } catch (_) {}
-    overlayProcess = null
-    overlayReady = false
+export function releasePcLock() {
+  if (lockQueue.length > 0) {
+    const next = lockQueue.shift()
+    next.grant()
+  } else {
+    currentLockHolder = null
+    stopOverlay(false) // 15s graceful inactivity close
   }
 }
 
@@ -399,6 +409,7 @@ export async function executeClick(x, y) {
     return invokeRaw
   }
 
+  sendVirtualCursor({ cmd: 'click', x: targetX, y: targetY })
   const raw = await sendCommand({ cmd: 'click', x: targetX, y: targetY })
   const canonical = normalizeCoordinates(targetX, targetY)
   wsHub.broadcast('computer:click', {
@@ -413,15 +424,29 @@ export async function executeClick(x, y) {
 }
 
 export async function executeDoubleClick(x, y) {
-  await executeClick(x, y)
-  await new Promise((r) => setTimeout(r, 60))
-  return await executeClick(x, y)
+  startOverlay()
+  if (!isDaemonAlive()) await startDaemon()
+  stateChanged = true
+  sendVirtualCursor({ cmd: 'click', x, y })
+  const raw = await sendCommand({ cmd: 'double-click', x, y })
+  const canonical = normalizeCoordinates(x, y)
+  wsHub.broadcast('computer:click', {
+    x: canonical.x,
+    y: canonical.y,
+    host_x: x,
+    host_y: y,
+    button: 'left',
+    double: true,
+    timestamp: Date.now()
+  })
+  return raw
 }
 
 export async function executeRightClick(x, y) {
   startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
+  sendVirtualCursor({ cmd: 'click', x, y })
   const raw = await sendCommand({ cmd: 'right-click', x, y })
   const canonical = normalizeCoordinates(x, y)
   wsHub.broadcast('computer:click', {
@@ -439,6 +464,7 @@ export async function executeMiddleClick(x, y) {
   startOverlay()
   if (!isDaemonAlive()) await startDaemon()
   stateChanged = true
+  sendVirtualCursor({ cmd: 'click', x, y })
   const raw = await sendCommand({ cmd: 'middle-click', x, y })
   const canonical = normalizeCoordinates(x, y)
   wsHub.broadcast('computer:click', {
@@ -454,6 +480,7 @@ export async function executeMiddleClick(x, y) {
 
 export async function executeMouseMove(x, y) {
   if (!isDaemonAlive()) await startDaemon()
+  sendVirtualCursor({ cmd: 'move', x, y })
   const raw = await sendCommand({ cmd: 'move', x, y })
   return raw
 }
@@ -608,7 +635,7 @@ export async function openPCSession() {
 }
 
 export async function closePCSession() {
-  stopOverlay()
+  stopOverlay(true)
   stopDaemon()
   return { success: true }
 }
@@ -617,53 +644,123 @@ export function isPCSessionOpen() {
   return isDaemonAlive()
 }
 
+async function capturePostActionScreenshot(waitMs = 300, quality = 75) {
+  if (waitMs > 0) {
+    updateHudAction({ status: 'thinking', detail: `Menunggu render (${waitMs}ms)...` })
+    await new Promise((r) => setTimeout(r, waitMs))
+  }
+  updateHudAction({ status: 'thinking', detail: 'Mengambil screenshot observasi...' })
+  const res = await captureScreen({
+    width: CANONICAL_WIDTH,
+    height: CANONICAL_HEIGHT,
+    quality
+  })
+  return res
+}
+
 /**
  * Unified Autonomous Computer Use Executor (VLA Contract).
  * Mengimplementasikan spesifikasi kontrak tool 'computer_use' sesuai SRS Visual Computer Use.
  */
 export async function executeComputerUse(params = {}) {
   const p = typeof params === 'object' && params !== null ? params : {}
+  const sessionId = p.sessionId || 'default'
+  const agentName =
+    p.agentName ||
+    (sessionId.startsWith('subagent_') ? `Sub-Agent ${sessionId.substring(9, 13)}` : 'Mark Utama')
 
-  // 1. Dukungan Unifikasi Array 'actions' (baik 1 aksi maupun banyak aksi berurutan)
-  if (Array.isArray(p.actions) && p.actions.length > 0) {
-    if (p.actions.length === 1 && typeof p.actions[0] === 'object') {
-      return executeComputerUse(p.actions[0])
+  // Pastikan daemon dan sesi overlay aktif
+  startOverlay(agentName)
+  if (!isDaemonAlive()) {
+    await startDaemon()
+  }
+
+  // Lindungi eksekusi dengan concurrency lock antrean serial
+  const releaseLock = await acquirePcLock(sessionId, agentName)
+  try {
+    return await _executeComputerUseInternal(p, { sessionId, agentName }, false)
+  } finally {
+    releaseLock()
+  }
+}
+
+async function _executeComputerUseInternal(p, context, isBatchItem = false) {
+  // 1. Dukungan Unifikasi Array 'actions' (Batch Execution)
+  const actionsList = Array.isArray(p.actions)
+    ? p.actions
+    : p.action === 'batch' && Array.isArray(p.actions)
+      ? p.actions
+      : null
+
+  if (actionsList && actionsList.length > 0) {
+    if (actionsList.length === 1 && typeof actionsList[0] === 'object') {
+      return _executeComputerUseInternal(actionsList[0], context, isBatchItem)
     }
+
     const results = []
-    let lastScreenshotResult = null
-    for (const act of p.actions) {
+    for (let i = 0; i < actionsList.length; i++) {
+      const act = actionsList[i]
       if (act && typeof act === 'object') {
-        const res = await executeComputerUse(act)
-        results.push(res)
-        if (res.action === 'screenshot' && (res.image || res.dataUrl)) {
-          lastScreenshotResult = res
-        }
-        const delay = act.delay_after_ms !== undefined ? Number(act.delay_after_ms) : 100
-        if (delay > 0) {
+        const stepRes = await _executeComputerUseInternal(act, context, true)
+        results.push(stepRes)
+        const delay = act.delay_after_ms !== undefined ? Number(act.delay_after_ms) : 50
+        if (delay > 0 && i < actionsList.length - 1) {
           await new Promise((r) => setTimeout(r, delay))
         }
       }
     }
+
+    const lastAct = actionsList[actionsList.length - 1]
+    const waitMs = lastAct?.wait_ms !== undefined ? Math.max(0, Number(lastAct.wait_ms)) : 300
+    const postShot = await capturePostActionScreenshot(waitMs, p.quality || 75)
+
     const batchReturn = {
       success: results.every((r) => r.success !== false),
       action: 'batch',
       count: results.length,
       results
     }
-    if (lastScreenshotResult) {
-      batchReturn.image = lastScreenshotResult.image
-      batchReturn.dataUrl = lastScreenshotResult.dataUrl
-      batchReturn.cursor = lastScreenshotResult.cursor
-      batchReturn.cursor_host = lastScreenshotResult.cursor_host
-      batchReturn.viewport = lastScreenshotResult.viewport
-      batchReturn.host_resolution = lastScreenshotResult.host_resolution
-      batchReturn.message = lastScreenshotResult.message
+
+    if (postShot && postShot.status === 'success') {
+      batchReturn.image = postShot.image
+      batchReturn.dataUrl = postShot.image
+      batchReturn.cursor = postShot.cursor
+      batchReturn.cursor_host = postShot.cursor_host
+      batchReturn.viewport = `${CANONICAL_WIDTH}x${CANONICAL_HEIGHT}`
+      batchReturn.host_resolution = `${postShot.host_width}x${postShot.host_height}`
+      batchReturn.message = `Batch ${results.length} langkah tuntas. Screenshot observasi akhir (wait ${waitMs}ms) disertakan.`
     }
+
     return batchReturn
   }
 
   // 2. Dukungan Single Action Langsung di Root
   const action = (p.action || 'screenshot').toLowerCase().trim()
+
+  updateHudAction({
+    sessionName: context.agentName,
+    detail: `${action.toUpperCase()}${p.coordinate ? ` [${p.coordinate}]` : p.text ? ` "${p.text.substring(0, 15)}"` : ''}`,
+    status: action === 'screenshot' ? 'thinking' : 'running'
+  })
+
+  const attachPostScreenshot = async (res) => {
+    if (isBatchItem || !res || res.success === false) return res
+    const waitMs = p.wait_ms !== undefined ? Math.max(0, Number(p.wait_ms)) : 300
+    const postShot = await capturePostActionScreenshot(waitMs, p.quality || 75)
+    if (postShot && postShot.status === 'success') {
+      return {
+        ...res,
+        image: postShot.image,
+        dataUrl: postShot.image,
+        cursor: postShot.cursor,
+        cursor_host: postShot.cursor_host,
+        host_resolution: `${postShot.host_width}x${postShot.host_height}`,
+        viewport: `${CANONICAL_WIDTH}x${CANONICAL_HEIGHT}`,
+        message: `${res.message || `Aksi ${action} berhasil dieksekusi.`} Screenshot observasi pasca-aksi (wait ${waitMs}ms) disertakan.`
+      }
+    }
+    return res
+  }
 
   switch (action) {
     case 'screenshot': {
@@ -704,13 +801,13 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeClick(x, y)
-      return {
+      return await attachPostScreenshot({
         success: true,
         action: 'click',
         coordinate: [p.coordinate?.[0] ?? p.x, p.coordinate?.[1] ?? p.y],
         host_coordinate: [x, y],
         result: raw
-      }
+      })
     }
 
     case 'double_click': {
@@ -722,7 +819,12 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeDoubleClick(x, y)
-      return { success: true, action: 'double_click', coordinate: p.coordinate, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'double_click',
+        coordinate: p.coordinate,
+        result: raw
+      })
     }
 
     case 'right_click': {
@@ -734,7 +836,12 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeRightClick(x, y)
-      return { success: true, action: 'right_click', coordinate: p.coordinate, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'right_click',
+        coordinate: p.coordinate,
+        result: raw
+      })
     }
 
     case 'middle_click': {
@@ -746,7 +853,12 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeMiddleClick(x, y)
-      return { success: true, action: 'middle_click', coordinate: p.coordinate, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'middle_click',
+        coordinate: p.coordinate,
+        result: raw
+      })
     }
 
     case 'mouse_down': {
@@ -757,7 +869,12 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeMouseDown({ button: p.button || 'left', x, y })
-      return { success: true, action: 'mouse_down', button: p.button || 'left', result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'mouse_down',
+        button: p.button || 'left',
+        result: raw
+      })
     }
 
     case 'mouse_up': {
@@ -768,7 +885,12 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeMouseUp({ button: p.button || 'left', x, y })
-      return { success: true, action: 'mouse_up', button: p.button || 'left', result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'mouse_up',
+        button: p.button || 'left',
+        result: raw
+      })
     }
 
     case 'move': {
@@ -780,7 +902,12 @@ export async function executeComputerUse(params = {}) {
         y = denorm.y
       }
       const raw = await executeMouseMove(x, y)
-      return { success: true, action: 'move', coordinate: p.coordinate, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'move',
+        coordinate: p.coordinate,
+        result: raw
+      })
     }
 
     case 'drag': {
@@ -814,7 +941,7 @@ export async function executeComputerUse(params = {}) {
         duration_ms: p.duration_ms || 300,
         button: p.button || 'left'
       })
-      return { success: true, action: 'drag', result: raw }
+      return await attachPostScreenshot({ success: true, action: 'drag', result: raw })
     }
 
     case 'burst_click': {
@@ -832,31 +959,36 @@ export async function executeComputerUse(params = {}) {
         interval_ms: p.interval_ms || 20,
         button: p.button || 'left'
       })
-      return { success: true, action: 'burst_click', count: p.count || 5, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'burst_click',
+        count: p.count || 5,
+        result: raw
+      })
     }
 
     case 'type': {
       const text = p.text ?? ''
       const raw = await executeType(text)
-      return { success: true, action: 'type', text, result: raw }
+      return await attachPostScreenshot({ success: true, action: 'type', text, result: raw })
     }
 
     case 'key': {
       const key = p.key || p.combo || p.text || ''
       const raw = await executeKey(key)
-      return { success: true, action: 'key', key, result: raw }
+      return await attachPostScreenshot({ success: true, action: 'key', key, result: raw })
     }
 
     case 'key_down': {
       const key = p.key || p.combo || p.text || ''
       const raw = await executeKeyDown(key, p.duration_ms || 0)
-      return { success: true, action: 'key_down', key, result: raw }
+      return await attachPostScreenshot({ success: true, action: 'key_down', key, result: raw })
     }
 
     case 'key_up': {
       const key = p.key || p.combo || p.text || ''
       const raw = await executeKeyUp(key)
-      return { success: true, action: 'key_up', key, result: raw }
+      return await attachPostScreenshot({ success: true, action: 'key_up', key, result: raw })
     }
 
     case 'hotkey': {
@@ -871,20 +1003,26 @@ export async function executeComputerUse(params = {}) {
         combo = mods ? `${mods}+${key}` : key
       }
       const raw = await executeKey(combo)
-      return { success: true, action: 'hotkey', combo, result: raw }
+      return await attachPostScreenshot({ success: true, action: 'hotkey', combo, result: raw })
     }
 
     case 'scroll': {
       const dir = p.direction || 'down'
       const amt = p.amount !== undefined ? Number(p.amount) : 3
       const raw = await executeScroll(dir, amt)
-      return { success: true, action: 'scroll', direction: dir, amount: amt, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'scroll',
+        direction: dir,
+        amount: amt,
+        result: raw
+      })
     }
 
     case 'wait': {
       const ms = Math.min(10000, Math.max(10, Number(p.duration_ms || p.ms || 1000)))
       await new Promise((r) => setTimeout(r, ms))
-      return { success: true, action: 'wait', duration_ms: ms }
+      return await attachPostScreenshot({ success: true, action: 'wait', duration_ms: ms })
     }
 
     case 'list_windows': {
@@ -896,24 +1034,35 @@ export async function executeComputerUse(params = {}) {
       const title = p.title || p.target || ''
       const maximize = p.maximize !== undefined ? Boolean(p.maximize) : true
       const raw = await focusWindow(title, maximize)
-      return { success: true, action: 'focus_window', title, maximize, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'focus_window',
+        title,
+        maximize,
+        result: raw
+      })
     }
 
     case 'maximize_window': {
       const title = p.title || p.target || ''
       const raw = await maximizeWindow(title)
-      return { success: true, action: 'maximize_window', title, result: raw }
+      return await attachPostScreenshot({
+        success: true,
+        action: 'maximize_window',
+        title,
+        result: raw
+      })
     }
 
     case 'open_app': {
       const target = p.name || p.target || p.app || ''
       const raw = await openApp(target)
-      return { success: true, action: 'open_app', target, result: raw }
+      return await attachPostScreenshot({ success: true, action: 'open_app', target, result: raw })
     }
 
     case 'batch': {
       const actions = Array.isArray(p.actions) ? p.actions : []
-      return executeComputerUse({ actions })
+      return _executeComputerUseInternal({ actions }, context, isBatchItem)
     }
 
     case 'close':

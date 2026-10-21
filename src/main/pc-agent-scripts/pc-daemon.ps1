@@ -62,6 +62,17 @@ public class MarkWin32 {
     [DllImport("user32.dll")]
     public static extern bool SetProcessDPIAware();
 
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+    [DllImport("gdi32.dll")]
+    public static extern bool BitBlt(IntPtr hObject, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hObjectSource, int nXSrc, int nYSrc, int dwRop);
+
+    public const int SRCCOPY = 0x00CC0020;
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool GetCursorInfo(out CURSORINFO pci);
 
@@ -456,19 +467,34 @@ function Capture-ScreenJpeg {
         $bounds = $targetScreen.Bounds
         $bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
         $graphics = [System.Drawing.Graphics]::FromImage($bmp)
-        $graphics.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bounds.Size, [System.Drawing.CopyPixelOperation]::SourceCopy)
 
-        # Render system cursor and high-contrast precision halo directly onto bitmap
+        # Render screen and system cursor directly using Win32 BitBlt (zero copy handle dependency)
         $cursorHostX = 0
         $cursorHostY = 0
         $cursorDrawn = $false
-        $hdc = [IntPtr]::Zero
-        try {
-            $hdc = $graphics.GetHdc()
-            [MarkWin32]::DrawCursor($hdc, $bounds.X, $bounds.Y, [ref]$cursorHostX, [ref]$cursorHostY, [ref]$cursorDrawn) | Out-Null
-        } catch {} finally {
-            if ($hdc -ne [IntPtr]::Zero) {
-                try { $graphics.ReleaseHdc($hdc) } catch {}
+        $hdcSrc = [MarkWin32]::GetDC([IntPtr]::Zero)
+        if ($hdcSrc -ne [IntPtr]::Zero) {
+            $hdcDest = [IntPtr]::Zero
+            try {
+                $hdcDest = $graphics.GetHdc()
+                [MarkWin32]::BitBlt($hdcDest, 0, 0, $bounds.Width, $bounds.Height, $hdcSrc, $bounds.X, $bounds.Y, [MarkWin32]::SRCCOPY) | Out-Null
+                [MarkWin32]::DrawCursor($hdcDest, $bounds.X, $bounds.Y, [ref]$cursorHostX, [ref]$cursorHostY, [ref]$cursorDrawn) | Out-Null
+            } finally {
+                if ($hdcDest -ne [IntPtr]::Zero) {
+                    try { $graphics.ReleaseHdc($hdcDest) } catch {}
+                }
+                [MarkWin32]::ReleaseDC([IntPtr]::Zero, $hdcSrc) | Out-Null
+            }
+        } else {
+            $graphics.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bounds.Size, [System.Drawing.CopyPixelOperation]::SourceCopy)
+            $hdc = [IntPtr]::Zero
+            try {
+                $hdc = $graphics.GetHdc()
+                [MarkWin32]::DrawCursor($hdc, $bounds.X, $bounds.Y, [ref]$cursorHostX, [ref]$cursorHostY, [ref]$cursorDrawn) | Out-Null
+            } catch {} finally {
+                if ($hdc -ne [IntPtr]::Zero) {
+                    try { $graphics.ReleaseHdc($hdc) } catch {}
+                }
             }
         }
 
@@ -790,9 +816,15 @@ while ($true) {
                     $rect.Top = 0
                 }
 
-                $bmp = New-Object System.Drawing.Bitmap($width, $height)
-                $graphics = [System.Drawing.Graphics]::FromImage($bmp)
-                $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bmp.Size)
+                $hdcSrc = [MarkWin32]::GetDC([IntPtr]::Zero)
+                if ($hdcSrc -ne [IntPtr]::Zero) {
+                    $hdcDest = $graphics.GetHdc()
+                    [MarkWin32]::BitBlt($hdcDest, 0, 0, $width, $height, $hdcSrc, $rect.Left, $rect.Top, [MarkWin32]::SRCCOPY) | Out-Null
+                    $graphics.ReleaseHdc($hdcDest)
+                    [MarkWin32]::ReleaseDC([IntPtr]::Zero, $hdcSrc) | Out-Null
+                } else {
+                    $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bmp.Size)
+                }
                 $tempPath = [System.IO.Path]::Combine($env:TEMP, "mark_ocr_temp_$([Guid]::NewGuid().ToString('N')).png")
                 $bmp.Save($tempPath, [System.Drawing.Imaging.ImageFormat]::Png)
                 $graphics.Dispose()
@@ -1134,6 +1166,7 @@ while ($true) {
                     [MarkWin32]::mouse_event($upFlag, 0, 0, 0, 0)
                     if ($interval -gt 0) { Start-Sleep -Milliseconds $interval }
                 }
+
                 Write-Output (@{ status="success"; action="burst-click"; x=$x; y=$y; count=$count; interval_ms=$interval } | ConvertTo-Json -Compress)
             }
             "drag" {
@@ -1163,6 +1196,7 @@ while ($true) {
                 }
                 Start-Sleep -Milliseconds 30
                 [MarkWin32]::mouse_event($upFlag, 0, 0, 0, 0)
+
                 Write-Output (@{ status="success"; action="drag"; start_x=$x1; start_y=$y1; end_x=$x2; end_y=$y2 } | ConvertTo-Json -Compress)
             }
             "key-down" {

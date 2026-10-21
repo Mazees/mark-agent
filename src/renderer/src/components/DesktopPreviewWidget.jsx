@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Monitor, X, Minimize2, MousePointer, ShieldAlert, Maximize2 } from 'lucide-react'
 
 // Module-level singleton state untuk Desktop Preview agar tahan terhadap unmount/remount di React
-let globalState = {
+const DEFAULT_STATE = {
   isVisible: false,
   isMinimized: false,
   isExpanded: false,
@@ -14,14 +14,21 @@ let globalState = {
   lastUpdated: 0
 }
 
+let globalState = { ...DEFAULT_STATE }
+
 const listeners = new Set()
 let autoHideTimer = null
 let isIpcInitialized = false
 
 function notifyListeners() {
+  const snapshot = {
+    ...DEFAULT_STATE,
+    ...globalState,
+    clickMarkers: Array.isArray(globalState.clickMarkers) ? [...globalState.clickMarkers] : []
+  }
   listeners.forEach((listener) => {
     try {
-      listener({ ...globalState })
+      listener(snapshot)
     } catch (e) {
       console.error('[DesktopPreviewWidget] Listener error:', e)
     }
@@ -30,15 +37,25 @@ function notifyListeners() {
 
 export function setDesktopPreviewState(updater) {
   if (typeof updater === 'function') {
-    globalState = updater(globalState)
+    const nextState = updater(globalState)
+    globalState = { ...globalState, ...(nextState || {}) }
   } else {
-    globalState = { ...globalState, ...updater }
+    globalState = { ...globalState, ...(updater || {}) }
   }
+
+  if (!Array.isArray(globalState.clickMarkers)) {
+    globalState.clickMarkers = []
+  }
+
   notifyListeners()
 }
 
 export function getDesktopPreviewState() {
-  return globalState
+  return {
+    ...DEFAULT_STATE,
+    ...globalState,
+    clickMarkers: Array.isArray(globalState.clickMarkers) ? [...globalState.clickMarkers] : []
+  }
 }
 
 function initIpcListeners() {
@@ -60,7 +77,9 @@ function initIpcListeners() {
         ...globalState,
         currentImage: data.image,
         resolution:
-          data.width && data.height ? `${data.width}x${data.height}` : globalState.resolution,
+          data.width && data.height
+            ? `${data.width}x${data.height}`
+            : globalState.resolution || '1280x720',
         cursorPos:
           Array.isArray(data.cursor) && data.cursor.length >= 2
             ? data.cursor
@@ -85,18 +104,25 @@ function initIpcListeners() {
         burst: Boolean(data.burst)
       }
 
+      const existingMarkers = Array.isArray(globalState.clickMarkers)
+        ? globalState.clickMarkers
+        : []
+
       globalState = {
         ...globalState,
-        clickMarkers: [...globalState.clickMarkers.slice(-4), newMarker],
+        clickMarkers: [...existingMarkers.slice(-4), newMarker],
         lastAction: `Click (${data.x}, ${data.y})`,
         lastUpdated: Date.now()
       }
       notifyListeners()
 
       setTimeout(() => {
+        const currentMarkers = Array.isArray(globalState.clickMarkers)
+          ? globalState.clickMarkers
+          : []
         globalState = {
           ...globalState,
-          clickMarkers: globalState.clickMarkers.filter((m) => m.id !== markerId)
+          clickMarkers: currentMarkers.filter((m) => m && m.id !== markerId)
         }
         notifyListeners()
       }, 1200)
@@ -112,7 +138,7 @@ export const DesktopPreviewWidget = ({ forceShow = false }) => {
 
   useEffect(() => {
     initIpcListeners()
-    const listener = (newState) => setState(newState)
+    const listener = (newState) => setState(newState || getDesktopPreviewState())
     listeners.add(listener)
     // Sinkronisasi instan saat mount agar tidak blank
     setState(getDesktopPreviewState())
@@ -220,12 +246,13 @@ export const DesktopPreviewWidget = ({ forceShow = false }) => {
         />
 
         {/* Click Marker Ripples */}
-        {clickMarkers.map((marker) => {
+        {(Array.isArray(clickMarkers) ? clickMarkers : []).map((marker) => {
+          if (!marker || typeof marker.x !== 'number' || typeof marker.y !== 'number') return null
           const leftPct = (marker.x / 1280) * 100
           const topPct = (marker.y / 720) * 100
           return (
             <div
-              key={marker.id}
+              key={marker.id || `${marker.x}_${marker.y}`}
               className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
               style={{ left: `${leftPct}%`, top: `${topPct}%` }}
             >
@@ -244,26 +271,31 @@ export const DesktopPreviewWidget = ({ forceShow = false }) => {
         })}
 
         {/* Live Host Cursor Position */}
-        {cursorPos && (
-          <div
-            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-75 z-10"
-            style={{
-              left: `${Math.max(0, Math.min(100, (cursorPos[0] / 1280) * 100))}%`,
-              top: `${Math.max(0, Math.min(100, (cursorPos[1] / 720) * 100))}%`
-            }}
-          >
-            <div className="w-5 h-5 rounded-full border-2 border-red-500 bg-red-500/20 shadow-lg flex items-center justify-center animate-pulse">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+        {Array.isArray(cursorPos) &&
+          cursorPos.length >= 2 &&
+          typeof cursorPos[0] === 'number' &&
+          typeof cursorPos[1] === 'number' && (
+            <div
+              className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-75 z-10"
+              style={{
+                left: `${Math.max(0, Math.min(100, (cursorPos[0] / 1280) * 100))}%`,
+                top: `${Math.max(0, Math.min(100, (cursorPos[1] / 720) * 100))}%`
+              }}
+            >
+              <div className="w-5 h-5 rounded-full border-2 border-red-500 bg-red-500/20 shadow-lg flex items-center justify-center animate-pulse">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* Watermark Overlay Status */}
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[10px] font-mono text-white/90 border border-white/10 flex items-center gap-1.5 shadow-md">
           <MousePointer className="w-3 h-3 text-primary animate-pulse" />
           <span>
             {lastAction ||
-              (cursorPos ? `Cursor [${cursorPos[0]}, ${cursorPos[1]}]` : 'Observing Viewport')}
+              (Array.isArray(cursorPos) && cursorPos.length >= 2
+                ? `Cursor [${cursorPos[0]}, ${cursorPos[1]}]`
+                : 'Observing Viewport')}
           </span>
         </div>
 

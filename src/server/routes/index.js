@@ -1,3 +1,6 @@
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 import { configRouter } from './config.routes.js'
 import { chatRouter } from './chat.routes.js'
 import { memoryRouter } from './memory.routes.js'
@@ -9,6 +12,9 @@ import { tasksRouter } from './tasks.routes.js'
 import { integrationsRouter } from './integrations.routes.js'
 import { aiRouter } from './ai.routes.js'
 import { workspaceRouter } from './workspace.routes.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export function registerRoutes(app) {
   app.use('/api', configRouter)
@@ -23,6 +29,19 @@ export function registerRoutes(app) {
   app.use('/api', aiRouter)
   app.use('/api', workspaceRouter)
 
+  // Direct route for HUD Overlay
+  app.get('/overlay-hud.html', (_req, res) => {
+    const hudPath = path.resolve(__dirname, '../../renderer/public/overlay-hud.html')
+    const outPath = path.resolve(__dirname, '../../../out/renderer/overlay-hud.html')
+    if (fs.existsSync(hudPath)) {
+      return res.sendFile(hudPath)
+    }
+    if (fs.existsSync(outPath)) {
+      return res.sendFile(outPath)
+    }
+    res.status(404).send('HUD overlay file not found')
+  })
+
   // 404 handler khusus /api agar mengembalikan respons JSON bukan HTML SPA fallback
   app.all('/api/*', (req, res) => {
     res.status(404).json({
@@ -32,4 +51,3 @@ export function registerRoutes(app) {
     })
   })
 }
-

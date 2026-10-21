@@ -15,9 +15,9 @@ MARK memecahkan masalah ini dengan memadukan dua kapabilitas terpadu:
 
 ### Komponen Utama:
 
-- Server Tool Facade & Koordinat Engine: [`src/server/tools/pc-agent.js`](file:///d:/My%20Project/mark-project/mark/src/server/tools/pc-agent.js)
+- Server Tool Facade, Mutex Lock, & Koordinat Engine: [`src/server/tools/pc-agent.js`](file:///d:/My%20Project/mark-project/mark/src/server/tools/pc-agent.js)
 - Skrip Daemon PowerShell + C#: [`src/main/pc-agent-scripts/pc-daemon.ps1`](file:///d:/My%20Project/mark-project/mark/src/main/pc-agent-scripts/pc-daemon.ps1)
-- Skrip Overlay Darurat: [`src/main/pc-agent-scripts/pc-overlay.ps1`](file:///d:/My%20Project/mark-project/mark/src/main/pc-agent-scripts/pc-overlay.ps1)
+- Manajer Floating HUD Overlay: [`src/server/tools/overlay-manager.js`](file:///d:/My%20Project/mark-project/mark/src/server/tools/overlay-manager.js) & [`public/overlay-hud.html`](file:///d:/My%20Project/mark-project/mark/public/overlay-hud.html)
 - Web Bridge & Native Tool Registry: [`src/main/tools/system-tools.js`](file:///d:/My%20Project/mark-project/mark/src/main/tools/system-tools.js) dan [`src/server/tools/group-tools.js`](file:///d:/My%20Project/mark-project/mark/src/server/tools/group-tools.js)
 - Floating HUD Real-Time: [`src/renderer/src/components/DesktopPreviewWidget.jsx`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/components/DesktopPreviewWidget.jsx)
 
@@ -28,30 +28,34 @@ flowchart TD
     end
 
     subgraph "Node.js Server Runtime"
+        Mutex["PC Automation Mutex (Multi-Sesi Safe)"]
         CoordEngine["pc-agent.js (1280x720 VLA Normalizer)"]
         WSHub["WebSocket Hub (/stream)"]
     end
 
     subgraph "PowerShell STA Daemon"
-        Daemon["pc-daemon.ps1 (Persistent stdin/stdout IPC)"]
+        Daemon["pc-daemon.ps1 (Win32 IPC & Direct Injections)"]
         CSharp["MarkWin32 (C# Type via Add-Type)"]
-        GDI["GDI+ In-Memory JPEG Scaler (Zero Disk Writes)"]
+        GDI["GDI+ In-Memory JPEG Scaler (BitBlt Capture)"]
         Win32["Win32 API (user32.dll: SendInput, EnumWindows)"]
     end
 
     subgraph "Frontend UI & Safety"
-        HUD["DesktopPreviewWidget.jsx (Live Canvas & Ripple)"]
-        Overlay["pc-overlay.ps1 (Topmost Hotkey: Ctrl+Shift+S)"]
+        Overlay["overlay-manager.js (HTML HUD Overlay: Ctrl+Shift+S)"]
+        PreviewWidget["DesktopPreviewWidget.jsx (Live Canvas & Ripple)"]
+        AbortHook["Emergency Abort (Ctrl+Shift+S)"]
     end
 
-    Planner -->|"executeComputerUse(action, params)"| CoordEngine
+    Planner -->|"executeComputerUse(action, params)"| Mutex
+    Mutex --> CoordEngine
+    CoordEngine --> Overlay
     CoordEngine -->|"JSON Command via stdin"| Daemon
     Daemon --> GDI
     Daemon --> Win32
     GDI -->|"Base64 JPEG buffer via stdout"| CoordEngine
     Win32 -->|"Input execution result via stdout"| CoordEngine
     CoordEngine -->|"WebSocket: computer:preview, computer:action"| WSHub
-    WSHub -->|"Live frames & ripples"| HUD
+    WSHub -->|"Live frames & ripples"| PreviewWidget
     Overlay -->|"Ctrl+Shift+S (Emergency Abort)"| CoordEngine
 ```
 

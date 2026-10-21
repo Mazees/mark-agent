@@ -13,6 +13,7 @@ import { startOsActivityTracking } from './tools/awareness-tracker.js'
 import { startTelegramBot } from '../main/telegram/telegram-service.js'
 import { getActiveConfig } from './config-manager.js'
 import { registerRoutes } from './routes/index.js'
+import { setServerPort } from './tools/overlay-manager.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -169,6 +170,7 @@ server.on('listening', async () => {
   activePort = typeof address === 'object' && address ? address.port : activePort
   const activeHost = typeof address === 'object' && address?.address ? address.address : HOST
   app.set('port', activePort)
+  setServerPort(activePort)
   console.log(`\n======================================================`)
   console.log(`  Menyalakan Server MARK di http://${activeHost}:${activePort}`)
   console.log(`======================================================\n`)
