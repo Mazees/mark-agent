@@ -348,14 +348,6 @@ export const MessageBubble = React.memo(
                                       </div>
                                     </div>
                                   )}
-                                  {displayReason && (
-                                    <div>
-                                      <div className="text-info/80 font-semibold mb-0.5">
-                                        Tujuan:
-                                      </div>
-                                      <div className="text-white/90 font-sans">{displayReason}</div>
-                                    </div>
-                                  )}
                                   {hasQuery && (
                                     <div>
                                       <div className="text-primary/70 font-semibold mb-0.5">

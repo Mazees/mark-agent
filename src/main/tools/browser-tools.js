@@ -10,6 +10,7 @@ import {
   showBrowserWindow,
   hideBrowserWindow
 } from '../browser-agent.js'
+import { describeBrowserNetworkError, normalizeBrowserUrl } from './browser-url.js'
 
 export const browserTools = {
   'browser-search': {
@@ -196,15 +197,13 @@ export const browserTools = {
   'browser-fetch': {
     needsApproval: false,
     handler: async (args) => {
-      let targetUrl = (
-        typeof args === 'object' && args !== null ? args.url : String(args || '')
-      ).trim()
+      let targetUrl
       const maxChars =
         typeof args === 'object' && args !== null ? parseInt(args.max_chars, 10) || 4000 : 4000
-      if (!targetUrl) return { success: false, message: 'URL tujuan tidak boleh kosong.' }
-
-      if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-        targetUrl = 'https://' + targetUrl
+      try {
+        targetUrl = normalizeBrowserUrl(typeof args === 'object' && args !== null ? args.url : args)
+      } catch (err) {
+        return { success: false, error: err.message }
       }
 
       try {
@@ -261,7 +260,7 @@ export const browserTools = {
         return {
           success: false,
           url: targetUrl,
-          error: `Gagal mengambil konten dari ${targetUrl}: ${err.message}. Kamu bisa menggunakan 'browser-navigate' sebagai alternatif.`
+          error: `Gagal mengambil konten dari ${targetUrl}: ${describeBrowserNetworkError(err)}`
         }
       }
     }
@@ -271,15 +270,12 @@ export const browserTools = {
     needsApproval: false,
     handler: async (args, config) => {
       try {
-        let url = (typeof args === 'object' && args !== null ? args.url : String(args || '')).trim()
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-          url = 'https://' + url
-        }
+        const url = normalizeBrowserUrl(typeof args === 'object' && args !== null ? args.url : args)
         const sessionId = config?.sessionId || 'default'
         const result = await navigateTo(url, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: describeBrowserNetworkError(e) }
       }
     }
   },

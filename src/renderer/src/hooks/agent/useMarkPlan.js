@@ -26,6 +26,8 @@ import {
   GATEWAY_HYGIENE_THRESHOLD,
   IN_LOOP_COMPACT_THRESHOLD,
   calculateSessionTokens,
+  calculatePayloadTokens,
+  countTokens,
   calculateMessageTokens,
   calculateSessionChars,
   executeSessionCompaction,
@@ -1398,6 +1400,7 @@ export const useMarkPlan = ({
             messages: effectiveSourceMessages,
             activeConfig: config[0] || {},
             systemPrompt,
+            signal: sessionAbortController.signal,
             onProgress: (prog) => {
               targetSetChatData((prev) =>
                 prev.map((item) =>
@@ -1448,8 +1451,12 @@ export const useMarkPlan = ({
               })
             )
           }
+          if (!compactionResult?.isCompacted) {
+            throw new Error('Kompaksi tidak mengurangi konteks sesi.')
+          }
         } catch (compactErr) {
           console.error('[useMarkPlan] Gagal context compaction:', compactErr)
+          throw new Error(`Kompaksi konteks gagal: ${compactErr.message}`)
         } finally {
           targetSetChatData((prev) => (prev || []).filter((item) => item.id !== compactBannerId))
         }
@@ -1699,51 +1706,70 @@ export const useMarkPlan = ({
         // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
         // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
+        let inLoopBannerId = null
         try {
-          const inLoopResult = await Promise.race([
-            checkAndCompressInLoop({
-              loopMessages,
-              sessionId: String(activeSessionNum || 1),
-              maxTokens: MAX_CONTEXT_TOKENS,
-              thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
-              protectLastN: 6,
-              protectFirstN: 2,
-              activeConfig: config[0] || {},
-              systemPrompt
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('In-loop compaction timeout (20s)')), 20000)
-            )
-          ]).catch((err) => {
-            console.warn('[useMarkPlan] In-loop compaction warning/timeout:', err?.message)
-            return { compressed: false, loopMessages }
+          const inLoopResult = await checkAndCompressInLoop({
+            loopMessages,
+            sessionId: String(activeSessionNum || 1),
+            maxTokens: MAX_CONTEXT_TOKENS,
+            thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
+            protectLastN: 6,
+            protectFirstN: 2,
+            activeConfig: config[0] || {},
+            systemPrompt,
+            signal: sessionAbortController.signal,
+            onProgress: (progress) => {
+              if (!inLoopBannerId) {
+                inLoopBannerId = `compact-loop-${Date.now()}`
+                targetSetChatData((prev) => [
+                  ...prev,
+                  {
+                    id: inLoopBannerId,
+                    role: 'system',
+                    isCompacting: true,
+                    compactProgress: progress.text
+                  }
+                ])
+              } else {
+                targetSetChatData((prev) =>
+                  prev.map((msg) =>
+                    msg.id === inLoopBannerId ? { ...msg, compactProgress: progress.text } : msg
+                  )
+                )
+              }
+            }
           })
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
             loopMessages = inLoopResult.loopMessages
-            if (inLoopResult.totalTokens || inLoopResult.totalChars) {
-              const inLoopTokens = inLoopResult.totalTokens || inLoopResult.totalChars
-              window.dispatchEvent(
-                new CustomEvent('context-tracker-updated', {
-                  detail: {
-                    sessionId: String(activeSessionNum || 1),
-                    currentTokens: inLoopTokens,
-                    maxTokens: MAX_CONTEXT_TOKENS,
-                    percentage: Math.min(100, (inLoopTokens / MAX_CONTEXT_TOKENS) * 100),
-                    currentChars: inLoopTokens,
-                    maxChars: MAX_CONTEXT_TOKENS,
-                    lastCompactedAt: Date.now()
-                  }
-                })
-              )
-            }
           }
-        } catch (inLoopErr) {
-          console.warn('[useMarkPlan] In-loop compaction warning:', inLoopErr)
+        } finally {
+          if (inLoopBannerId) {
+            targetSetChatData((prev) => prev.filter((msg) => msg.id !== inLoopBannerId))
+          }
         }
 
         // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
+        const inFlightTokens =
+          calculatePayloadTokens(loopMessages) +
+          (activeTools ? countTokens(JSON.stringify(activeTools)) : 0)
+        if (inFlightTokens >= MAX_CONTEXT_TOKENS) {
+          throw new Error(
+            'Konteks masih melebihi 256K token setelah kompaksi. Permintaan AI dibatalkan.'
+          )
+        }
+        window.dispatchEvent(
+          new CustomEvent('context-tracker-updated', {
+            detail: {
+              sessionId: String(activeSessionNum || 1),
+              currentTokens: inFlightTokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (inFlightTokens / MAX_CONTEXT_TOKENS) * 100),
+              lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
+            }
+          })
+        )
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
@@ -1848,27 +1874,6 @@ export const useMarkPlan = ({
 
         if (streamResult?.usage) {
           lastServerUsage = streamResult.usage
-          const liveTokens = Number(
-            streamResult.usage.total_tokens ||
-              (streamResult.usage.prompt_tokens || 0) +
-                (streamResult.usage.completion_tokens || 0) ||
-              0
-          )
-          if (liveTokens > 0) {
-            window.dispatchEvent(
-              new CustomEvent('context-tracker-updated', {
-                detail: {
-                  sessionId: String(activeSessionNum || 1),
-                  currentTokens: liveTokens,
-                  maxTokens: MAX_CONTEXT_TOKENS,
-                  percentage: Math.min(100, (liveTokens / MAX_CONTEXT_TOKENS) * 100),
-                  currentChars: liveTokens,
-                  maxChars: MAX_CONTEXT_TOKENS,
-                  lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
-                }
-              })
-            )
-          }
         }
 
         if (streamResult?.finishReason === 'error') {
