@@ -34,6 +34,8 @@ export const WS_BASE = SERVER_CONFIG.wsBase
 
 let ws = null
 const listeners = new Map()
+let groupToolsRevision = 0
+let groupToolsRequest = null
 
 function getWebSocket() {
   if (typeof window === 'undefined') return null
@@ -55,6 +57,8 @@ function getWebSocket() {
       try {
         const data = JSON.parse(event.data)
         const { event: evtName, payload } = data
+
+        if (evtName === 'plugins:updated') webApi.invalidateGroupTools()
 
         if (evtName && listeners.has(evtName)) {
           listeners.get(evtName).forEach((cb) => {
@@ -317,19 +321,37 @@ export const webApi = {
   },
 
   _groupToolsCache: null,
-  getGroupTools: async () => {
+  invalidateGroupTools: () => {
+    groupToolsRevision += 1
+    webApi._groupToolsCache = null
+    groupToolsRequest = null
+  },
+  getGroupTools: async ({ forceRefresh = false } = {}) => {
+    if (forceRefresh) webApi.invalidateGroupTools()
     if (webApi._groupToolsCache) return webApi._groupToolsCache
-    try {
-      const res = await fetch(`${API_BASE}/api/tools/groups`)
-      const json = await res.json()
-      if (json && json.success && json.data) {
-        webApi._groupToolsCache = json.data
-        return webApi._groupToolsCache
+    if (groupToolsRequest) return groupToolsRequest
+    const revision = groupToolsRevision
+    const request = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/tools/groups`)
+        const json = await res.json()
+        if (revision !== groupToolsRevision) return webApi.getGroupTools()
+        if (json && json.success && json.data) {
+          webApi._groupToolsCache = json.data
+          return webApi._groupToolsCache
+        }
+      } catch (err) {
+        if (revision !== groupToolsRevision) return webApi.getGroupTools()
+        console.error('Gagal memuat skema group tools dari server:', err)
       }
-    } catch (err) {
-      console.error('Gagal memuat skema group tools dari server:', err)
+      return { schema: {}, names: [], definition: {}, flat: {} }
+    })()
+    groupToolsRequest = request
+    try {
+      return await request
+    } finally {
+      if (groupToolsRequest === request) groupToolsRequest = null
     }
-    return { schema: {}, names: [], definition: {}, flat: {} }
   },
 
   getWorkspaceFiles: async (query = '', root = '') => {

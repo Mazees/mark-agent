@@ -772,7 +772,7 @@ export async function executeAgentTool({
         const actionDescs = (matchedPlugin.actions || [])
           .map(
             (act) =>
-              `- plugin-${matchedPlugin.name}-${act.name}: ${act.description || act.triggerHint || ''}`
+              `- ${act.name}: ${act.description || act.triggerHint || ''}`
           )
           .join('\n')
         res = {

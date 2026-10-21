@@ -147,7 +147,10 @@ Fungsi `isDangerousCommand` di `system-tools.js` memindai string perintah sebelu
 
 MARK mendukung sistem plugin eksternal yang dapat diinstal tanpa harus mengubah kode inti server:
 
-- Setiap plugin disimpan dalam direktori `~/.config/mark-agent/plugins/<nama-plugin>/`.
-- Plugin mendefinisikan berkas konfigurasi `manifest.json` yang berisi nama aksi, deskripsi OpenAPI, dan skrip eksekusi.
+- Setiap plugin disimpan dalam direktori `Documents/Mark Plugins/<nama-plugin>/` di home pengguna.
+- `plugin.json` menyimpan identitas dan metadata aksi; `index.js` mengekspor handler JavaScript yang dijalankan dalam proses Node.js MARK.
 - Backend menyediakan endpoint eksekusi di `/api/plugins/execute`.
-- Saat aktif, aksi-aksi plugin secara otomatis dipetakan ke skema OpenAPI berformat `plugin-<namaPlugin>-<namaAksi>` dan dapat dipanggil langsung oleh loop ReAct MARK.
+- Nama plugin menjadi group tool, sedangkan `actions[].name` menjadi nama tool langsung. Contoh: group `system-ops` menyediakan `sys-ram-check`.
+- Muat group melalui `read-tools` atau tag `@system-ops`. Nama aksi harus unik terhadap plugin aktif lainnya dan tool bawaan. Nama bentrok tidak diekspos sebagai tool; resolver menolak panggilan ambigu.
+- Alias lama `plugin-<namaPlugin>-<namaAksi>` masih diterima untuk riwayat lama. Plugin baru memakai nama aksi langsung.
+- Skill bawaan `/create-plugin` menjelaskan pembuatan dan pengujian plugin berdasarkan kontrak runtime ini.

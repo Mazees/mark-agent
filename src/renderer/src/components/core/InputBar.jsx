@@ -17,6 +17,7 @@ import {
 import { Zap, Sparkles, Folder, Wrench, ChevronLeft } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import { NATIVE_SKILLS } from './native-skills'
+import { webApi } from '../../api/web-bridge.js'
 import { calculateSessionTokens, MAX_CONTEXT_TOKENS } from '../../api/ai/contextManager'
 import {
   getChatData,
@@ -110,15 +111,18 @@ const InputBar = ({
   const [workspaceFiles, setWorkspaceFiles] = useState([])
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
   const [toolGroups, setToolGroups] = useState([])
+  const toolGroupsRequestRef = useRef(0)
 
-  const loadToolGroups = useCallback(async () => {
+  const loadToolGroups = useCallback(async ({ forceRefresh = false } = {}) => {
+    const requestId = ++toolGroupsRequestRef.current
     if (window.api && window.api.getGroupTools) {
       try {
-        const data = await window.api.getGroupTools()
+        const data = await webApi.getGroupTools({ forceRefresh })
+        if (requestId !== toolGroupsRequestRef.current) return []
         const schema = data?.schema || {}
         const names = data?.names || Object.keys(schema)
         const list = names
-          .filter((key) => schema[key])
+          .filter((key) => schema[key] && schema[key].kind !== 'plugin')
           .map((key) => {
             const desc = schema[key]?.description || ''
             const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -155,6 +159,14 @@ const InputBar = ({
 
   useEffect(() => {
     loadToolGroups()
+    const unsubscribe = webApi.onPluginsUpdated(() => {
+      loadToolGroups()
+      setSelectedMentionIndex(0)
+    })
+    return () => {
+      toolGroupsRequestRef.current += 1
+      unsubscribe()
+    }
   }, [loadToolGroups])
 
   const [contextTracker, setContextTracker] = useState({
@@ -833,8 +845,8 @@ const InputBar = ({
       const afterAt = textBefore.slice(atIndex + 1)
       if (!/\s/.test(afterAt)) {
         const tokenAfterCaret = val.slice(cursor).match(/^\S*/)?.[0] || ''
-        if (toolGroups.length === 0) {
-          loadToolGroups()
+        if (!showMentionList) {
+          loadToolGroups({ forceRefresh: true })
         }
         setShowMentionList(true)
         setMentionQuery(afterAt)

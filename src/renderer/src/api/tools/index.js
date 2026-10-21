@@ -1,9 +1,11 @@
 import { core_tools, core_tools_schema } from './core-tools'
 import { webApi } from '../web-bridge.js'
+import { buildPluginToolGroups } from '../../../../shared/plugin-schema.js'
 
 let cachedGroupToolsFlat = {}
 let cachedGroupToolsSchema = {}
 let cachedGroupToolNames = []
+let cachedPluginToolNames = new Set()
 
 // Inisialisasi cache secara background agar checkTools siap sedini mungkin
 if (typeof window !== 'undefined') {
@@ -21,6 +23,7 @@ export const checkTools = (toolName) => {
   return (
     !!core_tools[toolName] ||
     !!cachedGroupToolsFlat[toolName] ||
+    cachedPluginToolNames.has(toolName) ||
     toolName === 'read-tools' ||
     (typeof toolName === 'string' && toolName.startsWith('plugin-'))
   )
@@ -44,6 +47,7 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
   const loadedSet = loadedGroups instanceof Set ? loadedGroups : new Set(loadedGroups || [])
 
   for (const [groupKey, group] of Object.entries(groupToolsSchema)) {
+    if (group.kind === 'plugin') continue
     // Hanya tambah schema group jika user explicit panggil read-tools("group_name")
     if (loadedSet.has(groupKey) && Array.isArray(group.tools)) {
       for (const t of group.tools) {
@@ -64,32 +68,31 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
       if (Array.isArray(plugins)) {
         const activePlugins = plugins.filter((p) => p.isEnabled !== false)
         activePluginNames = activePlugins.map((p) => p.name)
-
-        for (const plugin of activePlugins) {
-          if (
-            (loadedSet.has(plugin.name) || loadedSet.has('custom_plugins')) &&
-            Array.isArray(plugin.actions)
-          ) {
-            for (const act of plugin.actions) {
-              const pName = `plugin-${plugin.name}-${act.name}`
-              if (!seenToolNames.has(pName)) {
-                seenToolNames.add(pName)
-                activeSchemas.push({
-                  type: 'function',
-                  function: {
-                    name: pName,
-                    description: `[Plugin: ${plugin.name}] ${act.description || act.triggerHint || ''}`,
-                    parameters: {
-                      type: 'object',
-                      properties: {
-                        query: { type: 'string', description: 'Parameter aksi plugin' }
-                      },
-                      required: ['query'],
-                      additionalProperties: false
-                    }
-                  }
-                })
-              }
+        const nativeGroups = Object.entries(groupToolsSchema).filter(
+          ([, group]) => group.kind !== 'plugin'
+        )
+        const reservedNames = [
+          ...core_tools_schema.map((tool) => tool.function.name),
+          ...nativeGroups.flatMap(([, group]) =>
+            (group.tools || []).map((tool) => tool.function.name)
+          )
+        ]
+        const pluginGroups = buildPluginToolGroups(
+          activePlugins,
+          reservedNames,
+          nativeGroups.map(([key]) => key)
+        )
+        cachedPluginToolNames = new Set(
+          Object.values(pluginGroups).flatMap((group) =>
+            group.tools.map((tool) => tool.function.name)
+          )
+        )
+        for (const [pluginName, group] of Object.entries(pluginGroups)) {
+          if (loadedSet.has(pluginName) || loadedSet.has('custom_plugins')) {
+            for (const tool of group.tools) {
+              if (seenToolNames.has(tool.function.name)) continue
+              seenToolNames.add(tool.function.name)
+              activeSchemas.push(tool)
             }
           }
         }
@@ -103,7 +106,7 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
   const readToolsIdx = activeSchemas.findIndex((s) => s.function?.name === 'read-tools')
   if (readToolsIdx >= 0) {
     const orig = activeSchemas[readToolsIdx]
-    const allGroups = [...groupToolGroupNames, ...activePluginNames]
+    const allGroups = [...new Set([...groupToolGroupNames, ...activePluginNames])]
     activeSchemas[readToolsIdx] = {
       ...orig,
       function: {

@@ -48,7 +48,7 @@ export async function loadAllPlugins() {
                 handlerInstance[act.name] ||
                 (typeof handlerInstance === 'function' ? handlerInstance : null)
               if (typeof actHandler === 'function') {
-                pluginActionHandlers.set(act.name, {
+                pluginActionHandlers.set(`${manifest.name}/${act.name}`, {
                   handler: actHandler,
                   pluginName: manifest.name,
                   actionName: act.name
@@ -141,41 +141,37 @@ export function normalizePluginQuery(rawQuery) {
 }
 
 function findRegisteredAction(actionName) {
-  let registered = pluginActionHandlers.get(actionName)
-  if (!registered && typeof actionName === 'string') {
-    const lowerName = actionName.toLowerCase()
-    for (const [key, value] of pluginActionHandlers.entries()) {
-      const fullKey = `plugin-${value.pluginName}-${value.actionName}`.toLowerCase()
-      if (
-        key.toLowerCase() === lowerName ||
-        fullKey === lowerName ||
-        lowerName.endsWith(`-${key.toLowerCase()}`) ||
-        lowerName.endsWith(`_${key.toLowerCase()}`)
-      ) {
-        return value
-      }
-    }
+  if (typeof actionName !== 'string') return null
+  const name = actionName.toLowerCase()
+  const matches = [...pluginActionHandlers.values()].filter((action) => {
+    const legacyName = `plugin-${action.pluginName}-${action.actionName}`.toLowerCase()
+    return action.actionName.toLowerCase() === name || legacyName === name
+  })
+  if (matches.length > 1) {
+    throw new Error(
+      `Nama tool '${actionName}' digunakan beberapa plugin. Ubah nama aksi agar unik.`
+    )
   }
-  return registered
+  return matches[0] || null
 }
 
 export async function executePluginAction(actionName, query) {
-  let registered = findRegisteredAction(actionName)
-
-  // Lazy reload on cache miss jika plugin baru ditambah ke disk saat runtime
-  if (!registered) {
-    await loadAllPlugins()
-    registered = findRegisteredAction(actionName)
-  }
-
-  if (!registered) {
-    return {
-      success: false,
-      error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.`
-    }
-  }
-
   try {
+    let registered = findRegisteredAction(actionName)
+
+    // Lazy reload on cache miss jika plugin baru ditambah ke disk saat runtime
+    if (!registered) {
+      await loadAllPlugins()
+      registered = findRegisteredAction(actionName)
+    }
+
+    if (!registered) {
+      return {
+        success: false,
+        error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.`
+      }
+    }
+
     const cleanQuery = normalizePluginQuery(query)
 
     // Buat polymorphic payload agar kompatibel dengan handler `{ query }` maupun `(query)` atau direct template literals
