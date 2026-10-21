@@ -26,6 +26,8 @@ import {
   GATEWAY_HYGIENE_THRESHOLD,
   IN_LOOP_COMPACT_THRESHOLD,
   calculateSessionTokens,
+  calculatePayloadTokens,
+  countTokens,
   calculateMessageTokens,
   calculateSessionChars,
   executeSessionCompaction,
@@ -87,6 +89,7 @@ const MUTATION_TOOLS = new Set([
   'edit-file',
   'append-file',
   'delete-file',
+  'computer_use',
   'os-click',
   'os-type',
   'os-key',
@@ -112,6 +115,23 @@ const VERIFICATION_TOOLS = new Set([
   'readDesktop',
   'takeScreenshot'
 ])
+
+const awaitWithTimeout = async (promise, timeoutMs, stage) => {
+  let timeoutId
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`${stage} tidak selesai dalam ${timeoutMs / 1000} detik.`)),
+          timeoutMs
+        )
+      })
+    ])
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
 
 // ============================================================================
 // MAIN HOOK: useMarkPlan
@@ -157,34 +177,30 @@ export const useMarkPlan = ({
 
   // Listener event status AI dari Main Process (IPC)
   useEffect(() => {
+    let unsubStatus = null
     if (window.api && window.api.onAiStatus) {
-      window.api.onAiStatus((msg) => {
-        if (activeSessionUpdatersRef.current.size > 0) {
-          for (const updater of activeSessionUpdatersRef.current.values()) {
-            try {
-              updater((prev) => {
-                const filtered = prev.filter((item) => !item.isThinking)
-                return [...filtered, { role: 'ai', content: msg, isThinking: true }]
-              })
-            } catch (e) {}
-          }
-        } else {
-          setChatData((prev) => {
-            const filtered = prev.filter((item) => !item.isThinking)
-            return [...filtered, { role: 'ai', content: msg, isThinking: true }]
-          })
+      unsubStatus = window.api.onAiStatus((msg) => {
+        for (const updater of activeSessionUpdatersRef.current.values()) {
+          try {
+            updater((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [...filtered, { role: 'ai', content: msg, isThinking: true }]
+            })
+          } catch (e) {}
         }
       })
     }
 
+    let unsubAbort = null
     if (window.api && window.api.onAiAbort) {
-      const unsub = window.api.onAiAbort((payload) => {
+      unsubAbort = window.api.onAiAbort((payload) => {
         console.warn('[useMarkPlan] Sinyal ai:abort diterima:', payload)
         handleStop()
       })
-      return () => {
-        if (typeof unsub === 'function') unsub()
-      }
+    }
+    return () => {
+      if (typeof unsubStatus === 'function') unsubStatus()
+      if (typeof unsubAbort === 'function') unsubAbort()
     }
   }, [setChatData])
 
@@ -676,9 +692,43 @@ export const useMarkPlan = ({
 
         const res = executionResult.res
 
+        // Ekstraksi dataUrl/image jika ada dari tool apapun (computer_use, screenshot, read-image, dll)
+        const extractedImageUrl =
+          res?.dataUrl ||
+          res?.image ||
+          res?.screenshot ||
+          res?.imageUrl ||
+          res?.data?.dataUrl ||
+          res?.data?.image ||
+          res?.data?.screenshot ||
+          (typeof res?.data === 'string' && res.data.startsWith('data:image/') ? res.data : null)
+
         if (res && res.success) {
           if (res.data !== undefined) {
-            resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+            if (typeof res.data === 'string') {
+              resultString = res.data.startsWith('data:image/')
+                ? '[Tangkapan Layar Gambar Diteruskan ke Observasi Visual]'
+                : res.data
+            } else if (typeof res.data === 'object' && res.data !== null) {
+              const cleanData = { ...res.data }
+              if (
+                cleanData.image &&
+                typeof cleanData.image === 'string' &&
+                cleanData.image.startsWith('data:image/')
+              ) {
+                cleanData.image = `[VISUAL_ATTACHED: ${cleanData.viewport || '1280x720'}]`
+              }
+              if (
+                cleanData.dataUrl &&
+                typeof cleanData.dataUrl === 'string' &&
+                cleanData.dataUrl.startsWith('data:image/')
+              ) {
+                cleanData.dataUrl = `[VISUAL_ATTACHED]`
+              }
+              resultString = JSON.stringify(cleanData)
+            } else {
+              resultString = JSON.stringify(res.data)
+            }
           } else if (res.output !== undefined) {
             resultString = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
           } else if (res.result !== undefined) {
@@ -705,7 +755,8 @@ export const useMarkPlan = ({
           }
 
           // Analisis visual untuk read-image
-          if (tool === 'read-image' && res.dataUrl) {
+          if (tool === 'read-image' && (res.dataUrl || extractedImageUrl)) {
+            const activeImg = res.dataUrl || extractedImageUrl
             const promptText =
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               (typeof rawArgs === 'string' ? rawArgs : '') ||
@@ -725,7 +776,7 @@ export const useMarkPlan = ({
                     role: 'user',
                     content: [
                       { type: 'text', text: promptText },
-                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                      { type: 'image_url', image_url: { url: activeImg } }
                     ]
                   }
                 ],
@@ -743,7 +794,12 @@ export const useMarkPlan = ({
           }
 
           // Analisis visual untuk browser-screenshot jika query disertakan
-          if (tool === 'browser-screenshot' && res.dataUrl && (rawArgs?.query || res.query)) {
+          if (
+            tool === 'browser-screenshot' &&
+            (res.dataUrl || extractedImageUrl) &&
+            (rawArgs?.query || res.query)
+          ) {
+            const activeImg = res.dataUrl || extractedImageUrl
             const promptText =
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               res.query ||
@@ -759,7 +815,7 @@ export const useMarkPlan = ({
                     role: 'user',
                     content: [
                       { type: 'text', text: promptText },
-                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                      { type: 'image_url', image_url: { url: activeImg } }
                     ]
                   }
                 ],
@@ -779,8 +835,8 @@ export const useMarkPlan = ({
           resultString = `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
         }
 
-        const toolImageUrls = res?.dataUrl ? [res.dataUrl] : null
-        const toolPreviewUrl = res?.dataUrl || null
+        const toolImageUrls = extractedImageUrl ? [extractedImageUrl] : null
+        const toolPreviewUrl = extractedImageUrl || null
 
         return {
           res,
@@ -941,6 +997,7 @@ export const useMarkPlan = ({
     const sessionAbortController = new AbortController()
     const sessionRecord = {
       abortController: sessionAbortController,
+      thinkingId: `thinking_${activeSessionNum}_${Date.now()}`,
       startTime: Date.now(),
       lastActivityTime: Date.now(),
       prompt: userInput,
@@ -1014,7 +1071,7 @@ export const useMarkPlan = ({
     }
 
     if (isAutonomous) {
-      finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'os-*' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
+      finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'computer_use' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
     }
 
     let imageVisionPayloads = []
@@ -1199,7 +1256,7 @@ export const useMarkPlan = ({
       let durableTask = null
       let durableActiveStep = null
 
-      const allMemory = await getAllMemory()
+      const allMemory = await awaitWithTimeout(getAllMemory(), 15000, 'Memuat memori')
       let searchQuery = userInput
       if (validHistory.length > 0) {
         const lastMsg = validHistory[validHistory.length - 1]
@@ -1219,7 +1276,11 @@ export const useMarkPlan = ({
         if (sessionAbortController.signal.aborted) return onAbort()
         sessionAbortController.signal.addEventListener('abort', onAbort)
       })
-      const unifiedContext = await Promise.race([contextPromise, abortPromise])
+      const unifiedContext = await awaitWithTimeout(
+        Promise.race([contextPromise, abortPromise]),
+        30000,
+        'Menyiapkan konteks'
+      )
 
       let contextMsgStr = ''
       if (tgContext)
@@ -1269,18 +1330,22 @@ export const useMarkPlan = ({
         }
       } catch (_) {}
 
-      const systemPrompt = await buildPlanningSystemPrompt(
-        userInput,
-        {
-          ...opts,
-          tgContext,
-          currentMusicTrack,
-          systemTelemetry,
-          activeTaskObjective: activeTaskObjectiveRef.current,
-          existingSubagents
-        },
-        unifiedContext,
-        contextMsgStr
+      const systemPrompt = await awaitWithTimeout(
+        buildPlanningSystemPrompt(
+          userInput,
+          {
+            ...opts,
+            tgContext,
+            currentMusicTrack,
+            systemTelemetry,
+            activeTaskObjective: activeTaskObjectiveRef.current,
+            existingSubagents
+          },
+          unifiedContext,
+          contextMsgStr
+        ),
+        30000,
+        'Menyiapkan instruksi sistem'
       )
 
       // ------------------------------------------------------------------------
@@ -1335,6 +1400,7 @@ export const useMarkPlan = ({
             messages: effectiveSourceMessages,
             activeConfig: config[0] || {},
             systemPrompt,
+            signal: sessionAbortController.signal,
             onProgress: (prog) => {
               targetSetChatData((prev) =>
                 prev.map((item) =>
@@ -1385,8 +1451,12 @@ export const useMarkPlan = ({
               })
             )
           }
+          if (!compactionResult?.isCompacted) {
+            throw new Error('Kompaksi tidak mengurangi konteks sesi.')
+          }
         } catch (compactErr) {
           console.error('[useMarkPlan] Gagal context compaction:', compactErr)
+          throw new Error(`Kompaksi konteks gagal: ${compactErr.message}`)
         } finally {
           targetSetChatData((prev) => (prev || []).filter((item) => item.id !== compactBannerId))
         }
@@ -1502,6 +1572,8 @@ export const useMarkPlan = ({
       }
 
       let consecutiveErrors = 0
+      let consecutiveEmptyTurns = 0
+      let consecutiveNoToolTurns = 0
       const maxConsecutiveErrorRetries = 50
       let verificationGateCount = 0
 
@@ -1588,9 +1660,13 @@ export const useMarkPlan = ({
         const activeTools =
           opts.disableTools || isDurableTaskCompleted
             ? null
-            : await getActiveToolsSchema(
-                userInput + ' ' + (activeTaskObjectiveRef.current || ''),
-                dynamicallyLoadedToolGroups
+            : await awaitWithTimeout(
+                getActiveToolsSchema(
+                  userInput + ' ' + (activeTaskObjectiveRef.current || ''),
+                  dynamicallyLoadedToolGroups
+                ),
+                15000,
+                'Memuat daftar tool'
               )
 
         // Loading thinking indicator di awal turn (akumulasi semua pemikiran dari langkah sebelumnya)
@@ -1609,6 +1685,7 @@ export const useMarkPlan = ({
           return [
             ...filtered,
             {
+              id: sessionRecord.thinkingId,
               role: 'ai',
               content: loadingText,
               isThinking: true,
@@ -1629,6 +1706,7 @@ export const useMarkPlan = ({
         // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
         // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
+        let inLoopBannerId = null
         try {
           const inLoopResult = await checkAndCompressInLoop({
             loopMessages,
@@ -1638,34 +1716,60 @@ export const useMarkPlan = ({
             protectLastN: 6,
             protectFirstN: 2,
             activeConfig: config[0] || {},
-            systemPrompt
+            systemPrompt,
+            signal: sessionAbortController.signal,
+            onProgress: (progress) => {
+              if (!inLoopBannerId) {
+                inLoopBannerId = `compact-loop-${Date.now()}`
+                targetSetChatData((prev) => [
+                  ...prev,
+                  {
+                    id: inLoopBannerId,
+                    role: 'system',
+                    isCompacting: true,
+                    compactProgress: progress.text
+                  }
+                ])
+              } else {
+                targetSetChatData((prev) =>
+                  prev.map((msg) =>
+                    msg.id === inLoopBannerId ? { ...msg, compactProgress: progress.text } : msg
+                  )
+                )
+              }
+            }
           })
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
             loopMessages = inLoopResult.loopMessages
-            if (inLoopResult.totalTokens || inLoopResult.totalChars) {
-              const inLoopTokens = inLoopResult.totalTokens || inLoopResult.totalChars
-              window.dispatchEvent(
-                new CustomEvent('context-tracker-updated', {
-                  detail: {
-                    sessionId: String(activeSessionNum || 1),
-                    currentTokens: inLoopTokens,
-                    maxTokens: MAX_CONTEXT_TOKENS,
-                    percentage: Math.min(100, (inLoopTokens / MAX_CONTEXT_TOKENS) * 100),
-                    currentChars: inLoopTokens,
-                    maxChars: MAX_CONTEXT_TOKENS,
-                    lastCompactedAt: Date.now()
-                  }
-                })
-              )
-            }
           }
-        } catch (inLoopErr) {
-          console.warn('[useMarkPlan] In-loop compaction warning:', inLoopErr)
+        } finally {
+          if (inLoopBannerId) {
+            targetSetChatData((prev) => prev.filter((msg) => msg.id !== inLoopBannerId))
+          }
         }
 
         // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
+        const inFlightTokens =
+          calculatePayloadTokens(loopMessages) +
+          (activeTools ? countTokens(JSON.stringify(activeTools)) : 0)
+        if (inFlightTokens >= MAX_CONTEXT_TOKENS) {
+          throw new Error(
+            'Konteks masih melebihi 256K token setelah kompaksi. Permintaan AI dibatalkan.'
+          )
+        }
+        window.dispatchEvent(
+          new CustomEvent('context-tracker-updated', {
+            detail: {
+              sessionId: String(activeSessionNum || 1),
+              currentTokens: inFlightTokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (inFlightTokens / MAX_CONTEXT_TOKENS) * 100),
+              lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
+            }
+          })
+        )
 
         // Request streaming ke Backend AI Bridge
         const streamResult = await fetchAI(loopMessages, true, {
@@ -1685,6 +1789,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: currentTurnContent,
                   isThinking: true,
@@ -1739,6 +1844,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: currentTurnContent,
                   isThinking: true,
@@ -1768,27 +1874,6 @@ export const useMarkPlan = ({
 
         if (streamResult?.usage) {
           lastServerUsage = streamResult.usage
-          const liveTokens = Number(
-            streamResult.usage.total_tokens ||
-              (streamResult.usage.prompt_tokens || 0) +
-                (streamResult.usage.completion_tokens || 0) ||
-              0
-          )
-          if (liveTokens > 0) {
-            window.dispatchEvent(
-              new CustomEvent('context-tracker-updated', {
-                detail: {
-                  sessionId: String(activeSessionNum || 1),
-                  currentTokens: liveTokens,
-                  maxTokens: MAX_CONTEXT_TOKENS,
-                  percentage: Math.min(100, (liveTokens / MAX_CONTEXT_TOKENS) * 100),
-                  currentChars: liveTokens,
-                  maxChars: MAX_CONTEXT_TOKENS,
-                  lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
-                }
-              })
-            )
-          }
         }
 
         if (streamResult?.finishReason === 'error') {
@@ -1946,6 +2031,8 @@ export const useMarkPlan = ({
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+          consecutiveEmptyTurns = 0
+          consecutiveNoToolTurns = 0
           sentenceBuffer = ''
           speechQueue.reset()
           const assistantMsg = {
@@ -2005,6 +2092,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: streamResult.content || `Mengeksekusi [${toolName}]...`,
                   isThinking: true,
@@ -2115,6 +2203,25 @@ export const useMarkPlan = ({
                   : execResult.resultString
             })
             currentInFlightTool = null
+
+            targetSetChatData((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [
+                ...filtered,
+                {
+                  role: 'ai',
+                  content:
+                    streamResult.content ||
+                    `Selesai mengeksekusi [${toolName}]. Menganalisis hasil observasi...`,
+                  isThinking: true,
+                  reasoning: liveReasoning || undefined,
+                  executedTools: [...executedToolsList],
+                  mood: currentActiveMood,
+                  usage: lastServerUsage || undefined,
+                  tokens: lastServerUsage?.completion_tokens || undefined
+                }
+              ]
+            })
 
             if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
               for (const u of execResult.imageUrls) {
@@ -2406,8 +2513,49 @@ export const useMarkPlan = ({
           currentActiveMood = turnMeta.mood
         }
 
+        // Safeguard untuk respon kosong / terputus:
+        // Jika model tidak memanggil tool dan tidak memberikan teks output (misal hanya berpikir atau turn terputus)
+        if (!turnAnswer.trim() && !opts.disableTools && !isSystem) {
+          if (consecutiveEmptyTurns < 2) {
+            consecutiveEmptyTurns++
+            console.warn(
+              `[useMarkPlan] Model mengembalikan respon kosong tanpa tool call (percobaan ${consecutiveEmptyTurns}/2). Melanjutkan loop...`
+            )
+
+            if (currentTurnReasoning && currentTurnReasoning.trim()) {
+              loopMessages.push({
+                role: 'assistant',
+                content: currentTurnReasoning.trim()
+              })
+            }
+
+            loopMessages.push({
+              role: 'user',
+              content:
+                '[Instruksi Lanjutan]: Berdasarkan analisis pemikiran di atas, segera panggil tool yang relevan atau berikan output/jawaban lengkap kepada pengguna sekarang.'
+            })
+
+            execSteps.push({ task: 'Meminta respon lanjutan model...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning: 'Model belum memberikan output, melanjutkan loop...'
+              }
+            })
+
+            continue
+          }
+        } else if (turnAnswer.trim()) {
+          consecutiveEmptyTurns = 0
+        }
+
         // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
-        if (durableTask && !isDurableTaskCompleted) {
+        let pausedWorkflowMessage = ''
+        if (durableTask && !isDurableTaskCompleted && ++consecutiveNoToolTurns < 3) {
           const activeStep =
             durableActiveStep ||
             durableTask.steps?.find((s) => s.status === 'running') ||
@@ -2427,6 +2575,32 @@ export const useMarkPlan = ({
             content: `[PENGINGAT TAHAP AKTIF]: Kamu saat ini sedang berada di Tahap ${curIdx}: "${curTitle}".\n- Sasaran: ${curObj}\n- Target Deliverable: ${curDeliv}\n\nTahap ini BELUM selesai karena kamu belum memverifikasi hasil dan belum memanggil tool 'mark_done_task'. Kerjakan sasaran ini dengan tools yang relevan di workspace pengguna, lakukan pengujian/verifikasi hasil, lalu PANGGIL TOOL 'mark_done_task' dengan parameter stepIndex: ${curIdx}, artifactContent, dan verificationProof agar alur kerja dapat beralih ke tahap berikutnya!`
           })
           continue
+        }
+
+        if (durableTask && !isDurableTaskCompleted) {
+          pausedWorkflowMessage = `Alur kerja "${durableTask.title}" dijeda karena model tiga kali merespons tanpa menyelesaikan tahap aktif. Progres yang tersimpan dapat dilanjutkan.${turnAnswer.trim() ? `\n\nRespons terakhir: ${turnAnswer.trim()}` : ''}`
+          try {
+            await awaitWithTimeout(
+              transitionAgentTask(
+                durableTask.id,
+                'paused',
+                'Model berulang kali merespons tanpa menyelesaikan tahap aktif.'
+              ),
+              10000,
+              'Menjeda alur kerja'
+            )
+            targetSetChatData((prev) =>
+              prev.map((msg) =>
+                msg.isPlanSteps && msg.taskId === durableTask.id
+                  ? { ...msg, taskStatus: 'paused' }
+                  : msg
+              )
+            )
+          } catch (err) {
+            console.warn('[useMarkPlan] Gagal menjeda alur kerja tanpa kemajuan:', err)
+            pausedWorkflowMessage = `Alur kerja "${durableTask.title}" berhenti setelah tiga respons tanpa penyelesaian tahap. Status jeda belum dapat disimpan: ${err.message}`
+          }
+          activeTaskObjectiveRef.current = null
         }
 
         // Jika seluruh tahapan Durable Task telah tuntas diselesaikan via mark_done_task
@@ -2497,39 +2671,47 @@ export const useMarkPlan = ({
         // 2. Bukan instruksi sistem internal (isSystem === false)
         // 3. AI secara EKSPLISIT menyatakan done="false" (membutuhkan turn lanjutan untuk eksekusi)
         const shouldContinueStep =
+          !pausedWorkflowMessage &&
           !opts.disableTools &&
           !isSystem &&
           turnMeta.hasExplicitDone === true &&
           turnMeta.done === false
 
         if (shouldContinueStep) {
-          if (rawTurnAnswer && rawTurnAnswer.trim()) {
-            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
-          }
-          loopMessages.push({
-            role: 'user',
-            content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
-          })
-
-          execSteps.push({ task: 'Melanjutkan langkah...' })
-          targetPushProcess({
-            id: agenticProcessId,
-            type: 'planning',
-            status: 'active',
-            data: {
-              steps: [...execSteps],
-              currentStep: execSteps.length - 1,
-              reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
+          consecutiveNoToolTurns++
+          if (consecutiveNoToolTurns >= 3) {
+            console.warn(
+              '[useMarkPlan] Tiga respons done=false tanpa tool. Menampilkan respons terakhir.'
+            )
+          } else {
+            if (rawTurnAnswer && rawTurnAnswer.trim()) {
+              loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
             }
-          })
+            loopMessages.push({
+              role: 'user',
+              content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+            })
 
-          continue
+            execSteps.push({ task: 'Melanjutkan langkah...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
+              }
+            })
+
+            continue
+          }
         }
 
         // ======================================================================
         // SUPER EFFORT VERIFICATION GATEKEEPER (Autonomous Deep-Persistence)
         // ======================================================================
-        if (isSuperEffort && !opts.disableTools && !isSystem) {
+        if (!pausedWorkflowMessage && isSuperEffort && !opts.disableTools && !isSystem) {
           // 1. Cari index tool mutasi terakhir yang dieksekusi
           let lastMutationIndex = -1
           for (let i = executedToolsList.length - 1; i >= 0; i--) {
@@ -2609,6 +2791,7 @@ Lakukan pemeriksaan mandiri sekarang:
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: 'Memvalidasi & Menguji Hasil Pekerjaan...',
                   isThinking: true,
@@ -2626,7 +2809,13 @@ Lakukan pemeriksaan mandiri sekarang:
         }
 
         isDone = true
-        finalContentAccumulator = turnAnswer || 'Selesai.'
+        finalContentAccumulator =
+          pausedWorkflowMessage ||
+          turnAnswer.trim() ||
+          currentTurnReasoning?.trim() ||
+          (executedToolsList.length > 0
+            ? 'Seluruh tindakan tool telah selesai dieksekusi.'
+            : 'Tidak ada respon yang dihasilkan oleh model.')
 
         execSteps.push({ task: 'Selesai' })
         targetPushProcess({
@@ -2845,6 +3034,7 @@ Lakukan pemeriksaan mandiri sekarang:
       try {
         if (window.api && window.api.executeNativeTool) {
           window.api.executeNativeTool('os-control-close').catch(() => {})
+          window.api.executeNativeTool('computer_use', { action: 'close' }).catch(() => {})
         }
       } catch {
         /* ignore */

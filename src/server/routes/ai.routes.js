@@ -219,17 +219,38 @@ aiRouter.get('/tts/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store')
     res.setHeader('Access-Control-Allow-Origin', '*')
 
-    req.on('close', () => {
+    const handleClientAbort = () => {
       if (!audioStream.destroyed) {
-        audioStream.destroy()
+        try {
+          audioStream.unpipe(res)
+          audioStream.destroy()
+        } catch (_) {}
       }
+    }
+
+    req.once('close', handleClientAbort)
+    res.once('close', handleClientAbort)
+
+    res.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      console.warn('[TTS Stream GET] Response error:', err?.message || err)
     })
 
+    if (res.socket) {
+      res.socket.on('error', (err) => {
+        handleClientAbort()
+        if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      })
+    }
+
     audioStream.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: err.message })
       } else {
-        res.end()
+        try { res.end() } catch (_) {}
       }
     })
 
@@ -251,17 +272,38 @@ aiRouter.post('/tts/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store')
     res.setHeader('Access-Control-Allow-Origin', '*')
 
-    req.on('close', () => {
+    const handleClientAbort = () => {
       if (!audioStream.destroyed) {
-        audioStream.destroy()
+        try {
+          audioStream.unpipe(res)
+          audioStream.destroy()
+        } catch (_) {}
       }
+    }
+
+    req.once('close', handleClientAbort)
+    res.once('close', handleClientAbort)
+
+    res.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      console.warn('[TTS Stream POST] Response error:', err?.message || err)
     })
 
+    if (res.socket) {
+      res.socket.on('error', (err) => {
+        handleClientAbort()
+        if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      })
+    }
+
     audioStream.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: err.message })
       } else {
-        res.end()
+        try { res.end() } catch (_) {}
       }
     })
 

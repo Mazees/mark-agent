@@ -44,14 +44,26 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-navigate',
-          description:
-            'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
+            description:
+              'Buka dan tampilkan URL di jendela browser fisik Puppeteer. Gunakan jika pengguna ingin melihat halaman atau perlu interaksi web.',
           parameters: {
             type: 'object',
             properties: {
               url: { type: 'string', description: 'URL lengkap website tujuan' }
             },
             required: ['url'],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'browser-show',
+          description: 'Tampilkan kembali jendela browser fisik Puppeteer yang sudah terbuka.',
+          parameters: {
+            type: 'object',
+            properties: {},
             additionalProperties: false
           }
         }
@@ -211,198 +223,6 @@ export const GROUP_TOOLS_SCHEMA = {
           parameters: {
             type: 'object',
             properties: {},
-            additionalProperties: false
-          }
-        }
-      }
-    ]
-  },
-  pc_automation: {
-    description:
-      'Tool untuk interaksi fisik dengan desktop OS Windows, mouse click, keyboard typing, dan window management.',
-    tools: [
-      {
-        type: 'function',
-        function: {
-          name: 'os-control-open',
-          description:
-            'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-control-close',
-          description: 'WAJIB DIPANGGIL TERAKHIR setelah semua tugas otomatisasi PC selesai.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-read',
-          description: 'Membaca elemen GUI desktop.',
-          parameters: {
-            type: 'object',
-            properties: {
-              mode: {
-                type: 'string',
-                enum: ['all', 'focus'],
-                description:
-                  '"all" untuk scan seluruh layar atau "focus" untuk membaca 1 elemen aktif'
-              }
-            },
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-click',
-          description:
-            'Klik mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
-          parameters: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'ID elemen dari os-read atau koordinat "x||y"'
-              }
-            },
-            required: ['target'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-double-click',
-          description:
-            'Double click mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
-          parameters: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'ID elemen dari os-read atau koordinat "x||y"'
-              }
-            },
-            required: ['target'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-type',
-          description: 'Ketik teks ke aplikasi Windows yang sedang aktif.',
-          parameters: {
-            type: 'object',
-            properties: {
-              text: { type: 'string', description: 'Teks yang akan diketikkan' }
-            },
-            required: ['text'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-key',
-          description: 'Tekan kombinasi tombol keyboard shortcut (misal: ctrl+c, alt+tab, enter).',
-          parameters: {
-            type: 'object',
-            properties: {
-              combo: { type: 'string', description: 'Kombinasi tombol keyboard' }
-            },
-            required: ['combo'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-scroll',
-          description: 'Scroll mouse wheel di aplikasi aktif.',
-          parameters: {
-            type: 'object',
-            properties: {
-              direction: { type: 'string', enum: ['up', 'down'], description: 'Arah scroll' },
-              amount: { type: 'number', description: 'Jumlah baris scroll' }
-            },
-            required: ['direction'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-delay',
-          description: 'Menunggu beberapa milidetik (jeda) saat menjalankan otomatisasi UI.',
-          parameters: {
-            type: 'object',
-            properties: {
-              ms: { type: 'number', description: 'Durasi jeda dalam milidetik (contoh: 1000)' }
-            },
-            required: ['ms'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-search',
-          description: 'Mencari aplikasi di Start Menu Windows dengan tombol Windows.',
-          parameters: {
-            type: 'object',
-            properties: {
-              keyword: { type: 'string', description: 'Kata kunci nama aplikasi' }
-            },
-            required: ['keyword'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-list-windows',
-          description: 'Menampilkan daftar semua window aplikasi yang terbuka beserta judulnya.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-focus-window',
-          description:
-            'Fokus sebuah window aplikasi berdasarkan judul yang ada di os-list-windows.',
-          parameters: {
-            type: 'object',
-            properties: {
-              title: { type: 'string', description: 'Judul window aplikasi persis' }
-            },
-            required: ['title'],
             additionalProperties: false
           }
         }

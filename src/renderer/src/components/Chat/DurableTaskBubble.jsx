@@ -18,6 +18,7 @@ import {
 import { useApproval } from '../../contexts/ApprovalContext'
 import { ApprovalBubble } from './ApprovalBubble'
 import { FileDiffModal } from './FileDiffModal'
+import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 
 export const DurableTaskBubble = ({
   plan = [],
@@ -393,6 +394,9 @@ export const DurableTaskBubble = ({
               </div>
             </details>
           )}
+
+          {/* Live Desktop Screen Preview Widget (Computer Use) - Di atas list proses saat running */}
+          {isRunning && <DesktopPreviewWidget />}
 
           {/* Executed Tools Folded Process Accordion */}
           {toolsToDisplay && toolsToDisplay.length > 0 && (

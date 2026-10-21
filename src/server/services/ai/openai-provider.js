@@ -142,24 +142,8 @@ export async function executeOpenAIProvider({
     }
 
     let isStreamDone = false
-    let streamWatchdogTimer = null
-    const STREAM_INACTIVITY_TIMEOUT_MS = 60000 // 60 detik tanpa chunk/data baru
 
-    const resetStreamWatchdog = () => {
-      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
-      if (isStreamDone) return
-      streamWatchdogTimer = setTimeout(() => {
-        if (!isStreamDone) {
-          abortController.abort(
-            new Error(
-              `Stream Inactivity Timeout: Tidak ada data dari server (${endpoint}) selama ${STREAM_INACTIVITY_TIMEOUT_MS / 1000} detik.`
-            )
-          )
-        }
-      }, STREAM_INACTIVITY_TIMEOUT_MS)
-    }
-
-    const CONNECT_TIMEOUT_MS = 60000
+    const CONNECT_TIMEOUT_MS = 120000 // 2 menit untuk handshaking / HTTP response headers awal
     let connectTimeoutTimer = setTimeout(() => {
       abortController.abort(
         new Error(
@@ -228,9 +212,6 @@ export async function executeOpenAIProvider({
         throw new Error(`API Error (${response.status}): ${errorMsg}`)
       }
 
-      // Mulai pantau inaktivitas stream setelah koneksi HTTP 200 OK berhasil terbuka
-      resetStreamWatchdog()
-
       const sseMoodFilter = createMoodStreamFilter(
         onToken,
         (mood) => {
@@ -253,18 +234,14 @@ export async function executeOpenAIProvider({
           isStreamDone = true
           return
         }
-        resetStreamWatchdog()
         try {
           const parsed = JSON.parse(jsonStr)
           if (parsed.usage) {
             serverUsage = parsed.usage
+            isStreamDone = true
           }
           const choice = parsed.choices?.[0]
           if (!choice) return
-
-          if (choice.finish_reason) {
-            finishReason = choice.finish_reason
-          }
 
           const delta = choice.delta || {}
 
@@ -300,70 +277,165 @@ export async function executeOpenAIProvider({
               }
             }
           }
+
+          if (choice.finish_reason) {
+            finishReason = choice.finish_reason
+            isStreamDone = true
+          }
         } catch (_) {}
       }
 
       if (response.body && (response.body.getReader || response.body[Symbol.asyncIterator])) {
-        if (response.body[Symbol.asyncIterator]) {
-          const decoder = new TextDecoder()
-          let lineBuffer = ''
-          for await (const chunk of response.body) {
-            resetStreamWatchdog()
-            lineBuffer +=
-              typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
-            const lines = lineBuffer.split('\n')
-            lineBuffer = lines.pop() || ''
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (trimmed.startsWith('data:')) {
-                const dataPayload = trimmed.slice(5).trim()
-                if (dataPayload === '[DONE]') {
-                  isStreamDone = true
-                  break
-                }
-                handleChunkText(dataPayload)
+        const reader =
+          typeof response.body.getReader === 'function' ? response.body.getReader() : null
+        const decoder = new TextDecoder()
+        let lineBuffer = ''
+        let receivedAnyData = false
+        let ttftTimer = null
+        let inactivityTimer = null
+
+        const TTFT_TIMEOUT_MS = 180000 // 3 menit batas koneksi awal sebelum token pertama
+        const INACTIVITY_TIMEOUT_MS = 45000 // 45 detik batas hening tanpa token baru setelah data mulai masuk
+
+        const resetInactivityTimer = () => {
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer)
+            inactivityTimer = null
+          }
+          if (isStreamDone) return
+          inactivityTimer = setTimeout(() => {
+            if (!isStreamDone) {
+              if (
+                accumulatedContent ||
+                accumulatedReasoning ||
+                Object.keys(accumulatedToolCalls).length > 0
+              ) {
+                console.warn(
+                  `[OpenAI Stream] Stream hening selama ${INACTIVITY_TIMEOUT_MS / 1000}s setelah menerima data. Mengakhiri stream secara aman (graceful completion).`
+                )
+                cancelStream()
+              } else {
+                abortController.abort(
+                  new Error(
+                    `Stream Timeout: Tidak ada data dari server (${endpoint}) selama ${INACTIVITY_TIMEOUT_MS / 1000} detik.`
+                  )
+                )
               }
             }
-            if (isStreamDone) break
+          }, INACTIVITY_TIMEOUT_MS)
+        }
+
+        // Watchdog hanya untuk koneksi awal / token pertama (Time-To-First-Token)
+        ttftTimer = setTimeout(() => {
+          if (!receivedAnyData && !isStreamDone) {
+            abortController.abort(
+              new Error(
+                `Connection Timeout: Server API (${endpoint}) tidak mengirim data awal selama ${TTFT_TIMEOUT_MS / 1000} detik.`
+              )
+            )
           }
-          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
-            const dataPayload = lineBuffer.trim().slice(5).trim()
-            if (dataPayload === '[DONE]') {
-              isStreamDone = true
-            } else {
+        }, TTFT_TIMEOUT_MS)
+
+        const cancelStream = () => {
+          isStreamDone = true
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer)
+            inactivityTimer = null
+          }
+          if (reader) {
+            try {
+              reader.cancel().catch(() => {})
+            } catch (_) {}
+          } else if (typeof response.body.cancel === 'function') {
+            try {
+              response.body.cancel().catch(() => {})
+            } catch (_) {}
+          }
+        }
+
+        const processRawChunk = (chunkText) => {
+          lineBuffer += chunkText
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() || ''
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (trimmed.startsWith('data:')) {
+              const dataPayload = trimmed.slice(5).trim()
+              if (dataPayload === '[DONE]') {
+                isStreamDone = true
+                break
+              }
               handleChunkText(dataPayload)
+              if (isStreamDone) break
             }
           }
-          sseMoodFilter.flush()
-        } else {
-          const reader = response.body.getReader()
-          const decoder = new TextDecoder()
-          let lineBuffer = ''
-          while (true) {
-            resetStreamWatchdog()
-            const { done, value } = await reader.read()
-            if (done) break
-            lineBuffer +=
-              typeof value === 'string' ? value : decoder.decode(value, { stream: true })
-            const lines = lineBuffer.split('\n')
-            lineBuffer = lines.pop() || ''
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (trimmed.startsWith('data:')) {
-                const dataPayload = trimmed.slice(5).trim()
-                if (dataPayload === '[DONE]') {
-                  isStreamDone = true
-                  break
-                }
+          // Periksa jika lineBuffer merupakan event SSE utuh (misal berakhiran '}' tanpa newline)
+          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
+            const trimmed = lineBuffer.trim()
+            if (trimmed === 'data: [DONE]') {
+              isStreamDone = true
+              lineBuffer = ''
+            } else if (trimmed.endsWith('}')) {
+              const dataPayload = trimmed.slice(5).trim()
+              try {
+                JSON.parse(dataPayload)
                 handleChunkText(dataPayload)
+                lineBuffer = ''
+              } catch (_) {}
+            }
+          }
+        }
+
+        try {
+          if (reader) {
+            while (!isStreamDone) {
+              const { done, value } = await reader.read()
+              if (done) break
+              if (!receivedAnyData) {
+                receivedAnyData = true
+                if (ttftTimer) {
+                  clearTimeout(ttftTimer)
+                  ttftTimer = null
+                }
+              }
+              resetInactivityTimer()
+              const chunkText =
+                typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+              processRawChunk(chunkText)
+              if (isStreamDone) {
+                cancelStream()
+                break
               }
             }
-            if (isStreamDone) {
-              await reader.cancel().catch(() => {})
-              break
+          } else if (response.body[Symbol.asyncIterator]) {
+            for await (const chunk of response.body) {
+              if (!receivedAnyData) {
+                receivedAnyData = true
+                if (ttftTimer) {
+                  clearTimeout(ttftTimer)
+                  ttftTimer = null
+                }
+              }
+              resetInactivityTimer()
+              const chunkText =
+                typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
+              processRawChunk(chunkText)
+              if (isStreamDone) {
+                cancelStream()
+                break
+              }
             }
           }
-          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
+        } finally {
+          if (ttftTimer) {
+            clearTimeout(ttftTimer)
+            ttftTimer = null
+          }
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer)
+            inactivityTimer = null
+          }
+          if (lineBuffer.trim().startsWith('data:')) {
             const dataPayload = lineBuffer.trim().slice(5).trim()
             if (dataPayload === '[DONE]') {
               isStreamDone = true
@@ -428,7 +500,6 @@ export async function executeOpenAIProvider({
       throw error
     } finally {
       if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer)
-      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
       activeAbortControllers.delete(abortController)
     }
   }

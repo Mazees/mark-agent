@@ -210,6 +210,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   // Sinkronisasi status karakter gauge ke UI saat sesi aktif dimuat/berganti
   useEffect(() => {
+    if (isCurrentLoading) return
     if (!currentDisplayMessages || currentDisplayMessages.length === 0) {
       window.dispatchEvent(
         new CustomEvent('context-tracker-updated', {
@@ -257,7 +258,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     return () => {
       isMounted = false
     }
-  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact])
+  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact, isCurrentLoading])
 
   const handleSendMessage = async (prompt, sendOptions = {}) => {
     if (!prompt.trim()) return

@@ -43,7 +43,6 @@ const APPROVAL_REQUIRED_TOOLS = new Set([
   'delete-file',
   'run-powershell',
   'run-task',
-  'os-control-open',
   'git-commit',
   'git-revert',
   'gdrive-upload',
@@ -69,8 +68,10 @@ const GROUP_META = {
     icon: FaGlobe,
     color: 'text-secondary'
   },
-  pc_automation: {
-    title: 'PC Automation Engine',
+  computer_use: {
+    title: 'Computer Use Engine',
+    description:
+      'Kendali visual tingkat OS (Visual Computer Use / VLA) dan otomasi desktop Windows melalui screenshot kanvas 1280x720, mouse click, drag-and-drop, keyboard typing, dan shortcut Win32.',
     icon: FaTerminal,
     color: 'text-warning'
   },

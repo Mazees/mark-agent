@@ -456,6 +456,177 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
+      name: 'computer_use',
+      description:
+        'Kendali visual tingkat OS untuk otomasi desktop Windows melalui screenshot kanonikal 1280x720 dan injeksi mouse/keyboard presisi tinggi. SANGAT DIANJURKAN menggunakan array "actions" (Batch Execution) untuk merangkai beberapa aksi sekuensial sekaligus dalam satu panggilan (misal: klik input -> ketik teks -> tekan Return) demi efisiensi round-trip dan token. Setiap pemanggilan otomatis mengembalikan screenshot pasca-aksi setelah jeda wait_ms.',
+      parameters: {
+        type: 'object',
+        properties: {
+          actions: {
+            type: 'array',
+            description:
+              'Daftar satu atau lebih aksi yang akan dieksekusi berurutan (Batch Execution). Sangat disarankan menggabungkan aksi sekuensial ke sini (misal: [{ action: "click", coordinate: [500, 300] }, { action: "type", text: "query" }, { action: "key", key: "Return", wait_ms: 500 }]).',
+            items: {
+              type: 'object',
+              properties: {
+                action: {
+                  type: 'string',
+                  enum: [
+                    'screenshot',
+                    'click',
+                    'double_click',
+                    'right_click',
+                    'middle_click',
+                    'mouse_down',
+                    'mouse_up',
+                    'move',
+                    'drag',
+                    'burst_click',
+                    'type',
+                    'key',
+                    'key_down',
+                    'key_up',
+                    'hotkey',
+                    'scroll',
+                    'list_windows',
+                    'focus_window',
+                    'maximize_window',
+                    'open_app'
+                  ],
+                  description: 'Jenis aksi yang akan dieksekusi'
+                },
+                coordinate: {
+                  type: 'array',
+                  items: { type: 'integer' },
+                  description:
+                    '[x, y] koordinat kanvas kanonikal 1280x720 (untuk click/move/mouse_down)'
+                },
+                start_coordinate: {
+                  type: 'array',
+                  items: { type: 'integer' },
+                  description: '[x, y] koordinat awal untuk aksi drag'
+                },
+                end_coordinate: {
+                  type: 'array',
+                  items: { type: 'integer' },
+                  description: '[x, y] koordinat akhir untuk aksi drag'
+                },
+                text: {
+                  type: 'string',
+                  description: 'Teks yang akan diketikkan (action: type)'
+                },
+                key: {
+                  type: 'string',
+                  description: 'Tombol keyboard (Return, Space, Tab, Escape, dll)'
+                },
+                modifiers: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Tombol modifikasi untuk hotkey (ctrl, shift, alt, win)'
+                },
+                title: {
+                  type: 'string',
+                  description: 'Judul window untuk focus_window atau maximize_window'
+                },
+                target: {
+                  type: 'string',
+                  description: 'Judul window (focus_window) atau path/nama program (open_app)'
+                },
+                maximize: {
+                  type: 'boolean',
+                  description:
+                    'Apakah window otomatis dimaksimalkan ke fullscreen saat difokuskan (default: true)'
+                },
+                count: {
+                  type: 'integer',
+                  description: 'Jumlah repetisi untuk burst_click'
+                },
+                interval_ms: {
+                  type: 'integer',
+                  description: 'Jeda antar klik pada burst_click (ms)'
+                },
+                duration_ms: {
+                  type: 'integer',
+                  description: 'Durasi tahanan tombol atau delay (ms)'
+                },
+                wait_ms: {
+                  type: 'integer',
+                  description:
+                    'Jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya atau sebelum auto-screenshot diambil (ms, default: 300, isi 0 jika tanpa jeda)'
+                },
+                delay_after_ms: {
+                  type: 'integer',
+                  description:
+                    'Alias jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya (ms)'
+                }
+              },
+              required: ['action']
+            }
+          },
+          action: {
+            type: 'string',
+            enum: [
+              'screenshot',
+              'click',
+              'double_click',
+              'right_click',
+              'middle_click',
+              'mouse_down',
+              'mouse_up',
+              'move',
+              'drag',
+              'burst_click',
+              'type',
+              'key',
+              'key_down',
+              'key_up',
+              'hotkey',
+              'scroll',
+              'list_windows',
+              'focus_window',
+              'maximize_window',
+              'open_app'
+            ],
+            description:
+              '(Alternatif single action) Jenis aksi tunggal jika tidak menggunakan array actions'
+          },
+          coordinate: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: '(Alternatif single action) [x, y] kanvas kanonikal 1280x720'
+          },
+          text: {
+            type: 'string',
+            description: '(Alternatif single action) Teks untuk pengetikan (action: type)'
+          },
+          key: {
+            type: 'string',
+            description: '(Alternatif single action) Tombol keyboard'
+          },
+          title: {
+            type: 'string',
+            description: '(Alternatif single action) Judul window'
+          },
+          target: {
+            type: 'string',
+            description: '(Alternatif single action) Judul window atau path program'
+          },
+          maximize: {
+            type: 'boolean',
+            description: '(Alternatif single action) Apakah otomatis dimaksimalkan (default: true)'
+          },
+          wait_ms: {
+            type: 'integer',
+            description:
+              '(Alternatif single action) Jeda waktu sebelum auto-screenshot diambil (ms, default: 300, isi 0 jika tanpa jeda)'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'spawn_subagent',
       description:
         'Mendelegasikan tugas ke sub-agent baru yang bekerja mandiri di background secara non-blocking. Sub-agent akan mengeksekusi misi dan melapor kembali secara otomatis via push notification tanpa Lead Agent perlu memanggil wait_subagents.',

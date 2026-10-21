@@ -6,16 +6,14 @@ export const VoiceSection = ({ config, setConfig }) => {
     setConfig((prev) => ({ ...prev, speechLanguage: e.target.value }))
 
   const openSoundSettings = async () => {
-    if (window.api && window.api.osOpen) {
-      try {
-        await window.api.osOpen('ms-settings:sound')
-      } catch (_) {
-        if (window.api.executeNativeTool) {
-          await window.api.executeNativeTool('run-powershell', 'start ms-settings:sound')
-        }
+    try {
+      if (window.api && window.api.executeNativeTool) {
+        await window.api.executeNativeTool('open', 'ms-settings:sound')
       }
-    } else if (window.api && window.api.executeNativeTool) {
-      await window.api.executeNativeTool('run-powershell', 'start ms-settings:sound')
+    } catch (_) {
+      if (window.api && window.api.executeNativeTool) {
+        await window.api.executeNativeTool('run-powershell', 'start ms-settings:sound')
+      }
     }
   }
 
@@ -40,8 +38,8 @@ export const VoiceSection = ({ config, setConfig }) => {
         />
         <p className="text-xs opacity-50">
           Pola bawaan seperti <strong>"Hey Mark"</strong>, <strong>"Halo Mark"</strong>, dan{' '}
-          <strong>"Mark"</strong> sudah aktif otomatis di latar belakang. Masukkan kata atau
-          nama panggilan tambahan di atas (pisahkan dengan koma).
+          <strong>"Mark"</strong> sudah aktif otomatis di latar belakang. Masukkan kata atau nama
+          panggilan tambahan di atas (pisahkan dengan koma).
         </p>
       </div>
 
@@ -96,13 +94,12 @@ export const VoiceSection = ({ config, setConfig }) => {
         </div>
 
         <p className="font-medium text-xs text-white/90">
-          Mark otomatis menggunakan{' '}
-          <strong>mikrofon utama (default) laptop atau PC kamu</strong>.
+          Mark otomatis menggunakan <strong>mikrofon utama (default) laptop atau PC kamu</strong>.
         </p>
         <p className="text-xs opacity-50">
           Kalau kamu punya mikrofon eksternal (seperti headset atau mic USB) dan ingin
-          menggunakannya, klik tombol <em>"Ganti Mikrofon di Windows"</em> di atas lalu
-          pilih mikrofon tersebut sebagai perangkat utama.
+          menggunakannya, klik tombol <em>"Ganti Mikrofon di Windows"</em> di atas lalu pilih
+          mikrofon tersebut sebagai perangkat utama.
         </p>
       </div>
     </div>

@@ -75,6 +75,7 @@ Sistem otomasi desktop, manipulasi berkas, dan penjelajahan web.
 
 - [Native Tools Registry & Plugins](./04-automation-and-tools/native-tools-registry.md): Peta komposisi tool, registry facade, dan sistem plugin eksternal.
 - [Windows PC Automation Daemon](./04-automation-and-tools/pc-automation.md): Komunikasi IPC dengan C# Win32 daemon, SendInput Unicode, dan window tracking.
+- [Computer Use & Windows PC Automation Daemon](./04-automation-and-tools/pc-automation.md): Kendali visual OS (Visual VLA 1280x720, in-memory GDI capture, input primitives), komunikasi IPC C# Win32 daemon, dan window tracking.
 - [Browser Automation Engine](./04-automation-and-tools/browser-automation.md): Multi-session Puppeteer, DOM parser 80 elemen, blocking overlay, dan Holo preview.
 
 ### [05. Voice & Multimodal](./05-voice-and-multimodal/voice-pipeline.md)

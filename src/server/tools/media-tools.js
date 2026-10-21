@@ -6,122 +6,6 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 
-// Patch MsEdgeTTS prototype to prevent unhandled crashes when streams close prematurely,
-// when connections are rejected, or when WebSocket events throw without handler.
-if (!MsEdgeTTS.__mark_patched) {
-  MsEdgeTTS.__mark_patched = true
-
-  MsEdgeTTS.prototype._pushAudioData = function (data, requestId) {
-    if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
-      try {
-        if (!this._streams[requestId].audio.destroyed) {
-          this._streams[requestId].audio.push(data)
-        }
-      } catch (_) {}
-    }
-  }
-
-  MsEdgeTTS.prototype._pushMetadata = function (data, requestId) {
-    if (this._streams && this._streams[requestId] && this._streams[requestId].metadata) {
-      try {
-        if (!this._streams[requestId].metadata.destroyed) {
-          this._streams[requestId].metadata.push(data)
-        }
-      } catch (_) {}
-    }
-  }
-
-  // Override _rawSSMLRequest with explicit catch handler on _send() to eliminate UnhandledPromiseRejection
-  MsEdgeTTS.prototype._rawSSMLRequest = function (requestSSML) {
-    this._metadataCheck()
-    const requestId = MsEdgeTTS.randomHex(16)
-    const request =
-      `X-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n` +
-      requestSSML.trim()
-    const self = this
-    const audioStream = new Readable({
-      read() {},
-      destroy(error, callback) {
-        delete self._streams[requestId]
-        if (typeof callback === 'function') callback(error)
-      }
-    })
-    const metadataStream = this._hasMetadataBoundaries()
-      ? new Readable({
-          read() {},
-          destroy(error, callback) {
-            delete self._streams[requestId]
-            if (typeof callback === 'function') callback(error)
-          }
-        })
-      : null
-
-    audioStream.on('error', () => {
-      audioStream.destroy()
-      metadataStream?.destroy()
-    })
-    audioStream.once('close', () => {
-      audioStream.destroy()
-      metadataStream?.destroy()
-    })
-
-    this._streams[requestId] = {
-      audio: audioStream,
-      metadata: metadataStream
-    }
-
-    // Attach catch handler directly to eliminate UnhandledPromiseRejection and pipe error to audioStream
-    this._send(request).catch((err) => {
-      const errMsg = typeof err === 'string' ? err : err?.message || 'TTS connection failed'
-      if (!audioStream.destroyed) {
-        audioStream.destroy(new Error(errMsg))
-      }
-    })
-
-    return { audioStream, metadataStream, requestId }
-  }
-
-  const originalInitClient = MsEdgeTTS.prototype._initClient
-  MsEdgeTTS.prototype._initClient = async function () {
-    try {
-      const res = await originalInitClient.apply(this, arguments)
-      if (this._ws) {
-        const origOnMessage = this._ws.onmessage
-        this._ws.onmessage = (m) => {
-          try {
-            const buffer = Buffer.from(m.data)
-            const message = buffer.toString()
-            const match = /X-RequestId:(.*?)\r\n/gm.exec(message)
-            const requestId = match ? match[1] : null
-
-            if (message.includes('Path:turn.end') && requestId) {
-              if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
-                try {
-                  if (!this._streams[requestId].audio.destroyed) {
-                    this._streams[requestId].audio.push(null)
-                  }
-                } catch (_) {}
-              }
-              return
-            }
-
-            if (origOnMessage) {
-              origOnMessage.call(this._ws, m)
-            }
-          } catch (_) {
-            // Ignore unparseable or orphaned socket packets
-          }
-        }
-      }
-      return res
-    } catch (connectErr) {
-      const msg =
-        typeof connectErr === 'string' ? connectErr : connectErr?.message || 'TTS connection failed'
-      throw new Error(msg)
-    }
-  }
-}
-
 const TEMP_DIR = path.join(os.tmpdir(), 'mark-audio')
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true })
@@ -148,8 +32,16 @@ export async function streamTTS(text, voice = 'id-ID-ArdiNeural', rate = 10, pit
     selectedVoice = voice.trim()
   }
 
-  const numRate = typeof rate === 'number' ? rate : (rate !== undefined && rate !== '' ? parseInt(rate, 10) : CUTE_ROBOT_RATE) || CUTE_ROBOT_RATE
-  const numPitch = typeof pitch === 'number' ? pitch : (pitch !== undefined && pitch !== '' ? parseInt(pitch, 10) : CUTE_ROBOT_PITCH) || CUTE_ROBOT_PITCH
+  const numRate =
+    typeof rate === 'number'
+      ? rate
+      : (rate !== undefined && rate !== '' ? parseInt(rate, 10) : CUTE_ROBOT_RATE) ||
+        CUTE_ROBOT_RATE
+  const numPitch =
+    typeof pitch === 'number'
+      ? pitch
+      : (pitch !== undefined && pitch !== '' ? parseInt(pitch, 10) : CUTE_ROBOT_PITCH) ||
+        CUTE_ROBOT_PITCH
   const rateStr = numRate >= 0 ? `+${numRate}%` : `${numRate}%`
   const pitchStr = numPitch >= 0 ? `+${numPitch}Hz` : `${numPitch}Hz`
 

@@ -45,7 +45,7 @@ export const GEMINI_WEB_MODELS = {
 
 const DEFAULT_BL = 'boq_assistant-bard-web-server_20260730.01_p1'
 
-function httpPost(urlStr, headers, bodyData) {
+function httpPost(urlStr, headers, bodyData, timeoutMs = 25000) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(urlStr)
     const options = {
@@ -59,6 +59,9 @@ function httpPost(urlStr, headers, bodyData) {
       let data = ''
       res.on('data', (chunk) => (data += chunk.toString()))
       res.on('end', () => resolve(data))
+    })
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Gemini Web HTTP request timed out after ${timeoutMs}ms`))
     })
     req.on('error', (err) => reject(err))
     req.write(bodyData)
@@ -88,10 +91,12 @@ export async function generateGeminiResponse(
 
   let selected = GEMINI_WEB_MODELS[reqModel]
   if (!selected) {
-    if (reqModel.includes('thinking-lite')) selected = GEMINI_WEB_MODELS['gemini-3.5-flash-thinking-lite']
+    if (reqModel.includes('thinking-lite'))
+      selected = GEMINI_WEB_MODELS['gemini-3.5-flash-thinking-lite']
     else if (reqModel.includes('think')) selected = GEMINI_WEB_MODELS['gemini-3.5-flash-thinking']
     else if (reqModel.includes('auto')) selected = GEMINI_WEB_MODELS['gemini-auto']
-    else if (reqModel.includes('lite') || reqModel.includes('fast')) selected = GEMINI_WEB_MODELS['gemini-flash-lite']
+    else if (reqModel.includes('lite') || reqModel.includes('fast'))
+      selected = GEMINI_WEB_MODELS['gemini-flash-lite']
     else selected = GEMINI_WEB_MODELS['gemini-3.6-flash']
   }
 
@@ -155,7 +160,7 @@ export async function generateGeminiResponse(
             finalAnswer = text
           }
         }
-      } catch (e) {}
+      } catch (_) {}
     }
   }
 
@@ -163,7 +168,9 @@ export async function generateGeminiResponse(
     if (rawText.includes('BardErrorInfo')) {
       throw new Error('Google menolak request (Session / Cookie mungkin expired atau terblokir).')
     }
-    throw new Error('Gagal mengekstrak jawaban dari Gemini Web. Balasan mentah: ' + rawText.substring(0, 200))
+    throw new Error(
+      'Gagal mengekstrak jawaban dari Gemini Web. Balasan mentah: ' + rawText.substring(0, 200)
+    )
   }
 
   return finalAnswer
