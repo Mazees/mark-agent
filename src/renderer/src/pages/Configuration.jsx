@@ -90,7 +90,7 @@ const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
           steps: [
             {
               popover: {
-                title: 'Halo, Selamat Datang di Mark! 👋',
+                title: 'Halo, Selamat Datang di Mark!',
                 description:
                   'Mark adalah asisten AI pribadimu. Sebelum mulai ngobrol, ayo kita kenalan dulu sama pengaturan utamanya biar Mark bisa kerja maksimal buat kamu!',
                 side: 'top',

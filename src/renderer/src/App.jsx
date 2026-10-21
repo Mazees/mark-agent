@@ -173,7 +173,23 @@ function App() {
 
   useEffect(() => {
     const checkConfig = async () => {
-      // 1. Init Orama and Hydrate from Database
+      // 0. Cek konfigurasi terlebih dahulu: jika fresh install / DB kosong, langsung buka Configuration tanpa loading berat
+      try {
+        const data = await getAllConfig()
+        if (!data || data.length === 0) {
+          setHasConfig(false)
+          setIsChecking(false)
+          return
+        }
+        setHasConfig(true)
+        if (window.api && window.api.syncConfig) {
+          window.api.syncConfig(data[0])
+        }
+      } catch (err) {
+        console.error('[App] Failed to check initial config:', err)
+      }
+
+      // 1. Init Orama and Hydrate from Database (hanya saat config sudah tersedia)
       try {
         setLoadingText('Memuat Knowledge Base...')
         await initOramaIndices()
@@ -220,16 +236,6 @@ function App() {
         console.error('[App] Failed to load Transformers:', e)
       }
 
-      // 2. Load config
-      const data = await getAllConfig()
-      if (!data || data.length === 0) {
-        setHasConfig(false)
-      } else {
-        setHasConfig(true)
-        if (window.api && window.api.syncConfig) {
-          window.api.syncConfig(data[0])
-        }
-      }
       setIsChecking(false)
     }
     checkConfig()
