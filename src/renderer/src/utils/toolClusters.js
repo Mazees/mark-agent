@@ -35,17 +35,30 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
       : webApi._groupToolsCache?.schema || {}
   const clusters = []
   const hasDynamicPlugins = Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0
+  const seenClusterKeys = new Set()
 
   let currentRadius = 170
   let isClockwise = true
 
   // 1. Ambil seluruh tool groups dari groupToolsSchema
   Object.entries(effectiveSchema).forEach(([groupKey, groupData]) => {
-    if (groupData.kind === 'plugin' && hasDynamicPlugins) return
-    // Jika custom_plugins memiliki dynamic plugin terpasang, tangani terpisah di bawah
-    if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
+    const normalizedKey = groupKey.toLowerCase()
 
-    const clusterName = formatClusterName(groupKey)
+    const isPluginGroup =
+      groupData?.kind === 'plugin' ||
+      (hasDynamicPlugins &&
+        dynamicPlugins.some((p) => (p?.name || '').toLowerCase() === normalizedKey))
+
+    if (isPluginGroup && hasDynamicPlugins) return
+    if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
+    if (seenClusterKeys.has(normalizedKey)) return
+
+    seenClusterKeys.add(normalizedKey)
+    if (groupData?.displayName) {
+      seenClusterKeys.add(groupData.displayName.toLowerCase())
+    }
+
+    const clusterName = groupData?.displayName || formatClusterName(groupKey)
     const clusterColor = getDeterministicColor(groupKey)
     const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
     isClockwise = !isClockwise
@@ -138,6 +151,10 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
   ]
 
   additionalCoreGroups.forEach((cg) => {
+    const normalizedKey = cg.key.toLowerCase()
+    if (seenClusterKeys.has(normalizedKey)) return
+    seenClusterKeys.add(normalizedKey)
+
     if (cg.tools.length > 0) {
       const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
       isClockwise = !isClockwise
@@ -159,6 +176,16 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
   // 3. Tambahkan Custom Plugins jika ada
   if (Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0) {
     dynamicPlugins.forEach((p) => {
+      if (!p || !p.name) return
+      const pKey = p.name.toLowerCase()
+      const dispNameKey = (p.displayName || '').toLowerCase()
+
+      if (seenClusterKeys.has(pKey) || (dispNameKey && seenClusterKeys.has(dispNameKey))) {
+        return
+      }
+      seenClusterKeys.add(pKey)
+      if (dispNameKey) seenClusterKeys.add(dispNameKey)
+
       if (p.isEnabled !== false && Array.isArray(p.actions)) {
         const pluginTools = p.actions.map((act) => {
           const actionName = act.name

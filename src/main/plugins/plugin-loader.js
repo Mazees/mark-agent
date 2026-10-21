@@ -6,6 +6,7 @@ import { execSync } from 'child_process'
 
 let loadedPlugins = []
 let pluginActionHandlers = new Map()
+let loadPluginsPromise = null
 
 export function getPluginsDirectory() {
   const dir = path.join(os.homedir(), 'Documents', 'Mark Plugins')
@@ -18,94 +19,116 @@ export function getPluginsDirectory() {
 export const getPluginsDir = getPluginsDirectory
 
 export async function loadAllPlugins() {
-  const dir = getPluginsDirectory()
-  loadedPlugins = []
-  pluginActionHandlers.clear()
+  if (loadPluginsPromise) {
+    return loadPluginsPromise
+  }
 
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true })
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const pluginDir = path.join(dir, entry.name)
-      const manifestPath = path.join(pluginDir, 'plugin.json')
-      const indexPath = path.join(pluginDir, 'index.js')
+  loadPluginsPromise = (async () => {
+    try {
+      const dir = getPluginsDirectory()
+      const newPlugins = []
+      const newHandlers = new Map()
+      const seenNames = new Set()
 
-      if (fs.existsSync(manifestPath) && fs.existsSync(indexPath)) {
-        try {
-          const manifestRaw = await fs.promises.readFile(manifestPath, 'utf-8')
-          const manifest = JSON.parse(manifestRaw)
-          manifest.folderName = entry.name
-          manifest.folderPath = pluginDir
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const pluginDir = path.join(dir, entry.name)
+          const manifestPath = path.join(pluginDir, 'plugin.json')
+          const indexPath = path.join(pluginDir, 'index.js')
 
-          const moduleUrl = `${pathToFileURL(indexPath).href}?t=${Date.now()}`
-          const module = await import(moduleUrl)
-          const handlerInstance = module.default || module
+          if (fs.existsSync(manifestPath) && fs.existsSync(indexPath)) {
+            try {
+              const manifestRaw = await fs.promises.readFile(manifestPath, 'utf-8')
+              const manifest = JSON.parse(manifestRaw)
 
-          const indexContent = await fs.promises.readFile(indexPath, 'utf-8')
-
-          if (manifest.isEnabled !== false && Array.isArray(manifest.actions)) {
-            for (const act of manifest.actions) {
-              const actHandler =
-                handlerInstance[act.name] ||
-                (typeof handlerInstance === 'function' ? handlerInstance : null)
-              if (typeof actHandler === 'function') {
-                pluginActionHandlers.set(`${manifest.name}/${act.name}`, {
-                  handler: actHandler,
-                  pluginName: manifest.name,
-                  actionName: act.name
-                })
+              if (!manifest.name || seenNames.has(manifest.name.toLowerCase())) {
+                continue
               }
+              seenNames.add(manifest.name.toLowerCase())
 
-              // Extract function body for Monaco editor
-              const searchPatterns = [
-                `'${act.name}': async ({ query }) => {`,
-                `"${act.name}": async ({ query }) => {`,
-                `${act.name}: async ({ query }) => {`,
-                `'${act.name}': async (query) => {`,
-                `"${act.name}": async (query) => {`,
-                `${act.name}: async (query) => {`
-              ]
+              manifest.folderName = entry.name
+              manifest.folderPath = pluginDir
 
-              let startIdx = -1
-              let matchedPatternLen = 0
-              for (const pat of searchPatterns) {
-                const idx = indexContent.indexOf(pat)
-                if (idx !== -1) {
-                  startIdx = idx
-                  matchedPatternLen = pat.length
-                  break
-                }
-              }
+              const moduleUrl = `${pathToFileURL(indexPath).href}?t=${Date.now()}`
+              const module = await import(moduleUrl)
+              const handlerInstance = module.default || module
 
-              if (startIdx !== -1) {
-                let i = startIdx + matchedPatternLen
-                let openBrackets = 1
-                for (; i < indexContent.length; i++) {
-                  if (indexContent[i] === '{') openBrackets++
-                  if (indexContent[i] === '}') {
-                    openBrackets--
-                    if (openBrackets === 0) break
+              const indexContent = await fs.promises.readFile(indexPath, 'utf-8')
+
+              if (manifest.isEnabled !== false && Array.isArray(manifest.actions)) {
+                for (const act of manifest.actions) {
+                  const actHandler =
+                    handlerInstance[act.name] ||
+                    (typeof handlerInstance === 'function' ? handlerInstance : null)
+                  if (typeof actHandler === 'function') {
+                    newHandlers.set(`${manifest.name}/${act.name}`, {
+                      handler: actHandler,
+                      pluginName: manifest.name,
+                      actionName: act.name
+                    })
+                  }
+
+                  // Extract function body for Monaco editor
+                  const searchPatterns = [
+                    `'${act.name}': async ({ query }) => {`,
+                    `"${act.name}": async ({ query }) => {`,
+                    `${act.name}: async ({ query }) => {`,
+                    `'${act.name}': async (query) => {`,
+                    `"${act.name}": async (query) => {`,
+                    `${act.name}: async (query) => {`
+                  ]
+
+                  let startIdx = -1
+                  let matchedPatternLen = 0
+                  for (const pat of searchPatterns) {
+                    const idx = indexContent.indexOf(pat)
+                    if (idx !== -1) {
+                      startIdx = idx
+                      matchedPatternLen = pat.length
+                      break
+                    }
+                  }
+
+                  if (startIdx !== -1) {
+                    let i = startIdx + matchedPatternLen
+                    let openBrackets = 1
+                    for (; i < indexContent.length; i++) {
+                      if (indexContent[i] === '{') openBrackets++
+                      if (indexContent[i] === '}') {
+                        openBrackets--
+                        if (openBrackets === 0) break
+                      }
+                    }
+                    const rawCode = indexContent.substring(startIdx + matchedPatternLen, i)
+                    act.code = rawCode
+                      .split('\n')
+                      .map((l) =>
+                        l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l
+                      )
+                      .join('\n')
+                      .trim()
                   }
                 }
-                const rawCode = indexContent.substring(startIdx + matchedPatternLen, i)
-                act.code = rawCode
-                  .split('\n')
-                  .map((l) =>
-                    l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l
-                  )
-                  .join('\n')
-                  .trim()
               }
+
+              newPlugins.push(manifest)
+            } catch (err) {
+              console.error(`[Plugin Loader] Gagal memuat plugin ${entry.name}:`, err)
             }
           }
-
-          loadedPlugins.push(manifest)
-        } catch (err) {
-          console.error(`[Plugin Loader] Gagal memuat plugin ${entry.name}:`, err)
         }
       }
+
+      loadedPlugins = newPlugins
+      pluginActionHandlers = newHandlers
+      return loadedPlugins
+    } finally {
+      loadPluginsPromise = null
     }
-  }
-  return loadedPlugins
+  })()
+
+  return loadPluginsPromise
 }
 
 export const loadPlugins = loadAllPlugins
