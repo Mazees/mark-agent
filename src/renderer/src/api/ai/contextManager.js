@@ -16,8 +16,8 @@ import { compactCodeBlocks } from './contextCompactor.js'
 
 export const MAX_CONTEXT_TOKENS = 256000 // 256K tokens
 export const MAX_CONTEXT_CHARS = 256000 // Legacy backward-compatibility alias disinkronkan ke 256K
-export const GATEWAY_HYGIENE_THRESHOLD = 0.85 // Jaring pengaman pra-turn (85% kapasitas = ~217.6K tokens)
-export const IN_LOOP_COMPACT_THRESHOLD = 0.5 // Ambang pemicu in-loop ReAct (50% kapasitas = ~128K tokens)
+export const GATEWAY_HYGIENE_THRESHOLD = 0.9 // 90% kapasitas = 230.4K tokens
+export const IN_LOOP_COMPACT_THRESHOLD = GATEWAY_HYGIENE_THRESHOLD
 export const OLD_TOOL_PRUNE_CHAR_LIMIT = 200 // Batas karakter output tool lama untuk dipangkas
 export const CLEARED_TOOL_PLACEHOLDER = '[Old tool output cleared to save context space]'
 
@@ -1007,6 +1007,7 @@ export async function checkAndCompressInLoop({
   activeConfig = {},
   onProgress = null,
   systemPrompt = '',
+  reservedTokens = 0,
   signal = null
 }) {
   void maxChars
@@ -1016,14 +1017,12 @@ export async function checkAndCompressInLoop({
 
   const effectiveMaxTokens = maxTokens || MAX_CONTEXT_TOKENS
   const triggerLimit = effectiveMaxTokens * thresholdRatio
-  const systemTokens = loopMessages.some((m) => m?.role === 'system')
-    ? 0
-    : countTokens(systemPrompt)
+  const systemTokens =
+    (loopMessages.some((m) => m?.role === 'system') ? 0 : countTokens(systemPrompt)) +
+    Math.max(0, Number(reservedTokens) || 0)
   const totalTokens = systemTokens + calculatePayloadTokens(loopMessages)
 
-  // Jika masih di bawah ambang batas (50% dari 256K) dan jumlah pesan belum terlalu panjang (< 24),
-  // tidak memerlukan kompresi
-  if (totalTokens < triggerLimit && loopMessages.length < 24) {
+  if (totalTokens < triggerLimit) {
     return {
       compressed: false,
       loopMessages,
@@ -1040,7 +1039,7 @@ export async function checkAndCompressInLoop({
   const prunedMessages = pruneOldToolResultsInLoop(loopMessages, protectLastN)
   const prunedTokens = systemTokens + calculatePayloadTokens(prunedMessages)
 
-  // Jika Fase 1 saja sudah cukup membawa konteks di bawah ambang batas 50%:
+  // Pruning yang cukup mengembalikan ruang aman tidak perlu panggilan summarizer.
   if (prunedTokens < triggerLimit) {
     const didPrune = prunedTokens < totalTokens
     return {

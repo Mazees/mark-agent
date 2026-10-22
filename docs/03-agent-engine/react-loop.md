@@ -211,9 +211,11 @@ Pengguna dapat menghentikan eksekusi agen kapan saja melalui tombol Stop di UI a
 
 Untuk mendukung siklus ReAct yang berjalan puluhan hingga ratusan langkah tanpa batas turn (`maxTurns: unconstrained`), MARK mengadopsi arsitektur **In-Loop Context Compressor** dari **Hermes Agent (Nous Research)**:
 
+Indikator konteks diperbarui sebelum kompaksi dan diberi kesempatan tampil sebelum banner proses muncul. Auto-compact baru dimulai pada 90%; jumlah pesan saja tidak memicu pruning. Hitungan in-loop mencakup schema tool dan reminder selain pesan.
+
 1. **Evaluasi Per-Iterasi**: Pada setiap putaran siklus `while (!isDone)` tepat sebelum `fetchAI` dipanggil, sistem menjalankan `checkAndCompressInLoop`.
 2. **Fase 1 Tool Pruning**: Output dari pemanggilan tool sebelumnya yang berumur > 6 langkah dan berukuran > 200 karakter secara otomatis diganti menjadi stub `[Old tool output cleared to save context space]`. Ini memangkas 70–80% bobot memori secara instan tanpa biaya token LLM.
-3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 50% kapasitas (128.000 token dari batas 256.000 token), bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
+3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 90% kapasitas (230.400 token dari batas 256.000 token), bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
 4. **Pencegahan Context Ballooning**: Mekanisme ini menjamin bahwa model tidak akan mengalami kegagalan akibat batas konteks terlampaui (_context length exceeded_) meskipun menjalankan 500+ iterasi dalam satu tugas otonom.
 
 ---
@@ -227,12 +229,12 @@ stateDiagram-v2
     Inisialisasi --> Retrieval: Ambil Memori Vektor & Orama
     Retrieval --> Compaction: Evaluasi Batas Token Konteks
     Compaction --> Inferensi: Panggil fetchAI dengan Tools
-    Retrieval --> GatewayHygiene: Cek Kapasitas Sesi (>= 85%)
+    Retrieval --> GatewayHygiene: Cek Kapasitas Sesi (>= 90%)
     GatewayHygiene --> Inferensi: Masuk ReAct Loop
 
     state Inferensi {
         [*] --> StreamingThought: onReasoning
-        [*] --> InLoopCheck: Evaluasi Kapasitas loopMessages (>= 50%)
+        [*] --> InLoopCheck: Evaluasi Kapasitas loopMessages (>= 90%)
         InLoopCheck --> ToolPruning: Pangkas Output Tool Lama (Fase 1)
         ToolPruning --> HandoverSummary: Ringkas Middle Section jika Perlu (Fase 2-4)
         HandoverSummary --> StreamingThought: fetchAI (onReasoning)
@@ -282,8 +284,8 @@ Pada model DeepSeek Web RPC, sesi peramban web memiliki batas kenyamanan obrolan
 | :-------------------------- | :----------------------------------------------------- | :------------------------------------------ |
 | **Batas Turn (`maxTurns`)** | Tidak Terbatas (berjalan hingga selesai / dibatalkan)  | `useMarkPlan.js` line 1256                  |
 | **Batas Global Konteks**    | 256.000 tokens (256K tokens via `gpt-tokenizer`)       | `src/renderer/src/api/ai/contextManager.js` |
-| **Gateway Hygiene Trigger** | 85% dari batas token (~217.6K tokens pra-turn safety)  | `useMarkPlan.js` line 1148                  |
-| **In-Loop Compact Trigger** | 50% dari batas token (~128K tokens in-loop guard)      | `src/renderer/src/api/ai/contextManager.js` |
+| **Gateway Hygiene Trigger** | 90% dari batas token (~230.4K tokens pra-turn safety)  | `useMarkPlan.js` line 1148                  |
+| **In-Loop Compact Trigger** | 90% dari batas token (~230.4K tokens in-loop guard)    | `src/renderer/src/api/ai/contextManager.js` |
 | **Rotasi Sesi DeepSeek**    | Maksimal 10 turn aktif (rotasi + State Anchor)         | `src/server/services/ai/deepseek-web.js`    |
 | **Toleransi Retry Error**   | Maksimal 50 kali kesalahan berturut-turut              | `useMarkPlan.js` line 1276                  |
 | **Streaming Engine**        | Server-Sent Events (SSE) dengan parser JSON / chunk    | `src/renderer/src/api/ai/core.js`           |

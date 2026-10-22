@@ -57,6 +57,39 @@ import {
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
 
+const publishContextUsage = async (
+  sessionId,
+  tokens,
+  lastCompactedAt,
+  beforeCompaction = false
+) => {
+  window.dispatchEvent(
+    new CustomEvent('context-tracker-updated', {
+      detail: {
+        sessionId: String(sessionId),
+        currentTokens: tokens,
+        maxTokens: MAX_CONTEXT_TOKENS,
+        percentage: Math.min(100, (tokens / MAX_CONTEXT_TOKENS) * 100),
+        lastCompactedAt: lastCompactedAt || null
+      }
+    })
+  )
+  if (!beforeCompaction || document.visibilityState !== 'visible') return
+  await new Promise((resolve) => {
+    let firstFrame, secondFrame
+    const done = () => {
+      clearTimeout(timer)
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+      resolve()
+    }
+    const timer = setTimeout(done, 100)
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(done)
+    })
+  })
+}
+
 const isImagePath = (filePath = '') => {
   if (typeof filePath === 'string' && filePath.startsWith('data:image/')) return true
   const ext = String(filePath || '')
@@ -1444,8 +1477,14 @@ export const useMarkPlan = ({
         isSystem || isAutonomous || opts.skipCompaction || opts.disableTools
       )
 
-      // Layer 1: Gateway Session Hygiene (Hermes 85% safety net)
+      // Layer 1: Gateway Session Hygiene (90%).
       const gatewayHygieneTriggerTokens = MAX_CONTEXT_TOKENS * GATEWAY_HYGIENE_THRESHOLD
+      await publishContextUsage(
+        activeSessionNum || 1,
+        currentEstimatedTokens,
+        activeSessionCompact?.lastCompactedAt,
+        !isInternalTurn && currentEstimatedTokens >= gatewayHygieneTriggerTokens
+      )
       if (!isInternalTurn && currentEstimatedTokens >= gatewayHygieneTriggerTokens) {
         const compactBannerId = `compact-banner-${Date.now()}`
         targetSetChatData((prev) => [
@@ -1817,9 +1856,25 @@ export const useMarkPlan = ({
 
         // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai batas kapasitas,
         // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 256K tokens.
-        // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
+        // Layer 2: In-Loop Agent ContextCompressor (90% threshold + O(n) pruning).
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
-        // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
+        // Schema tool dan reminder ikut dihitung pada indikator serta ambang kompaksi.
+        const progressReminder =
+          isSystem || isAutonomous || opts.disableTools
+            ? null
+            : buildProgressReminder(executedToolsList, { initial: stepCount === 1 })
+        const reservedTokens =
+          (activeTools ? countTokens(JSON.stringify(activeTools)) : 0) +
+          (progressReminder
+            ? calculatePayloadTokens([{ role: 'system', content: progressReminder }])
+            : 0)
+        const tokensBeforeCompact = calculatePayloadTokens(loopMessages) + reservedTokens
+        await publishContextUsage(
+          activeSessionNum || 1,
+          tokensBeforeCompact,
+          activeSessionCompact?.lastCompactedAt,
+          tokensBeforeCompact >= MAX_CONTEXT_TOKENS * IN_LOOP_COMPACT_THRESHOLD
+        )
         let inLoopBannerId = null
         try {
           const inLoopResult = await checkAndCompressInLoop({
@@ -1831,6 +1886,7 @@ export const useMarkPlan = ({
             protectFirstN: 2,
             activeConfig: config[0] || {},
             systemPrompt,
+            reservedTokens,
             signal: sessionAbortController.signal,
             onProgress: (progress) => {
               if (!inLoopBannerId) {
@@ -1865,10 +1921,6 @@ export const useMarkPlan = ({
 
         // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
-        const progressReminder =
-          isSystem || isAutonomous || opts.disableTools
-            ? null
-            : buildProgressReminder(executedToolsList, { initial: stepCount === 1 })
         const requestMessages = progressReminder
           ? [...loopMessages, { role: 'system', content: progressReminder }]
           : loopMessages

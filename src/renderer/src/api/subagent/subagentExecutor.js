@@ -156,7 +156,7 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         })
       }
 
-      // In-Loop Context Guard (Hermes 50% Threshold + O(n) Pruning untuk Sub-Agent)
+      // In-Loop Context Guard (90% Threshold + O(n) Pruning untuk Sub-Agent)
       try {
         const inLoopResult = await checkAndCompressInLoop({
           loopMessages: messagesPayload,
