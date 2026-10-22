@@ -25,11 +25,12 @@ export async function executeOpenAIProvider({
   onStatus = null
 }) {
   const conf = config || {}
+  const latestUserMessageIndex = (messages || []).findLastIndex((m) => m.role === 'user')
 
   let formattedMessages = (messages || []).map((m, index) => {
     let sanitizedContent = m.content
     if (Array.isArray(m.content)) {
-      if (index < messages.length - 1) {
+      if (index < messages.length - 1 && index !== latestUserMessageIndex) {
         sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
       } else {
         sanitizedContent = m.content
