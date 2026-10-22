@@ -11,13 +11,15 @@ export const useMarkState = () => {
   const runningSessionId = runningSessionIds[0] || null
 
   const addRunningSessionId = (id) => {
-    const num = Number(id)
-    setRunningSessionIds((prev) => (prev.map(Number).includes(num) ? prev : [...prev, num]))
+    if (id === null || id === undefined) return
+    const strId = String(id)
+    setRunningSessionIds((prev) => (prev.map(String).includes(strId) ? prev : [...prev, strId]))
   }
 
   const removeRunningSessionId = (id) => {
-    const num = Number(id)
-    setRunningSessionIds((prev) => prev.filter((x) => Number(x) !== num))
+    if (id === null || id === undefined) return
+    const strId = String(id)
+    setRunningSessionIds((prev) => prev.filter((x) => String(x) !== strId))
   }
 
   const setRunningSessionId = (id) => {

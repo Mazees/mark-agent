@@ -10,6 +10,7 @@ Folder Main Thread tidak dapat diganti. Pembacaan sesi melalui API mengembalikan
 
 ## Sidebar dan editor sesi
 
+- Tombol Minimize sidebar melipat daftar menjadi bar navigasi kecil. Tombol Buka sidebar mengembalikan daftar beserta pencarian dan grup yang sebelumnya terbuka. Membuka Browser otomatis melipat sidebar untuk memberi ruang halaman.
 - Tambah Workspace memilih folder lalu langsung membuat satu percakapan kosong. Pembatalan tidak membuat sesi. Memilih folder yang sama menambah percakapan ke grup yang sudah ada.
 - Percakapan Baru membuat sesi umum; tombol tambah dalam grup mewariskan folder grup.
 - Ikon pengaturan terlihat ketika baris sesi di-hover atau mendapat fokus keyboard. Editor menyimpan judul dan folder sekaligus setelah pengguna menekan Simpan.

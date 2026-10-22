@@ -1,7 +1,22 @@
 /* eslint-disable react/prop-types */
 import { useMemo, useState, useSyncExternalStore } from 'react'
-import { browserStateVersion, subscribeBrowserState, browserSessionId, getBrowserState } from '../../api/browser-panel.js'
-import { ArrowLeft, Folder, FolderPlus, Loader2, Plus, Search, Settings } from 'lucide-react'
+import {
+  browserStateVersion,
+  subscribeBrowserState,
+  browserSessionId,
+  getBrowserState
+} from '../../api/browser-panel.js'
+import {
+  ArrowLeft,
+  Folder,
+  FolderPlus,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Settings
+} from 'lucide-react'
 import { groupWorkspaceSessions, isMainSession, workspaceKey } from '@shared/workspaces.js'
 import SessionEditor from './SessionEditor.jsx'
 
@@ -15,6 +30,8 @@ export default function WorkspaceSidebar({
   busy,
   onRetry,
   onClose,
+  minimized = false,
+  onToggleMinimized,
   onSelect,
   onCreate,
   onAddWorkspace,
@@ -56,7 +73,12 @@ export default function WorkspaceSidebar({
           {running(session.id) && (
             <Loader2 size={13} className="shrink-0 animate-spin text-primary ml-auto" />
           )}
-          {!active && getBrowserState(browserSessionId(session.id))?.open && <span title="Browser aktif" className="w-1.5 h-1.5 rounded-full bg-primary/70 shrink-0 ml-auto"/>}
+          {!active && getBrowserState(browserSessionId(session.id))?.open && (
+            <span
+              title="Browser aktif"
+              className="w-1.5 h-1.5 rounded-full bg-primary/70 shrink-0 ml-auto"
+            />
+          )}
         </button>
         <button
           type="button"
@@ -75,7 +97,36 @@ export default function WorkspaceSidebar({
     : [{ id: '1', title: 'Main Thread' }, ...grouped.general]
   return (
     <>
-      <aside className="w-80 max-w-[42vw] border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
+      {minimized && (
+        <aside
+          aria-label="Navigasi Chat Studio"
+          className="w-12 shrink-0 border-r border-white/10 bg-base-200/50 flex flex-col items-center py-3 gap-2"
+        >
+          <button
+            type="button"
+            onClick={onToggleMinimized}
+            aria-label="Buka sidebar"
+            title="Buka sidebar"
+            aria-expanded={false}
+            className="btn btn-ghost btn-sm btn-circle"
+          >
+            <PanelLeftOpen size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup Chat Studio"
+            title="Tutup Chat Studio"
+            className="btn btn-ghost btn-sm btn-circle"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        </aside>
+      )}
+      <aside
+        hidden={minimized}
+        className={`w-80 max-w-[80vw] border-r border-white/10 bg-base-200/50 flex-col h-full shrink-0 ${minimized ? 'hidden' : 'flex'}`}
+      >
         <div className="p-4 border-b border-white/10 space-y-3">
           <div className="flex items-center gap-2">
             <button
@@ -87,6 +138,16 @@ export default function WorkspaceSidebar({
               <ArrowLeft size={19} />
             </button>
             <h2 className="text-sm font-semibold text-white">Chat Studio</h2>
+            <button
+              type="button"
+              onClick={onToggleMinimized}
+              aria-label="Minimize sidebar"
+              title="Minimize sidebar"
+              aria-expanded={true}
+              className="btn btn-ghost btn-sm btn-circle ml-auto"
+            >
+              <PanelLeftClose size={18} />
+            </button>
           </div>
           <div className="relative">
             <Search

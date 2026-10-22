@@ -20,6 +20,7 @@ export const _getBrowserSign = () =>
 
 // Map of sessionId -> SessionState { browser, page, url, title, idleTimeout }
 const sessions = new Map()
+const launches = new Map()
 
 function getEdgePath() {
   const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
@@ -64,9 +65,18 @@ function resetSessionIdleTimeout(session) {
     },
     5 * 60 * 1000
   )
+  session.idleTimeout.unref?.()
 }
 
 async function getOrCreateSession(sessionId = 'default') {
+  browserControl(sessionId)
+  if (launches.has(sessionId)) return launches.get(sessionId)
+  const pending = createBrowserSession(sessionId).finally(() => launches.delete(sessionId))
+  launches.set(sessionId, pending)
+  return pending
+}
+
+async function createBrowserSession(sessionId) {
   browserControl(sessionId)
   let session = sessions.get(sessionId)
   if (session && session.page && !session.page.isClosed()) {
@@ -89,10 +99,12 @@ async function getOrCreateSession(sessionId = 'default') {
   const browser = await puppeteer.launch({
     executablePath: edgePath,
     headless: true,
+    protocolTimeout: 15000,
     userDataDir,
     ignoreDefaultArgs: ['--enable-automation'],
     defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
     args: [
+      '--force-high-performance-gpu',
       '--disable-blink-features=AutomationControlled',
       '--disable-infobars',
       '--no-first-run',
@@ -101,240 +113,67 @@ async function getOrCreateSession(sessionId = 'default') {
     ]
   })
 
-  const pages = await browser.pages()
-  const page = pages.length > 0 ? pages[0] : await browser.newPage()
+  try {
+    const pages = await browser.pages()
+    const page = pages.length > 0 ? pages[0] : await browser.newPage()
+    page.setDefaultTimeout(8000)
+    page.setDefaultNavigationTimeout(45000)
 
-  // Real Edge Windows 11 User-Agent & HTTP Headers
-  const userAgent =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
-  await page.setUserAgent(userAgent)
-
-  await page.setExtraHTTPHeaders({
-    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Sec-CH-UA': '"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
-    'Sec-CH-UA-Mobile': '?0',
-    'Sec-CH-UA-Platform': '"Windows"',
-    'Upgrade-Insecure-Requests': '1'
-  })
-
-  // Comprehensive Anti-Bot Detection Stealth Overrides
-  await page.evaluateOnNewDocument(() => {
-    const makeNative = (fn, name) => {
-      Object.defineProperty(fn, 'name', { value: name, configurable: true })
-      const toString = () => `function ${name}() { [native code] }`
-      Object.defineProperty(fn, 'toString', { value: toString, configurable: true })
-      return fn
-    }
-
-    // 2. WebDriver stealth: returns false with native getter signature
+    // Real Edge Windows 11 User-Agent & HTTP Headers
     try {
-      delete Object.getPrototypeOf(navigator).webdriver
-    } catch (_) {}
-    const webdriverGetter = makeNative(() => false, 'get webdriver')
-    Object.defineProperty(Navigator.prototype, 'webdriver', {
-      get: webdriverGetter,
-      enumerable: true,
-      configurable: true
-    })
-
-    // 3. Native Chrome runtime structure matching official Edge
-    const sendMessageFn = makeNative(function () {}, 'sendMessage')
-    const connectFn = makeNative(function () {}, 'connect')
-    window.chrome = {
-      app: {
-        isInstalled: false,
-        InstallState: {
-          DISABLED: 'disabled',
-          INSTALLED: 'installed',
-          NOT_INSTALLED: 'not_installed'
-        },
-        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
-      },
-      runtime: {
-        OnInstalledReason: {},
-        OnRestartRequiredReason: {},
-        PlatformArch: {},
-        PlatformNaclArch: {},
-        PlatformOs: {},
-        RequestUpdateCheckStatus: {},
-        connect: connectFn,
-        sendMessage: sendMessageFn
-      },
-      loadTimes: makeNative(function () {
-        return {
-          requestTime: performance.now() / 1000,
-          startLoadTime: performance.now() / 1000,
-          commitLoadTime: performance.now() / 1000,
-          finishDocumentLoadTime: performance.now() / 1000,
-          finishLoadTime: performance.now() / 1000,
-          firstPaintTime: performance.now() / 1000,
-          firstPaintAfterLoadTime: 0,
-          navigationType: 'Other',
-          wasFetchedViaSpdy: false,
-          wasNpnNegotiated: false,
-          npnNegotiatedProtocol: '',
-          wasAlternateProtocolAvailable: false,
-          connectionInfo: 'http/1.1'
-        }
-      }, 'loadTimes'),
-      csi: makeNative(function () {
-        return {
-          startE: performance.now(),
-          onloadT: performance.now(),
-          pageT: performance.now(),
-          tran: 15
-        }
-      }, 'csi')
-    }
-
-    // 4. PluginArray and MimeTypeArray Prototype emulation
-    const pluginData = [
-      {
-        name: 'PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'Chrome PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'Chromium PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'Microsoft Edge PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'WebKit built-in PDF',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      }
-    ]
-
-    const createPluginArray = (plugins) => {
-      const arr = Object.create(PluginArray.prototype)
-      plugins.forEach((p, idx) => {
-        const pluginObj = Object.create(Plugin.prototype)
-        Object.defineProperties(pluginObj, {
-          name: { value: p.name, enumerable: true },
-          filename: { value: p.filename, enumerable: true },
-          description: { value: p.description, enumerable: true },
-          length: { value: 1, enumerable: true }
-        })
-        arr[idx] = pluginObj
-        arr[p.name] = pluginObj
-      })
-      Object.defineProperty(arr, 'length', { value: plugins.length, enumerable: true })
-      arr.item = makeNative((i) => arr[i] || null, 'item')
-      arr.namedItem = makeNative((name) => arr[name] || null, 'namedItem')
-      arr.refresh = makeNative(() => {}, 'refresh')
-      return arr
-    }
-
-    try {
-      const fakePlugins = createPluginArray(pluginData)
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => fakePlugins,
-        configurable: true
-      })
-    } catch (_) {}
-
-    // 5. Hardware and Locale properties
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['id-ID', 'id', 'en-US', 'en'],
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'language', { get: () => 'id-ID', configurable: true })
-    Object.defineProperty(navigator, 'platform', { get: () => 'Win32', configurable: true })
-    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true })
-    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true })
-    Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0, configurable: true })
-
-    // 6. User Agent Data (Edge Client Hints)
-    Object.defineProperty(navigator, 'userAgentData', {
-      get: () => ({
-        brands: [
-          { brand: 'Not(A:Brand', version: '99' },
-          { brand: 'Microsoft Edge', version: '133' },
-          { brand: 'Chromium', version: '133' }
-        ],
-        mobile: false,
-        platform: 'Windows',
-        getHighEntropyValues: async () => ({
-          architecture: 'x86',
-          bitness: '64',
-          brands: [
-            { brand: 'Not(A:Brand', version: '99' },
-            { brand: 'Microsoft Edge', version: '133' },
-            { brand: 'Chromium', version: '133' }
-          ],
-          fullVersionList: [
-            { brand: 'Not(A:Brand', version: '99.0.0.0' },
-            { brand: 'Microsoft Edge', version: '133.0.3065.82' },
-            { brand: 'Chromium', version: '133.0.6943.127' }
-          ],
-          mobile: false,
-          model: '',
-          platform: 'Windows',
-          platformVersion: '15.0.0'
-        })
-      }),
-      configurable: true
-    })
-
-    // 7. Notification Permissions
-    const originalQuery = window.navigator.permissions?.query
-    if (originalQuery) {
-      window.navigator.permissions.query = makeNative(
-        (parameters) =>
-          parameters && parameters.name === 'notifications'
-            ? Promise.resolve({ state: Notification.permission || 'default', onchange: null })
-            : originalQuery.call(window.navigator.permissions, parameters),
-        'query'
+      const rawUA = await page.evaluate(() => navigator.userAgent)
+      const cleanUA = rawUA.replace(/HeadlessChrome/g, 'Chrome')
+      await page.setUserAgent(cleanUA)
+    } catch (_) {
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
       )
     }
 
-    // 8. WebGL Vendor and Renderer
-    const patchParam = (proto) => {
-      const original = proto.getParameter
-      proto.getParameter = makeNative(function (param) {
-        if (param === 37445) return 'Google Inc. (Intel)'
-        if (param === 37446)
-          return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
-        return original.apply(this, arguments)
-      }, 'getParameter')
-    }
-    patchParam(WebGLRenderingContext.prototype)
-    patchParam(WebGL2RenderingContext.prototype)
-  })
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
+    })
 
-  session = {
-    id: sessionId,
-    browser,
-    page,
-    url: 'about:blank',
-    title: 'New Tab',
-    idleTimeout: null,
-    isForeground: true
+    session = {
+      id: sessionId,
+      browser,
+      page,
+      url: 'https://www.google.com',
+      title: 'Google',
+      idleTimeout: null,
+      isForeground: true
+    }
+    session.readDom = () => evaluateObservation(session, DOM_PARSER_SCRIPT)
+
+    // Buka beranda Google secara default agar peramban langsung siap pakai
+    try {
+      await page.goto('https://www.google.com/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 25000
+      })
+      session.url = page.url()
+      session.title = (await page.title()) || 'Google'
+    } catch (err) {
+      console.warn('[BrowserAgent] Inisialisasi Google beranda:', err.message)
+    }
+
+    sessions.set(sessionId, session)
+    await attachBrowserSession(session)
+    browser.once('disconnected', () => {
+      if (sessions.get(sessionId) === session) {
+        sessions.delete(sessionId)
+        clearTimeout(session.idleTimeout)
+        detachBrowserSession(sessionId).catch(() => {})
+      }
+    })
+    resetSessionIdleTimeout(session)
+    return session
+  } catch (error) {
+    sessions.delete(sessionId)
+    await browser.close().catch(() => {})
+    await detachBrowserSession(sessionId)
+    throw error
   }
-  session.readDom = () => page.evaluate(DOM_PARSER_SCRIPT)
-
-  sessions.set(sessionId, session)
-  await attachBrowserSession(session)
-  browser.once('disconnected', () => {
-    if (sessions.get(sessionId) === session) {
-      sessions.delete(sessionId)
-      clearTimeout(session.idleTimeout)
-      detachBrowserSession(sessionId).catch(() => {})
-    }
-  })
-  resetSessionIdleTimeout(session)
-  return session
 }
 
 const DOM_PARSER_SCRIPT = `
@@ -387,7 +226,9 @@ const DOM_PARSER_SCRIPT = `
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
     let node;
     let lastParent = null;
+    let visited = 0;
     while ((node = walker.nextNode())) {
+      if (++visited > 12000) break;
       if (text.length > 8000) break;
       const parent = node.parentElement;
       if (!parent || parent.closest('#mark-user-blocker')) continue;
@@ -427,6 +268,26 @@ const DOM_PARSER_SCRIPT = `
 
 async function broadcastPreview(session) {
   publishBrowserState(session.id)
+}
+
+async function evaluateObservation(session, expression, awaitPromise = false) {
+  const client = await session.page.createCDPSession()
+  try {
+    const response = await client.send(
+      'Runtime.evaluate',
+      {
+        expression,
+        awaitPromise,
+        returnByValue: true,
+        timeout: 2500
+      },
+      { timeout: 3000 }
+    )
+    if (response.exceptionDetails) throw new Error(response.exceptionDetails.text)
+    return response.result.value
+  } finally {
+    await client.detach().catch(() => {})
+  }
 }
 
 async function detectChallenge(page) {
@@ -495,25 +356,21 @@ async function detectChallenge(page) {
   return { isBlocked: false }
 }
 
-async function seedAntiBotCookies(page) {
+async function recoverIfBlockedByGoogle(page) {
   try {
-    const cookies = [
-      {
-        name: 'SOCS',
-        value:
-          'CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJpZCADGgYIgJnPpwY',
-        domain: '.google.com',
-        path: '/'
-      },
-      {
-        name: 'CONSENT',
-        value: 'PENDING+999',
-        domain: '.google.com',
-        path: '/'
-      }
-    ]
-    await page.setCookie(...cookies)
-  } catch (_) {}
+    const url = page.url()
+    if (url.includes('google.com/sorry')) {
+      console.warn('[BrowserAgent] Terdeteksi halaman blokir Google. Cookie login dipertahankan.')
+      await page.goto('https://www.google.com/', {
+        waitUntil: 'networkidle2',
+        timeout: 20000
+      })
+      return true
+    }
+  } catch (err) {
+    console.warn('[BrowserAgent] Pemulihan sesi terblokir:', err.message)
+  }
+  return false
 }
 
 async function navigateToInternal(url, sessionId = 'default') {
@@ -529,11 +386,15 @@ async function navigateToInternal(url, sessionId = 'default') {
     targetUrl = `${targetUrl}${separator}sourceid=chrome&ie=UTF-8`
   }
 
-  if (targetUrl.includes('google.com')) {
-    await seedAntiBotCookies(session.page)
+  await session.page.goto(targetUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 45000,
+    referer: targetUrl.includes('google.com') ? 'https://www.google.com/' : undefined
+  })
+  if (session.page.url().includes('google.com/sorry')) {
+    await recoverIfBlockedByGoogle(session.page)
   }
 
-  await session.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
   session.url = session.page.url()
   session.title = await session.page.title()
 
@@ -576,12 +437,21 @@ async function navigateToInternal(url, sessionId = 'default') {
     return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Halaman memicu perlindungan "${challenge.type}" (Judul: "${session.title}", URL: "${session.url}").\nTanyakan bantuan pengguna di chat, gunakan metadata await_user="true", dan akhiri giliran tanpa menutup browser.`
   }
 
-  return `Berhasil membuka ${session.url} (Judul: "${session.title}"). Gunakan 'browser-read' untuk melihat isi dan elemen interaktif.`
+  return `Berhasil membuka ${session.url} (Judul: "${session.title}").`
 }
 
 async function readDOMInternal(sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
-  const result = await session.page.evaluate(DOM_PARSER_SCRIPT)
+  let result
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      result = await evaluateObservation(session, DOM_PARSER_SCRIPT)
+      break
+    } catch (error) {
+      if (attempt === 2 || !/context|navigation|frame.*detach/i.test(error.message)) throw error
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+  }
 
   session.url = session.page.url()
   session.title = await session.page.title()
@@ -590,10 +460,59 @@ async function readDOMInternal(sessionId = 'default') {
 
   const challenge = await detectChallenge(session.page)
   if (challenge.isBlocked) {
-    return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Terdeteksi "${challenge.type}" pada halaman ini!\nTanyakan bantuan pengguna di chat, gunakan metadata await_user="true", dan akhiri giliran tanpa menutup browser.`
+    return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Terdeteksi "${challenge.type}" pada halaman ini!\nTanyakan bantuan pengguna di chat, gunakan metadata await_user="true", dan akhiri giliran tanpa menutup browser.\n\n${result}`
   }
 
   return result
+}
+
+async function withPageObservation(sessionId, action) {
+  const result = await action()
+  const session = sessions.get(sessionId)
+  if (session && !session.page.isClosed()) {
+    await evaluateObservation(
+      session,
+      `(${() =>
+        new Promise((resolve) => {
+          let quiet
+          const done = () => {
+            clearTimeout(quiet)
+            clearTimeout(limit)
+            observer.disconnect()
+            resolve()
+          }
+          const observer = new MutationObserver(() => {
+            clearTimeout(quiet)
+            quiet = setTimeout(done, 120)
+          })
+          const limit = setTimeout(done, 600)
+          observer.observe(document, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            characterData: true
+          })
+          quiet = setTimeout(done, 120)
+        })})()`,
+      true
+    ).catch(() => {})
+  }
+  let observation
+  try {
+    observation = await readDOMInternal(sessionId)
+  } catch (error) {
+    observation = `[DOM terbaru belum tersedia: ${error.message}. Periksa halaman sebelum aksi berikutnya.]`
+  }
+  const text =
+    typeof result === 'object' && result !== null
+      ? result.message
+      : String(result ?? 'Aksi selesai.')
+  const summary =
+    text.length > 4000
+      ? `${text.slice(0, 4000)}\n[Hasil aksi dipotong; gunakan browser-extract untuk bagian tertentu.]`
+      : text
+  const message = `${summary}\n\n[Observasi halaman setelah aksi]\n${observation}`
+  return typeof result === 'object' && result !== null ? { ...result, message } : message
 }
 
 async function executeActionInternal(data, sessionId = 'default') {
@@ -613,7 +532,7 @@ async function executeActionInternal(data, sessionId = 'default') {
     await publishBrowserCursor(sessionId, box.x, box.y, 'click')
     await new Promise((r) => setTimeout(r, 1000))
     await broadcastPreview(session)
-    return `Berhasil klik elemen [${id}]. Gunakan 'browser-read' untuk melihat perubahan halaman.`
+    return `Berhasil klik elemen [${id}].`
   }
 
   if (action === 'type') {
@@ -637,7 +556,7 @@ async function executeActionInternal(data, sessionId = 'default') {
     await session.page.evaluate((d) => window.scrollBy({ top: d, behavior: 'smooth' }), delta)
     await new Promise((r) => setTimeout(r, 600))
     await broadcastPreview(session)
-    return `Berhasil scroll ${direction}. Gunakan 'browser-read' untuk membaca elemen terbaru.`
+    return `Berhasil scroll ${direction}.`
   }
 
   return `Aksi ${action} tidak dikenali.`
@@ -682,7 +601,8 @@ async function downloadFileInternal(url, filename, sessionId = 'default') {
   return `File berhasil diunduh ke ${outPath}`
 }
 
-export async function closeBrowser(sessionId = 'default') {
+async function closeBrowserInternal(sessionId = 'default') {
+  if (launches.has(sessionId)) await launches.get(sessionId).catch(() => {})
   const session = sessions.get(sessionId)
   if (session && session.browser) {
     if (session.idleTimeout) clearTimeout(session.idleTimeout)
@@ -699,6 +619,8 @@ export async function closeBrowser(sessionId = 'default') {
 }
 
 setBrowserFactory(getOrCreateSession)
+export const closeBrowser = (sessionId = 'default') =>
+  runBrowserAction(sessionId, () => closeBrowserInternal(sessionId))
 export const navigateTo = (url, sessionId = 'default') =>
   runBrowserAction(sessionId, async () => {
     const target = normalizeBrowserUrl(url)
@@ -707,7 +629,7 @@ export const navigateTo = (url, sessionId = 'default') =>
     control.loading = true
     publishBrowserState(sessionId)
     try {
-      return await navigateToInternal(target, sessionId)
+      return await withPageObservation(sessionId, () => navigateToInternal(target, sessionId))
     } finally {
       control.loading = false
       publishBrowserState(sessionId)
@@ -716,12 +638,24 @@ export const navigateTo = (url, sessionId = 'default') =>
 export const readDOM = (sessionId = 'default') =>
   runBrowserAction(sessionId, () => readDOMInternal(sessionId))
 export const executeAction = (data, sessionId = 'default') =>
-  runBrowserAction(sessionId, () => executeActionInternal(data, sessionId))
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => executeActionInternal(data, sessionId))
+  )
 export const executeScript = (code, sessionId = 'default') =>
-  runBrowserAction(sessionId, () => executeScriptInternal(code, sessionId))
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => executeScriptInternal(code, sessionId))
+  )
 export const extractData = (selector, sessionId = 'default') =>
-  runBrowserAction(sessionId, () => extractDataInternal(selector, sessionId))
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => extractDataInternal(selector, sessionId))
+  )
 export const takeScreenshot = (filename = 'screenshot.png', sessionId = 'default') =>
-  runBrowserAction(sessionId, () => takeScreenshotInternal(filename, sessionId))
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => takeScreenshotInternal(filename, sessionId))
+  )
 export const downloadFile = (url, filename, sessionId = 'default') =>
-  runBrowserAction(sessionId, () => downloadFileInternal(url, filename, sessionId))
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () =>
+      downloadFileInternal(normalizeBrowserUrl(url), filename, sessionId)
+    )
+  )

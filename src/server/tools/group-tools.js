@@ -5,7 +5,8 @@
 
 export const GROUP_TOOLS_SCHEMA = {
   advanced_browser: {
-    description: 'Tool untuk navigasi dan kontrol elemen fisik browser web secara detail.',
+    description:
+      'Browser bawaan MARK berbasis Puppeteer yang tampil di panel Browser dalam aplikasi. Pilihan default untuk permintaan "buka di browser", membuka website/localhost, serta interaksi halaman; bukan Chrome desktop atau computer-use.',
     tools: [
       {
         type: 'function',
@@ -45,7 +46,7 @@ export const GROUP_TOOLS_SCHEMA = {
         function: {
           name: 'browser-navigate',
           description:
-            'Buka dan tampilkan URL di panel browser di Chat Studio. Gunakan jika pengguna ingin melihat halaman atau perlu interaksi web.',
+            'Buka URL di browser Puppeteer bawaan MARK dan tampilkan panel Browser Chat Studio secara otomatis. Gunakan sebagai default saat pengguna berkata "buka di browser" atau "buka website", tanpa membuka Chrome/Edge desktop atau computer-use. Hasil sudah menyertakan DOM terbaru beserta ID elemen; gunakan hasil itu langsung untuk aksi berikutnya.',
           parameters: {
             type: 'object',
             properties: {
@@ -73,7 +74,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-click',
-          description: 'Klik elemen pada halaman browser berdasarkan ID numerik.',
+          description:
+            'Klik elemen berdasarkan ID numerik. Hasil menyertakan DOM terbaru; tidak perlu browser-read terpisah.',
           parameters: {
             type: 'object',
             properties: {
@@ -88,7 +90,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-type',
-          description: 'Ketik teks ke kolom input formulir web berdasarkan ID elemen.',
+          description:
+            'Ketik ke input berdasarkan ID elemen. Hasil menyertakan DOM terbaru setelah ketikan.',
           parameters: {
             type: 'object',
             properties: {
@@ -104,7 +107,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-scroll',
-          description: 'Scroll halaman browser ke atas atau ke bawah.',
+          description:
+            'Scroll halaman ke atas atau bawah dan kembalikan DOM terbaru beserta ID elemen yang terlihat.',
           parameters: {
             type: 'object',
             properties: {
@@ -134,7 +138,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-script',
-          description: 'Eksekusi JavaScript langsung pada halaman browser web.',
+          description:
+            'Jalankan JavaScript pada halaman. Hasil script disertai DOM terbaru setelah eksekusi.',
           parameters: {
             type: 'object',
             properties: {
@@ -172,7 +177,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-download',
-          description: 'Mengunduh berkas dari web ke komputer.',
+          description:
+            'Mengunduh berkas dari web ke komputer, disertai observasi halaman setelah aksi.',
           parameters: {
             type: 'object',
             properties: {
@@ -184,17 +190,13 @@ export const GROUP_TOOLS_SCHEMA = {
           }
         }
       },
-
       {
         type: 'function',
         function: {
           name: 'browser-close',
-          description: 'Menutup sesi browser sesi aktif yang sedang aktif.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
+          description:
+            'Akhiri browser sesi ini jika pengguna meminta. Cookie profil tetap tersimpan. Menutup panel saja tidak menjalankan tool ini.',
+          parameters: { type: 'object', properties: {}, additionalProperties: false }
         }
       }
     ]

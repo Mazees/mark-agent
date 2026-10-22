@@ -244,7 +244,7 @@ export const useMarkPlan = ({
     const displayMsg = opts.displayPrompt || textMsg
     const sId =
       targetSessionId !== null && targetSessionId !== undefined
-        ? Number(targetSessionId)
+        ? targetSessionId
         : activeRunningSessionIdRef.current || 1
 
     const interventionItem = {
@@ -253,8 +253,12 @@ export const useMarkPlan = ({
       timestamp: Date.now()
     }
 
-    const session = activeSessionsRef.current.get(sId)
+    const session =
+      activeSessionsRef.current.get(sId) ||
+      activeSessionsRef.current.get(String(sId)) ||
+      (!isNaN(Number(sId)) ? activeSessionsRef.current.get(Number(sId)) : null)
     if (session) {
+      session.needsFreshBrowserObservation = true
       session.lastActivityTime = Date.now()
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
@@ -263,7 +267,11 @@ export const useMarkPlan = ({
       }
     }
 
-    const updater = activeSessionUpdatersRef.current.get(sId) || (sId === 1 ? setChatData : null)
+    const updater =
+      activeSessionUpdatersRef.current.get(sId) ||
+      activeSessionUpdatersRef.current.get(String(sId)) ||
+      (!isNaN(Number(sId)) ? activeSessionUpdatersRef.current.get(Number(sId)) : null) ||
+      (String(sId) === '1' ? setChatData : null)
     if (updater) {
       updater((prev) => {
         const thinkingIndex = prev.findIndex((item) => item.isThinking)
@@ -289,18 +297,16 @@ export const useMarkPlan = ({
       speechQueue.reset()
     } catch (_) {}
 
-    const numId =
-      targetSessionId !== null && targetSessionId !== undefined ? Number(targetSessionId) : null
-    const strId =
-      targetSessionId !== null && targetSessionId !== undefined ? String(targetSessionId) : null
-
     const sessionsToAbort = []
-    if (numId !== null) {
-      const s = activeSessionsRef.current.get(numId) || activeSessionsRef.current.get(strId)
+    if (targetSessionId !== null && targetSessionId !== undefined) {
+      const s =
+        activeSessionsRef.current.get(targetSessionId) ||
+        activeSessionsRef.current.get(String(targetSessionId)) ||
+        (!isNaN(Number(targetSessionId))
+          ? activeSessionsRef.current.get(Number(targetSessionId))
+          : null)
       if (s) sessionsToAbort.push(s)
-    }
-
-    if (targetSessionId == null) {
+    } else {
       for (const s of activeSessionsRef.current.values()) {
         sessionsToAbort.push(s)
       }
@@ -326,11 +332,12 @@ export const useMarkPlan = ({
       } catch (_) {}
     }
 
-
     // Fail-safe: Langsung batalkan semua agent tasks yang berstatus running di SQLite
     try {
       const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-      for (const t of runningTasks.filter(t => targetSessionId == null || sessionsToAbort.some(session => session.taskId === t.id))) {
+      for (const t of runningTasks.filter(
+        (t) => targetSessionId == null || sessionsToAbort.some((session) => session.taskId === t.id)
+      )) {
         await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
       }
     } catch (_) {}
@@ -351,18 +358,33 @@ export const useMarkPlan = ({
       })
     }
 
-    if (numId !== null && activeSessionUpdatersRef.current.has(numId)) {
-      activeSessionUpdatersRef.current.get(numId)(stopUpdater)
-    } else if (targetSessionId == null || numId === 1) {
+    if (targetSessionId !== null && targetSessionId !== undefined) {
+      const updater =
+        activeSessionUpdatersRef.current.get(targetSessionId) ||
+        activeSessionUpdatersRef.current.get(String(targetSessionId)) ||
+        (!isNaN(Number(targetSessionId))
+          ? activeSessionUpdatersRef.current.get(Number(targetSessionId))
+          : null)
+      if (updater) {
+        updater(stopUpdater)
+      } else if (String(targetSessionId) === '1') {
+        setChatData(stopUpdater)
+      }
+    } else {
       setChatData(stopUpdater)
       for (const updater of activeSessionUpdatersRef.current.values()) {
         updater(stopUpdater)
       }
     }
 
-    if (numId === 1 || numId === null) {
-      setIsLoading(false)
+    if (targetSessionId !== null && targetSessionId !== undefined) {
+      if (removeRunningSessionId) removeRunningSessionId(targetSessionId)
+      if (String(targetSessionId) === '1') setIsLoading(false)
       setIsAgentBusy(activeSessionsRef.current.size > sessionsToAbort.length)
+    } else {
+      setIsLoading(false)
+      setIsAgentBusy(false)
+      if (setRunningSessionIds) setRunningSessionIds([])
     }
   }
 
@@ -1620,7 +1642,7 @@ export const useMarkPlan = ({
       let verificationGateCount = 0
 
       const panelSessionId = browserSessionId(activeSessionNum)
-      await browserCommand(panelSessionId, 'job-start')
+      browserCommand(panelSessionId, 'job-start').catch(() => {})
       let needsFreshBrowserObservation = true
       let awaitingBrowserUser = false
       const onBrowserPause = (paused) => {
@@ -1630,30 +1652,39 @@ export const useMarkPlan = ({
       while (!isDone && !sessionAbortController.signal.aborted) {
         if (browserPaused(panelSessionId)) needsFreshBrowserObservation = true
         await waitForBrowserAgent(panelSessionId, sessionAbortController.signal, onBrowserPause)
-        if (needsFreshBrowserObservation) {
-          const observation = await browserObservation(panelSessionId, true)
-          if (observation)
+        if (needsFreshBrowserObservation || sessionRecord.needsFreshBrowserObservation) {
+          sessionRecord.needsFreshBrowserObservation = false
+          try {
+            const observation = await browserObservation(panelSessionId, true)
+            if (observation)
+              loopMessages.push({
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text:
+                      '[Observasi browser terbaru setelah pergantian kontrol. Rencanakan ulang; jangan ulangi aksi lama.]\n' +
+                      observation.url +
+                      '\n' +
+                      observation.text
+                  },
+                  { type: 'image_url', image_url: { url: observation.image } }
+                ]
+              })
+          } catch (error) {
+            if (sessionAbortController.signal.aborted) throw new Error('AbortError')
             loopMessages.push({
               role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text:
-                    '[Observasi browser terbaru setelah pergantian kontrol. Rencanakan ulang; jangan ulangi aksi lama.]\n' +
-                    observation.url +
-                    '\n' +
-                    observation.text
-                },
-                { type: 'image_url', image_url: { url: observation.image } }
-              ]
+              content: `[Observasi browser terbaru belum tersedia: ${error.message}. Jangan mengasumsikan kondisi halaman; periksa sebelum berinteraksi.]`
             })
+          }
           needsFreshBrowserObservation = false
         }
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
           try {
             const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-            for (const t of runningTasks) {
+            for (const t of runningTasks.filter((task) => task.id === durableTaskForRecovery?.id)) {
               await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
             }
           } catch (_) {}
@@ -2419,11 +2450,12 @@ export const useMarkPlan = ({
             }
 
             let obsStr = execResult.resultString
+            const observationLimit = toolName.startsWith('browser-') ? 20000 : 3000
             if (
               typeof execResult.resultString === 'string' &&
-              execResult.resultString.length > 3000
+              execResult.resultString.length > observationLimit
             ) {
-              obsStr = `${execResult.resultString.slice(0, 3000)}\n\n[SISA OUTPUT DIPOTONG (Total: ${execResult.resultString.length} karakter). Gunakan start_line/end_line atau grep-search untuk mencari bagian spesifik.]`
+              obsStr = `${execResult.resultString.slice(0, observationLimit)}\n\n[SISA OUTPUT DIPOTONG (Total: ${execResult.resultString.length} karakter). ${toolName.startsWith('browser-') ? 'Gunakan browser-extract untuk bagian tertentu.' : 'Gunakan start_line/end_line atau grep-search untuk mencari bagian spesifik.'}]`
             }
 
             const toolObservation = {
@@ -3307,7 +3339,7 @@ Lakukan pemeriksaan mandiri sekarang:
         } catch (_) {}
         try {
           const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-          for (const t of runningTasks.filter(t => t.id === durableTaskForRecovery?.id)) {
+          for (const t of runningTasks.filter((t) => t.id === durableTaskForRecovery?.id)) {
             await transitionAgentTask(
               t.id,
               'cancelled',

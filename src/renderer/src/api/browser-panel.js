@@ -41,7 +41,8 @@ export async function browserCommand(id, action, values) {
   return state
 }
 export function browserPaused(id) {
-  return getBrowserState(id)?.mode && getBrowserState(id).mode !== 'agent'
+  void id
+  return false
 }
 export function browserRevision(id) {
   return getBrowserState(id)?.revision || 0
@@ -78,6 +79,7 @@ export async function waitForBrowserAgent(id, signal, onPause = () => {}) {
   }
 }
 export async function browserObservation(id, force = false) {
+  if (force) await browserCommand(id, 'state')
   if (!getBrowserState(id)?.open || browserPaused(id)) return null
   if (force || !observations.has(id)) await browserCommand(id, 'observe')
   const observation = observations.get(id)

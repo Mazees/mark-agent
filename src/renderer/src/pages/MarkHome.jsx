@@ -310,15 +310,6 @@ const MarkHome = ({ isHome = true }) => {
               </span>
             )}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/chat', { state: { openBrowser: true } })}
-            className="h-8 px-3 flex items-center gap-2 text-xs text-white/70 hover:text-white"
-            title="Browser Main Thread"
-          >
-            <PanelRight size={15} />
-            Browser
-          </button>
         </div>
       </header>
 

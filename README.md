@@ -54,7 +54,7 @@
 - **Git Workspace Tools (`git-*`):** `git-status`, `git-diff`, `git-commit`, `git-revert`.
 - **Google Workspace Suite (`google-*` / `gdrive-*` / `gcal-*` / `gmail-*`):** `gdrive-search`, `gdrive-list`, `gdrive-read`, `gdrive-upload`, `gdrive-create`, `gdrive-move`, `gdrive-copy`, `gdrive-share`, `gdrive-info`, `gcal-list`, `gcal-create`, `gcal-delete`, `gmail-search`, `gmail-read`, `gmail-send`, `gmail-mark-read`.
 - **Memory & Recall Tools (`memory-search`):** Pencarian semantik memori, preferensi, catatan teknis, dan pasangan percakapan asli (Turn Pairs) dengan _similarity threshold_ dinamis (`keyword||threshold||limit`, default threshold `0.5`, limit `5`).
-- **Multi-Session Web Browsing (`browser-*`):** `browser-navigate`, `browser-read`, `browser-click`, `browser-type`, `browser-scroll`, `browser-extract`, `browser-ask-user`, `browser-close`.
+- **Multi-Session Web Browsing (`browser-*`):** `browser-navigate`, `browser-read`, `browser-click`, `browser-type`, `browser-scroll`, `browser-extract`, `browser-script`, `browser-screenshot`, `browser-close`. Aksi browser menyertakan DOM terbaru; cookie login tersimpan per percakapan.
 - **Computer Use & Desktop Automation (`computer_use`):** `computer_use` (primitif visual VLA terpadu: screenshot, click, double_click, right_click, middle_click, mouse_down, mouse_up, move, drag, burst_click, type, key, key_down, key_up, hotkey, scroll, wait, batch, open_app, list_windows, focus_window, maximize_window).
 - **Native File Handling & PowerShell:** `read-file`, `write-file`, `replace-content`, `delete-file`, `list-dir`, `grep-search`, `run-powershell`.
 - **Background Tasks Engine:** `run-task`, `read-task-output`, `kill-task`, `list-tasks`.

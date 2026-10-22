@@ -109,10 +109,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const [activeSessionId, setActiveSessionId] = useState('1')
   const [browserOpen, setBrowserOpen] = useState(!!location.state?.openBrowser)
   const [browserExpanded, setBrowserExpanded] = useState(false)
-  const [browserWidth, setBrowserWidth] = useState(560)
+  const [chatWidth, setChatWidth] = useState(380)
+  const [sidebarMinimized, setSidebarMinimized] = useState(false)
   const [narrow, setNarrow] = useState(() => window.innerWidth < 1200)
   const browserId = browserSessionId(activeSessionId)
   const browserRevisions = useRef(new Map())
+  useEffect(() => {
+    if (browserOpen) setSidebarMinimized(true)
+  }, [browserOpen])
   useEffect(() => {
     const resize = () => setNarrow(window.innerWidth < 1200)
     window.addEventListener('resize', resize)
@@ -314,23 +318,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     if (isCurrentLoading && typeof handleIntervention === 'function') {
       handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
-      if (getBrowserState(browserId)?.mode === 'manual') {
-        try {
-          await browserCommand(browserId, 'resume')
-        } catch (error) {
-          setSessionsError(error.message)
-        }
-      }
       return
-    }
-
-    if (getBrowserState(browserId)?.mode && getBrowserState(browserId)?.mode !== 'agent') {
-      try {
-        await browserCommand(browserId, 'resume')
-      } catch (error) {
-        setSessionsError(error.message)
-        return
-      }
     }
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
@@ -603,40 +591,49 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   return (
     <>
       <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
-        <div className={narrow && browserOpen ? 'hidden' : 'contents'}><WorkspaceSidebar
-          sessions={sessions}
-          defaultRoot={defaultRoot}
-          activeId={activeSessionId}
-          runningIds={[
-            ...runningSessionIds,
-            ...(!runningSessionIds.length && (isMainLoading || isAgentBusy) ? ['1'] : [])
-          ]}
-          loading={isSessionsLoading}
-          error={sessionsError}
-          busy={isWorkspaceBusy || !defaultRoot}
-          onRetry={loadAllSessions}
-          onClose={handleClose}
-          onSelect={setActiveSessionId}
-          onCreate={handleCreateNewChat}
-          onAddWorkspace={handleAddWorkspace}
-          onSave={handleSaveSession}
-          onDelete={handleDeleteSession}
-        /></div>
+        <div className={narrow && browserOpen ? 'hidden' : 'contents'}>
+          <WorkspaceSidebar
+            sessions={sessions}
+            defaultRoot={defaultRoot}
+            activeId={activeSessionId}
+            runningIds={[
+              ...runningSessionIds,
+              ...(!runningSessionIds.length && (isMainLoading || isAgentBusy) ? ['1'] : [])
+            ]}
+            loading={isSessionsLoading}
+            error={sessionsError}
+            busy={isWorkspaceBusy || !defaultRoot}
+            onRetry={loadAllSessions}
+            onClose={handleClose}
+            minimized={sidebarMinimized}
+            onToggleMinimized={() => setSidebarMinimized((value) => !value)}
+            onSelect={setActiveSessionId}
+            onCreate={handleCreateNewChat}
+            onAddWorkspace={handleAddWorkspace}
+            onSave={handleSaveSession}
+            onDelete={handleDeleteSession}
+          />
+        </div>
 
         {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
         <div
           className={`flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden ${browserOpen && (narrow || browserExpanded) ? 'hidden' : ''}`}
+          style={
+            browserOpen && !narrow && !browserExpanded
+              ? { flex: '0 0 auto', width: chatWidth, maxWidth: '40%' }
+              : undefined
+          }
         >
           {/* Header */}
-          <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
+          <div className="h-14 px-3 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
             <div className="flex flex-col min-w-0 pr-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white truncate max-w-md">
+              <div className="flex items-center gap-2 min-w-0">
+                <h3 className="text-sm font-bold text-white truncate">
                   {activeSessionObj.title || 'Percakapan'}
                 </h3>
                 {activeSessionWorkspace && (
                   <span
-                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate inline-flex items-center gap-1"
+                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-28 shrink-0 truncate inline-flex items-center gap-1"
                     title={`Workspace: ${activeSessionWorkspace}`}
                   >
                     <Folder className="w-2.5 h-2.5 shrink-0" />
@@ -652,11 +649,12 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             <button
               type="button"
               onClick={() => setBrowserOpen(true)}
-              className="flex items-center gap-2 text-xs text-white/60 hover:text-white"
+              className="flex shrink-0 items-center gap-2 text-xs text-white/60 hover:text-white"
               title="Buka browser percakapan"
+              aria-label="Buka browser percakapan"
             >
               <PanelRight size={16} />
-              Browser
+              {!browserOpen && 'Browser'}
             </button>
           </div>
 
@@ -804,17 +802,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             {!narrow && !browserExpanded && (
               <div
                 role="separator"
-                aria-label="Lebar panel browser"
+                aria-label="Lebar percakapan dan browser"
                 aria-orientation="vertical"
                 tabIndex={0}
                 className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40 focus:bg-primary/40"
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
-                    setBrowserWidth((w) =>
-                      Math.max(
-                        360,
-                        Math.min(window.innerWidth - 650, w + (e.key === 'ArrowLeft' ? 30 : -30))
-                      )
+                    setChatWidth((w) =>
+                      Math.max(300, Math.min(600, w + (e.key === 'ArrowLeft' ? -30 : 30)))
                     )
                 }}
                 onPointerDown={(e) => {
@@ -822,24 +817,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 }}
                 onPointerMove={(e) => {
                   if (e.currentTarget.hasPointerCapture(e.pointerId))
-                    setBrowserWidth(
-                      Math.max(
-                        360,
-                        Math.min(window.innerWidth - 650, window.innerWidth - e.clientX)
-                      )
+                    setChatWidth(
+                      Math.max(300, Math.min(600, e.clientX - (sidebarMinimized ? 48 : 320)))
                     )
                 }}
                 onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
               />
             )}
-            <div
-              className={`min-w-0 h-full ${narrow || browserExpanded ? 'flex-1' : 'shrink-0'}`}
-              style={
-                narrow || browserExpanded
-                  ? undefined
-                  : { width: browserWidth, maxWidth: 'calc(100% - 650px)' }
-              }
-            >
+            <div className="min-w-0 h-full flex-1 overflow-hidden">
               <BrowserPanel
                 key={browserId}
                 sessionId={browserId}
