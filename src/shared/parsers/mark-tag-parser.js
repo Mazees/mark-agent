@@ -37,6 +37,11 @@ export const MOOD_NORMALIZATION = {
 }
 
 export const MARK_TAG_SCHEMA = {
+  await_user: {
+    type: 'boolean',
+    default: false,
+    validate: (value) => value === true || value === 'true'
+  },
   mood: {
     type: 'string',
     default: 'neutral',
@@ -81,6 +86,7 @@ const LEGACY_DONE_REGEX = /<\/?done\s*\/?>/gi
  */
 export function parseAttributes(attrString) {
   const result = {
+    await_user: false,
     mood: MARK_TAG_SCHEMA.mood.default,
     done: MARK_TAG_SCHEMA.done.default,
     message: MARK_TAG_SCHEMA.message.default,
@@ -138,6 +144,7 @@ export function parseMarkTag(rawText) {
   if (!rawText || typeof rawText !== 'string') {
     return {
       meta: {
+        await_user: false,
         mood: MARK_TAG_SCHEMA.mood.default,
         done: MARK_TAG_SCHEMA.done.default,
         message: MARK_TAG_SCHEMA.message.default,
@@ -158,6 +165,7 @@ export function parseMarkTag(rawText) {
 
   // 2. Ekstraksi Tag <mark ... /> (termasuk tag tidak lengkap / terpotong)
   let meta = {
+    await_user: false,
     mood: MARK_TAG_SCHEMA.mood.default,
     done: MARK_TAG_SCHEMA.done.default,
     message: MARK_TAG_SCHEMA.message.default,

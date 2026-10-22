@@ -37,6 +37,7 @@ const listeners = new Map()
 let groupToolsRevision = 0
 let groupToolsRequest = null
 let workspaceInfoRequest = null
+const browserRequests = new Map()
 
 function getWebSocket() {
   if (typeof window === 'undefined') return null
@@ -58,6 +59,15 @@ function getWebSocket() {
       try {
         const data = JSON.parse(event.data)
         const { event: evtName, payload } = data
+        if (evtName === 'browser-panel:command:response') {
+          const request = browserRequests.get(payload?.id)
+          if (request) {
+            browserRequests.delete(payload.id)
+            clearTimeout(request.timer)
+            if (payload.success) request.resolve(payload.data)
+            else request.reject(new Error(payload.error || 'Perintah browser gagal.'))
+          }
+        }
 
         if (evtName === 'plugins:updated') webApi.invalidateGroupTools()
 
@@ -76,6 +86,11 @@ function getWebSocket() {
     }
 
     ws.onclose = () => {
+      for (const request of browserRequests.values()) {
+        clearTimeout(request.timer)
+        request.reject(new Error('Koneksi browser terputus.'))
+      }
+      browserRequests.clear()
       console.warn('[WebBridge] Koneksi WebSocket terputus. Mencoba reconnect dalam 3 detik...')
       setTimeout(getWebSocket, 3000)
     }
@@ -130,6 +145,66 @@ export function resolveAbortSignal(sig) {
 }
 
 export const webApi = {
+  onBrowserReconnect: (callback) => {
+    addWebListener('core:ready', callback)
+    return () => removeWebListener('core:ready', callback)
+  },
+  browserPanelRequest: async (sessionId, action, values = {}) => {
+    const socket = getWebSocket()
+    if (!socket) throw new Error('WebSocket browser tidak tersedia.')
+    if (socket.readyState !== WebSocket.OPEN)
+      await new Promise((resolve, reject) => {
+        const done = () => {
+          clearTimeout(timer)
+          socket.removeEventListener('open', ready)
+          socket.removeEventListener('close', closed)
+        }
+        const ready = () => {
+            done()
+            resolve()
+          },
+          closed = () => {
+            done()
+            reject(new Error('Koneksi browser terputus.'))
+          }
+        const timer = setTimeout(() => {
+          done()
+          reject(new Error('Koneksi browser belum siap.'))
+        }, 5000)
+        socket.addEventListener('open', ready, { once: true })
+        socket.addEventListener('close', closed, { once: true })
+      })
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID()
+      const timer = setTimeout(() => {
+        browserRequests.delete(id)
+        reject(new Error('Perintah browser melewati batas waktu.'))
+      }, 60000)
+      browserRequests.set(id, { resolve, reject, timer })
+      try {
+        socket.send(
+          JSON.stringify({
+            event: 'browser-panel:command',
+            id,
+            payload: { ...values, sessionId, action }
+          })
+        )
+      } catch (error) {
+        clearTimeout(timer)
+        browserRequests.delete(id)
+        reject(error)
+      }
+    })
+  },
+  getBrowserSessions: async () => {
+    const res = await fetch(`${API_BASE}/api/browser/sessions`)
+    if (!res.ok) throw new Error('Status browser belum dapat dimuat.')
+    return (await res.json()).data || []
+  },
+  onBrowserPanel: (event, callback) => {
+    addWebListener(`browser-panel:${event}`, callback)
+    return () => removeWebListener(`browser-panel:${event}`, callback)
+  },
   // 1. Health & Config
   getHealth: async () => {
     const res = await fetch(`${API_BASE}/api/health`)
@@ -428,10 +503,6 @@ export const webApi = {
       'browser-close',
       typeof sessionId === 'string' ? sessionId : sessionId?.sessionId || 'default'
     ),
-  showBrowserWindow: async (sessionId = 'default') =>
-    webApi.executeNativeTool('browser-show', typeof sessionId === 'string' ? sessionId : 'default'),
-  hideBrowserWindow: async (sessionId = 'default') =>
-    webApi.executeNativeTool('browser-hide', typeof sessionId === 'string' ? sessionId : 'default'),
   onBrowserPreview: (cb) => {
     addWebListener('browser:preview', cb)
   },

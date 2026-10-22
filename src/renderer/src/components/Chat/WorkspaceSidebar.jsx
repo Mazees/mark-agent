@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
+import { browserStateVersion, subscribeBrowserState, browserSessionId, getBrowserState } from '../../api/browser-panel.js'
 import { ArrowLeft, Folder, FolderPlus, Loader2, Plus, Search, Settings } from 'lucide-react'
 import { groupWorkspaceSessions, isMainSession, workspaceKey } from '@shared/workspaces.js'
 import SessionEditor from './SessionEditor.jsx'
@@ -20,6 +21,7 @@ export default function WorkspaceSidebar({
   onSave,
   onDelete
 }) {
+  useSyncExternalStore(subscribeBrowserState, browserStateVersion)
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState({})
   const [editing, setEditing] = useState(null)
@@ -54,6 +56,7 @@ export default function WorkspaceSidebar({
           {running(session.id) && (
             <Loader2 size={13} className="shrink-0 animate-spin text-primary ml-auto" />
           )}
+          {!active && getBrowserState(browserSessionId(session.id))?.open && <span title="Browser aktif" className="w-1.5 h-1.5 rounded-full bg-primary/70 shrink-0 ml-auto"/>}
         </button>
         <button
           type="button"

@@ -6,7 +6,7 @@ import ResponseArea from '../components/core/ResponseArea'
 import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
-import { MessageSquare, Sparkles, Terminal } from 'lucide-react'
+import { MessageSquare, Sparkles, Terminal, PanelRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
@@ -309,6 +309,15 @@ const MarkHome = ({ isHome = true }) => {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-warning"></span>
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/chat', { state: { openBrowser: true } })}
+            className="h-8 px-3 flex items-center gap-2 text-xs text-white/70 hover:text-white"
+            title="Browser Main Thread"
+          >
+            <PanelRight size={15} />
+            Browser
           </button>
         </div>
       </header>

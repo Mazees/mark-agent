@@ -45,11 +45,12 @@ export const GEMINI_WEB_MODELS = {
 
 const DEFAULT_BL = 'boq_assistant-bard-web-server_20260730.01_p1'
 
-function httpPost(urlStr, headers, bodyData, timeoutMs = 25000) {
+function httpPost(urlStr, headers, bodyData, timeoutMs = 25000, signal) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(urlStr)
     const options = {
       hostname: parsedUrl.hostname,
+      signal,
       port: parsedUrl.port || 443,
       path: parsedUrl.pathname + parsedUrl.search,
       method: 'POST',
@@ -85,7 +86,8 @@ export async function generateGeminiResponse(
   prompt,
   modelName = 'gemini-3.6-flash',
   cookie = '',
-  bl = DEFAULT_BL
+  bl = DEFAULT_BL,
+  { signal } = {}
 ) {
   const reqModel = (modelName || 'gemini-3.6-flash').toLowerCase()
 
@@ -144,7 +146,7 @@ export async function generateGeminiResponse(
     headers['cookie'] = cookie
   }
 
-  const rawText = await httpPost(url, headers, bodyParams.toString())
+  const rawText = await httpPost(url, headers, bodyParams.toString(), 25000, signal)
 
   let finalAnswer = ''
   const lines = rawText.split('\n')

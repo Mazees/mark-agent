@@ -91,7 +91,7 @@ wsHub.on('ai:abort', async () => {
 // Relaying WebSocket events dari client (misal: subagent:report) ke semua client
 wsHub.on('ws:broadcast', async (payload) => {
   const { event, data } = payload || {}
-  if (event) {
+  if (event && !event.startsWith('browser-panel:')) {
     wsHub.broadcast(event, data)
   }
   return { success: true }

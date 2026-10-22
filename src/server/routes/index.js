@@ -12,6 +12,7 @@ import { tasksRouter } from './tasks.routes.js'
 import { integrationsRouter } from './integrations.routes.js'
 import { aiRouter } from './ai.routes.js'
 import { workspaceRouter } from './workspace.routes.js'
+import { browserRouter } from './browser.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -28,6 +29,7 @@ export function registerRoutes(app) {
   app.use('/api', integrationsRouter)
   app.use('/api', aiRouter)
   app.use('/api', workspaceRouter)
+  app.use('/api', browserRouter)
 
   // Direct route for HUD Overlay
   app.get('/overlay-hud.html', (_req, res) => {

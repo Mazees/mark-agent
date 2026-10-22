@@ -59,11 +59,13 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
 
   // 1. Streaming Mode
   if (actualStream) {
+    const requestId = crypto.randomUUID()
     let unsubToken = null
     let unsubMood = null
 
     if (window.api?.onAiToken && (onToken || onReasoning)) {
       unsubToken = window.api.onAiToken((payload) => {
+        if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (!payload?.token) return
         if (payload.type === 'thought') {
           onReasoning?.(payload.token)
@@ -76,19 +78,21 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     let unsubMeta = null
     if (window.api?.onAiMood && onMood) {
       unsubMood = window.api.onAiMood((payload) => {
+        if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (payload?.mood) onMood(payload.mood)
       })
     }
 
     if (window.api?.onAiMarkMeta && onMeta) {
       unsubMeta = window.api.onAiMarkMeta((payload) => {
+        if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (payload) onMeta(payload)
       })
     }
 
     try {
       const result = await window.api.fetchAI(
-        { messages, tools, config: conf, isSmallTask, stream: true, sessionId },
+        { messages, tools, config: conf, isSmallTask, stream: true, sessionId, requestId },
         cleanSignal
       )
       if (import.meta.env.DEV && typeof window !== 'undefined') {

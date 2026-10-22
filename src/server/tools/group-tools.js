@@ -28,7 +28,7 @@ export const GROUP_TOOLS_SCHEMA = {
         function: {
           name: 'browser-fetch',
           description:
-            'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka jendela browser fisik.',
+            'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka panel browser.',
           parameters: {
             type: 'object',
             properties: {
@@ -44,8 +44,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-navigate',
-            description:
-              'Buka dan tampilkan URL di jendela browser fisik Puppeteer. Gunakan jika pengguna ingin melihat halaman atau perlu interaksi web.',
+          description:
+            'Buka dan tampilkan URL di panel browser di Chat Studio. Gunakan jika pengguna ingin melihat halaman atau perlu interaksi web.',
           parameters: {
             type: 'object',
             properties: {
@@ -56,18 +56,7 @@ export const GROUP_TOOLS_SCHEMA = {
           }
         }
       },
-      {
-        type: 'function',
-        function: {
-          name: 'browser-show',
-          description: 'Tampilkan kembali jendela browser fisik Puppeteer yang sudah terbuka.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
+
       {
         type: 'function',
         function: {
@@ -195,31 +184,12 @@ export const GROUP_TOOLS_SCHEMA = {
           }
         }
       },
-      {
-        type: 'function',
-        function: {
-          name: 'browser-ask-user',
-          description:
-            'Minta bantuan user untuk menyelesaikan CAPTCHA, 2FA, verifikasi Cloudflare, atau login manual pada halaman browser. Jendela browser akan otomatis ditampilkan dan interaksi user di-unblock sementara hingga user menekan tombol Resume.',
-          parameters: {
-            type: 'object',
-            properties: {
-              prompt: {
-                type: 'string',
-                description:
-                  'Pesan arahan untuk user (misal: "Silakan selesaikan Cloudflare Turnstile / Login Google terlebih dahulu")'
-              }
-            },
-            required: ['prompt'],
-            additionalProperties: false
-          }
-        }
-      },
+
       {
         type: 'function',
         function: {
           name: 'browser-close',
-          description: 'Menutup sesi browser fisik yang sedang aktif.',
+          description: 'Menutup sesi browser sesi aktif yang sedang aktif.',
           parameters: {
             type: 'object',
             properties: {},

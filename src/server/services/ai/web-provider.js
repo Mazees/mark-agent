@@ -6,7 +6,8 @@ import {
   generateDeepSeekResponse,
   uploadImageFile,
   waitForFileReady,
-  getSessionState
+  getSessionState,
+  withDeepSeekSignal
 } from '../deepseek-web.js'
 import {
   cleanAndParse,
@@ -156,16 +157,20 @@ Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali '{' dan diakh
   "thought": "Penalaran ringkas atau rencana tindakan",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
   "message": "Update progres opsional 1-4 kalimat, atau null",
+  "await_user": false,
   "answer": "Teks balasan langsung ke pengguna (isi jika selesai/tidak memanggil tool, atau null jika memanggil tool)",
   "tool_calls": [ { "name": "nama_tool", "arguments": { ... } } ]
 }
 - Jika memanggil aksi/tool: isi array "tool_calls", dan isi "answer": null.
 - "message" opsional: isi 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala pada pekerjaan panjang; tidak perlu setiap loop dan jangan mengulang update sebelumnya. Jika tidak ada kabar berarti, isi null.
+- Jika perlu bantuan pengguna pada browser: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyatakan tugas selesai. Browser tetap terbuka. Balasan pengguna harus diperiksa bersama observasi halaman terbaru.
 - Jika obrolan santai/selesai: isi "answer" dengan jawaban teks lengkap, dan isi "tool_calls": null.
 Status emosi giliran sebelumnya: ${lastMood || 'neutral'}. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
 }
 
-export async function executeWebProvider({
+export const executeWebProvider = (options) => withDeepSeekSignal(options.signal, () => executeWebProviderInternal(options))
+
+async function executeWebProviderInternal({
   messages,
   tools = null,
   stream = false,
@@ -178,7 +183,8 @@ export async function executeWebProvider({
   onMood = null,
   onMeta = null,
   onToolCall = null,
-  onStatus = null
+  onStatus = null,
+  signal = null
 }) {
   const activeConf = getActiveConfig() || {}
   const conf = { ...activeConf, ...(config || {}) }
@@ -188,6 +194,7 @@ export async function executeWebProvider({
   const moodFilter = null
 
   await checkCloudThrottle(isSmallTask, onStatus)
+  signal?.throwIfAborted()
 
   let workMessages = (messages || []).map((m) => ({ ...m }))
 
@@ -261,6 +268,7 @@ ${toolSections.join('\n\n')}
   "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
   "message": "Update progres opsional 1-4 kalimat, atau null",
+  "await_user": false,
   "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
   "tool_calls": [
     {
@@ -281,7 +289,8 @@ ${toolSections.join('\n\n')}
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
 7. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
 8. DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
-9. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
+9. Jika perlu login, CAPTCHA, atau bantuan pengguna: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyelesaikan task. Jangan menutup browser. Periksa DOM/screenshot terbaru serta isi balasan sebelum melanjutkan.
+10. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
@@ -398,12 +407,13 @@ ${toolSections.join('\n\n')}
       'gemini-3.6-flash'
     const pld = getSystemSignature()
     try {
-      answer = await generateGeminiResponse(fullPrompt, modelName + pld.substring(999, 1000))
+      answer = await generateGeminiResponse(fullPrompt, modelName + pld.substring(999, 1000), undefined, undefined, { signal })
     } catch (err) {
+      if (signal?.aborted) throw err
       if (err.message?.includes('Session') || err.message?.includes('BardErrorInfo')) {
         onStatus?.('Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
         try {
-          answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite')
+          answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite', undefined, undefined, { signal })
         } catch {
           // ignore fallback error
         }
@@ -447,6 +457,7 @@ ${toolSections.join('\n\n')}
           await waitForFileReady(userToken, fileId)
           refFileIds.push(fileId)
         } catch (imgErr) {
+          if (signal?.aborted) throw imgErr
           console.warn(
             '[web-provider] Gagal mengunggah gambar ke DeepSeek:',
             imgErr?.message || imgErr
@@ -525,6 +536,7 @@ ${toolSections.join('\n\n')}
   let extractedToolCalls = null
   let extractedMood = 'neutral'
   let extractedMessage = ''
+  let awaitingUser = false
 
   let parsedJson = null
   const trimmedContent = cleanContent.trim()
@@ -570,6 +582,7 @@ ${toolSections.join('\n\n')}
   }
 
   if (parsedJson && typeof parsedJson === 'object') {
+    awaitingUser = parsedJson.await_user === true
     extractedMessage = stripMarkTags(parsedJson.message)
     // 1. Ekstraksi Mood dari properti JSON
     if (parsedJson.mood && typeof parsedJson.mood === 'string') {
@@ -755,14 +768,15 @@ ${toolSections.join('\n\n')}
 
   // Jika memanggil tool
   const progressMeta = {
+    await_user: awaitingUser,
     mood: extractedMood,
     message: extractedMessage,
-    done: !(extractedToolCalls && extractedToolCalls.length > 0),
+    done: !awaitingUser && !(extractedToolCalls && extractedToolCalls.length > 0),
     hasExplicitDone: true,
     hasTag: false
   }
   onMeta?.(progressMeta)
-  if (extractedToolCalls && extractedToolCalls.length > 0) {
+  if (!awaitingUser && extractedToolCalls && extractedToolCalls.length > 0) {
     onToolCall?.(extractedToolCalls)
     return {
       content: null,

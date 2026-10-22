@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
-import { Folder } from 'lucide-react'
+import { Folder, PanelRight } from 'lucide-react'
+import BrowserPanel from '../components/BrowserPanel.jsx'
+import {
+  browserSessionId,
+  browserCommand,
+  getBrowserState,
+  subscribeBrowserState
+} from '../api/browser-panel.js'
 import {
   db,
   getSessionSummaries,
@@ -100,6 +107,35 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
+  const [browserOpen, setBrowserOpen] = useState(!!location.state?.openBrowser)
+  const [browserExpanded, setBrowserExpanded] = useState(false)
+  const [browserWidth, setBrowserWidth] = useState(560)
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 1200)
+  const browserId = browserSessionId(activeSessionId)
+  const browserRevisions = useRef(new Map())
+  useEffect(() => {
+    const resize = () => setNarrow(window.innerWidth < 1200)
+    window.addEventListener('resize', resize)
+    const check = () => {
+      const state = getBrowserState(browserId)
+      if (!state) return
+      const previous = browserRevisions.current.get(browserId) || 0
+      browserRevisions.current.set(browserId, state.panelRevision || 0)
+      if ((state.panelRevision || 0) > previous) setBrowserOpen(true)
+    }
+    check()
+    const off = subscribeBrowserState(check)
+    return () => {
+      off()
+      window.removeEventListener('resize', resize)
+    }
+  }, [browserId])
+  const resumeBrowser = () => {
+    if (!isCurrentLoading)
+      handleSendMessage(
+        'Lanjutkan berdasarkan kondisi halaman terbaru. Periksa hasil langkah pengguna sebelum melanjutkan.'
+      )
+  }
   const [lastCompactedMessageId, setLastCompactedMessageId] = useState(null)
   const [activeSessionCompact, setActiveSessionCompact] = useState(null)
   const [isSessionsLoading, setIsSessionsLoading] = useState(true)
@@ -278,7 +314,23 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     if (isCurrentLoading && typeof handleIntervention === 'function') {
       handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
+      if (getBrowserState(browserId)?.mode === 'manual') {
+        try {
+          await browserCommand(browserId, 'resume')
+        } catch (error) {
+          setSessionsError(error.message)
+        }
+      }
       return
+    }
+
+    if (getBrowserState(browserId)?.mode && getBrowserState(browserId)?.mode !== 'agent') {
+      try {
+        await browserCommand(browserId, 'resume')
+      } catch (error) {
+        setSessionsError(error.message)
+        return
+      }
     }
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
@@ -429,13 +481,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   const handleStopSession = () => {
     if (handleStop) handleStop(activeSessionId)
-    if (window.api && window.api.browserClose) {
-      window.api
-        .browserClose({
-          sessionId: String(activeSessionId) === '1' ? 'main' : `workspace-${activeSessionId}`
-        })
-        .catch(() => {})
-    }
   }
 
   const handleManualCompaction = async () => {
@@ -558,7 +603,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   return (
     <>
       <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
-        <WorkspaceSidebar
+        <div className={narrow && browserOpen ? 'hidden' : 'contents'}><WorkspaceSidebar
           sessions={sessions}
           defaultRoot={defaultRoot}
           activeId={activeSessionId}
@@ -576,10 +621,12 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           onAddWorkspace={handleAddWorkspace}
           onSave={handleSaveSession}
           onDelete={handleDeleteSession}
-        />
+        /></div>
 
         {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
-        <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
+        <div
+          className={`flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden ${browserOpen && (narrow || browserExpanded) ? 'hidden' : ''}`}
+        >
           {/* Header */}
           <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
             <div className="flex flex-col min-w-0 pr-4">
@@ -602,7 +649,15 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
               </span>
             </div>
 
-            <div className="flex items-center gap-2 pointer-events-auto mr-28"></div>
+            <button
+              type="button"
+              onClick={() => setBrowserOpen(true)}
+              className="flex items-center gap-2 text-xs text-white/60 hover:text-white"
+              title="Buka browser percakapan"
+            >
+              <PanelRight size={16} />
+              Browser
+            </button>
           </div>
 
           {/* Messages Stream Container */}
@@ -744,8 +799,61 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             </div>
           </div>
         </div>
+        {browserOpen && (
+          <>
+            {!narrow && !browserExpanded && (
+              <div
+                role="separator"
+                aria-label="Lebar panel browser"
+                aria-orientation="vertical"
+                tabIndex={0}
+                className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40 focus:bg-primary/40"
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+                    setBrowserWidth((w) =>
+                      Math.max(
+                        360,
+                        Math.min(window.innerWidth - 650, w + (e.key === 'ArrowLeft' ? 30 : -30))
+                      )
+                    )
+                }}
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                }}
+                onPointerMove={(e) => {
+                  if (e.currentTarget.hasPointerCapture(e.pointerId))
+                    setBrowserWidth(
+                      Math.max(
+                        360,
+                        Math.min(window.innerWidth - 650, window.innerWidth - e.clientX)
+                      )
+                    )
+                }}
+                onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
+              />
+            )}
+            <div
+              className={`min-w-0 h-full ${narrow || browserExpanded ? 'flex-1' : 'shrink-0'}`}
+              style={
+                narrow || browserExpanded
+                  ? undefined
+                  : { width: browserWidth, maxWidth: 'calc(100% - 650px)' }
+              }
+            >
+              <BrowserPanel
+                key={browserId}
+                sessionId={browserId}
+                onClose={() => setBrowserOpen(false)}
+                onResume={resumeBrowser}
+                expanded={browserExpanded || narrow}
+                onExpand={() =>
+                  narrow ? setBrowserOpen(false) : setBrowserExpanded((value) => !value)
+                }
+              />
+            </div>
+          </>
+        )}
       </div>
-
     </>
   )
 }

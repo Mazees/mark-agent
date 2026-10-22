@@ -40,6 +40,16 @@ import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 import { recordProgressMessage, buildProgressReminder } from '../../utils/processSteps'
 import { resolveSessionWorkspace } from '@shared/workspaces.js'
+import {
+  browserSessionId,
+  browserCommand,
+  browserPaused,
+  browserRevision,
+  getBrowserState,
+  waitForBrowserAgent,
+  browserObservation,
+  withBrowserRequest
+} from '../../api/browser-panel.js'
 
 // ============================================================================
 // HELPER UTILITIES
@@ -290,7 +300,7 @@ export const useMarkPlan = ({
       if (s) sessionsToAbort.push(s)
     }
 
-    if (sessionsToAbort.length === 0) {
+    if (targetSessionId == null) {
       for (const s of activeSessionsRef.current.values()) {
         sessionsToAbort.push(s)
       }
@@ -304,27 +314,23 @@ export const useMarkPlan = ({
       }
     }
 
-    if (abortControllerRef?.current) {
+    if (targetSessionId == null && abortControllerRef?.current) {
       try {
         abortControllerRef.current.abort()
       } catch (_) {}
     }
 
-    if (window.api && window.api.abortFetchAI) {
+    if (targetSessionId == null && window.api && window.api.abortFetchAI) {
       try {
         window.api.abortFetchAI()
       } catch (_) {}
     }
 
-    if (window.api && window.api.browserClose) {
-      const closeId = numId === 1 || !numId ? 'main' : `workspace-${numId}`
-      window.api.browserClose({ sessionId: closeId }).catch(() => {})
-    }
 
     // Fail-safe: Langsung batalkan semua agent tasks yang berstatus running di SQLite
     try {
       const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-      for (const t of runningTasks) {
+      for (const t of runningTasks.filter(t => targetSessionId == null || sessionsToAbort.some(session => session.taskId === t.id))) {
         await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
       }
     } catch (_) {}
@@ -347,7 +353,7 @@ export const useMarkPlan = ({
 
     if (numId !== null && activeSessionUpdatersRef.current.has(numId)) {
       activeSessionUpdatersRef.current.get(numId)(stopUpdater)
-    } else {
+    } else if (targetSessionId == null || numId === 1) {
       setChatData(stopUpdater)
       for (const updater of activeSessionUpdatersRef.current.values()) {
         updater(stopUpdater)
@@ -356,7 +362,7 @@ export const useMarkPlan = ({
 
     if (numId === 1 || numId === null) {
       setIsLoading(false)
-      setIsAgentBusy(false)
+      setIsAgentBusy(activeSessionsRef.current.size > sessionsToAbort.length)
     }
   }
 
@@ -985,7 +991,11 @@ export const useMarkPlan = ({
         now - (existingSession?.lastActivityTime || existingSession?.startTime || now)
       const MAX_INACTIVE_SESSION_MS = 90000 // 90 detik tanpa aktivitas apa pun
 
-      if (existingSession && inactiveDuration > MAX_INACTIVE_SESSION_MS) {
+      if (
+        existingSession &&
+        !existingSession.browserPaused &&
+        inactiveDuration > MAX_INACTIVE_SESSION_MS
+      ) {
         console.warn(
           `[useMarkPlan] Terdeteksi Ghost Session ${activeSessionNum} macet/tidak aktif selama ${Math.round(inactiveDuration / 1000)} detik. Melakukan auto-recovery.`
         )
@@ -1609,7 +1619,36 @@ export const useMarkPlan = ({
       const maxConsecutiveErrorRetries = 50
       let verificationGateCount = 0
 
+      const panelSessionId = browserSessionId(activeSessionNum)
+      await browserCommand(panelSessionId, 'job-start')
+      let needsFreshBrowserObservation = true
+      let awaitingBrowserUser = false
+      const onBrowserPause = (paused) => {
+        sessionRecord.browserPaused = paused
+        sessionRecord.lastActivityTime = Date.now()
+      }
       while (!isDone && !sessionAbortController.signal.aborted) {
+        if (browserPaused(panelSessionId)) needsFreshBrowserObservation = true
+        await waitForBrowserAgent(panelSessionId, sessionAbortController.signal, onBrowserPause)
+        if (needsFreshBrowserObservation) {
+          const observation = await browserObservation(panelSessionId, true)
+          if (observation)
+            loopMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    '[Observasi browser terbaru setelah pergantian kontrol. Rencanakan ulang; jangan ulangi aksi lama.]\n' +
+                    observation.url +
+                    '\n' +
+                    observation.text
+                },
+                { type: 'image_url', image_url: { url: observation.image } }
+              ]
+            })
+          needsFreshBrowserObservation = false
+        }
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
           try {
@@ -1823,91 +1862,110 @@ export const useMarkPlan = ({
         )
 
         // Request streaming ke Backend AI Bridge
-        const streamResult = await fetchAI(requestMessages, true, {
-          sessionId: String(activeSessionNum || 1),
-          tools: isDurableTaskCompleted ? null : activeTools,
-          signal: sessionAbortController.signal,
-          onReasoning: (chunk) => {
-            sessionRecord.lastActivityTime = Date.now()
-            currentTurnReasoning += chunk
-            const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
-              .map((t) => (typeof t === 'string' ? t.trim() : ''))
-              .filter(Boolean)
-            const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+        let streamResult
+        const requestBrowserRevision = browserRevision(panelSessionId)
+        try {
+          streamResult = await withBrowserRequest(
+            panelSessionId,
+            sessionAbortController.signal,
+            (requestSignal) =>
+              fetchAI(requestMessages, true, {
+                sessionId: String(activeSessionNum || 1),
+                tools: isDurableTaskCompleted ? null : activeTools,
+                signal: requestSignal,
+                onReasoning: (chunk) => {
+                  sessionRecord.lastActivityTime = Date.now()
+                  currentTurnReasoning += chunk
+                  const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+                    .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                    .filter(Boolean)
+                  const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
 
-            targetSetChatData((prev) => {
-              const filtered = prev.filter((item) => !item.isThinking)
-              return [
-                ...filtered,
-                {
-                  id: sessionRecord.thinkingId,
-                  role: 'ai',
-                  content: currentTurnContent,
-                  isThinking: true,
-                  reasoning: liveReasoning || undefined,
-                  executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                  mood: currentActiveMood
+                  targetSetChatData((prev) => {
+                    const filtered = prev.filter((item) => !item.isThinking)
+                    return [
+                      ...filtered,
+                      {
+                        id: sessionRecord.thinkingId,
+                        role: 'ai',
+                        content: currentTurnContent,
+                        isThinking: true,
+                        reasoning: liveReasoning || undefined,
+                        executedTools:
+                          executedToolsList.length > 0 ? [...executedToolsList] : undefined,
+                        mood: currentActiveMood
+                      }
+                    ]
+                  })
+                },
+                onMood: (moodTag) => {
+                  currentActiveMood = moodTag
+                  targetSetChatData((prev) =>
+                    prev.map((msg) => (msg.isThinking ? { ...msg, mood: moodTag } : msg))
+                  )
+                },
+                onMeta: (meta) => {
+                  turnStreamMeta = meta
+                  publishProgressMessage(meta?.message)
+                  if (meta?.mood) {
+                    currentActiveMood = meta.mood
+                    targetSetChatData((prev) =>
+                      prev.map((msg) => (msg.isThinking ? { ...msg, mood: meta.mood } : msg))
+                    )
+                  }
+                },
+                onToken: (token) => {
+                  sessionRecord.lastActivityTime = Date.now()
+                  currentTurnContent += token
+                  finalContentAccumulator = currentTurnContent
+
+                  // Sentence-Level Streaming TTS: Deteksi kalimat lengkap secara real-time
+                  if (finalIsSpeak) {
+                    sentenceBuffer += token
+                    // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
+                    let sentenceEndMatch
+                    while (
+                      (sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/))
+                    ) {
+                      const completeSentence = sentenceEndMatch[1].trim()
+                      sentenceBuffer = sentenceEndMatch[2] || ''
+                      if (completeSentence) {
+                        speechQueue.enqueue(completeSentence)
+                      }
+                    }
+                  }
+
+                  targetSetChatData((prev) => {
+                    const filtered = prev.filter((item) => !item.isThinking)
+                    const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+                      .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                      .filter(Boolean)
+                    const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+
+                    return [
+                      ...filtered,
+                      {
+                        id: sessionRecord.thinkingId,
+                        role: 'ai',
+                        content: currentTurnContent,
+                        isThinking: true,
+                        reasoning: liveReasoning || undefined,
+                        executedTools:
+                          executedToolsList.length > 0 ? [...executedToolsList] : undefined,
+                        mood: currentActiveMood
+                      }
+                    ]
+                  })
                 }
-              ]
-            })
-          },
-          onMood: (moodTag) => {
-            currentActiveMood = moodTag
-            targetSetChatData((prev) =>
-              prev.map((msg) => (msg.isThinking ? { ...msg, mood: moodTag } : msg))
-            )
-          },
-          onMeta: (meta) => {
-            turnStreamMeta = meta
-            publishProgressMessage(meta?.message)
-            if (meta?.mood) {
-              currentActiveMood = meta.mood
-              targetSetChatData((prev) =>
-                prev.map((msg) => (msg.isThinking ? { ...msg, mood: meta.mood } : msg))
-              )
-            }
-          },
-          onToken: (token) => {
-            sessionRecord.lastActivityTime = Date.now()
-            currentTurnContent += token
-            finalContentAccumulator = currentTurnContent
-
-            // Sentence-Level Streaming TTS: Deteksi kalimat lengkap secara real-time
-            if (finalIsSpeak) {
-              sentenceBuffer += token
-              // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
-              let sentenceEndMatch
-              while ((sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/))) {
-                const completeSentence = sentenceEndMatch[1].trim()
-                sentenceBuffer = sentenceEndMatch[2] || ''
-                if (completeSentence) {
-                  speechQueue.enqueue(completeSentence)
-                }
-              }
-            }
-
-            targetSetChatData((prev) => {
-              const filtered = prev.filter((item) => !item.isThinking)
-              const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
-                .map((t) => (typeof t === 'string' ? t.trim() : ''))
-                .filter(Boolean)
-              const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
-
-              return [
-                ...filtered,
-                {
-                  id: sessionRecord.thinkingId,
-                  role: 'ai',
-                  content: currentTurnContent,
-                  isThinking: true,
-                  reasoning: liveReasoning || undefined,
-                  executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                  mood: currentActiveMood
-                }
-              ]
-            })
+              })
+          )
+        } catch (error) {
+          if (error.code === 'BROWSER_REPLAN') {
+            needsFreshBrowserObservation = true
+            continue
           }
-        })
+          throw error
+        }
 
         publishProgressMessage(
           streamResult?.meta?.message || parseMarkTag(streamResult?.content).meta.message
@@ -1977,6 +2035,8 @@ export const useMarkPlan = ({
                 } catch (_) {}
               }
               if (pObj && typeof pObj === 'object') {
+                if (pObj.await_user === true)
+                  turnStreamMeta = { ...turnStreamMeta, await_user: true }
                 publishProgressMessage(pObj.message)
                 if (pObj.mood) {
                   currentActiveMood = String(pObj.mood).toLowerCase().trim()
@@ -2097,7 +2157,12 @@ export const useMarkPlan = ({
         }
 
         // Jika alur kerja Durable Task telah tuntas 100%, abaikan seluruh tool calls dan paksa penyelesaian
-        if (isDurableTaskCompleted) {
+        if (
+          isDurableTaskCompleted ||
+          streamResult?.meta?.await_user ||
+          turnStreamMeta?.await_user ||
+          parseMarkTag(currentTurnContent || streamResult?.content).meta.await_user
+        ) {
           effectiveToolCalls = []
         }
 
@@ -2211,6 +2276,21 @@ export const useMarkPlan = ({
               ]
             })
 
+            if (
+              browserPaused(panelSessionId) ||
+              browserRevision(panelSessionId) !== requestBrowserRevision
+            ) {
+              needsFreshBrowserObservation = true
+              loopMessages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                name: toolName,
+                content:
+                  'Aksi dibatalkan sebelum dieksekusi karena pengguna mengambil alih browser. Gunakan observasi terbaru setelah kontrol dikembalikan.'
+              })
+              continue
+            }
+
             // Eksekusi tool
             const pluginProcessId = `plugin-${Date.now()}`
             const currentSessionTitle =
@@ -2263,6 +2343,7 @@ export const useMarkPlan = ({
             if (execResult.durableTask) {
               durableTask = execResult.durableTask
               durableTaskForRecovery = execResult.durableTask
+              sessionRecord.taskId = execResult.durableTask.id
             }
             if (toolName === 'create_agent_task' || toolName === 'mark_done_task') {
               durableActiveStep = execResult.durableActiveStep || null
@@ -2566,6 +2647,8 @@ export const useMarkPlan = ({
                   } catch (_) {}
                 }
                 if (parsed && typeof parsed === 'object') {
+                  if (parsed.await_user === true)
+                    turnStreamMeta = { ...turnStreamMeta, await_user: true }
                   if (parsed.mood && parsed.mood !== 'neutral') {
                     currentActiveMood = String(parsed.mood).toLowerCase().trim()
                   }
@@ -2593,6 +2676,11 @@ export const useMarkPlan = ({
 
         // Gabungkan metadata dari streamResult, onMeta stream, atau parsed text
         const turnMeta = {
+          awaitUser: Boolean(
+            streamResult?.meta?.await_user ||
+            turnStreamMeta?.await_user ||
+            parsedTextMeta?.await_user
+          ),
           mood:
             streamResult?.mood ||
             streamResult?.meta?.mood ||
@@ -2615,6 +2703,23 @@ export const useMarkPlan = ({
           )
         }
 
+        awaitingBrowserUser = turnMeta.awaitUser
+        if (awaitingBrowserUser && getBrowserState(panelSessionId)?.open)
+          await browserCommand(panelSessionId, 'wait')
+        if (awaitingBrowserUser && durableTask && !isDurableTaskCompleted) {
+          await transitionAgentTask(
+            durableTask.id,
+            'paused',
+            'Menunggu bantuan pengguna melalui chat.'
+          )
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isPlanSteps && msg.taskId === durableTask.id
+                ? { ...msg, taskStatus: 'paused' }
+                : msg
+            )
+          )
+        }
         if (turnMeta.mood && turnMeta.mood !== 'neutral') {
           currentActiveMood = turnMeta.mood
         }
@@ -2661,7 +2766,12 @@ export const useMarkPlan = ({
 
         // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
         let pausedWorkflowMessage = ''
-        if (durableTask && !isDurableTaskCompleted && ++consecutiveNoToolTurns < 3) {
+        if (
+          !awaitingBrowserUser &&
+          durableTask &&
+          !isDurableTaskCompleted &&
+          ++consecutiveNoToolTurns < 3
+        ) {
           const activeStep =
             durableActiveStep ||
             durableTask.steps?.find((s) => s.status === 'running') ||
@@ -2683,7 +2793,7 @@ export const useMarkPlan = ({
           continue
         }
 
-        if (durableTask && !isDurableTaskCompleted) {
+        if (!awaitingBrowserUser && durableTask && !isDurableTaskCompleted) {
           pausedWorkflowMessage = `Alur kerja "${durableTask.title}" dijeda karena model tiga kali merespons tanpa menyelesaikan tahap aktif. Progres yang tersimpan dapat dilanjutkan.${turnAnswer.trim() ? `\n\nRespons terakhir: ${turnAnswer.trim()}` : ''}`
           try {
             await awaitWithTimeout(
@@ -2777,6 +2887,7 @@ export const useMarkPlan = ({
         // 2. Bukan instruksi sistem internal (isSystem === false)
         // 3. AI secara EKSPLISIT menyatakan done="false" (membutuhkan turn lanjutan untuk eksekusi)
         const shouldContinueStep =
+          !awaitingBrowserUser &&
           !pausedWorkflowMessage &&
           !opts.disableTools &&
           !isSystem &&
@@ -2817,7 +2928,13 @@ export const useMarkPlan = ({
         // ======================================================================
         // SUPER EFFORT VERIFICATION GATEKEEPER (Autonomous Deep-Persistence)
         // ======================================================================
-        if (!pausedWorkflowMessage && isSuperEffort && !opts.disableTools && !isSystem) {
+        if (
+          !awaitingBrowserUser &&
+          !pausedWorkflowMessage &&
+          isSuperEffort &&
+          !opts.disableTools &&
+          !isSystem
+        ) {
           // 1. Cari index tool mutasi terakhir yang dieksekusi
           let lastMutationIndex = -1
           for (let i = executedToolsList.length - 1; i >= 0; i--) {
@@ -2987,7 +3104,7 @@ Lakukan pemeriksaan mandiri sekarang:
             role: 'ai',
             content: finalOutput,
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
-            isTaskDone: true,
+            isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             pluginExecution: lastToolExecution,
@@ -3007,6 +3124,7 @@ Lakukan pemeriksaan mandiri sekarang:
 
         // Meta-Learning: Sintesis skill otomatis jika turn berhasil mengeksekusi tool bermakna
         if (
+          !awaitingBrowserUser &&
           !isAutonomous &&
           !isSystem &&
           executedToolsList &&
@@ -3059,7 +3177,7 @@ Lakukan pemeriksaan mandiri sekarang:
             role: 'ai',
             content: 'Tugas telah selesai diproses.',
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
-            isTaskDone: true,
+            isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             timestamp: getCurrentTimeInfo(),
@@ -3189,7 +3307,7 @@ Lakukan pemeriksaan mandiri sekarang:
         } catch (_) {}
         try {
           const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-          for (const t of runningTasks) {
+          for (const t of runningTasks.filter(t => t.id === durableTaskForRecovery?.id)) {
             await transitionAgentTask(
               t.id,
               'cancelled',
@@ -3301,6 +3419,7 @@ Lakukan pemeriksaan mandiri sekarang:
         return finalUpdated
       })
     } finally {
+      browserCommand(browserSessionId(activeSessionNum), 'job-stop').catch(() => {})
       activeSessionsRef.current.delete(activeSessionNum)
       activeSessionUpdatersRef.current.delete(activeSessionNum)
       if (removeRunningSessionId) removeRunningSessionId(activeSessionNum)

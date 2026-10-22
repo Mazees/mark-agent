@@ -6,9 +6,7 @@ import {
   executeScript,
   extractData,
   takeScreenshot,
-  downloadFile,
-  showBrowserWindow,
-  hideBrowserWindow
+  downloadFile
 } from '../browser-agent.js'
 import { describeBrowserNetworkError, normalizeBrowserUrl } from './browser-url.js'
 
@@ -54,7 +52,25 @@ async function resolveGoogleNewsArticleUrl(axios, sourceUrl) {
   const innerRequest = [
     'garturlreq',
     [
-      ['X', 'X', ['X', 'X'], null, null, 1, 1, 'ID:id', null, 1, null, null, null, null, null, 0, 1],
+      [
+        'X',
+        'X',
+        ['X', 'X'],
+        null,
+        null,
+        1,
+        1,
+        'ID:id',
+        null,
+        1,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0,
+        1
+      ],
       'X',
       'X',
       1,
@@ -278,13 +294,15 @@ export const browserTools = {
         }
 
         await Promise.all(
-          results.filter((result) => isGoogleNewsArticleUrl(result.url)).map(async (result) => {
-            try {
-              result.url = await resolveGoogleNewsArticleUrl(axios, result.url)
-            } catch {
-              // Keep the Google News URL; browser-fetch retries resolution and reports a clear error if unavailable.
-            }
-          })
+          results
+            .filter((result) => isGoogleNewsArticleUrl(result.url))
+            .map(async (result) => {
+              try {
+                result.url = await resolveGoogleNewsArticleUrl(axios, result.url)
+              } catch {
+                // Keep the Google News URL; browser-fetch retries resolution and reports a clear error if unavailable.
+              }
+            })
         )
 
         const formatted = results
@@ -406,7 +424,7 @@ export const browserTools = {
         const result = await navigateTo(url, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: describeBrowserNetworkError(e) }
+        return { success: false, error: describeBrowserNetworkError(e), code: e.code }
       }
     }
   },
@@ -422,41 +440,7 @@ export const browserTools = {
         const result = await closeBrowser(sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'browser-show': {
-    needsApproval: false,
-    handler: async (args, config) => {
-      try {
-        const sessionId =
-          config?.sessionId ||
-          (typeof args === 'object' && args !== null
-            ? args.session_id || 'default'
-            : String(args || '').trim() || 'default')
-        const result = await showBrowserWindow(sessionId)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'browser-hide': {
-    needsApproval: false,
-    handler: async (args, config) => {
-      try {
-        const sessionId =
-          config?.sessionId ||
-          (typeof args === 'object' && args !== null
-            ? args.session_id || 'default'
-            : String(args || '').trim() || 'default')
-        const result = await hideBrowserWindow(sessionId)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -469,7 +453,7 @@ export const browserTools = {
         const result = await readDOM(sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -489,7 +473,7 @@ export const browserTools = {
         const result = await executeAction({ action: 'click', id }, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -514,7 +498,7 @@ export const browserTools = {
         const result = await executeAction({ action: 'type', id, value: text }, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -535,22 +519,7 @@ export const browserTools = {
         const result = await executeAction({ action: 'scroll', direction }, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'browser-ask-user': {
-    needsApproval: false,
-    handler: async (args, config) => {
-      try {
-        const prompt =
-          typeof args === 'object' && args !== null ? args.prompt || '' : String(args || '')
-        const sessionId = config?.sessionId || 'default'
-        const result = await executeAction({ action: 'unblock', value: prompt }, sessionId)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -565,7 +534,7 @@ export const browserTools = {
         const result = await executeScript(script, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -580,7 +549,7 @@ export const browserTools = {
         const result = await extractData(selector, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -605,7 +574,7 @@ export const browserTools = {
           query
         }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   },
@@ -636,7 +605,7 @@ export const browserTools = {
         const result = await downloadFile(url, filename, sessionId)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: e.message }
+        return { success: false, error: e.message, code: e.code }
       }
     }
   }

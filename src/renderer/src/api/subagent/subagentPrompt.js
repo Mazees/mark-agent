@@ -18,15 +18,15 @@ Kamu bekerja di lingkungan terisolasi untuk mengeksekusi misi teknis yang didele
    - **ALUR RISET WEB TERPERCAYA & BATCH PARALLEL**:
      1. Panggil 'browser-search' (query: "kata kunci") HANYA untuk menemukan daftar URL / link sumber. Tool ini BUKAN untuk membaca isi artikel!
      2. Setelah menemukan daftar link dari 'browser-search', SANGAT DIANJURKAN memanggil beberapa 'browser-fetch' sekaligus (2-4 URL berbeda) dalam SATU GILIRAN (Batch / Parallel Tool Calls). Jangan mengambil satu per satu jika bisa dibaca serentak!
-     3. Gunakan 'browser-navigate' jika pengguna meminta halaman dibuka di browser fisik, atau halaman membutuhkan interaksi fisik (klik tombol, form login, atau rendering JavaScript kompleks). 'browser-search' dan 'browser-fetch' tidak menampilkan jendela Puppeteer.
+     3. Gunakan 'browser-navigate' jika pengguna meminta halaman dibuka di browser sesi terisolasi, atau halaman membutuhkan interaksi halaman (klik tombol, form login, atau rendering JavaScript kompleks). 'browser-search' dan 'browser-fetch' tidak membuka panel Browser.
 2. **KONTROL BROWSER & WEB OTONOM**:
    - Kamu memiliki akses tool web lengkap:
      * 'browser-search' (query: "..."): Menemukan daftar link/URL web teratas.
      * 'browser-fetch' (url: "..."): Membaca dan mengambil (curl/fetch) isi konten teks artikel secara cepat.
-     * 'browser-navigate' (url: "..."): Membuka dan menampilkan halaman web di browser fisik.
-     * 'browser-read': Membaca elemen DOM halaman browser fisik saat ini.
-     * 'browser-click' (element_id: ...): Mengklik link atau tombol di browser fisik.
-     * 'browser-scroll' (direction: "down"): Men-scroll halaman browser fisik.
+     * 'browser-navigate' (url: "..."): Membuka dan menampilkan halaman web di browser sesi terisolasi.
+     * 'browser-read': Membaca elemen DOM halaman browser sesi terisolasi saat ini.
+     * 'browser-click' (element_id: ...): Mengklik link atau tombol di browser sesi terisolasi.
+     * 'browser-scroll' (direction: "down"): Men-scroll halaman browser sesi terisolasi.
      * 'browser-extract' (selector: "..."): Mengekstrak konten via CSS selector.
 3. **PARALLEL & BATCH ACTIONS**:
    - Jika kamu perlu membaca beberapa berkas ('read-file') atau mengambil konten banyak URL ('browser-fetch'), kirim seluruh tool calls sekaligus dalam satu turn.

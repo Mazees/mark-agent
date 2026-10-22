@@ -35,7 +35,7 @@ aiRouter.post('/ai/fetch', async (req, res) => {
             : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
-      type: 'fetch',
+      type: 'fetch', sessionId,
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
@@ -69,7 +69,8 @@ aiRouter.post('/ai/stream', async (req, res) => {
     tools = null,
     config = {},
     isSmallTask = false,
-    sessionId = null
+    sessionId = null,
+    requestId = null
   } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
@@ -85,7 +86,7 @@ aiRouter.post('/ai/stream', async (req, res) => {
             : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
-      type: 'stream',
+      type: 'stream', sessionId,
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
@@ -107,22 +108,22 @@ aiRouter.post('/ai/stream', async (req, res) => {
       sessionId,
       signal: clientAbortController.signal,
       onToken: (token) => {
-        wsHub.streamToken(token, 'answer')
+        wsHub.streamToken(token, 'answer', sessionId, requestId)
       },
       onReasoning: (rToken) => {
-        wsHub.streamToken(rToken, 'thought')
+        wsHub.streamToken(rToken, 'thought', sessionId, requestId)
       },
       onMood: (mood) => {
-        wsHub.broadcast('ai:mood', { mood })
+        wsHub.broadcast('ai:mood', { mood, sessionId, requestId })
       },
       onMeta: (meta) => {
-        wsHub.broadcast('ai:mark_meta', meta)
+        wsHub.broadcast('ai:mark_meta', { ...meta, sessionId, requestId })
         if (meta?.mood) {
-          wsHub.broadcast('ai:mood', { mood: meta.mood })
+          wsHub.broadcast('ai:mood', { mood: meta.mood, sessionId, requestId })
         }
       },
       onToolCall: (toolCalls) => {
-        wsHub.broadcast('ai:tool_calls', { toolCalls })
+        wsHub.broadcast('ai:tool_calls', { toolCalls, sessionId, requestId })
       }
     })
 
@@ -180,10 +181,15 @@ aiRouter.get('/tools/groups', async (_req, res) => {
     GROUP_TOOL_GROUP_NAMES
   )
   const pluginDefinitions = Object.fromEntries(
-    Object.entries(pluginSchema).map(([name, group]) => [name, {
-      description: group.description,
-      tools: Object.fromEntries(group.tools.map((tool) => [tool.function.name, tool.function.description]))
-    }])
+    Object.entries(pluginSchema).map(([name, group]) => [
+      name,
+      {
+        description: group.description,
+        tools: Object.fromEntries(
+          group.tools.map((tool) => [tool.function.name, tool.function.description])
+        )
+      }
+    ])
   )
 
   res.json({
@@ -193,7 +199,11 @@ aiRouter.get('/tools/groups', async (_req, res) => {
       names: [...GROUP_TOOL_GROUP_NAMES, ...Object.keys(pluginSchema)],
       plugins: pluginGroups,
       definition: { ...GROUP_TOOLS_DEFINITION, ...pluginDefinitions },
-      flat: Object.assign({}, group_tools_flat, ...Object.values(pluginDefinitions).map((group) => group.tools))
+      flat: Object.assign(
+        {},
+        group_tools_flat,
+        ...Object.values(pluginDefinitions).map((group) => group.tools)
+      )
     }
   })
 })
@@ -285,7 +295,9 @@ aiRouter.get('/tts/stream', async (req, res) => {
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: err.message })
       } else {
-        try { res.end() } catch (_) {}
+        try {
+          res.end()
+        } catch (_) {}
       }
     })
 
@@ -338,7 +350,9 @@ aiRouter.post('/tts/stream', async (req, res) => {
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: err.message })
       } else {
-        try { res.end() } catch (_) {}
+        try {
+          res.end()
+        } catch (_) {}
       }
     })
 
