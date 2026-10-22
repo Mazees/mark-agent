@@ -8,6 +8,7 @@ import SkillEditor from './pages/SkillEditor'
 import Guidebook from './pages/Guidebook'
 import NeuralCore from './pages/NeuralCore'
 import GoogleWorkspace from './pages/GoogleWorkspace'
+import Addons from './pages/Addons'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
@@ -144,7 +145,12 @@ const MainLayout = () => {
               <Route path="/skills" element={<Skills />} />
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />
-              <Route path="/google-workspace" element={<GoogleWorkspace />} />
+              <Route path="/addons" element={<Addons />} />
+              <Route path="/addons/google-workspace" element={<GoogleWorkspace />} />
+              <Route
+                path="/google-workspace"
+                element={<Navigate to="/addons/google-workspace" replace />}
+              />
               <Route path="/knowledge" element={<Navigate to="/" replace />} />
               <Route path="/guidebook" element={<Guidebook />} />
               <Route path="/neural-core" element={<NeuralCore />} />

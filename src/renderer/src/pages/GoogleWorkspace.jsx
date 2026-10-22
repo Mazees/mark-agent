@@ -1,293 +1,124 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FaGoogle, FaKey, FaSave, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa'
-import { getAllConfig, saveConfiguration } from '../api/db'
-import { webApi } from '../api/web-bridge'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, Files, Mail, Plus } from 'lucide-react'
+import { FaGoogle } from 'react-icons/fa'
 
-const GoogleWorkspace = () => {
+const features = [
+  {
+    icon: Files,
+    name: 'Google Drive',
+    description: 'Cari, baca, dan kelola file yang kamu perlukan.'
+  },
+  {
+    icon: CalendarDays,
+    name: 'Google Calendar',
+    description: 'Lihat agenda dan buat jadwal melalui percakapan.'
+  },
+  { icon: Mail, name: 'Gmail', description: 'Cari email, baca pesan, dan bantu kirim balasan.' }
+]
+const examples = [
+  'Ringkas email masuk terbaru dan tandai yang perlu aku tindak lanjuti.',
+  'Cari dokumen proyek di Google Drive dan rangkum isinya.',
+  'Lihat agenda besok dan bantu cari waktu yang kosong.'
+]
+
+export default function GoogleWorkspace() {
   const navigate = useNavigate()
-  const [config, setConfig] = useState({})
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [toastMessage, setToastMessage] = useState(null)
-  const [isConnected, setIsConnected] = useState(false)
-  const [isConnecting, setIsConnecting] = useState(false)
-
-  useEffect(() => {
-    loadConfig()
-    checkConnectionStatus()
-  }, [])
-
-  const checkConnectionStatus = async () => {
-    const res = await webApi.googleStatus()
-    setIsConnected(Boolean(res?.isConnected))
-  }
-
-  const handleConnect = async () => {
-    if (!config.googleClientId || !config.googleClientSecret) {
-      showToast('Client ID & Secret harus diisi dan disimpan dulu!')
-      return
-    }
-    setIsConnecting(true)
-    try {
-      const res = await webApi.googleConnect(config.googleClientId, config.googleClientSecret)
-      if (res.success) {
-        showToast('Berhasil terhubung ke Google Workspace!')
-        setIsConnected(true)
-      } else {
-        showToast(`Gagal: ${res.error}`)
-      }
-    } catch (e) {
-      showToast('Gagal memproses login.')
-    } finally {
-      setIsConnecting(false)
-    }
-  }
-
-  const handleDisconnect = async () => {
-    try {
-      await webApi.googleDisconnect()
-      setIsConnected(false)
-      showToast('Terputus dari Google Workspace.')
-    } catch (e) {
-      showToast('Gagal memutuskan koneksi.')
-    }
-  }
-
-  const loadConfig = async () => {
-    try {
-      const data = await getAllConfig()
-      if (data && data.length > 0) {
-        setConfig(data[0])
-      }
-    } catch (error) {
-      console.error('Failed to load config:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
-      await saveConfiguration(config)
-      await webApi.syncConfig(config)
-      showToast('Kredensial Google Workspace berhasil disimpan!')
-    } catch (error) {
-      console.error('Failed to save config:', error)
-      showToast('Gagal menyimpan kredensial.')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const showToast = (msg) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-base-300 text-base-content flex items-center justify-center">
-        <span className="loading loading-spinner text-primary w-12 h-12"></span>
-      </div>
-    )
-  }
-
+  const draft = (composerDraft) => navigate('/chat', { state: { composerDraft } })
   return (
-    <div className="h-screen bg-base-300 text-base-content overflow-hidden relative font-['Poppins',sans-serif]">
-      {/* Background Ambience */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,oklch(var(--n))_0%,transparent_70%)] opacity-20 pointer-events-none" />
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 pointer-events-none" />
-
-      {/* Main Content Area */}
-      <div className="relative z-10 w-full h-full overflow-y-auto custom-scrollbar">
-        <div className="max-w-4xl mx-auto px-4 py-8 pb-32 space-y-8">
-          {/* Page Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className="btn btn-ghost btn-sm btn-circle shrink-0"
-                style={{ WebkitAppRegion: 'no-drag' }}
-                title="Kembali"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="1.2em"
-                  height="1.2em"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold">Google Workspace</h1>
-                <p className="opacity-50 text-sm mt-1">
-                  Integrasi Drive, Calendar, dan Gmail ke Mark AI.
-                </p>
-              </div>
-            </div>
+    <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-3 px-5 py-6 text-sm sm:px-8">
+        <Link
+          to="/addons"
+          aria-label="Kembali ke Add-ons"
+          title="Kembali ke Add-ons"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          <ArrowLeft size={18} />
+        </Link>
+        <Link to="/addons" className="text-white/50 hover:text-white">
+          Add-ons
+        </Link>
+        <ChevronRight size={15} className="text-white/35" />
+        <span className="text-white/85">Google Workspace</span>
+      </nav>
+      <div className="max-w-4xl mx-auto px-5 pt-5 pb-12 sm:px-8 sm:pt-8">
+        <header>
+          <div className="h-16 w-16 rounded-2xl border border-white/10 flex items-center justify-center mb-5">
+            <FaGoogle size={34} className="text-[#4285f4]" aria-hidden="true" />
           </div>
-          {/* Info Card */}
-          <div className="card bg-base-100 border border-info/30 shadow-xl shadow-info/10">
-            <div className="card-body">
-              <h2 className="card-title text-info mb-2 flex items-center gap-2">
-                <FaExclamationTriangle /> Panduan Singkat
-              </h2>
-              <p className="text-sm opacity-80 mb-4">
-                Untuk menghubungkan Mark dengan Google Workspace milikmu, kamu harus membuat{' '}
-                <strong>OAuth Client ID</strong> bertipe Desktop App di Google Cloud Console.
-              </p>
-              <ol className="list-decimal list-inside text-sm space-y-2 opacity-80 bg-base-200 p-4 rounded-xl font-mono">
-                <li>
-                  Buka{' '}
-                  <a
-                    href="https://console.cloud.google.com/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    console.cloud.google.com
-                  </a>
-                </li>
-                <li>
-                  Buat Project Baru & Aktifkan: <strong>Drive API, Gmail API, Calendar API</strong>
-                </li>
-                <li>
-                  Buat <strong>OAuth Consent Screen</strong> (External, masukkan emailmu di Test
-                  Users)
-                </li>
-                <li>
-                  Buat Credentials baru: <strong>OAuth client ID</strong> &gt;{' '}
-                  <strong>Desktop App</strong>
-                </li>
-                <li>Copy Client ID & Client Secret ke form di bawah ini.</li>
-              </ol>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+            <div>
+              <h1 className="text-2xl font-semibold text-white">Google Workspace</h1>
+              <p className="text-sm text-white/45 mt-2">Oleh MARK</p>
             </div>
-          </div>
-
-          {/* Form Card */}
-          <div className="card bg-base-100 border border-white/5 shadow-2xl">
-            <div className="card-body space-y-6">
-              <h2 className="card-title text-xl border-b border-white/10 pb-4 flex items-center gap-2">
-                <FaKey className="text-warning" /> API Credentials
-              </h2>
-
-              <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text font-bold text-sm">Google Client ID</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Misal: 123456789-abcdefghijkl.apps.googleusercontent.com"
-                  className="input input-bordered w-full font-mono text-sm focus:border-primary"
-                  value={config.googleClientId || ''}
-                  onChange={(e) => setConfig({ ...config, googleClientId: e.target.value })}
-                />
-              </div>
-
-              <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text font-bold text-sm">Google Client Secret</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
-                  className="input input-bordered w-full font-mono text-sm focus:border-primary"
-                  value={config.googleClientSecret || ''}
-                  onChange={(e) => setConfig({ ...config, googleClientSecret: e.target.value })}
-                />
-              </div>
-
-              <div className="bg-warning/10 border border-warning/30 rounded-xl p-4 mt-4 flex gap-3 items-start">
-                <FaExclamationTriangle className="text-warning mt-1 shrink-0" />
-                <div>
-                  <h3 className="font-bold text-warning text-sm">Peringatan Keamanan</h3>
-                  <p className="text-xs opacity-70 mt-1">
-                    Kredensial ini disimpan secara lokal dan aman di databasemu. Jangan pernah
-                    membagikan Client Secret ke orang lain. Mark hanya akan menggunakan kredensial
-                    ini untuk meminta akses ke akun Google-mu secara resmi.
-                  </p>
-                </div>
-              </div>
-
-              {/* Connection Status & Buttons */}
-              <div className="border-t border-white/10 pt-6 mt-2 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-bold text-sm">Status Koneksi</h3>
-                    <p className="text-xs opacity-70">
-                      {isConnected
-                        ? 'Mark terhubung dan memiliki akses ke Google Workspace.'
-                        : 'Mark belum diberikan akses masuk ke Google Workspace.'}
-                    </p>
-                  </div>
-                  <div
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${isConnected ? 'bg-success/20 text-success' : 'bg-base-300 text-white/50'}`}
-                  >
-                    {isConnected ? 'TERHUBUNG' : 'TERPUTUS'}
-                  </div>
-                </div>
-
-                {isConnected ? (
-                  <button onClick={handleDisconnect} className="btn btn-error btn-outline w-full">
-                    Putuskan Koneksi Google
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleConnect}
-                    disabled={isConnecting || !config.googleClientId || !config.googleClientSecret}
-                    className="btn btn-info w-full"
-                  >
-                    {isConnecting ? (
-                      <span className="loading loading-spinner"></span>
-                    ) : (
-                      <FaGoogle />
-                    )}
-                    Login & Beri Akses
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Sticky Save Button */}
-        <div className="fixed bottom-0 left-0 w-full bg-base-300/80 backdrop-blur border-t border-white/10 p-4 z-50">
-          <div className="max-w-5xl mx-auto flex justify-end">
             <button
-              onClick={handleSave}
-              disabled={isSaving || !config.googleClientId || !config.googleClientSecret}
-              className="btn btn-primary min-w-[200px]"
+              type="button"
+              onClick={() => draft('/setup-google-workspace ')}
+              className="btn bg-white text-neutral-900 border-white hover:bg-white/90 rounded-full self-start sm:self-center px-5"
             >
-              {isSaving ? (
-                <span className="loading loading-spinner"></span>
-              ) : (
-                <>
-                  <FaSave /> Simpan Kredensial
-                </>
-              )}
+              <Plus size={17} /> Install
             </button>
           </div>
-        </div>
-
-        {/* Toast Notification */}
-        {toastMessage && (
-          <div className="toast toast-top toast-center z-[100]">
-            <div className="alert alert-success shadow-lg">
-              <FaCheckCircle className="text-xl" />
-              <span>{toastMessage}</span>
-            </div>
+        </header>
+        <section
+          aria-label="Contoh penggunaan"
+          className="my-8 rounded-2xl border border-white/5 bg-gradient-to-br from-emerald-950/70 via-base-200 to-teal-950/50 px-4 py-7 sm:px-10 sm:py-9"
+        >
+          <div className="max-w-xl mx-auto space-y-3">
+            {examples.map((text) => (
+              <button
+                key={text}
+                type="button"
+                onClick={() => draft(text)}
+                className="w-full flex items-center gap-4 rounded-2xl bg-base-300/90 px-4 py-4 text-left text-sm text-white/85 leading-relaxed hover:bg-base-300"
+              >
+                <span className="flex-1">{text}</span>
+                <ArrowRight size={17} className="shrink-0 text-white/60" />
+              </button>
+            ))}
           </div>
-        )}
+        </section>
+        <p className="text-sm text-white/65 leading-relaxed">
+          Hubungkan Drive, Calendar, dan Gmail agar Mark bisa membantu pekerjaanmu langsung dari
+          chat. Install membuka panduan setup OAuth bersama Mark; login dan izin akun tetap kamu
+          tentukan.
+        </p>
+        <section aria-labelledby="google-services" className="mt-9">
+          <h2
+            id="google-services"
+            className="text-base font-medium text-white/90 pb-3 border-b border-white/10"
+          >
+            Layanan <span className="text-white/40">3</span>
+          </h2>
+          <div className="divide-y divide-white/5">
+            {features.map(({ icon: Icon, name, description }) => (
+              <div key={name} className="flex gap-4 py-5">
+                <Icon size={20} className="shrink-0 mt-0.5 text-white/50" aria-hidden="true" />
+                <div>
+                  <h3 className="text-sm font-medium text-white/85">{name}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-white/50">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section aria-labelledby="addon-info" className="mt-7">
+          <h2
+            id="addon-info"
+            className="text-base font-medium text-white/90 pb-3 border-b border-white/10"
+          >
+            Informasi
+          </h2>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-4 py-5 text-sm">
+            <dt className="text-white/40">Kemampuan</dt>
+            <dd className="text-white/75">Baca dan tulis</dd>
+            <dt className="text-white/40">Pengembang</dt>
+            <dd className="text-white/75">Mazees</dd>
+            <dt className="text-white/40">Koneksi</dt>
+            <dd className="text-white/75">OAuth akun Google</dd>
+          </dl>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
-
-export default GoogleWorkspace

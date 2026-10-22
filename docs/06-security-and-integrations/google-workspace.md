@@ -6,6 +6,8 @@ Dokumen ini menjelaskan arsitektur integrasi **Google Workspace** pada sistem **
 
 ## 1. Arsitektur Integrasi Google
 
+Menu navigasi membuka katalog **Add-ons** di `/addons`. Pilih Google Workspace untuk membuka detail di `/addons/google-workspace`: contoh penggunaan, layanan, informasi addon, dan tombol Install. Install membuka Chat Studio dengan draft `/setup-google-workspace`, tanpa mengirim pesan otomatis. Halaman ini tidak lagi memuat form kredensial. URL lama `/google-workspace` diarahkan ke detail addon dengan redirect replace.
+
 MARK menyediakan jembatan native ke ekosistem produktivitas Google tanpa memerlukan layanan perantara cloud pihak ketiga (_No Third-Party Middleman_). Seluruh token disimpan dan didekripsi langsung di komputer pengguna.
 
 Implementasi:
