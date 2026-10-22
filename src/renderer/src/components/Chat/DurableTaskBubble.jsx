@@ -168,7 +168,7 @@ export const DurableTaskBubble = ({
             ) : (
               <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
             )}
-            <span className="font-semibold text-white/50 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+            <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
               {displayReason || toolLabel}
             </span>
             {isPendingApproval ? (
@@ -363,12 +363,12 @@ export const DurableTaskBubble = ({
             <details className="group/thought outline-none" open={isRunning}>
               <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/60 hover:text-white select-none py-0.5 transition-colors">
                 <Brain className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                <span className="font-medium text-white/50 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+                <span className="font-medium text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
                   Proses Pemikiran AI
                 </span>
                 <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/thought:rotate-90 group-open/thought:opacity-100" />
               </summary>
-              <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/50 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
+              <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
                 <Markdown
                   remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
                   rehypePlugins={[...mathRehypePlugins]}
@@ -399,7 +399,7 @@ export const DurableTaskBubble = ({
             >
               <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
                 <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                <span className="font-semibold text-white/50 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+                <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
                   Proses
                 </span>
                 <span className="text-[10px] text-white/40 font-normal">
@@ -438,7 +438,7 @@ export const DurableTaskBubble = ({
       {isRunning && (!toolsToDisplay || toolsToDisplay.length === 0) && !displayReasoning && (
         <div className="flex items-center gap-2 text-xs text-primary font-medium py-1">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span className="text-white/50 animate-pulse">
+          <span className="text-white/80 animate-pulse">
             Mark sedang menganalisis & mengeksekusi...
           </span>
         </div>

@@ -39,6 +39,7 @@ import {
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 import { recordProgressMessage, buildProgressReminder } from '../../utils/processSteps'
+import { resolveSessionWorkspace } from '@shared/workspaces.js'
 
 // ============================================================================
 // HELPER UTILITIES
@@ -1262,6 +1263,16 @@ export const useMarkPlan = ({
     let finalContentAccumulator = ''
 
     try {
+      const workspaceInfo = await awaitWithTimeout(
+        webApi.getWorkspaceInfo(),
+        10000,
+        'Memuat workspace',
+        sessionAbortController.signal
+      )
+      opts.workspaceRoot = resolveSessionWorkspace(
+        { id: activeSessionNum, workspaceRoot: opts.workspaceRoot },
+        workspaceInfo.defaultWorkspaceRoot
+      )
       let durableTask = null
       let durableActiveStep = null
 

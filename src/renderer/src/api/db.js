@@ -461,16 +461,12 @@ export async function getSession(id) {
   }
 }
 
-export async function createSession(title = 'Percakapan Baru') {
-  try {
-    const id = String(Date.now())
-    const session = { id, title, data: [], timestamp: Date.now() }
-    await db.sessions.put(session)
-    return session
-  } catch (error) {
-    console.error('Error createSession:', error)
-    return null
-  }
+export async function createSession(title = 'Percakapan Baru', { workspaceRoot = null } = {}) {
+  const id = String(Date.now()) + '-' + globalThis.crypto.randomUUID()
+  const session = { id, title, workspaceRoot, data: [], timestamp: Date.now() }
+  const saved = await db.sessions.put(session)
+  if (!saved?.id) throw new Error('Percakapan belum dapat disimpan.')
+  return saved
 }
 
 export async function saveSession(id, data, title = null) {
@@ -494,7 +490,8 @@ export async function saveSession(id, data, title = null) {
 export async function deleteSession(id) {
   try {
     const cleanId = normalizeDbId(id)
-    await db.sessions.delete(cleanId)
+    const success = await db.sessions.delete(cleanId)
+    if (!success) return { success: false, error: 'Percakapan belum dapat dihapus.' }
     return { success: true }
   } catch (error) {
     console.error(`Error deleteSession ${id}:`, error)
@@ -561,29 +558,29 @@ export async function getChatData(sessionId = '1') {
 }
 
 export async function setSessionWorkspace(sessionId, workspaceRoot) {
-  try {
-    const cleanId = normalizeDbId(sessionId)
-    const existing = await db.sessions.get(cleanId)
-    await db.sessions.put({
-      ...(existing || {
-        id: cleanId,
-        title: cleanId === '1' ? 'Main Thread' : 'Percakapan Baru',
-        data: []
-      }),
-      id: cleanId,
-      workspaceRoot: workspaceRoot || null,
-      timestamp: Date.now()
-    })
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('session-workspace-updated', {
-          detail: { sessionId: cleanId, workspaceRoot }
-        })
-      )
-    }
-  } catch (error) {
-    console.error(`Error setSessionWorkspace ${sessionId}:`, error)
-  }
+  if (normalizeDbId(sessionId) === '1') throw new Error('Workspace Main Thread tidak dapat diubah.')
+  return updateSessionMetadata(sessionId, { workspaceRoot: workspaceRoot || null })
+}
+
+export async function updateSessionMetadata(sessionId, updates) {
+  const cleanId = normalizeDbId(sessionId)
+  if (cleanId === '1' && Object.hasOwn(updates, 'workspaceRoot'))
+    throw new Error('Workspace Main Thread tidak dapat diubah.')
+  const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(cleanId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  })
+  const json = await res.json()
+  if (!res.ok || !json.success)
+    throw new Error(json.error || 'Perubahan percakapan belum dapat disimpan.')
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(
+      new CustomEvent('session-workspace-updated', {
+        detail: { sessionId: cleanId, workspaceRoot: json.data.workspaceRoot }
+      })
+    )
+  return json.data
 }
 
 export async function getSessionWorkspace(sessionId) {

@@ -11,8 +11,7 @@ import {
   FaFilePdf,
   FaFileCode,
   FaFileImage,
-  FaLock,
-  FaFolder
+  FaLock
 } from 'react-icons/fa'
 import { Zap, Sparkles, Folder, Wrench, FileText } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
@@ -79,7 +78,6 @@ const InputBar = ({
   inline = false,
   className = '',
   workspaceRoot = null,
-  onSelectWorkspace = null,
   onManualCompact = null
 }) => {
   void source
@@ -310,16 +308,20 @@ const InputBar = ({
 
   const reloadSkills = async () => {
     const nativeSkillList = NATIVE_SKILLS.map(({ name, title, icon, description }) => ({
-      name, title, icon, description
+      name,
+      title,
+      icon,
+      description
     }))
     setSkills(nativeSkillList)
     if (window.api && window.api.getSkills) {
       try {
         const loadedSkills = await window.api.getSkills()
         const nativeNames = new Set(nativeSkillList.map((skill) => skill.name.toLowerCase()))
-        const merged = [...nativeSkillList, ...(loadedSkills || []).filter(
-          (skill) => !nativeNames.has(skill.name.toLowerCase())
-        )]
+        const merged = [
+          ...nativeSkillList,
+          ...(loadedSkills || []).filter((skill) => !nativeNames.has(skill.name.toLowerCase()))
+        ]
         setSkills(merged)
         return merged
       } catch (err) {
@@ -990,29 +992,8 @@ const InputBar = ({
         </div>
       )}
 
-      {/* Pills Container (Workspace Root + Super Effort) */}
-      {(workspaceRoot || isSuperEffort) && (
+      {isSuperEffort && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          {workspaceRoot && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-base-200/80 border border-primary/30 rounded-lg text-xs text-white/80 w-fit backdrop-blur-md animate-fade-in shadow-md">
-              <FaFolder className="text-primary text-xs" />
-              <span className="text-[10px] text-primary uppercase font-bold tracking-wider">
-                Workspace:
-              </span>
-              <span className="font-mono text-[11px] truncate max-w-xs">{workspaceRoot}</span>
-              {onSelectWorkspace && (
-                <button
-                  type="button"
-                  onClick={onSelectWorkspace}
-                  className="ml-1 text-[10px] text-white/50 hover:text-primary transition-colors cursor-pointer underline"
-                  title="Ganti folder proyek"
-                >
-                  Ganti
-                </button>
-              )}
-            </div>
-          )}
-
           {isSuperEffort && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/15 border border-primary/40 rounded-lg text-xs text-primary font-medium w-fit backdrop-blur-md animate-fade-in shadow-md select-none">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -1075,387 +1056,375 @@ const InputBar = ({
 
         <div className="flex w-full items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1">
+            {/* Paperclip File Upload Button */}
+            <button
+              type="button"
+              onClick={handlePaperclipClick}
+              className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all flex-shrink-0"
+              title="Lampirkan File (PDF, DOCX, TXT, MD, Gambar, dll)"
+            >
+              <FaPaperclip size={16} />
+            </button>
 
-        {/* Workspace Root Folder Button */}
-        {onSelectWorkspace && (
-          <button
-            type="button"
-            onClick={onSelectWorkspace}
-            className={`p-3 rounded-full transition-all flex-shrink-0 relative ${
-              workspaceRoot
-                ? 'text-primary hover:text-primary hover:bg-primary/10'
-                : 'text-white/40 hover:text-white/80 hover:bg-white/5'
-            }`}
-            title={
-              workspaceRoot
-                ? `Workspace Root: ${workspaceRoot} (Klik untuk ganti)`
-                : 'Atur Folder Proyek (Workspace Root)'
-            }
-          >
-            <FaFolder size={16} />
-            {workspaceRoot && (
-              <span className="absolute bottom-2 right-2 w-1.5 h-1.5 rounded-full bg-primary ring-1 ring-base-300" />
-            )}
-          </button>
-        )}
-
-        {/* Paperclip File Upload Button */}
-        <button
-          type="button"
-          onClick={handlePaperclipClick}
-          className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all flex-shrink-0"
-          title="Lampirkan File (PDF, DOCX, TXT, MD, Gambar, dll)"
-        >
-          <FaPaperclip size={16} />
-        </button>
-
-        {/* Mic / Record Toggle (Hold to talk) */}
-        <button
-          type="button"
-          onClick={isRecording ? onStopRecord : onStartRecord}
-          disabled={isProcessing || isLoading}
-          className={`relative p-3 md:p-4 rounded-full flex-shrink-0 transition-all duration-300 transform outline-none z-10 ${
-            isProcessing
-              ? 'text-primary bg-primary/20 cursor-wait'
-              : isLoading
-                ? 'text-white/20 bg-white/5 cursor-not-allowed'
-                : isRecording
-                  ? 'text-error bg-error/20'
-                  : 'text-white/40 hover:text-white/80 hover:bg-white/5'
-          }`}
-          style={{
-            transform: isRecording && !isProcessing ? `scale(${1 + audioIntensity * 0.3})` : '',
-            boxShadow:
-              isRecording && !isProcessing
-                ? `0 0 ${10 + audioIntensity * 40}px rgba(255,0,0, ${0.3 + audioIntensity * 0.5})`
-                : ''
-          }}
-          title={
-            isProcessing
-              ? 'Sedang memproses suara...'
-              : isLoading
-                ? 'Agen sedang sibuk'
-                : 'Mulai/Berhenti Rekam (Ctrl+Alt+M)'
-          }
-        >
-          {isRecording && !isProcessing && (
-            <div
-              className="absolute inset-0 rounded-full bg-error/30 -z-10"
-              style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
-            />
-          )}
-          {isProcessing ? (
-            <span className="loading loading-spinner w-[18px] h-[18px]"></span>
-          ) : isLoading ? (
-            <FaLock size={18} />
-          ) : (
-            <FaMicrophone size={18} />
-          )}
-        </button>
-
-        {/* Emoji Button */}
-        <div className="relative flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all"
-            title="Insert Emoji"
-          >
-            <FaSmile size={18} />
-          </button>
-
-          {showEmojiPicker && (
-            <div className="absolute bottom-full left-0 mb-4 bg-[var(--glass-bg)] backdrop-blur-3xl border border-[var(--glass-border)] rounded-2xl p-2 shadow-2xl flex flex-wrap w-52 gap-1 z-[100] animate-[holo-project-in_0.2s_ease-out_forwards]">
-              {EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => handleEmojiClick(emoji)}
-                  className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-xl text-2xl transition-all hover:scale-110 active:scale-95"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-          </div>
-
-        {/* Skill Autocomplete Dropdown */}
-        {showSkillList && filteredSkills.length > 0 && (
-          <div className="absolute bottom-full left-4 mb-2 w-[400px] max-w-[calc(100%-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
-            <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5">
-              Available Skills
-            </div>
-            <div ref={skillListRef} className="max-h-64 overflow-y-auto no-scrollbar">
-              {filteredSkills.map((skillObj, idx) => {
-                const Icon = NATIVE_SKILLS.find((item) => item.name === skillObj.name)?.icon || FileText
-                return (
+            {/* Mic / Record Toggle (Hold to talk) */}
+            <button
+              type="button"
+              onClick={isRecording ? onStopRecord : onStartRecord}
+              disabled={isProcessing || isLoading}
+              className={`relative p-3 md:p-4 rounded-full flex-shrink-0 transition-all duration-300 transform outline-none z-10 ${
+                isProcessing
+                  ? 'text-primary bg-primary/20 cursor-wait'
+                  : isLoading
+                    ? 'text-white/20 bg-white/5 cursor-not-allowed'
+                    : isRecording
+                      ? 'text-error bg-error/20'
+                      : 'text-white/40 hover:text-white/80 hover:bg-white/5'
+              }`}
+              style={{
+                transform: isRecording && !isProcessing ? `scale(${1 + audioIntensity * 0.3})` : '',
+                boxShadow:
+                  isRecording && !isProcessing
+                    ? `0 0 ${10 + audioIntensity * 40}px rgba(255,0,0, ${0.3 + audioIntensity * 0.5})`
+                    : ''
+              }}
+              title={
+                isProcessing
+                  ? 'Sedang memproses suara...'
+                  : isLoading
+                    ? 'Agen sedang sibuk'
+                    : 'Mulai/Berhenti Rekam (Ctrl+Alt+M)'
+              }
+            >
+              {isRecording && !isProcessing && (
                 <div
-                  key={skillObj.name}
-                  onClick={() => selectSkill(skillObj)}
-                  className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
-                    idx === selectedSkillIndex
-                      ? 'bg-primary/10 text-primary'
-                      : 'hover:bg-white/10 text-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-semibold text-sm">
-                    <Icon className="size-4 shrink-0" aria-hidden="true" />
-                    <span className="truncate">{skillObj.title || skillObj.name}</span>
-                  </div>
-                  <div className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-white/50'}`}>/{skillObj.name}</div>
-                  <div
-                    className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-gray-400'} line-clamp-2`}
-                  >
-                    {skillObj.description}
-                  </div>
-                </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Mention (@) Autocomplete Dropdown */}
-        {showMentionList && (mentionDisplayItems.length > 0 || isLoadingFiles) && (
-          <div className="absolute bottom-full left-4 mb-2 w-[380px] max-w-[calc(100vw-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in flex flex-col">
-            {/* Items List */}
-            <div ref={mentionListRef} className="max-h-64 overflow-y-auto no-scrollbar">
-              {mentionDisplayItems.length === 0 && !isLoadingFiles ? (
-                <div className="py-3 text-center text-xs text-gray-400">Tidak ada yang cocok.</div>
+                  className="absolute inset-0 rounded-full bg-error/30 -z-10"
+                  style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
+                />
+              )}
+              {isProcessing ? (
+                <span className="loading loading-spinner w-[18px] h-[18px]"></span>
+              ) : isLoading ? (
+                <FaLock size={18} />
               ) : (
-                mentionDisplayItems.map((item, idx) => (
-                  <div
-                    key={
-                      item.type === 'category'
-                        ? item.category
-                        : item.type === 'file'
-                          ? item.absolutePath
-                          : item.name
-                    }
-                    onClick={() => selectMentionItem(item)}
-                    className={`px-3 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center gap-2.5 ${
-                      idx === selectedMentionIndex
-                        ? 'bg-primary/20 text-primary'
-                        : 'hover:bg-white/5 text-gray-300'
-                    }`}
-                  >
-                    {/* Inline Icon */}
-                    <div className="shrink-0 text-sm opacity-80">
-                      {item.type === 'category' ? (
-                        item.category === 'files' ? (
-                          <Folder size={15} />
-                        ) : (
-                          <Wrench size={15} />
-                        )
-                      ) : item.type === 'file' ? (
-                        getFileIcon(item.name)
-                      ) : (
-                        <Wrench size={15} />
-                      )}
-                    </div>
+                <FaMicrophone size={18} />
+              )}
+            </button>
 
-                    {/* Text Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-xs truncate">
-                        {item.type === 'category'
-                          ? item.title
-                          : item.type === 'file'
-                            ? item.relativePath
-                            : `@${item.name}`}
-                      </div>
-                      <div className="text-[11px] text-gray-400 truncate">
-                        {item.type === 'category'
-                          ? item.subtitle
-                          : item.type === 'file'
-                            ? formatFileSize(item.size)
-                            : [item.label !== item.name ? item.label : '', item.description]
-                                .filter(Boolean)
-                                .join(' · ')}
-                      </div>
-                    </div>
-                  </div>
-                ))
+            {/* Emoji Button */}
+            <div className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all"
+                title="Insert Emoji"
+              >
+                <FaSmile size={18} />
+              </button>
+
+              {showEmojiPicker && (
+                <div className="absolute bottom-full left-0 mb-4 bg-[var(--glass-bg)] backdrop-blur-3xl border border-[var(--glass-border)] rounded-2xl p-2 shadow-2xl flex flex-wrap w-52 gap-1 z-[100] animate-[holo-project-in_0.2s_ease-out_forwards]">
+                  {EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => handleEmojiClick(emoji)}
+                      className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-xl text-2xl transition-all hover:scale-110 active:scale-95"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </div>
-        )}
 
-        {/* Action Buttons */}
-        <div className="flex shrink-0 items-center gap-1">
-          {/* Super Effort Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setIsSuperEffort((prev) => !prev)}
-            className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
-              isSuperEffort
-                ? 'bg-primary/25 text-primary border border-primary/50 font-semibold shadow-sm shadow-primary/20'
-                : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
-            }`}
-            title={
-              isSuperEffort
-                ? 'Super Effort: AKTIF. ReAct loop pantang menyerah & wajib verifikasi mandiri sebelum selesai.'
-                : 'Super Effort: NONAKTIF. Klik untuk mengaktifkan persistensi otonom & pengujian mandiri.'
-            }
-          >
-            <Sparkles
-              className={`w-3.5 h-3.5 ${isSuperEffort ? 'fill-primary text-primary' : ''}`}
-            />
-          </button>
+          {/* Skill Autocomplete Dropdown */}
+          {showSkillList && filteredSkills.length > 0 && (
+            <div className="absolute bottom-full left-4 mb-2 w-[400px] max-w-[calc(100%-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
+              <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5">
+                Available Skills
+              </div>
+              <div ref={skillListRef} className="max-h-64 overflow-y-auto no-scrollbar">
+                {filteredSkills.map((skillObj, idx) => {
+                  const Icon =
+                    NATIVE_SKILLS.find((item) => item.name === skillObj.name)?.icon || FileText
+                  return (
+                    <div
+                      key={skillObj.name}
+                      onClick={() => selectSkill(skillObj)}
+                      className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
+                        idx === selectedSkillIndex
+                          ? 'bg-primary/10 text-primary'
+                          : 'hover:bg-white/10 text-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 font-semibold text-sm">
+                        <Icon className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{skillObj.title || skillObj.name}</span>
+                      </div>
+                      <div
+                        className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-white/50'}`}
+                      >
+                        /{skillObj.name}
+                      </div>
+                      <div
+                        className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-gray-400'} line-clamp-2`}
+                      >
+                        {skillObj.description}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
-          {/* Auto Mode Toggle Button */}
-          <button
-            type="button"
-            onClick={handleToggleAutoMode}
-            className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
-              isAutoMode
-                ? 'bg-warning/20 text-warning border border-warning/40 font-semibold'
-                : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
-            }`}
-            title={
-              isAutoMode
-                ? 'Auto Mode: AKTIF. Semua persetujuan tool otomatis diizinkan untuk sesi ini.'
-                : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
-            }
-          >
-            <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-white text-white' : ''}`} />
-          </button>
+          {/* Mention (@) Autocomplete Dropdown */}
+          {showMentionList && (mentionDisplayItems.length > 0 || isLoadingFiles) && (
+            <div className="absolute bottom-full left-4 mb-2 w-[380px] max-w-[calc(100vw-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in flex flex-col">
+              {/* Items List */}
+              <div ref={mentionListRef} className="max-h-64 overflow-y-auto no-scrollbar">
+                {mentionDisplayItems.length === 0 && !isLoadingFiles ? (
+                  <div className="py-3 text-center text-xs text-gray-400">
+                    Tidak ada yang cocok.
+                  </div>
+                ) : (
+                  mentionDisplayItems.map((item, idx) => (
+                    <div
+                      key={
+                        item.type === 'category'
+                          ? item.category
+                          : item.type === 'file'
+                            ? item.absolutePath
+                            : item.name
+                      }
+                      onClick={() => selectMentionItem(item)}
+                      className={`px-3 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center gap-2.5 ${
+                        idx === selectedMentionIndex
+                          ? 'bg-primary/20 text-primary'
+                          : 'hover:bg-white/5 text-gray-300'
+                      }`}
+                    >
+                      {/* Inline Icon */}
+                      <div className="shrink-0 text-sm opacity-80">
+                        {item.type === 'category' ? (
+                          item.category === 'files' ? (
+                            <Folder size={15} />
+                          ) : (
+                            <Wrench size={15} />
+                          )
+                        ) : item.type === 'file' ? (
+                          getFileIcon(item.name)
+                        ) : (
+                          <Wrench size={15} />
+                        )}
+                      </div>
 
-          {/* Ring Gauge Context Indicator (~30px) */}
-          {(() => {
-            const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
-            const roundedPct =
-              (contextTracker.currentTokens || contextTracker.currentChars || 0) > 0
-                ? Math.max(1, Math.round(pct))
-                : Math.round(pct)
-            const radius = 14
-            const circumference = 2 * Math.PI * radius
-            const strokeDashoffset = circumference - (pct / 100) * circumference
-            const colorClass =
-              pct >= 85 ? 'stroke-rose-500' : pct >= 50 ? 'stroke-amber-400' : 'stroke-emerald-400'
-            const barColorClass =
-              pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'
+                      {/* Text Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-xs truncate">
+                          {item.type === 'category'
+                            ? item.title
+                            : item.type === 'file'
+                              ? item.relativePath
+                              : `@${item.name}`}
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          {item.type === 'category'
+                            ? item.subtitle
+                            : item.type === 'file'
+                              ? formatFileSize(item.size)
+                              : [item.label !== item.name ? item.label : '', item.description]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
-            return (
-              <div className="relative flex items-center justify-center px-1 select-none">
-                {/* Ring Gauge Trigger Button */}
-                <div
-                  ref={gaugeRef}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setShowContextPopover((prev) => !prev)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
-                  }}
-                  className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
-                  title="Context Window Info (Dual-Layer Hermes Compressor)"
-                >
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r={radius}
-                      className="stroke-white/10"
-                      strokeWidth="2.5"
-                      fill="none"
-                    />
-                    {pct > 0 && (
+          {/* Action Buttons */}
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Super Effort Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsSuperEffort((prev) => !prev)}
+              className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
+                isSuperEffort
+                  ? 'bg-primary/25 text-primary border border-primary/50 font-semibold shadow-sm shadow-primary/20'
+                  : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
+              }`}
+              title={
+                isSuperEffort
+                  ? 'Super Effort: AKTIF. ReAct loop pantang menyerah & wajib verifikasi mandiri sebelum selesai.'
+                  : 'Super Effort: NONAKTIF. Klik untuk mengaktifkan persistensi otonom & pengujian mandiri.'
+              }
+            >
+              <Sparkles
+                className={`w-3.5 h-3.5 ${isSuperEffort ? 'fill-primary text-primary' : ''}`}
+              />
+            </button>
+
+            {/* Auto Mode Toggle Button */}
+            <button
+              type="button"
+              onClick={handleToggleAutoMode}
+              className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
+                isAutoMode
+                  ? 'bg-warning/20 text-warning border border-warning/40 font-semibold'
+                  : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
+              }`}
+              title={
+                isAutoMode
+                  ? 'Auto Mode: AKTIF. Semua persetujuan tool otomatis diizinkan untuk sesi ini.'
+                  : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
+              }
+            >
+              <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-white text-white' : ''}`} />
+            </button>
+
+            {/* Ring Gauge Context Indicator (~30px) */}
+            {(() => {
+              const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
+              const roundedPct =
+                (contextTracker.currentTokens || contextTracker.currentChars || 0) > 0
+                  ? Math.max(1, Math.round(pct))
+                  : Math.round(pct)
+              const radius = 14
+              const circumference = 2 * Math.PI * radius
+              const strokeDashoffset = circumference - (pct / 100) * circumference
+              const colorClass =
+                pct >= 85
+                  ? 'stroke-rose-500'
+                  : pct >= 50
+                    ? 'stroke-amber-400'
+                    : 'stroke-emerald-400'
+              const barColorClass =
+                pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'
+
+              return (
+                <div className="relative flex items-center justify-center px-1 select-none">
+                  {/* Ring Gauge Trigger Button */}
+                  <div
+                    ref={gaugeRef}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setShowContextPopover((prev) => !prev)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
+                    }}
+                    className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
+                    title="Context Window Info (Dual-Layer Hermes Compressor)"
+                  >
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                       <circle
                         cx="18"
                         cy="18"
                         r={radius}
-                        className={`${colorClass} transition-all duration-500 ease-out`}
+                        className="stroke-white/10"
                         strokeWidth="2.5"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeDashoffset}
-                        strokeLinecap="round"
                         fill="none"
                       />
-                    )}
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-white/80 group-hover/gauge:text-white tracking-tight leading-none pointer-events-none">
-                    {roundedPct}%
-                  </span>
-                </div>
-
-                {/* Popover Card Overlay */}
-                {showContextPopover && (
-                  <div
-                    ref={contextPopoverRef}
-                    className="absolute bottom-full right-0 mb-3.5 w-64 p-3.5 bg-base-200 border border-primary/30 rounded-xl shadow-2xl z-50 animate-fade-in text-left cursor-default"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between text-[11px] font-medium text-white/40 mb-0.5">
-                      <span>Session Info</span>
-                      <span className="text-[9px] uppercase tracking-wider text-primary font-bold">
-                        In-Place
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-white mb-2.5">Context Window</div>
-
-                    <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
-                      <span className="text-white">
-                        {(contextTracker.currentTokens || contextTracker.currentChars || 0) >= 1000
-                          ? `${((contextTracker.currentTokens || contextTracker.currentChars || 0) / 1000).toFixed(1)}K`
-                          : contextTracker.currentTokens || contextTracker.currentChars || 0}{' '}
-                        / 256K tokens
-                      </span>
-                      <span className="text-white/60">{roundedPct}%</span>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
-                      <div
-                        className={`h-full ${barColorClass} transition-all duration-300 rounded-full`}
-                        style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
-                      />
-                    </div>
-
-                    {/* Compact Conversation Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowContextPopover(false)
-                        if (typeof onManualCompact === 'function') {
-                          onManualCompact()
-                        } else {
-                          window.dispatchEvent(new CustomEvent('request-manual-compaction'))
-                        }
-                      }}
-                      disabled={isLoading}
-                      className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-primary/30 text-xs font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <span>Compact Conversation</span>
-                    </button>
-
-                    {/* Caret pointing to gauge */}
-                    <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-base-200 border-r border-b border-primary/30 rotate-45" />
+                      {pct > 0 && (
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r={radius}
+                          className={`${colorClass} transition-all duration-500 ease-out`}
+                          strokeWidth="2.5"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={strokeDashoffset}
+                          strokeLinecap="round"
+                          fill="none"
+                        />
+                      )}
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-white/80 group-hover/gauge:text-white tracking-tight leading-none pointer-events-none">
+                      {roundedPct}%
+                    </span>
                   </div>
-                )}
-              </div>
-            )
-          })()}
 
-          {isLoading && (
+                  {/* Popover Card Overlay */}
+                  {showContextPopover && (
+                    <div
+                      ref={contextPopoverRef}
+                      className="absolute bottom-full right-0 mb-3.5 w-64 p-3.5 bg-base-200 border border-primary/30 rounded-xl shadow-2xl z-50 animate-fade-in text-left cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between text-[11px] font-medium text-white/40 mb-0.5">
+                        <span>Session Info</span>
+                        <span className="text-[9px] uppercase tracking-wider text-primary font-bold">
+                          In-Place
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-white mb-2.5">Context Window</div>
+
+                      <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
+                        <span className="text-white">
+                          {(contextTracker.currentTokens || contextTracker.currentChars || 0) >=
+                          1000
+                            ? `${((contextTracker.currentTokens || contextTracker.currentChars || 0) / 1000).toFixed(1)}K`
+                            : contextTracker.currentTokens || contextTracker.currentChars || 0}{' '}
+                          / 256K tokens
+                        </span>
+                        <span className="text-white/60">{roundedPct}%</span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
+                        <div
+                          className={`h-full ${barColorClass} transition-all duration-300 rounded-full`}
+                          style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
+                        />
+                      </div>
+
+                      {/* Compact Conversation Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowContextPopover(false)
+                          if (typeof onManualCompact === 'function') {
+                            onManualCompact()
+                          } else {
+                            window.dispatchEvent(new CustomEvent('request-manual-compaction'))
+                          }
+                        }}
+                        disabled={isLoading}
+                        className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-primary/30 text-xs font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span>Compact Conversation</span>
+                      </button>
+
+                      {/* Caret pointing to gauge */}
+                      <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-base-200 border-r border-b border-primary/30 rotate-45" />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {isLoading && (
+              <button
+                type="button"
+                onClick={() => setShowAbortConfirm(true)}
+                className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white transition-all"
+                title="Stop Generation (Hard Abort)"
+              >
+                <FaStop size={16} />
+              </button>
+            )}
             <button
-              type="button"
-              onClick={() => setShowAbortConfirm(true)}
-              className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white transition-all"
-              title="Stop Generation (Hard Abort)"
+              type="submit"
+              disabled={isSendDisabled}
+              className="p-3 rounded-full bg-success text-success-content disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 hover:bg-success/80 hover:scale-105 active:scale-95 transition-all"
+              title="Send Message"
             >
-              <FaStop size={16} />
+              <FaArrowUp size={16} />
             </button>
-          )}
-          <button
-            type="submit"
-            disabled={isSendDisabled}
-            className="p-3 rounded-full bg-success text-success-content disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 hover:bg-success/80 hover:scale-105 active:scale-95 transition-all"
-            title="Send Message"
-          >
-            <FaArrowUp size={16} />
-          </button>
-        </div>
+          </div>
         </div>
       </form>
 

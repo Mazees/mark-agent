@@ -1,8 +1,8 @@
 import { Router } from 'express'
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import { getActiveConfig } from '../config-manager.js'
+import { DEFAULT_WORKSPACE_ROOT } from '../workspace-policy.js'
 
 export const workspaceRouter = Router()
 
@@ -21,7 +21,11 @@ const IGNORED_DIRS = new Set([
   'vendor'
 ])
 
-const DEFAULT_WORKSPACE_PATH = path.join(os.homedir(), 'Documents', 'Mark Workspace')
+const DEFAULT_WORKSPACE_PATH = DEFAULT_WORKSPACE_ROOT
+
+workspaceRouter.get('/workspace/info', (_req, res) => {
+  res.json({ success: true, data: { defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT } })
+})
 
 /**
  * Traversal rekursif cepat untuk mencari file di workspace

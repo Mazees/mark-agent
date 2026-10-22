@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { dbStore, normalizeSqliteId } from '../memory/db-store.js'
 import { initOramaIndices } from '../memory/orama-store.js'
 import { wsHub } from '../ws-hub.js'
+import { sessionForClient, isInvalidMainWorkspace } from '../workspace-policy.js'
 
 export const memoryRouter = Router()
 
@@ -42,38 +43,89 @@ memoryRouter.post('/turns/batch', (req, res) => {
 // 3. Sessions
 memoryRouter.get('/sessions', (req, res) => {
   if (req.query.summary === 'true') {
-    const summaries = dbStore.sqlite.prepare(`
+    const summaries = dbStore.sqlite
+      .prepare(
+        `
       SELECT id, title, workspace_root AS workspaceRoot, is_auto_mode AS isAutoMode, timestamp
       FROM sessions ORDER BY rowid ASC
-    `).all()
-    return res.json({ success: true, data: summaries })
+    `
+      )
+      .all()
+    return res.json({ success: true, data: summaries.map(sessionForClient) })
   }
-  res.json({ success: true, data: dbStore.sessions.getAll() })
+  res.json({ success: true, data: dbStore.sessions.getAll().map(sessionForClient) })
 })
 
 memoryRouter.get('/sessions/:id', (req, res) => {
   const { id } = req.params
   if (req.query.summary === 'true') {
-    const summary = dbStore.sqlite.prepare(`
+    const summary = dbStore.sqlite
+      .prepare(
+        `
       SELECT id, title, workspace_root AS workspaceRoot, is_auto_mode AS isAutoMode, timestamp
       FROM sessions WHERE id = ?
-    `).get(normalizeSqliteId(id))
-    return res.json({ success: true, data: summary || null })
+    `
+      )
+      .get(normalizeSqliteId(id))
+    return res.json({ success: true, data: sessionForClient(summary) || null })
   }
   const session = dbStore.sessions.getById(id)
-  res.json({ success: true, data: session })
+  res.json({ success: true, data: sessionForClient(session) })
 })
 
 memoryRouter.post('/sessions', (req, res) => {
   const item = req.body
-  const record = dbStore.sessions.insert(item)
+  if (isInvalidMainWorkspace(item))
+    return res
+      .status(400)
+      .json({ success: false, error: 'Workspace Main Thread tidak dapat diubah.' })
+  const record = dbStore.sessions.insert(sessionForClient(item))
   res.json({ success: true, data: record })
 })
 
 memoryRouter.post('/sessions/batch', (req, res) => {
   const items = req.body || []
-  const records = dbStore.sessions.insertBatch(items)
+  if (items.some(isInvalidMainWorkspace))
+    return res
+      .status(400)
+      .json({ success: false, error: 'Workspace Main Thread tidak dapat diubah.' })
+  const records = dbStore.sessions.insertBatch(items.map(sessionForClient))
   res.json({ success: true, count: records.length, data: records })
+})
+
+memoryRouter.patch('/sessions/:id', (req, res) => {
+  const id = normalizeSqliteId(req.params.id)
+  const current = dbStore.sqlite
+    .prepare(
+      'SELECT id, title, workspace_root AS workspaceRoot, timestamp FROM sessions WHERE id = ?'
+    )
+    .get(id)
+  if (!current)
+    return res.status(404).json({ success: false, error: 'Percakapan tidak ditemukan.' })
+  const { title = current.title, workspaceRoot = current.workspaceRoot } = req.body || {}
+  if (
+    typeof title !== 'string' ||
+    !title.trim() ||
+    (workspaceRoot !== null && typeof workspaceRoot !== 'string')
+  ) {
+    return res.status(400).json({ success: false, error: 'Judul atau workspace tidak valid.' })
+  }
+  if (isInvalidMainWorkspace({ id, workspaceRoot }))
+    return res
+      .status(400)
+      .json({ success: false, error: 'Workspace Main Thread tidak dapat diubah.' })
+  const updated = sessionForClient({
+    ...current,
+    title: title.trim(),
+    workspaceRoot: workspaceRoot?.trim() || null,
+    timestamp: Date.now()
+  })
+  dbStore.sqlite
+    .prepare(
+      'UPDATE sessions SET title = ?, workspace_root = ?, timestamp = ?, updated_at = ? WHERE id = ?'
+    )
+    .run(updated.title, updated.workspaceRoot, updated.timestamp, updated.timestamp, id)
+  res.json({ success: true, data: updated })
 })
 
 memoryRouter.delete('/sessions/:id', (req, res) => {

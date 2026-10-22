@@ -36,6 +36,7 @@ let ws = null
 const listeners = new Map()
 let groupToolsRevision = 0
 let groupToolsRequest = null
+let workspaceInfoRequest = null
 
 function getWebSocket() {
   if (typeof window === 'undefined') return null
@@ -354,10 +355,28 @@ export const webApi = {
     }
   },
 
+  getWorkspaceInfo: () => {
+    if (!workspaceInfoRequest) {
+      workspaceInfoRequest = (async () => {
+        const res = await fetch(`${API_BASE}/api/workspace/info`, {
+          signal: AbortSignal.timeout(10000)
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success || !json.data?.defaultWorkspaceRoot)
+          throw new Error('Informasi workspace belum dapat dimuat.')
+        return json.data
+      })().catch((error) => {
+        workspaceInfoRequest = null
+        throw error
+      })
+    }
+    return workspaceInfoRequest
+  },
+
   getWorkspaceFiles: async (query = '', root = '') => {
     try {
       const q = encodeURIComponent(query || '')
-      const r = encodeURIComponent(root || '')
+      const r = encodeURIComponent(root || (await webApi.getWorkspaceInfo()).defaultWorkspaceRoot)
       const res = await fetch(`${API_BASE}/api/workspace/files?query=${q}&root=${r}`)
       const json = await res.json()
       return json?.data || []

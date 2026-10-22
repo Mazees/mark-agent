@@ -11,7 +11,8 @@ import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
-import { db, setSessionWorkspace, getAllConfig } from '../api/db'
+import { getAllConfig } from '../api/db'
+import { webApi } from '../api/web-bridge.js'
 
 /**
  * Komponen waveform bar terisolasi (direct ref style update)
@@ -115,10 +116,11 @@ const MarkHome = ({ isHome = true }) => {
 
   // Muat konfigurasi workspace & overlay opacity dari database
   useEffect(() => {
-    db.sessions
-      .get(1)
-      .then((s) => {
-        if (s?.workspaceRoot) setWorkspaceRoot(s.workspaceRoot)
+    let mounted = true
+    webApi
+      .getWorkspaceInfo()
+      .then((info) => {
+        if (mounted) setWorkspaceRoot(info.defaultWorkspaceRoot)
       })
       .catch(() => {})
 
@@ -135,28 +137,12 @@ const MarkHome = ({ isHome = true }) => {
         setBgOverlayOpacity(Number(e.detail.bgOverlayOpacity))
       }
     }
-    const handleWorkspaceUpdated = (e) => {
-      if (String(e.detail?.sessionId) === '1') {
-        setWorkspaceRoot(e.detail?.workspaceRoot || null)
-      }
-    }
     window.addEventListener('config-updated', handleConfigUpdated)
-    window.addEventListener('session-workspace-updated', handleWorkspaceUpdated)
     return () => {
+      mounted = false
       window.removeEventListener('config-updated', handleConfigUpdated)
-      window.removeEventListener('session-workspace-updated', handleWorkspaceUpdated)
     }
   }, [])
-
-  const handleSelectWorkspace = async () => {
-    if (window.api && window.api.selectDirectory) {
-      const selected = await window.api.selectDirectory()
-      if (selected) {
-        await setSessionWorkspace(1, selected)
-        setWorkspaceRoot(selected)
-      }
-    }
-  }
 
   useEffect(() => {
     let lastSpeaking = false
@@ -483,7 +469,6 @@ const MarkHome = ({ isHome = true }) => {
             onStop={() => handleStop(1)}
             source={inputSource}
             workspaceRoot={workspaceRoot}
-            onSelectWorkspace={handleSelectWorkspace}
           />
         </div>
       </footer>

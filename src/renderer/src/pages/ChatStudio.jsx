@@ -1,25 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
-import {
-  MessageSquare,
-  Plus,
-  Trash2,
-  Edit2,
-  Search,
-  Pin,
-  X,
-  Maximize2,
-  Minimize2,
-  Sparkles,
-  Check,
-  RotateCcw,
-  Send,
-  Loader2,
-  ArrowLeft,
-  Bot,
-  Folder
-} from 'lucide-react'
+import { Folder } from 'lucide-react'
 import {
   db,
   getSessionSummaries,
@@ -29,12 +11,14 @@ import {
   deleteSession,
   renameSession,
   getChatData,
-  setSessionWorkspace,
+  updateSessionMetadata,
   getSessionCompact
 } from '../api/db'
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
-import { useConfirm } from '../hooks/useConfirm'
+import WorkspaceSidebar from '../components/Chat/WorkspaceSidebar.jsx'
+import { webApi } from '../api/web-bridge.js'
+import { isMainSession, resolveSessionWorkspace } from '@shared/workspaces.js'
 import { useApproval } from '../contexts/ApprovalContext'
 import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
@@ -167,21 +151,23 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   const [activeSessionData, setActiveSessionData] = useState([])
   const [visibleMessageCount, setVisibleMessageCount] = useState(30)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [editingSessionId, setEditingSessionId] = useState(null)
-  const [editingTitle, setEditingTitle] = useState('')
+  const [defaultRoot, setDefaultRoot] = useState('')
+  const [isWorkspaceBusy, setIsWorkspaceBusy] = useState(false)
+  const workspaceBusyRef = useRef(false)
 
   const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
-  const { confirm, ModalComponent } = useConfirm()
 
   const loadAllSessions = useCallback(async () => {
     const requestId = ++sessionsRequestRef.current
     setIsSessionsLoading(true)
     setSessionsError('')
     try {
-      const list = await getSessionSummaries()
-      if (requestId === sessionsRequestRef.current) setSessions(list)
+      const [list, info] = await Promise.all([getSessionSummaries(), webApi.getWorkspaceInfo()])
+      if (requestId === sessionsRequestRef.current) {
+        setSessions(list)
+        setDefaultRoot(info.defaultWorkspaceRoot)
+      }
     } catch (e) {
       console.error('Error loading sessions:', e)
       if (requestId === sessionsRequestRef.current)
@@ -193,8 +179,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   useEffect(() => {
     loadAllSessions()
+    const unsubscribe = webApi.onDatabaseRestored(loadAllSessions)
     return () => {
       sessionsRequestRef.current += 1
+      unsubscribe()
     }
   }, [loadAllSessions])
 
@@ -295,10 +283,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
     const commandOpts = {
-      workspaceRoot: currentSession?.workspaceRoot || null,
       displayPrompt: rawDisplay,
       attachedFiles: sendOptions?.attachedFiles,
       ...sendOptions,
+      workspaceRoot: resolveSessionWorkspace(
+        { ...currentSession, id: activeSessionId },
+        defaultRoot
+      ),
       ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
     }
 
@@ -384,64 +375,56 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }, [activeApproval?.id, activeApproval?.status])
 
-  const handleCreateNewChat = async () => {
+  const createWorkspaceChat = async (root = null) => {
+    const newSession = await createSession('Percakapan Baru', { workspaceRoot: root })
+    setSessions((prev) => [...prev, newSession])
+    setActiveSessionData([])
+    setActiveSessionId(newSession.id)
+  }
+
+  const runWorkspaceAction = async (action) => {
+    if (workspaceBusyRef.current) return
+    workspaceBusyRef.current = true
+    setIsWorkspaceBusy(true)
+    setSessionsError('')
     try {
-      window.api?.resetAiSession?.().catch(() => {})
-      const newSession = await createSession('Percakapan Baru', [])
-      await loadAllSessions()
-      setActiveSessionId(newSession.id)
-      setActiveSessionData([])
-    } catch (err) {
-      console.error('Failed to create session:', err)
+      await action()
+    } catch (error) {
+      setSessionsError(error.message || 'Workspace belum dapat disimpan.')
+    } finally {
+      workspaceBusyRef.current = false
+      setIsWorkspaceBusy(false)
     }
   }
 
-  const handleDeleteSessionClick = async (e, id) => {
-    e.stopPropagation()
-    if (id === 1) return
-
-    const confirmed = await confirm({
-      title: 'Hapus Sesi Obrolan',
-      message: 'Apakah kamu yakin ingin menghapus sesi percakapan ini secara permanen?',
-      confirmText: 'Hapus',
-      confirmColor: 'btn-error'
+  const handleCreateNewChat = (root = null) => runWorkspaceAction(() => createWorkspaceChat(root))
+  const handleAddWorkspace = () =>
+    runWorkspaceAction(async () => {
+      const selected = await webApi.selectDirectory()
+      if (selected) await createWorkspaceChat(selected)
     })
 
-    if (confirmed?.isConfirmed) {
-      await deleteSession(id)
-      await loadAllSessions()
-      if (String(activeSessionId) === String(id)) {
-        setActiveSessionId('1')
-      }
-    }
+  const handleSaveSession = async (id, updates) => {
+    if (isMainSession(id)) throw new Error('Main Thread tidak dapat diubah.')
+    const sessionIsRunning = runningSessionIds.map(String).includes(String(id))
+    if (sessionIsRunning && Object.hasOwn(updates, 'workspaceRoot'))
+      throw new Error('Tunggu proses percakapan selesai sebelum mengubah workspace.')
+    const saved = await updateSessionMetadata(id, updates)
+    setSessions((prev) =>
+      prev.map((session) =>
+        String(session.id) === String(id) ? { ...session, ...saved } : session
+      )
+    )
   }
 
-  const handleStartRename = (e, session) => {
-    e.stopPropagation()
-    setEditingSessionId(session.id)
-    setEditingTitle(session.title)
-  }
-
-  const handleSaveRename = async (id) => {
-    if (editingTitle.trim()) {
-      await renameSession(id, editingTitle.trim())
-      await loadAllSessions()
-    }
-    setEditingSessionId(null)
-  }
-
-  const handleSelectSessionWorkspace = async () => {
-    if (window.api && window.api.selectDirectory) {
-      const selected = await window.api.selectDirectory()
-      if (selected) {
-        await setSessionWorkspace(activeSessionId, selected)
-        setSessions((prev) =>
-          prev.map((s) =>
-            String(s.id) === String(activeSessionId) ? { ...s, workspaceRoot: selected } : s
-          )
-        )
-      }
-    }
+  const handleDeleteSession = async (id) => {
+    if (isMainSession(id)) throw new Error('Main Thread tidak dapat dihapus.')
+    if (runningSessionIds.map(String).includes(String(id)))
+      throw new Error('Tunggu proses percakapan selesai sebelum menghapus sesi.')
+    const result = await deleteSession(id)
+    if (!result?.success) throw new Error('Percakapan belum dapat dihapus.')
+    setSessions((prev) => prev.filter((session) => String(session.id) !== String(id)))
+    if (String(activeSessionId) === String(id)) setActiveSessionId('1')
   }
 
   const handleStopSession = () => {
@@ -566,220 +549,34 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   // Jika dipanggil via route (tanpa prop isOpen), default ke true
   if (isOpen === false) return null
 
-  const filteredSessions = sessions.filter(
-    (s) =>
-      !['1', '1.0'].includes(String(s.id)) &&
-      s.title !== 'Main Thread' &&
-      (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   const activeSessionObj = sessions.find((s) => String(s.id) === String(activeSessionId)) || {
     id: '1',
     title: 'Main Thread'
   }
-  const activeSessionWorkspace = activeSessionObj?.workspaceRoot || null
+  const activeSessionWorkspace = resolveSessionWorkspace(activeSessionObj, defaultRoot)
 
   return (
     <>
       <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
-        <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
-          {/* Sidebar Header */}
-          <div className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none">
-            <div className="flex items-center justify-between pointer-events-auto">
-              <div className="flex items-center gap-2 font-bold text-sm tracking-wide text-white">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleClose()
-                  }}
-                  className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
-                  title="Tutup Studio (Esc)"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <span className="truncate">Chat Studio</span>
-              </div>
-              <div className="flex items-center gap-1 pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={handleCreateNewChat}
-                  className="btn btn-xs btn-primary rounded-lg gap-1 font-medium shadow-md shadow-primary/20 cursor-pointer pointer-events-auto"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Sesi Baru
-                </button>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative pointer-events-auto">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-              <input
-                type="text"
-                placeholder="Cari obrolan..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input input-sm bg-base-300 border-white/10 pl-9 w-full rounded-xl text-xs text-white placeholder:text-white/30 focus:border-primary/50"
-              />
-            </div>
-          </div>
-
-          {/* Sessions Scroll List */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-1 custom-scrollbar">
-            {/* PINNED MAIN THREAD */}
-            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
-              <span>Sesi Utama</span>
-            </div>
-
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setActiveSessionId('1')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setActiveSessionId('1')
-              }}
-              className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/item cursor-pointer ${
-                String(activeSessionId) === '1'
-                  ? 'bg-primary/20 border border-primary/40 text-white shadow-sm'
-                  : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
-              }`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    runningSessionIds.map(String).includes('1') ||
-                    (!runningSessionIds.length && (isMainLoading || isAgentBusy))
-                      ? 'bg-warning animate-ping'
-                      : 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
-                  }`}
-                />
-                <div className="min-w-0">
-                  <h4 className="text-xs font-semibold truncate">Main Thread</h4>
-                </div>
-              </div>
-            </div>
-
-            <div className="my-2 border-t border-white/5" />
-
-            {/* WORKSPACE SESSIONS */}
-            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
-              Semua Sesi
-            </div>
-
-            {filteredSessions.map((s) => {
-              const isActive = String(activeSessionId) === String(s.id)
-              const isEditing = String(editingSessionId) === String(s.id)
-              const isThisSessionRunning = runningSessionIds.map(String).includes(String(s.id))
-
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => setActiveSessionId(s.id)}
-                  className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/session cursor-pointer ${
-                    isActive
-                      ? 'bg-white/10 border border-white/20 text-white shadow-sm'
-                      : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                    <div
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        isThisSessionRunning
-                          ? 'bg-warning animate-ping'
-                          : isActive
-                            ? 'bg-primary shadow-[0_0_6px_var(--color-primary)]'
-                            : 'bg-white/20'
-                      }`}
-                    />
-                    <MessageSquare className="w-3.5 h-3.5 opacity-50 shrink-0" />
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveRename(s.id)
-                          if (e.key === 'Escape') setEditingSessionId(null)
-                        }}
-                        autoFocus
-                        className="input input-xs bg-base-300 border-primary/50 text-xs text-white p-1 h-6 w-full rounded"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-medium truncate">{s.title || 'Percakapan'}</h4>
-                        <p className="text-[10px] opacity-40">
-                          {s.timestamp
-                            ? new Date(s.timestamp).toLocaleDateString('id-ID', {
-                                month: 'short',
-                                day: 'numeric'
-                              })
-                            : ''}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action buttons on hover */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
-                    {isEditing ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleSaveRename(s.id)
-                        }}
-                        className="btn btn-ghost btn-xs p-1 text-success hover:bg-success/20"
-                      >
-                        <Check className="w-3 h-3" />
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={(e) => handleStartRename(e, s)}
-                          className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-white"
-                          title="Ubah judul sesi"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteSessionClick(e, s.id)}
-                          className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-error"
-                          title="Hapus sesi"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-
-            {isSessionsLoading && (
-              <div role="status" className="py-3 px-2 text-xs text-white/40">
-                Memuat daftar sesi...
-              </div>
-            )}
-            {sessionsError && (
-              <div role="alert" className="py-3 px-2 text-xs text-white/60">
-                <p>{sessionsError}</p>
-                <button
-                  type="button"
-                  onClick={loadAllSessions}
-                  className="btn btn-ghost btn-xs mt-1"
-                >
-                  Coba lagi
-                </button>
-              </div>
-            )}
-            {!isSessionsLoading && !sessionsError && filteredSessions.length === 0 && (
-              <div className="text-center py-6 text-xs text-white/30">
-                {searchQuery ? 'Tidak ada sesi yang cocok.' : 'Belum ada sesi workspace lain.'}
-              </div>
-            )}
-          </div>
-        </div>
+        <WorkspaceSidebar
+          sessions={sessions}
+          defaultRoot={defaultRoot}
+          activeId={activeSessionId}
+          runningIds={[
+            ...runningSessionIds,
+            ...(!runningSessionIds.length && (isMainLoading || isAgentBusy) ? ['1'] : [])
+          ]}
+          loading={isSessionsLoading}
+          error={sessionsError}
+          busy={isWorkspaceBusy || !defaultRoot}
+          onRetry={loadAllSessions}
+          onClose={handleClose}
+          onSelect={setActiveSessionId}
+          onCreate={handleCreateNewChat}
+          onAddWorkspace={handleAddWorkspace}
+          onSave={handleSaveSession}
+          onDelete={handleDeleteSession}
+        />
 
         {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
         <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
@@ -942,7 +739,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 onStop={handleStopSession}
                 source={inputSource || 'pc'}
                 workspaceRoot={activeSessionWorkspace}
-                onSelectWorkspace={handleSelectSessionWorkspace}
                 onManualCompact={handleManualCompaction}
               />
             </div>
@@ -950,7 +746,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         </div>
       </div>
 
-      <ModalComponent />
     </>
   )
 }
