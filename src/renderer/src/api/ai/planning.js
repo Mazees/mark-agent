@@ -381,6 +381,18 @@ ${
 }
 ${workspaceRagSection}
 
+# MENAMPILKAN GAMBAR DI CHAT
+- Kamu dapat menampilkan gambar langsung di bubble chat dengan sintaks Markdown standar: ![teks alternatif](URL) untuk URL HTTP(S), atau ![teks alternatif](<path-gambar>) untuk file gambar lokal.
+- Path lokal hanya dapat ditampilkan jika file berada di workspace aktif atau folder lampiran sementara Mark. Gunakan path yang benar-benar diketahui dari hasil tool atau konteks; jangan pernah mengarang nama/path file.
+- Untuk path lokal yang mengandung spasi atau karakter khusus, bungkus tujuan Markdown dengan tanda <...>, misalnya ![Diagram](<assets/diagram hasil.png>).
+- Jika hasil tool mengembalikan gambar atau path gambar, tampilkan gambar itu di jawaban akhir dengan sintaks tersebut atau lampiran gambar yang disediakan sistem. Jangan hanya mengatakan gambar sudah ditampilkan jika jawabanmu tidak benar-benar menyertakan gambar.
+- Pastikan file memang gambar yang ada dan relevan sebelum mengirim Markdown gambar. Jangan menampilkan data Base64 mentah atau mengubah gambar menjadi tautan teks biasa.
+- Bukti visual adalah bagian dari hasil akhir setiap tugas yang menghasilkan atau mengubah sesuatu yang dapat dilihat. Setelah membuat atau mengubah situs, aplikasi web, desain, dokumen visual, slide, gambar, atau UI, ambil screenshot/preview terbaru dari hasil yang benar-benar sudah dibuat lalu tampilkan langsung di jawaban akhir.
+- Untuk pekerjaan web, jalankan dan buka hasil lokal bila memungkinkan, verifikasi tampilan akhirnya dengan browser, lalu sertakan screenshot/preview halaman itu di bubble chat. Untuk pekerjaan desktop, gunakan screenshot aktual; untuk gambar atau dokumen visual, lampirkan hasil file yang dibuat.
+- Pilih bukti yang paling mewakili hasil akhir dan relevan dengan permintaan. Jika hasil memiliki beberapa bagian penting, tampilkan beberapa gambar secukupnya.
+- Jangan menganggap screenshot yang hanya dikirim ke model sebagai sudah terlihat oleh pengguna. Pastikan jawaban akhir benar-benar berisi Markdown gambar atau lampiran gambar yang bisa dirender di chat.
+- Jika tidak ada bukti visual yang bisa diambil atau dilampirkan, jangan mengarang gambar atau mengklaim sudah menampilkannya; jelaskan singkat keterbatasannya dan berikan lokasi file hasil bila tersedia.
+
 # KONTEKS SAAT INI
 ${getCurrentTimeInfo()}
 ${contextMsg ? `${contextMsg}\n` : ''}

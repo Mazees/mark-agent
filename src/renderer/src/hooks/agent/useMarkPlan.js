@@ -56,6 +56,97 @@ import {
 // ============================================================================
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
+const LOCAL_IMAGE_PATH_PATTERN =
+  /(?:[a-z]:[\\/]|\.\.?[\\/]|\/)[^\r\n"'<>]*\.(?:avif|bmp|gif|jpe?g|png|svg|webp)/i
+
+function findPluginImageReference(value, key = '', depth = 0) {
+  if (depth > 5 || value == null) return null
+  if (typeof value === 'string') {
+    const imageData = value.match(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/i)?.[0]
+    if (imageData) return { previewUrl: imageData, modelUrl: imageData }
+    const remoteImage =
+      value.match(
+        /https?:\/\/[^\s"'<>]+\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:\?[^\s"'<>]*)?/i
+      )?.[0] ||
+      (['imageurl', 'qrurl'].includes(key.toLowerCase()) && /^https?:\/\//i.test(value)
+        ? value.trim()
+        : null)
+    if (remoteImage) return { previewUrl: remoteImage, modelUrl: remoteImage }
+
+    let valueToScan = value
+    if (/^file:\/\//i.test(value)) {
+      try {
+        const fileUrl = new URL(value)
+        if (fileUrl.host && fileUrl.host !== 'localhost') return null
+        valueToScan = decodeURIComponent(fileUrl.pathname).replace(/^\/(\w:)/, '$1')
+      } catch {
+        return null
+      }
+    }
+    const localPath =
+      LOCAL_IMAGE_PATH_PATTERN.exec(valueToScan)?.[0] ||
+      (/^(?:[^\s]+\.(?:avif|bmp|gif|jpe?g|png|svg|webp))$/i.test(value.trim()) &&
+      ['path', 'filepath', 'filename', 'qrpath'].includes(key.toLowerCase())
+        ? valueToScan.trim()
+        : null)
+    if (localPath) {
+      return {
+        previewUrl: `/api/chat/local-image?path=${encodeURIComponent(localPath.replace(/[),.;]+$/, ''))}`,
+        modelUrl: null
+      }
+    }
+    return null
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const image = findPluginImageReference(entry, key, depth + 1)
+      if (image) return image
+    }
+    return null
+  }
+
+  if (typeof value === 'object') {
+    const preferredKeys = [
+      'dataUrl',
+      'imageUrl',
+      'image',
+      'screenshot',
+      'qrImage',
+      'qrUrl',
+      'qrPath',
+      'filePath',
+      'filename',
+      'path',
+      'qr'
+    ]
+    for (const childKey of preferredKeys) {
+      if (Object.hasOwn(value, childKey)) {
+        const image = findPluginImageReference(value[childKey], childKey, depth + 1)
+        if (image) return image
+      }
+    }
+    for (const [childKey, child] of Object.entries(value)) {
+      if (preferredKeys.includes(childKey)) continue
+      const image = findPluginImageReference(child, childKey, depth + 1)
+      if (image) return image
+    }
+  }
+  return null
+}
+
+function redactPluginImagePayload(value) {
+  if (typeof value === 'string') {
+    return value.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi, '[Gambar dilampirkan]')
+  }
+  if (Array.isArray(value)) return value.map(redactPluginImagePayload)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, redactPluginImagePayload(child)])
+    )
+  }
+  return value
+}
 
 const publishContextUsage = async (
   sessionId,
@@ -942,17 +1033,27 @@ export const useMarkPlan = ({
         })
         const res = await Promise.race([pluginPromise, abortPromise])
 
+        const pluginImage = res?.success ? findPluginImageReference(res.data) : null
+        const safePluginData = redactPluginImagePayload(res?.data)
         resultString = res.success
-          ? typeof res.data === 'string'
-            ? res.data
-            : JSON.stringify(res.data)
+          ? typeof safePluginData === 'string'
+            ? safePluginData
+            : JSON.stringify(safePluginData)
           : `[ERROR] Plugin ${tool} gagal: ${res.error}`
+        if (pluginImage && !resultString.includes('[Gambar dilampirkan]')) {
+          resultString = `${resultString}\n[Gambar tersedia untuk ditampilkan di bubble chat]`
+        }
 
         targetPushProcess({
           id: pluginProcessId,
           type: 'plugin-execution',
           status: 'done',
-          data: { action: tool, query: stringQuery, result: resultString }
+          data: {
+            action: tool,
+            query: stringQuery,
+            result: resultString,
+            imageUrl: pluginImage?.previewUrl || null
+          }
         })
 
         return {
@@ -960,6 +1061,8 @@ export const useMarkPlan = ({
           success: Boolean(res?.success),
           resultString,
           rejected: false,
+          imageUrls: pluginImage?.modelUrl ? [pluginImage.modelUrl] : null,
+          previewUrl: pluginImage?.previewUrl || null,
           toolExecution: { action: tool, query: stringQuery, result: resultString }
         }
       }
@@ -1323,6 +1426,7 @@ export const useMarkPlan = ({
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
     let accumulatedThoughts = []
     let executedToolsList = []
+    let pluginImagesForTurn = []
     let currentInFlightTool = null
     let currentTurnReasoning = ''
     let finalContentAccumulator = ''
@@ -1637,6 +1741,7 @@ export const useMarkPlan = ({
       let isDone = false
       let stepCount = 0
       executedToolsList = []
+      pluginImagesForTurn = []
       sessionRecord.executedToolsList = executedToolsList
       let lastToolExecution = null
       accumulatedThoughts = []
@@ -2449,6 +2554,14 @@ export const useMarkPlan = ({
               durableActiveStep = execResult.durableActiveStep || null
             }
 
+            if (
+              toolName.startsWith('plugin-') &&
+              typeof execResult.previewUrl === 'string' &&
+              !pluginImagesForTurn.includes(execResult.previewUrl)
+            ) {
+              pluginImagesForTurn.push(execResult.previewUrl)
+            }
+
             lastToolExecution = execResult.toolExecution
             if (execResult.loadedGroup) {
               dynamicallyLoadedToolGroups.add(execResult.loadedGroup)
@@ -2645,7 +2758,15 @@ export const useMarkPlan = ({
 
                 const aiMsg = {
                   role: 'ai',
-                  content: cleanFinalOutput,
+                  content: pluginImagesForTurn.length
+                    ? [
+                        { type: 'text', text: cleanFinalOutput },
+                        ...pluginImagesForTurn.map((url) => ({
+                          type: 'image_url',
+                          image_url: { url }
+                        }))
+                      ]
+                    : cleanFinalOutput,
                   executedTools: executedToolsList.length > 0 ? executedToolsList : null,
                   isTaskDone: true,
                   reasoning: mergedReasoning,
@@ -3203,7 +3324,15 @@ Lakukan pemeriksaan mandiri sekarang:
 
           const aiMsg = {
             role: 'ai',
-            content: finalOutput,
+            content: pluginImagesForTurn.length
+              ? [
+                  { type: 'text', text: finalOutput },
+                  ...pluginImagesForTurn.map((url) => ({
+                    type: 'image_url',
+                    image_url: { url }
+                  }))
+                ]
+              : finalOutput,
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,

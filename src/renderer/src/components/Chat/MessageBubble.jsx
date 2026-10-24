@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import React from 'react'
-import Markdown from 'react-markdown'
+import Markdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
 import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
@@ -9,6 +9,57 @@ import { Brain, ChevronRight, ExternalLink, Sparkles } from 'lucide-react'
 import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 import { sanitizeProcessSteps } from '../../utils/processSteps'
 import { ProcessTimeline } from './ProcessTimeline'
+
+const LOCAL_IMAGE_EXTENSIONS = /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i
+
+function resolveMarkdownImageSource(source) {
+  if (typeof source !== 'string' || !source.trim()) return ''
+  const value = source.trim()
+  if (
+    /^https?:\/\//i.test(value) ||
+    /^data:image\/(avif|bmp|gif|jpe?g|png|webp);base64,/i.test(value)
+  ) {
+    return value
+  }
+  if (/^blob:/i.test(value) || /^\/api\/chat\/(temp-file|local-image)(\/|\?)/i.test(value)) {
+    return value
+  }
+
+  let localPath = value
+  if (/^file:\/\//i.test(value)) {
+    try {
+      const fileUrl = new URL(value)
+      if (fileUrl.host && fileUrl.host !== 'localhost') return ''
+      localPath = decodeURIComponent(fileUrl.pathname).replace(/^\/(\w:)/, '$1')
+    } catch {
+      return ''
+    }
+  }
+
+  if (!LOCAL_IMAGE_EXTENSIONS.test(localPath)) return ''
+  return `/api/chat/local-image?path=${encodeURIComponent(localPath)}`
+}
+
+function transformMarkdownUrl(url, key, node) {
+  if (key === 'src' && node?.tagName === 'img') return resolveMarkdownImageSource(url)
+  return defaultUrlTransform(url)
+}
+
+function MarkdownImage({ src, alt = '' }) {
+  const imageSource = resolveMarkdownImageSource(src)
+  if (!imageSource) return <span className="text-base-content/50">[Gambar tidak tersedia]</span>
+
+  return (
+    <a href={imageSource} target="_blank" rel="noreferrer" className="my-2 inline-block max-w-full">
+      <img
+        src={imageSource}
+        alt={alt}
+        loading="lazy"
+        className="block max-h-[min(70vh,34rem)] max-w-full rounded-lg object-contain"
+      />
+    </a>
+  )
+}
 
 export const MessageBubble = React.memo(
   ({
@@ -181,8 +232,10 @@ export const MessageBubble = React.memo(
                   [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
                 ]}
                 components={{
-                  code: CodeBlock
+                  code: CodeBlock,
+                  img: MarkdownImage
                 }}
+                urlTransform={transformMarkdownUrl}
               >
                 {preprocessLaTeX(stringContent)}
               </Markdown>
