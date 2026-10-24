@@ -18,6 +18,22 @@ export function getPluginsDirectory() {
 
 export const getPluginsDir = getPluginsDirectory
 
+async function assertUnmanagedPlugin(pluginName) {
+  if (typeof pluginName !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(pluginName)) {
+    throw new Error('Nama folder plugin tidak valid.')
+  }
+  const file = path.join(getPluginsDirectory(), pluginName, 'plugin.json')
+  const manifest = await fs.promises
+    .readFile(file, 'utf8')
+    .then(JSON.parse)
+    .catch(() => null)
+  if (manifest?.managedByAddon) {
+    throw Object.assign(new Error('Plugin ini dikelola melalui Add-ons > Chrome Bridge.'), {
+      status: 409
+    })
+  }
+}
+
 export async function loadAllPlugins() {
   if (loadPluginsPromise) {
     return loadPluginsPromise
@@ -104,7 +120,11 @@ export async function loadAllPlugins() {
                     act.code = rawCode
                       .split('\n')
                       .map((l) =>
-                        l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l
+                        l.startsWith('    ')
+                          ? l.substring(4)
+                          : l.startsWith('  ')
+                            ? l.substring(2)
+                            : l
                       )
                       .join('\n')
                       .trim()
@@ -231,6 +251,7 @@ export async function savePluginDefinition(payload) {
 
   const dir = getPluginsDirectory()
   const pluginDir = path.join(dir, cleanName)
+  await assertUnmanagedPlugin(cleanName)
 
   if (!isEdit && fs.existsSync(pluginDir)) {
     throw new Error(`Plugin dengan nama '${cleanName}' sudah ada.`)
@@ -300,6 +321,7 @@ export async function savePluginDefinition(payload) {
 }
 
 export async function togglePluginState(pluginName, isEnabled) {
+  await assertUnmanagedPlugin(pluginName)
   const dir = getPluginsDirectory()
   const manifestPath = path.join(dir, pluginName, 'plugin.json')
   if (fs.existsSync(manifestPath)) {
@@ -314,6 +336,7 @@ export async function togglePluginState(pluginName, isEnabled) {
 }
 
 export async function deletePlugin(pluginName) {
+  await assertUnmanagedPlugin(pluginName)
   const dir = getPluginsDirectory()
   const pluginDir = path.join(dir, pluginName)
   if (fs.existsSync(pluginDir)) {

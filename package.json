@@ -41,6 +41,7 @@
     "index.html",
     "LICENSE",
     "README.md",
+    "docs/chrome-bridge.md",
     "package.json"
   ],
   "dependencies": {

@@ -70,7 +70,7 @@ export default function Plugins() {
 
   const loadData = async () => {
     const data = await webApi.getPlugins()
-    setPlugins(data || [])
+    setPlugins((data || []).filter((plugin) => !plugin.managedByAddon))
   }
 
   useEffect(() => {

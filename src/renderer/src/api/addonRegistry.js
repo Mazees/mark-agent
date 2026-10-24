@@ -4,6 +4,24 @@
  */
 export const ADDONS = [
   {
+    id: 'chrome-bridge',
+    name: 'Chrome Bridge',
+    description: 'Kendalikan satu tab pilihan di Chrome milikmu',
+    capabilities: [
+      'Baca dan kendalikan tab Chrome yang dipilih pengguna',
+      'Isi formulir, jalankan JavaScript, dan ambil screenshot tab pilihan'
+    ],
+    detailRenderer: 'chrome-bridge',
+    icon: 'chrome',
+    statusProvider: 'chrome-bridge',
+    developer: 'MARK',
+    examples: [
+      'Gunakan Chrome saya untuk membaca halaman ini dan merangkum isinya.',
+      'Bantu isi formulir pada tab Chrome yang saya pilih.',
+      'Ambil tangkapan layar dari tab Chrome saya.'
+    ]
+  },
+  {
     id: 'google-workspace',
     name: 'Google Workspace',
     description: 'Drive, Calendar, dan Gmail',
@@ -15,7 +33,12 @@ export const ADDONS = [
     detailRenderer: 'google-workspace',
     icon: 'google',
     statusProvider: 'google',
-    developer: 'Mazees'
+    developer: 'Mazees',
+    examples: [
+      'Ringkas email masuk terbaru dan tandai yang perlu aku tindak lanjuti.',
+      'Cari dokumen proyek di Google Drive dan rangkum isinya.',
+      'Lihat agenda besok dan bantu cari waktu yang kosong.'
+    ]
   },
   {
     id: 'telegram',
@@ -30,7 +53,12 @@ export const ADDONS = [
     icon: 'telegram',
     statusProvider: 'telegram',
     developer: 'MARK',
-    logRoute: '/telegram-bot'
+    logRoute: '/telegram-bot',
+    examples: [
+      'Bantu hubungkan bot Telegram saya ke Mark.',
+      'Periksa apakah bot Telegram sudah terhubung.',
+      'Tampilkan log percakapan bot Telegram.'
+    ]
   }
 ]
 

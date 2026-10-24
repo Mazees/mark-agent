@@ -49,6 +49,8 @@
 
 ## Kemampuan Utama (Tools)
 
+- **Chrome Bridge:** Add-on bawaan untuk mengendalikan satu tab Chrome pilihan pengguna melalui ekstensi **Mark Agent Bridge**. Mendukung sesi login Chrome yang sudah aktif, formulir, JavaScript, dan screenshot di chat. Engine tetap `chrome-use`; lihat [panduan pemasangan dan pengujian](docs/chrome-bridge.md).
+
 - **Autonomous Multi-Agent Tools:** `spawn_subagent`, `wait_subagents`, `send_message`, `list_subagents`, `kill_subagent`.
 - **Durable Task Workflow Engine:** `create_agent_task` (pemecahan tugas multi-tahap terstruktur, checkpointing berkala, validasi kelayakan deliverable, dan generasi berkas artefak).
 - **Git Workspace Tools (`git-*`):** `git-status`, `git-diff`, `git-commit`, `git-revert`.

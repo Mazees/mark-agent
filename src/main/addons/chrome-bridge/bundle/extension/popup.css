@@ -1,0 +1,144 @@
+:root {
+  color-scheme: dark;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
+  color: #dededa;
+  background: #100e0d;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  width: 350px;
+  margin: 0;
+  padding: 20px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #302d2b;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #4cdb83;
+  border: 1px solid #337449;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 700;
+}
+h1 {
+  font-size: 16px;
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.subtitle,
+.hint {
+  color: #92938d;
+  font-size: 12px;
+}
+#status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0;
+}
+#status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #81857e;
+}
+#status[data-state='connected']::before {
+  background: #4cdb83;
+}
+#status[data-state='paused']::before {
+  background: #d5b666;
+}
+section {
+  padding: 14px;
+  background: #191715;
+  border: 1px solid #302d2b;
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+.label {
+  display: block;
+  color: #92938d;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  margin-bottom: 9px;
+}
+#tab-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  max-height: 58px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+#tab-domain {
+  display: block;
+  color: #92938d;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+  min-height: 36px;
+  color: #dededa;
+  background: transparent;
+  border: 1px solid #413e39;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+button:hover:not(:disabled) {
+  background: #24221e;
+}
+button:focus-visible {
+  outline: 2px solid #4cdb83;
+  outline-offset: 3px;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.primary {
+  width: 100%;
+  color: #071b0f;
+  background: #4cdb83;
+  border-color: #4cdb83;
+  font-weight: 600;
+}
+.primary:hover:not(:disabled) {
+  background: #70e59a;
+}
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.text-button {
+  border: 0;
+  width: 100%;
+  margin-top: 8px;
+  color: #a7aba3;
+}
+.hint {
+  line-height: 1.6;
+  margin: 14px 0 0;
+}
+#error {
+  color: #f0a7a0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

@@ -14,6 +14,7 @@ import { startTelegramBot } from '../main/telegram/telegram-service.js'
 import { getActiveConfig } from './config-manager.js'
 import { registerRoutes } from './routes/index.js'
 import { setServerPort } from './tools/overlay-manager.js'
+import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -77,10 +78,34 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 wsHub.init(server)
 initOramaIndices().catch(() => {})
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
+chromeBridge.events.on('status', (status) =>
+  wsHub.broadcast('addon:status', { id: 'chrome-bridge', ...status })
+)
+chromeBridge.start().catch((error) => console.warn('[Chrome Bridge]', error.message))
+server.on('close', () => {
+  chromeBridge.stop().catch(() => {})
+})
+const shutdownServices = () => {
+  const timeout = setTimeout(() => process.exit(0), 1500)
+  timeout.unref()
+  chromeBridge.stop().finally(() => {
+    for (const client of wsHub.clients) client.terminate()
+    server.close(() => {
+      clearTimeout(timeout)
+      process.exit(0)
+    })
+    server.closeAllConnections()
+  })
+}
+process.once('SIGTERM', shutdownServices)
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  process.once('SIGINT', shutdownServices)
+}
 startOsActivityTracking(10000)
 
 // Daftarkan listener event abort dari WebSocket
 wsHub.on('ai:abort', async () => {
+  chromeBridge.cancelRequests()
   try {
     const { abortAllFetches } = await import('./services/ai-bridge.js')
     abortAllFetches()

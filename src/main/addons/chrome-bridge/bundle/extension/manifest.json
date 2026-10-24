@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Mark Agent Bridge",
+  "version": "1.1.0",
+  "minimum_chrome_version": "116",
+  "description": "Hubungkan satu tab Chrome pilihanmu dengan Mark.",
+  "permissions": ["activeTab", "tabs", "scripting", "debugger", "storage", "alarms"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Mark Agent Bridge",
+    "default_icon": {
+      "16": "icon.png",
+      "32": "icon.png"
+    }
+  },
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

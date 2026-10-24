@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Save, Unplug } from 'lucide-react'
+import { Plus, Save, Unplug } from 'lucide-react'
 import { getAllConfig, saveConfiguration } from '../api/db'
 import { webApi } from '../api/web-bridge'
+import AddonDetail from './AddonDetail'
+import { getAddon } from '../api/addonRegistry'
 
 export default function TelegramAddonDetail() {
   const [status, setStatus] = useState('checking')
@@ -86,103 +88,104 @@ export default function TelegramAddonDetail() {
 
   const connected = status === 'connected'
 
+  const actions = [
+    {
+      key: 'connect',
+      label: isSaving ? 'Menyimpan...' : connected ? 'Simpan & hubungkan ulang' : 'Install',
+      icon: connected ? Save : Plus,
+      kind: connected ? 'secondary' : 'install',
+      type: 'submit',
+      form: 'telegram-addon-settings',
+      disabled: isSaving || status === 'connecting'
+    },
+    ...(connected
+      ? [
+          {
+            key: 'disconnect',
+            label: 'Putuskan koneksi',
+            icon: Unplug,
+            kind: 'danger',
+            disabled: isSaving,
+            onClick: disconnect
+          }
+        ]
+      : [])
+  ]
   return (
-    <section className="rounded-xl border border-white/10 bg-base-200/70 p-5 sm:p-7">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-        <div>
-          <h2 className="text-base font-medium text-white">Status koneksi</h2>
-          <p className="mt-1 text-sm text-white/50">
-            {status === 'checking'
-              ? 'Memeriksa koneksi bot.'
-              : status === 'error'
-                ? 'Status koneksi tidak tersedia.'
-                : connected
-                  ? 'Bot Telegram terhubung ke Mark.'
-                  : status === 'connecting'
-                    ? 'Bot sedang menghubungkan diri.'
-                    : 'Bot Telegram belum terhubung.'}
-          </p>
-        </div>
-        <span
-          className={`text-sm ${connected ? 'text-primary' : status === 'error' ? 'text-error' : 'text-white/50'}`}
-        >
-          {status === 'checking'
-            ? 'Memeriksa'
-            : status === 'error'
-              ? 'Tidak tersedia'
-              : status === 'connecting'
-                ? 'Menghubungkan'
-                : connected
-                  ? 'Terhubung'
-                  : 'Terputus'}
-        </span>
-      </div>
-
-      <form onSubmit={saveAndConnect} className="space-y-5 pt-5">
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Telegram Bot Token</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="Token dari @BotFather"
-            className="input input-bordered w-full font-mono text-sm"
-          />
-          <span className="mt-2 block text-xs leading-relaxed text-white/45">
-            Token disimpan di konfigurasi lokal Mark dan tidak ditampilkan ke AI.
-          </span>
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">
-            Username admin Telegram
-          </span>
-          <input
-            type="text"
-            value={adminIds}
-            onChange={(event) => setAdminIds(event.target.value)}
-            placeholder="@username1, @username2"
-            className="input input-bordered w-full text-sm"
-          />
-          <span className="mt-2 block text-xs leading-relaxed text-white/45">
-            Pisahkan beberapa username dengan koma. Hanya admin terdaftar yang dapat mengontrol Mark
-            lewat bot.
-          </span>
-        </label>
-        <p className="text-xs leading-relaxed text-white/45">
-          Kirim /start ke bot setidaknya sekali agar Mark dapat membalas dan mengirim notifikasi ke
-          akunmu.
-        </p>
-        {error && (
-          <p role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="submit"
-            disabled={isSaving || status === 'connecting'}
-            className="btn btn-primary rounded-full px-5"
+    <AddonDetail addon={getAddon('telegram')} status={status} actions={actions}>
+      <section className="rounded-xl border border-white/10 bg-base-200/70 p-5 sm:p-7">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
+          <div>
+            <h2 className="text-base font-medium text-white">Status koneksi</h2>
+            <p className="mt-1 text-sm text-white/50">
+              {status === 'checking'
+                ? 'Memeriksa koneksi bot.'
+                : status === 'error'
+                  ? 'Status koneksi tidak tersedia.'
+                  : connected
+                    ? 'Bot Telegram terhubung ke Mark.'
+                    : status === 'connecting'
+                      ? 'Bot sedang menghubungkan diri.'
+                      : 'Bot Telegram belum terhubung.'}
+            </p>
+          </div>
+          <span
+            className={`text-sm ${connected ? 'text-primary' : status === 'error' ? 'text-error' : 'text-white/50'}`}
           >
-            <Save size={16} />{' '}
-            {isSaving
-              ? 'Menyimpan...'
-              : connected
-                ? 'Simpan & hubungkan ulang'
-                : 'Simpan & hubungkan'}
-          </button>
-          {connected && (
-            <button
-              type="button"
-              onClick={disconnect}
-              disabled={isSaving}
-              className="btn btn-outline rounded-full border-error/40 text-error hover:bg-error/10"
-            >
-              <Unplug size={16} /> Putuskan koneksi
-            </button>
-          )}
+            {status === 'checking'
+              ? 'Memeriksa'
+              : status === 'error'
+                ? 'Tidak tersedia'
+                : status === 'connecting'
+                  ? 'Menghubungkan'
+                  : connected
+                    ? 'Terhubung'
+                    : 'Terputus'}
+          </span>
         </div>
-      </form>
-    </section>
+
+        <form id="telegram-addon-settings" onSubmit={saveAndConnect} className="space-y-5 pt-5">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-white/80">Telegram Bot Token</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              placeholder="Token dari @BotFather"
+              className="input input-bordered w-full font-mono text-sm"
+            />
+            <span className="mt-2 block text-xs leading-relaxed text-white/45">
+              Token disimpan di konfigurasi lokal Mark dan tidak ditampilkan ke AI.
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-white/80">
+              Username admin Telegram
+            </span>
+            <input
+              type="text"
+              value={adminIds}
+              onChange={(event) => setAdminIds(event.target.value)}
+              placeholder="@username1, @username2"
+              className="input input-bordered w-full text-sm"
+            />
+            <span className="mt-2 block text-xs leading-relaxed text-white/45">
+              Pisahkan beberapa username dengan koma. Hanya admin terdaftar yang dapat mengontrol
+              Mark lewat bot.
+            </span>
+          </label>
+          <p className="text-xs leading-relaxed text-white/45">
+            Kirim /start ke bot setidaknya sekali agar Mark dapat membalas dan mengirim notifikasi
+            ke akunmu.
+          </p>
+          {error && (
+            <p role="alert" className="text-sm text-error">
+              {error}
+            </p>
+          )}
+        </form>
+      </section>
+    </AddonDetail>
   )
 }
