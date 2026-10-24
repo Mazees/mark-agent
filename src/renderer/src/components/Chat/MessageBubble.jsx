@@ -70,7 +70,8 @@ export const MessageBubble = React.memo(
     executionSteps = null,
     executedTools = [],
     isPlanConclusion = false,
-    isThinking = false
+    isThinking = false,
+    compactActivity = false
   }) => {
     const toolsToRender = sanitizeProcessSteps(
       executedTools && executedTools.length > 0 ? executedTools : executionSteps
@@ -154,7 +155,9 @@ export const MessageBubble = React.memo(
     const { text: stringContent, images: attachedImages } = extractContent(content)
 
     return (
-      <div className="text-sm leading-relaxed custom-markdown flex flex-col gap-1 relative group">
+      <div
+        className={`text-sm leading-relaxed custom-markdown flex flex-col ${compactActivity ? 'gap-0' : 'gap-1'} relative group`}
+      >
         {/* Plan Conclusion Header */}
         {isPlanConclusion && (
           <div className="flex items-center gap-1.5 text-[11px] font-bold text-primary uppercase tracking-wider mb-2 border-b border-primary/20 pb-1.5 w-max">
@@ -163,38 +166,28 @@ export const MessageBubble = React.memo(
           </div>
         )}
 
-        {/* Reasoning and activity trace */}
-        {(toolsToRender.length > 0 || reasoning) && (
-          <div className="my-2.5 space-y-1.5 select-none">
-            {reasoning && (
-              <details className="group/thought outline-none">
-                <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/60 hover:text-white select-none py-0.5 transition-colors">
-                  <Brain className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                  <span className="font-medium text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                    Proses Pemikiran AI
-                  </span>
-                  <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/thought:rotate-90 group-open/thought:opacity-100" />
-                </summary>
-                <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
-                  <Markdown
-                    remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
-                    rehypePlugins={[...mathRehypePlugins]}
-                  >
-                    {preprocessLaTeX(
-                      typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)
-                    )}
-                  </Markdown>
-                </div>
-              </details>
-            )}
-            {toolsToRender.length > 0 &&
-              (isThinking ||
-                toolsToRender.some(
-                  (step) => step.tool === 'computer_use' || step.action === 'computer_use'
-                )) && <DesktopPreviewWidget />}
-            <ProcessTimeline steps={toolsToRender} isActive={isThinking} />
-          </div>
+        {reasoning && (
+          <details className="group/thought outline-none my-2.5 select-none">
+            <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/60 hover:text-white select-none py-0.5 transition-colors">
+              <Brain className="w-3.5 h-3.5 text-primary/80 shrink-0" />
+              <span className="font-medium text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
+                Proses Pemikiran AI
+              </span>
+              <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/thought:rotate-90 group-open/thought:opacity-100" />
+            </summary>
+            <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
+              <Markdown
+                remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
+                rehypePlugins={[...mathRehypePlugins]}
+              >
+                {preprocessLaTeX(
+                  typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)
+                )}
+              </Markdown>
+            </div>
+          </details>
         )}
+
         {/* Attached Images Preview Grid */}
         {attachedImages && attachedImages.length > 0 && (
           <div className="flex flex-wrap gap-2 my-1.5">
@@ -224,7 +217,9 @@ export const MessageBubble = React.memo(
           (isUser ? (
             <div className="whitespace-pre-wrap leading-relaxed">{stringContent}</div>
           ) : (
-            <div className="prose prose-sm max-w-none text-inherit prose-pre:p-0 prose-pre:bg-transparent prose-headings:text-inherit prose-strong:text-inherit">
+            <div
+              className={`prose prose-sm max-w-none text-inherit prose-pre:p-0 prose-pre:bg-transparent prose-headings:text-inherit prose-strong:text-inherit ${compactActivity ? 'process-message-content' : ''}`}
+            >
               <Markdown
                 remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
                 rehypePlugins={[
@@ -241,6 +236,18 @@ export const MessageBubble = React.memo(
               </Markdown>
             </div>
           ))}
+
+        {toolsToRender.length > 0 && (
+          <div
+            className={`${compactActivity ? 'mt-2 mb-4 space-y-1' : 'my-2.5 space-y-1.5'} select-none`}
+          >
+            {(isThinking ||
+              toolsToRender.some(
+                (step) => step.tool === 'computer_use' || step.action === 'computer_use'
+              )) && <DesktopPreviewWidget />}
+            <ProcessTimeline steps={toolsToRender} isActive={isThinking} />
+          </div>
+        )}
 
         {/* Sources */}
         {sources && sources.length > 0 && (

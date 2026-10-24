@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
-import { Folder, PanelRight } from 'lucide-react'
+import { ChevronRight, Folder, PanelRight } from 'lucide-react'
 import BrowserPanel from '../components/BrowserPanel.jsx'
 import {
   browserSessionId,
@@ -63,6 +63,90 @@ export function filterMessagePrefixes(content) {
     .trim()
 
   return { cleanContent, prefixes }
+}
+
+function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
+  const renderItems = []
+  let index = 0
+
+  while (index < messages.length) {
+    const current = messages[index]
+    if (current.role !== 'user') {
+      renderItems.push({ type: 'message', message: current })
+      index += 1
+      continue
+    }
+
+    renderItems.push({ type: 'message', message: current })
+    let turnEnd = index + 1
+    while (turnEnd < messages.length && messages[turnEnd].role !== 'user') turnEnd += 1
+
+    const turnMessages = messages.slice(index + 1, turnEnd)
+    const assistantMessages = turnMessages.filter((message) => message.role !== 'user')
+    const isLatestTurn = turnEnd === messages.length
+    const isTurnActive = assistantMessages.some(
+      (message) =>
+        message.isThinking ||
+        message.taskStatus === 'running' ||
+        (message.isApproval && message.status === 'pending')
+    )
+    const mostCompleteToolSnapshot = assistantMessages.reduce((best, message) => {
+      const candidate = Array.isArray(message.executedTools) ? message.executedTools : []
+      return candidate.length >= best.length ? candidate : best
+    }, [])
+
+    if (isLatestTurn && (isTurnActive || isLoading)) {
+      renderItems.push({
+        type: 'process',
+        id: assistantMessages.at(-1)?.id || assistantMessages.at(-1)?.created_at || index,
+        messages: assistantMessages,
+        steps: mostCompleteToolSnapshot,
+        reasoning: null,
+        isActive: true
+      })
+      index = turnEnd
+      continue
+    }
+
+    const finalIndex = turnMessages.findLastIndex(
+      (message) =>
+        message.role !== 'user' &&
+        !message.isThinking &&
+        !message.isApproval &&
+        !(message.isPlanSteps && message.taskStatus === 'running')
+    )
+
+    const shouldCollapse =
+      finalIndex >= 0 &&
+      !isTurnActive &&
+      !(isLoading && isLatestTurn) &&
+      (assistantMessages.length > 1 ||
+        assistantMessages.some(
+          (message) => Array.isArray(message.executedTools) && message.executedTools.length > 0
+        ))
+
+    if (!shouldCollapse) {
+      turnMessages.forEach((message) => renderItems.push({ type: 'message', message }))
+      index = turnEnd
+      continue
+    }
+
+    const finalMessage = turnMessages[finalIndex]
+    const progressMessages = turnMessages.filter(
+      (message, messageIndex) => messageIndex !== finalIndex && message.role !== 'user'
+    )
+    renderItems.push({
+      type: 'process',
+      id: finalMessage.id || finalMessage.created_at || index,
+      messages: progressMessages,
+      steps: mostCompleteToolSnapshot,
+      reasoning: finalMessage.reasoning
+    })
+    renderItems.push({ type: 'message', message: finalMessage, hideProcessDetails: true })
+    index = turnEnd
+  }
+
+  return renderItems
 }
 
 export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) => {
@@ -696,73 +780,171 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                   const activeThinkingMsg =
                     [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking) || null
 
-                  return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
-                    if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
-                      return null
+                  const visibleMessages = currentDisplayMessages.slice(-visibleMessageCount)
+                  return buildCompletedTurnRenderItems(visibleMessages, isCurrentLoading).map(
+                    (item, idx) => {
+                      if (item.type === 'process') {
+                        const progressMessages = item.messages.filter((message) => {
+                          if (message.isPlanSteps) return true
+                          const content = message.content
+                          if (
+                            message.isThinking &&
+                            typeof content === 'string' &&
+                            /^(?:Mengeksekusi\b|Selesai mengeksekusi\b)/i.test(content.trim())
+                          ) {
+                            return false
+                          }
+                          return typeof content === 'string'
+                            ? Boolean(content.trim())
+                            : Boolean(content?.length)
+                        })
+                        let stepCursor = 0
+                        const processItems = progressMessages.map((message, messageIndex) => {
+                          const messageStepCount = Array.isArray(message.executedTools)
+                            ? message.executedTools.length
+                            : 0
+                          const stepEnd = Math.max(stepCursor, messageStepCount)
+                          const messageSteps = item.steps.slice(stepCursor, stepEnd)
+                          stepCursor = stepEnd
+                          return { message, messageSteps, messageIndex }
+                        })
+                        if (stepCursor < item.steps.length) {
+                          processItems.push({
+                            message: { role: 'assistant', content: '' },
+                            messageSteps: item.steps.slice(stepCursor),
+                            messageIndex: 'remaining'
+                          })
+                        }
+                        const activeActivityIndex = item.isActive
+                          ? processItems.findLastIndex(({ messageSteps }) =>
+                              messageSteps.some((step) => step.tool || step.action)
+                            )
+                          : -1
+
+                        return (
+                          <details
+                            key={`process-${item.id}-${idx}`}
+                            className="chat-process group/completed-process w-full outline-none"
+                            open={item.isActive}
+                          >
+                            <summary className="group/row list-none flex w-full items-center gap-1.5 cursor-pointer border-b border-white/10 mt-1 pt-1.5 pb-2 text-sm font-sans text-white/55 hover:text-white/80 focus-visible:text-white/80 select-none transition-colors">
+                              <span>Proses</span>
+                              <ChevronRight className="w-3.5 h-3.5 shrink-0 text-white/55 transition-transform duration-150 group-open/completed-process:rotate-90" />
+                            </summary>
+                            <div className="chat-process-body space-y-2">
+                              {item.isActive && processItems.length === 0 && (
+                                <div role="status" className="text-sm text-white/60">
+                                  Sedang menganalisis permintaan…
+                                </div>
+                              )}
+                              {processItems.map(
+                                ({ message, messageSteps, messageIndex }, processIndex) => (
+                                  <ChatList
+                                    key={
+                                      message.id ||
+                                      `${message.timestamp || 'progress'}-${messageIndex}`
+                                    }
+                                    role={message.role || 'assistant'}
+                                    content={message.content || ''}
+                                    reasoning={message.reasoning}
+                                    compactActivity
+                                    isActivityActive={processIndex === activeActivityIndex}
+                                    sources={message.sources || []}
+                                    timestamp={message.timestamp}
+                                    isPlanSteps={message.isPlanSteps}
+                                    plan={message.plan}
+                                    currentStep={message.currentStep}
+                                    taskId={message.taskId}
+                                    taskTitle={message.taskTitle}
+                                    taskObjective={message.taskObjective}
+                                    taskStatus={message.taskStatus}
+                                    artifactRoot={message.artifactRoot}
+                                    executedTools={messageSteps}
+                                  />
+                                )
+                              )}
+                              {item.reasoning && (
+                                <ChatList
+                                  role="assistant"
+                                  content=""
+                                  reasoning={item.reasoning}
+                                  executedTools={[]}
+                                />
+                              )}
+                            </div>
+                          </details>
+                        )
+                      }
+
+                      const msg = item.message
+                      if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
+                        return null
+                      }
+                      const { cleanContent } = filterMessagePrefixes(msg.content)
+                      return (
+                        <ChatList
+                          key={
+                            msg.id
+                              ? `${msg.id}-${idx}`
+                              : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
+                          }
+                          id={msg.id || msg.timestamp || msg.created_at}
+                          lastCompactedMessageId={lastCompactedMessageId}
+                          isCompacting={msg.isCompacting}
+                          compactProgress={msg.compactProgress}
+                          role={msg.role}
+                          content={cleanContent}
+                          followsProcess={item.hideProcessDetails}
+                          reasoning={item.hideProcessDetails ? null : msg.reasoning}
+                          isThinking={msg.isThinking}
+                          isSearching={msg.isSearching}
+                          isSummarizing={msg.isSummarizing}
+                          isSearchingMusic={msg.isSearchingMusic}
+                          sources={msg.sources}
+                          executedTools={item.hideProcessDetails ? [] : msg.executedTools}
+                          isMemorySaved={msg.isMemorySaved}
+                          isMemoryUpdated={msg.isMemoryUpdated}
+                          isMemoryDeleted={msg.isMemoryDeleted}
+                          timestamp={msg.timestamp}
+                          mood={msg.mood}
+                          source={msg.source}
+                          sender={msg.sender}
+                          isPlanSteps={msg.isPlanSteps}
+                          plan={msg.plan}
+                          currentStep={msg.currentStep}
+                          taskId={msg.taskId}
+                          taskTitle={msg.taskTitle}
+                          taskObjective={msg.taskObjective}
+                          taskStatus={msg.taskStatus}
+                          artifactRoot={msg.artifactRoot}
+                          activeLiveTools={
+                            hasActivePlan && msg.isPlanSteps
+                              ? activeThinkingMsg?.executedTools || null
+                              : null
+                          }
+                          activeThinkingContent={
+                            hasActivePlan && msg.isPlanSteps
+                              ? (activeThinkingMsg?.reasoning
+                                  ? activeThinkingMsg.reasoning
+                                      .split('\n')
+                                      .map((s) => s.trim())
+                                      .filter(Boolean)
+                                      .pop()
+                                  : null) ||
+                                activeThinkingMsg?.content ||
+                                null
+                              : null
+                          }
+                          onStop={handleStopSession}
+                          isApproval={msg.isApproval}
+                          approvalId={msg.approvalId}
+                          approvalTool={msg.tool}
+                          approvalQuery={msg.query}
+                          approvalStatus={msg.status}
+                        />
+                      )
                     }
-                    const { cleanContent } = filterMessagePrefixes(msg.content)
-                    return (
-                      <ChatList
-                        key={
-                          msg.id
-                            ? `${msg.id}-${idx}`
-                            : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
-                        }
-                        id={msg.id || msg.timestamp || msg.created_at}
-                        lastCompactedMessageId={lastCompactedMessageId}
-                        isCompacting={msg.isCompacting}
-                        compactProgress={msg.compactProgress}
-                        role={msg.role}
-                        content={cleanContent}
-                        reasoning={msg.reasoning}
-                        isThinking={msg.isThinking}
-                        isSearching={msg.isSearching}
-                        isSummarizing={msg.isSummarizing}
-                        isSearchingMusic={msg.isSearchingMusic}
-                        sources={msg.sources}
-                        executedTools={msg.executedTools}
-                        isMemorySaved={msg.isMemorySaved}
-                        isMemoryUpdated={msg.isMemoryUpdated}
-                        isMemoryDeleted={msg.isMemoryDeleted}
-                        timestamp={msg.timestamp}
-                        mood={msg.mood}
-                        source={msg.source}
-                        sender={msg.sender}
-                        isPlanSteps={msg.isPlanSteps}
-                        plan={msg.plan}
-                        currentStep={msg.currentStep}
-                        taskId={msg.taskId}
-                        taskTitle={msg.taskTitle}
-                        taskObjective={msg.taskObjective}
-                        taskStatus={msg.taskStatus}
-                        artifactRoot={msg.artifactRoot}
-                        activeLiveTools={
-                          hasActivePlan && msg.isPlanSteps
-                            ? activeThinkingMsg?.executedTools || null
-                            : null
-                        }
-                        activeThinkingContent={
-                          hasActivePlan && msg.isPlanSteps
-                            ? (activeThinkingMsg?.reasoning
-                                ? activeThinkingMsg.reasoning
-                                    .split('\n')
-                                    .map((s) => s.trim())
-                                    .filter(Boolean)
-                                    .pop()
-                                : null) ||
-                              activeThinkingMsg?.content ||
-                              null
-                            : null
-                        }
-                        onStop={handleStopSession}
-                        isApproval={msg.isApproval}
-                        approvalId={msg.approvalId}
-                        approvalTool={msg.tool}
-                        approvalQuery={msg.query}
-                        approvalStatus={msg.status}
-                      />
-                    )
-                  })
+                  )
                 })()
               )}
               {/* Spacer besar dan anti-shrink agar pesan paling bawah (termasuk tombol ApprovalBubble) tidak pernah terpotong saat scroll mentok */}
