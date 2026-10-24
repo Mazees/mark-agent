@@ -145,6 +145,41 @@ export function resolveAbortSignal(sig) {
 }
 
 export const webApi = {
+  chromeBridgeRequest: async (operation = 'status', values = {}) => {
+    const response = await fetch(
+      `${API_BASE}/api/addons/chrome-bridge/${operation}`,
+      operation === 'status'
+        ? { cache: 'no-store' }
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(values)
+          }
+    )
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw Object.assign(new Error(result.error || 'Chrome Bridge gagal dihubungi.'), {
+        code: result.code
+      })
+    return result.data
+  },
+  onChromeBridgeStatus: (callback) => {
+    const listener = (status) => {
+      if (status.id === 'chrome-bridge') callback(status)
+    }
+    addWebListener('addon:status', listener)
+    const refresh = () => {
+      webApi
+        .chromeBridgeRequest()
+        .then(callback)
+        .catch(() => {})
+    }
+    addWebListener('core:ready', refresh)
+    return () => {
+      removeWebListener('addon:status', listener)
+      removeWebListener('core:ready', refresh)
+    }
+  },
   onBrowserReconnect: (callback) => {
     addWebListener('core:ready', callback)
     return () => removeWebListener('core:ready', callback)

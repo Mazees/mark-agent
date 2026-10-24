@@ -1,18 +1,27 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowLeft, ExternalLink } from 'lucide-react'
-import { FaGoogle, FaTelegram } from 'react-icons/fa'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, ExternalLink } from 'lucide-react'
+import { FaGoogle, FaTelegram, FaChrome } from 'react-icons/fa'
 import PropTypes from 'prop-types'
-import { getAddonStatuses } from '../api/addonStatus'
+import { getAddonStatuses, addonStatusLabels } from '../api/addonStatus'
 import { webApi } from '../api/web-bridge'
 
-const addonIcons = { google: FaGoogle, telegram: FaTelegram }
+const addonIcons = { google: FaGoogle, telegram: FaTelegram, chrome: FaChrome }
 
-export default function AddonDetail({ addon, children }) {
-  const [status, setStatus] = useState('checking')
+export default function AddonDetail({
+  addon,
+  children,
+  status: suppliedStatus,
+  actions = [],
+  feedback
+}) {
+  const [liveStatus, setStatus] = useState('checking')
+  const navigate = useNavigate()
+  const status = suppliedStatus ?? liveStatus
   const Icon = addonIcons[addon.icon]
 
   useEffect(() => {
+    if (suppliedStatus !== undefined) return
     let active = true
     const refreshStatus = () => {
       getAddonStatuses().then((statuses) => {
@@ -23,22 +32,20 @@ export default function AddonDetail({ addon, children }) {
     window.addEventListener('focus', refreshStatus)
     window.addEventListener('mark-addon-status-changed', refreshStatus)
     const unsubscribe =
-      addon.id === 'telegram' ? webApi.onTgConnection((nextStatus) => setStatus(nextStatus)) : null
+      addon.id === 'telegram'
+        ? webApi.onTgConnection((nextStatus) => setStatus(nextStatus))
+        : addon.id === 'chrome-bridge'
+          ? webApi.onChromeBridgeStatus((next) => setStatus(next.status))
+          : null
     return () => {
       active = false
       window.removeEventListener('focus', refreshStatus)
       window.removeEventListener('mark-addon-status-changed', refreshStatus)
       if (typeof unsubscribe === 'function') unsubscribe()
     }
-  }, [addon.id])
+  }, [addon.id, suppliedStatus])
 
-  const statusLabel = {
-    checking: 'Memeriksa koneksi',
-    connected: 'Terhubung',
-    connecting: 'Menghubungkan',
-    disconnected: 'Belum terhubung',
-    error: 'Status tidak tersedia'
-  }[status]
+  const statusLabel = addonStatusLabels[status] || addonStatusLabels.error
 
   return (
     <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
@@ -54,7 +61,13 @@ export default function AddonDetail({ addon, children }) {
             <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10">
               <Icon
                 size={34}
-                className={addon.icon === 'google' ? 'text-[#4285f4]' : 'text-[#2aabee]'}
+                className={
+                  addon.icon === 'google'
+                    ? 'text-[#4285f4]'
+                    : addon.icon === 'chrome'
+                      ? 'text-primary'
+                      : 'text-[#2aabee]'
+                }
                 aria-hidden="true"
               />
             </span>
@@ -86,7 +99,63 @@ export default function AddonDetail({ addon, children }) {
             </Link>
           )}
         </header>
-        <div className="mt-8">{children}</div>
+        <div className="mt-8 space-y-8">
+          {actions.length > 0 && (
+            <div
+              className="flex flex-wrap items-start justify-end gap-3 sm:items-center"
+              aria-label="Kelola add-on"
+            >
+              {actions.map(
+                ({
+                  key,
+                  label,
+                  icon: ActionIcon,
+                  kind = 'secondary',
+                  disabled,
+                  onClick,
+                  type = 'button',
+                  form
+                }) => (
+                  <button
+                    key={key || label}
+                    type={type}
+                    form={form}
+                    disabled={disabled}
+                    onClick={onClick}
+                    className={`btn self-start rounded-full px-5 sm:self-center ${kind === 'install' ? 'border-white bg-white text-neutral-900 hover:bg-white/90' : kind === 'danger' ? 'border-error/40 bg-transparent text-error hover:bg-error/10' : kind === 'ghost' ? 'btn-ghost' : ''}`}
+                  >
+                    {ActionIcon && <ActionIcon size={17} aria-hidden="true" />}
+                    {label}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+          {feedback}
+          {addon.examples?.length > 0 && (
+            <section
+              aria-label="Contoh penggunaan"
+              className="rounded-2xl border border-white/5 bg-gradient-to-br from-emerald-950/70 via-base-200 to-teal-950/50 px-4 py-7 sm:px-10 sm:py-9"
+            >
+              <div className="mx-auto max-w-xl space-y-3">
+                {addon.examples.map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    onClick={() => navigate('/chat', { state: { composerDraft: text } })}
+                    className="flex w-full items-center gap-4 rounded-2xl bg-base-300/90 px-4 py-4 text-left text-sm leading-relaxed text-white/85 hover:bg-base-300"
+                  >
+                    <span className="flex-1">{text}</span>
+                    <ArrowRight size={17} className="shrink-0 text-white/60" aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <div className="space-y-8" data-addon-content>
+            {children}
+          </div>
+        </div>
       </div>
     </main>
   )
@@ -97,8 +166,23 @@ AddonDetail.propTypes = {
     id: PropTypes.string.isRequired,
     name: PropTypes.string.isRequired,
     developer: PropTypes.string.isRequired,
-    icon: PropTypes.oneOf(['google', 'telegram']).isRequired,
-    logRoute: PropTypes.string
+    icon: PropTypes.oneOf(['google', 'telegram', 'chrome']).isRequired,
+    logRoute: PropTypes.string,
+    examples: PropTypes.arrayOf(PropTypes.string)
   }).isRequired,
-  children: PropTypes.node.isRequired
+  children: PropTypes.node.isRequired,
+  status: PropTypes.string,
+  feedback: PropTypes.node,
+  actions: PropTypes.arrayOf(
+    PropTypes.shape({
+      key: PropTypes.string,
+      label: PropTypes.string.isRequired,
+      icon: PropTypes.elementType,
+      kind: PropTypes.oneOf(['install', 'danger', 'ghost', 'secondary']),
+      disabled: PropTypes.bool,
+      onClick: PropTypes.func,
+      type: PropTypes.oneOf(['button', 'submit']),
+      form: PropTypes.string
+    })
+  )
 }

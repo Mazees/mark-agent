@@ -1,19 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Search } from 'lucide-react'
-import { FaGoogle, FaTelegram } from 'react-icons/fa'
+import { FaGoogle, FaTelegram, FaChrome } from 'react-icons/fa'
+import { webApi } from '../api/web-bridge'
 import { ADDONS } from '../api/addonRegistry'
-import { getAddonStatuses } from '../api/addonStatus'
+import { getAddonStatuses, addonStatusLabels } from '../api/addonStatus'
 
-const addonIcons = { google: FaGoogle, telegram: FaTelegram }
-const statusLabels = {
-  checking: 'Memeriksa koneksi',
-  connected: 'Terhubung',
-  connecting: 'Menghubungkan',
-  disconnected: 'Belum terhubung',
-  error: 'Status tidak tersedia'
-}
-
+const addonIcons = { google: FaGoogle, telegram: FaTelegram, chrome: FaChrome }
 export default function Addons() {
   const [query, setQuery] = useState('')
   const [statuses, setStatuses] = useState({})
@@ -23,7 +16,11 @@ export default function Addons() {
     getAddonStatuses().then((nextStatuses) => {
       if (active) setStatuses(nextStatuses)
     })
+    const unsubscribe = webApi.onChromeBridgeStatus((next) => {
+      if (active) setStatuses((current) => ({ ...current, 'chrome-bridge': next.status }))
+    })
     return () => {
+      unsubscribe()
       active = false
     }
   }, [])
@@ -87,7 +84,13 @@ export default function Addons() {
                     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10">
                       <Icon
                         size={25}
-                        className={addon.icon === 'google' ? 'text-[#4285f4]' : 'text-[#2aabee]'}
+                        className={
+                          addon.icon === 'google'
+                            ? 'text-[#4285f4]'
+                            : addon.icon === 'chrome'
+                              ? 'text-primary'
+                              : 'text-[#2aabee]'
+                        }
                         aria-hidden="true"
                       />
                     </span>
@@ -100,7 +103,7 @@ export default function Addons() {
                         className={`mt-2 block text-xs ${status === 'connected' ? 'text-primary' : status === 'error' ? 'text-error' : 'text-white/40'}`}
                         role="status"
                       >
-                        {statusLabels[status] || statusLabels.error}
+                        {addonStatusLabels[status] || addonStatusLabels.error}
                       </span>
                     </span>
                   </Link>

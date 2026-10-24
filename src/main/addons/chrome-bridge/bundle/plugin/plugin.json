@@ -1,0 +1,48 @@
+{
+  "name": "chrome-use",
+  "displayName": "Chrome Bridge",
+  "version": "1.1.0",
+  "managedByAddon": "chrome-bridge",
+  "isEnabled": true,
+  "dependencies": [],
+  "description": "Engine Chrome Bridge untuk tab Chrome pilihan pengguna. Gunakan hanya saat pengguna meminta Chrome miliknya; browser bawaan tetap advanced_browser. Pengguna harus memasang addon dan memilih Hubungkan tab ini di ekstensi. Jangan menjalankan VBS, memindai folder, membuka bridge sendiri, memindahkan tab target, atau mengulang aksi mutasi setelah timeout. Jika belum siap, arahkan pengguna ke /addons/chrome-bridge.",
+  "actions": [
+    {
+      "name": "chrome-navigate",
+      "description": "Navigasi tab Chrome yang dikunci. Query berupa URL atau JSON {url}. Tidak membuat atau memilih tab lain."
+    },
+    {
+      "name": "chrome-read",
+      "description": "Baca DOM dan ID elemen interaktif dari tab terkunci. Query berisi tujuan pembacaan."
+    },
+    {
+      "name": "chrome-click",
+      "description": "Klik ID elemen dari chrome-read. Query angka ID atau JSON {element_id}. Baca ulang setelah navigasi atau perubahan DOM."
+    },
+    {
+      "name": "chrome-type",
+      "description": "Isi input atau contenteditable. Query '<id> <teks>' atau JSON {element_id,text}."
+    },
+    {
+      "name": "chrome-extract",
+      "description": "Ekstrak teks CSS selector. Query selector atau JSON {selector,urlPattern}. urlPattern hanya memeriksa tab terkunci."
+    },
+    {
+      "name": "chrome-script",
+      "description": "Jalankan JavaScript di tab terkunci melalui debugger. Query kode atau JSON {script,urlPattern}. Konflik debugger dilaporkan sebagai gagal."
+    },
+    { "name": "chrome-scroll", "description": "Scroll tab terkunci. Query 'up' atau 'down'." },
+    {
+      "name": "chrome-screenshot",
+      "description": "Ambil screenshot tab terkunci dan kembalikan gambar Markdown yang bisa ditampilkan di chat. Query nama file opsional."
+    },
+    {
+      "name": "chrome-ask-user",
+      "description": "Minta bantuan pengguna pada tab terkunci tanpa menutup halaman. Query pesan bantuan. Tunggu hingga pengguna menekan Lanjutkan, membatalkan, atau maksimal lima menit."
+    },
+    {
+      "name": "chrome-close",
+      "description": "Tutup hanya tab terkunci, lalu lepaskan kendali. Query alasan penutupan."
+    }
+  ]
+}

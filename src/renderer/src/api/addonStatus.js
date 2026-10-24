@@ -2,6 +2,7 @@ import { ADDONS } from './addonRegistry'
 import { webApi } from './web-bridge'
 
 const readConnectionStatus = async (provider) => {
+  if (provider === 'chrome-bridge') return (await webApi.chromeBridgeRequest()).status
   if (provider === 'google') {
     const result = await webApi.googleStatus()
     if (!result?.success) throw new Error(result?.error || 'Status koneksi tidak tersedia.')
@@ -17,6 +18,18 @@ const readConnectionStatus = async (provider) => {
   }
 
   return 'unavailable'
+}
+
+export const addonStatusLabels = {
+  checking: 'Memeriksa koneksi',
+  connected: 'Terhubung',
+  connecting: 'Menghubungkan',
+  disconnected: 'Belum terhubung',
+  error: 'Gagal',
+  'not-installed': 'Belum dipasang',
+  'waiting-extension': 'Menunggu ekstensi',
+  'select-tab': 'Pilih tab',
+  paused: 'Dijeda'
 }
 
 export const getAddonStatuses = async () => {
