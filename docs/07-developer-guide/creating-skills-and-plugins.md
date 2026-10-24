@@ -1,6 +1,6 @@
 # Panduan Pembuatan Skills & Plugin Kustom
 
-Dokumen ini memandu pengembang dalam memperluas kapabilitas sistem **MARK**, mencakup penyusunan dokumen keahlian (_Learned Skills_), sintesis keahlian otomatis (_Autonomous Skill Synthesis_), serta pembuatan plugin eksternal (_External Plugins_) dengan skema OpenAPI kustom.
+Dokumen ini memandu pengembang dalam memperluas kapabilitas sistem **MARK**, mencakup learned skills dan pembuatan plugin eksternal (_External Plugins_) dengan skema OpenAPI kustom.
 
 ---
 
@@ -62,13 +62,14 @@ MARK akan membaca isi berkas skill tersebut via `window.api.readSkill()` dan men
 
 ---
 
-## 3. Sintesis Keahlian Otonom (Autonomous Skill Synthesis)
+## 3. Learned Skills
 
-MARK memiliki kemampuan belajar mandiri (_Continuous Cognitive Learning_):
+MARK menyediakan dua jalur belajar. Setelah tugas bermakna selesai, synthesizer mengevaluasi alur kerja di background dan dapat menyimpan atau memperbarui skill secara otomatis. Core tool `learn` tersedia untuk pengguna yang secara langsung meminta Mark menyimpan atau mengubah skill; tool ini menerima `name`, `description`, `content`, dan `method`:
 
-- Setiap kali MARK berhasil menyelesaikan tugas kompleks multi-langkah (misalnya men-debug bug baru atau mengonfigurasi database), modul [`src/renderer/src/api/ai/skillSynthesizer.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/skillSynthesizer.js) secara otomatis mengevaluasi riwayat aksi yang berhasil.
-- Sistem menyintesis prosedur teruji tersebut menjadi entitas keahlian baru.
-- Keahlian disimpan ke dalam tabel SQLite `learned_skills` dan dapat dipanggil kembali di masa depan jika MARK menghadapi masalah serupa.
+- `method: "insert"` membuat skill baru dan menolak nama yang sudah ada.
+- `method: "update"` memperbarui skill dengan nama yang sama dan menolak nama yang belum ada.
+- Sebelum memakai `method: "update"`, Mark membaca skill lama melalui `read-skill`, lalu menyatukan panduan lama dan temuan yang sudah diverifikasi.
+- Konten disimpan lokal ke tabel SQLite `learned_skills`. Sintesis otomatis tetap berjalan setelah tugas bermakna; tool `learn` tidak dipanggil hanya untuk menduplikasi proses itu.
 
 ---
 

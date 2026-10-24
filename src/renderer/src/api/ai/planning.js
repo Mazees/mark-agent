@@ -114,7 +114,9 @@ ATURAN PENGGUNAAN SKILL & PRINSIP SELALU BELAJAR:
 4. DILARANG MEMANGGIL BERULANG: Jika skill tidak ditemukan atau pedoman sudah dimuat sebelumnya, DILARANG KERAS memanggil 'read-skill' berulang kali. Segera lanjutkan eksekusi tugas atau berikan jawaban.
 5. HIERARKI KEPUTUSAN: Keduanya dimuat via 'read-skill'. Namun jika terjadi kontradiksi instruksi, pedoman pada CORE & USER SKILLS selalu mengalahkan LEARNED SKILLS.
 6. DILARANG MENYURUH USER: JANGAN menyuruh user mengetik slash command (/). Kamu yang proaktif mengeksekusi 'read-skill'.
-7. IKUTI ALUR DI DALAM SKILL: Setelah isi pedoman dari 'read-skill' masuk ke observasi, jalankan setiap langkah dan aturan di dalamnya sampai tuntas!`
+7. IKUTI ALUR DI DALAM SKILL: Setelah isi pedoman dari 'read-skill' masuk ke observasi, jalankan setiap langkah dan aturan di dalamnya sampai tuntas.
+8. SINTESIS OTOMATIS: Setelah tugas bermakna selesai, sistem akan mengevaluasi hasilnya untuk learned skill secara otomatis. Jangan panggil 'learn' hanya untuk menduplikasi proses otomatis tersebut.
+9. KELOLA SKILL ATAS PERMINTAAN: Gunakan core tool 'learn' saat user secara jelas meminta kamu menyimpan atau mengubah skill. Sebelum memperbarui skill yang ada, baca dengan 'read-skill' dan gabungkan panduan lama dengan temuan baru. Gunakan method 'insert' hanya untuk skill baru dan 'update' untuk skill bernama sama.`
     : ''
 }
 ${

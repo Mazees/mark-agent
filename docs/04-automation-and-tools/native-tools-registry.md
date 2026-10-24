@@ -18,7 +18,8 @@ export const NATIVE_TOOLS = {
   ...taskTools,
   ...googleTools,
   ...telegramTools,
-  ...mediaTools
+  ...mediaTools,
+  ...learnTools
 }
 ```
 
@@ -123,6 +124,7 @@ Mengelola proses CLI jangka panjang (misalnya dev server, build watcher):
 - `google-tools.js`: Mengakses Google Calendar, membaca dan mengirim Gmail, serta mengunduh berkas Google Drive dengan autentikasi OAuth2.
 - `telegram-tools.js`: Mengirim pesan, foto, dan dokumen dari komputer pengguna ke chat Telegram via bot.
 - `media-tools.js`: Sintesis suara real-time via Edge-TTS dan pencarian transkrip YouTube.
+- `learn-tools.js`: core tool `learn` untuk menyimpan atau memperbarui learned skill di SQLite. `insert` menolak nama yang sudah ada; `update` hanya berlaku untuk nama yang ditemukan.
 
 ---
 

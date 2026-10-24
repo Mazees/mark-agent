@@ -419,6 +419,29 @@ export const core_tools_schema = [
   {
     type: 'function',
     function: {
+      name: 'learn',
+      description:
+        'Mengelola learned skill MARK secara langsung atas permintaan pengguna. Sintesis otomatis tetap menangani pembelajaran dari tugas bermakna yang selesai. Pilih insert untuk skill baru atau update untuk merevisi skill yang sudah ada.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Nama skill yang stabil dan mudah dikenali.' },
+          description: { type: 'string', description: 'Ringkasan tujuan skill dan kapan perlu dipakai.' },
+          content: { type: 'string', description: 'Panduan langkah demi langkah yang teruji.' },
+          method: {
+            type: 'string',
+            enum: ['insert', 'update'],
+            description: 'insert membuat skill baru; update mengganti isi skill bernama sama.'
+          }
+        },
+        required: ['name', 'description', 'content', 'method'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'open',
       description:
         'Membuka aplikasi Windows via shell execute atau membuka URL di browser default.',
