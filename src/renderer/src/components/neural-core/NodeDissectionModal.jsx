@@ -1,57 +1,104 @@
-import React from 'react'
-import { FaTimes, FaTrash } from 'react-icons/fa'
+import { useState } from 'react'
+import { Trash2 } from 'lucide-react'
+import PropTypes from 'prop-types'
+import NeuralDialog from './NeuralDialog'
 
 export const NodeDissectionModal = ({ node, onClose, onDeleteNode }) => {
-  if (!node) return null
-
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const canDelete = ['memory', 'archive', 'skill'].includes(node.kind)
+  const remove = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await onDeleteNode(node)
+      onClose()
+    } catch (failure) {
+      setError(failure.message)
+      setBusy(false)
+    }
+  }
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-      <div className="w-full max-w-lg bg-base-200 border border-white/10 rounded-2xl p-6 shadow-2xl">
-        <div className="flex items-center justify-between mb-3">
-          <span
-            className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${
-              node.typeLabel === 'Explicit Memory'
-                ? 'bg-secondary/20 text-secondary border border-secondary/30'
-                : node.typeLabel === 'Document Chunk'
-                ? 'bg-warning/20 text-warning border border-warning/30'
-                : node.typeLabel === 'Learned Skill'
-                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                : 'bg-primary/20 text-primary border border-primary/30'
-            }`}
-          >
-            {node.typeLabel || 'Data Memori'}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-base-content/40 hover:text-base-content cursor-pointer transition-colors"
-          >
-            <FaTimes size={14} />
-          </button>
-        </div>
-
-        <p className="text-xs font-mono text-base-content/50 mb-2">{node.date}</p>
-        <div className="p-3.5 bg-base-300/60 border border-white/5 rounded-xl text-sm font-sans text-base-content/90 max-h-60 overflow-y-auto custom-scrollbar mb-4 leading-relaxed whitespace-pre-wrap">
-          {node.fullText}
-        </div>
-
-        <div className="flex items-center justify-between pt-2">
-          <span className="text-[11px] font-mono text-base-content/40">ID: {node.id}</span>
-          {(node.typeLabel === 'Explicit Memory' ||
-            node.typeLabel === 'Chat Archive' ||
-            node.typeLabel === 'Learned Skill') && (
+    <NeuralDialog
+      title={confirming ? 'Hapus data ini?' : node.typeLabel || 'Detail memori'}
+      subtitle={confirming ? undefined : node.date}
+      onClose={onClose}
+      busy={busy}
+      footer={
+        confirming ? (
+          <>
             <button
               type="button"
-              onClick={() => onDeleteNode(node)}
-              className="btn btn-xs btn-error btn-outline font-mono flex items-center gap-1.5"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+              className="btn btn-ghost rounded-full"
             >
-              <FaTrash size={11} /> Hapus Data Memori
+              Batal
             </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={remove}
+              className="btn rounded-full border-error/30 bg-error/10 text-error"
+            >
+              {busy ? 'Menghapus...' : 'Hapus data'}
+            </button>
+          </>
+        ) : (
+          <>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => setConfirming(true)}
+                className="btn btn-ghost mr-auto rounded-full text-error"
+              >
+                <Trash2 size={15} />
+                Hapus data
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="btn btn-ghost rounded-full">
+              Tutup
+            </button>
+          </>
+        )
+      }
+    >
+      {confirming ? (
+        <p className="text-sm leading-relaxed text-white/65">
+          Data “{node.name}” akan dihapus dari penyimpanan Mark. Tindakan ini tidak dapat
+          dibatalkan.
+        </p>
+      ) : (
+        <>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/75">
+            {node.fullText || node.description || node.name}
+          </p>
+          {node.kind === 'disk-skill' && (
+            <p className="mt-5 text-xs leading-relaxed text-white/40">
+              Ini adalah deskripsi skill dari folder lokal. Kelola berkas dan panduannya melalui
+              halaman Skills.
+            </p>
           )}
-        </div>
-      </div>
-    </div>
+          <details className="mt-6 text-xs text-white/35">
+            <summary className="w-fit cursor-pointer rounded-md py-1 focus-visible:outline-2 focus-visible:outline-primary">
+              Identitas data
+            </summary>
+            <p className="mt-2 break-all font-mono">{node.recordId}</p>
+          </details>
+        </>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-error">
+          {error}
+        </p>
+      )}
+    </NeuralDialog>
   )
 }
-
+NodeDissectionModal.propTypes = {
+  node: PropTypes.object.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onDeleteNode: PropTypes.func.isRequired
+}
 export default NodeDissectionModal
