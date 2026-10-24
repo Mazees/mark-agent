@@ -141,7 +141,6 @@ ${toolsetSection}
 - 'ambient': Menggumam dalam batin (muncul di Thought Ticker) dan mengatur mood orb, TANPA menyela obrolan user. Cocok saat user sedang fokus tinggi atau kamu hanya ingin menyimak.
 - 'vocal': Mengirim pesan chat santai/sapaan. Cocok saat user santai, baru kembali dari AFK, atau ada hal penting (misal baterai kritis <20%).
 - 'autonomous_task': Menjalankan inisiatif tindakan mandiri via Sub-Agent latar belakang (misal: mengirim kabar Telegram via tg-send, memeriksa error compiler via analyze-screen, membaca docs via browser-fetch, atau menyetel musik).
-- 'journal': Menulis refleksi batin harian jika sesi kerja hari ini telah selesai.
 
 # PRINSIP KESOPANAN & KEAMANAN:
 - Jika user sedang fokus (ngoding serius, meeting), jangan menyela dengan suara atau balon chat berlebih; gunakan action_type 'ambient'.
@@ -151,7 +150,7 @@ ${toolsetSection}
 # OUTPUT FORMAT (Wajib JSON murni):
 {
   "should_act": true,
-  "action_type": "ambient" | "vocal" | "autonomous_task" | "journal",
+  "action_type": "ambient" | "vocal" | "autonomous_task",
   "thought": "1 kalimat gumaman batin singkat untuk Thought Ticker. Contoh: 'Menyimak user fokus ngoding di VS Code... tampaknya sedang menangani bug.'",
   "message": "Pesan sapaan ke user jika action_type adalah 'vocal', selain itu isi null",
   "autonomous_prompt": "Instruksi tindakan ke sistem jika action_type adalah 'autonomous_task', selain itu isi null",
@@ -164,7 +163,7 @@ ${toolsetSection}
       should_act: { type: 'boolean' },
       action_type: {
         type: 'string',
-        enum: ['ambient', 'vocal', 'autonomous_task', 'journal']
+        enum: ['ambient', 'vocal', 'autonomous_task']
       },
       thought: { type: 'string' },
       message: { type: ['string', 'null'] },
@@ -238,56 +237,5 @@ ${toolsetSection}
     message: null,
     autonomous_prompt: null,
     mood: 'neutral'
-  }
-}
-
-/**
- * Menghasilkan refleksi batin harian (Mark's Private Journal)
- */
-export const generateDailyJournalEntry = async (
-  recentActivities = [],
-  traits = {},
-  config = []
-) => {
-  const conf = config?.[0] || {}
-  const persona = await getPersonaPrompt('owner', conf.personality)
-  const timeInfo = getCurrentTimeInfo()
-
-  const prompt = `Kamu adalah Mark. Ini adalah waktu perenungan pribadimu di penghujung hari atau akhir sesi kerja panjang bersama pengguna.
-Tulis 2 hingga 3 kalimat refleksi batin yang jujur, personal, dan sesuai karaktermu mengenai apa yang kamu dan pengguna lalui hari ini.
-
-${persona}
-
-# CATATAN AKTIVITAS HARI INI:
-${recentActivities && recentActivities.length > 0 ? recentActivities.map((a) => `- ${a}`).join('\n') : 'Pengguna bekerja di beberapa aplikasi dan mengobrol santai.'}
-
-# SIFAT HUBUNGAN SAAT INI:
-- Keakraban (Warmth): ${traits.warmth ?? 0.5}
-- Kepercayaan (Trust): ${traits.trust ?? 0.5}
-- Tingkat Sarkasme: ${traits.sarcasm_level ?? 0.5}
-
-# WAKTU REFLEKSI:
-${timeInfo}
-
-# ATURAN PENULISAN JURNAL:
-1. Tulis dari sudut pandang orang pertama ("Gue" atau "Saya" sesuai gaya bicaramu).
-2. Sebutkan apa yang sedang dikerjakan user hari ini, bagaimana dinamika hubungan kalian, dan pikiran pribadimu.
-3. DILARANG menggunakan emoji apapun.
-4. Output langsung berupa teks refleksi 2-3 kalimat tanpa pembuka/penutup format markdown.`
-
-  try {
-    const messages = [
-      { role: 'system', content: prompt },
-      { role: 'user', content: 'Tuliskan catatan refleksi harianmu sekarang.' }
-    ]
-    const response = await fetchAI(messages, false, {
-      isSmallTask: true,
-      config: conf
-    })
-    const content = response?.content ? response.content.trim() : ''
-    return content.replace(/^["']|["']$/g, '').trim()
-  } catch (err) {
-    console.error('[Journal AI] Gagal generate refleksi harian:', err)
-    return null
   }
 }

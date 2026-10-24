@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { getAllMemory, insertMemory, getRelationship } from '../api/db'
+import { getAllMemory } from '../api/db'
 import { getRelevantMemory } from '../api/vectorMemory'
-import { getAwarenessResponse, generateDailyJournalEntry } from '../api/ai/awareness'
+import { getAwarenessResponse } from '../api/ai/awareness'
 import { subagentStore } from '../api/subagent/subagentStore'
 import { runSubagentTurn } from '../api/subagent/subagentExecutor'
 import { getCurrentTimeInfo } from '../api/ai/utils'
@@ -73,7 +73,6 @@ export const useAwareness = ({
 
   // State Pelacak AFK
   const wasAfkRef = useRef(false)
-  const lastJournalDateRef = useRef('')
 
   useEffect(() => {
     chatDataRef.current = chatData
@@ -131,22 +130,7 @@ export const useAwareness = ({
           )
         }
 
-        // 1. Aksi: Journal (Refleksi Batin)
-        if (
-          result.action_type === 'journal' ||
-          result.thought?.toLowerCase().includes('refleksi')
-        ) {
-          const journalText = result.thought || result.message
-          if (journalText) {
-            await insertMemory({
-              type: 'private_journal',
-              summary: `Refleksi Batin Mark - ${new Date().toLocaleDateString('id-ID')}`,
-              memory: journalText
-            })
-          }
-        }
-
-        // 2. Aksi: Autonomous Task (Riset Mandiri AFK / Peeking / Telegram via Sub-Agent)
+        // Aksi mandiri melalui sub-agent.
         if (result.autonomous_prompt) {
           try {
             const isAfk = Boolean(telemetry?.isUserAFK)
@@ -167,7 +151,7 @@ export const useAwareness = ({
           }
         }
 
-        // 3. Aksi: Vocal (Balon Chat & Sapaan)
+        // Sapaan melalui percakapan.
         const cleanMessage = stripMarkTags(result.message || '').trim()
         if (result.action_type === 'vocal' && cleanMessage) {
           const recentVisibleMessages = (chatDataRef.current || [])
@@ -235,41 +219,6 @@ export const useAwareness = ({
           // Picu evaluasi awareness seketika (Welcome Back)
           runEvaluation({ isReturnFromAFK: true })
           return
-        }
-
-        // Cek Refleksi Harian Tengah Malam (00:00 - 00:15)
-        const now = new Date()
-        const todayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`
-        if (now.getHours() === 0 && lastJournalDateRef.current !== todayKey) {
-          lastJournalDateRef.current = todayKey
-          try {
-            const traits = await getRelationship('owner')
-            const allMem = await getAllMemory()
-            const actSummaries = (allMem || [])
-              .filter((m) => m.type === 'notes' || m.type === 'profile')
-              .slice(0, 5)
-              .map((m) => m.memory)
-
-            const journalContent = await generateDailyJournalEntry(
-              actSummaries,
-              traits,
-              configRef.current
-            )
-            if (journalContent) {
-              await insertMemory({
-                type: 'private_journal',
-                summary: `Refleksi Batin Mark - ${now.toLocaleDateString('id-ID')}`,
-                memory: journalContent
-              })
-              window.dispatchEvent(
-                new CustomEvent('mark:evaluate-relationship', {
-                  detail: { summary: journalContent }
-                })
-              )
-            }
-          } catch (jErr) {
-            console.warn('[Awareness] Gagal buat catatan harian tengah malam:', jErr)
-          }
         }
 
         // Evaluasi Berkala Normal

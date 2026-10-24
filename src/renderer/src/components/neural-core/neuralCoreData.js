@@ -13,9 +13,7 @@ export function neuralTab(value) {
     procedural: 'skills'
   }
   const tab = aliases[value] || value
-  return ['overview', 'personality', 'memory', 'skills', 'journal', 'data'].includes(tab)
-    ? tab
-    : 'overview'
+  return ['overview', 'personality', 'memory', 'skills', 'data'].includes(tab) ? tab : 'overview'
 }
 
 export function buildMemoryGraph({ archives = [], memories = [], skills = [], diskSkills = [] }) {

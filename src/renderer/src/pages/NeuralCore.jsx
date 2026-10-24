@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
-  BookOpen,
   Brain,
   Download,
   GraduationCap,
@@ -34,7 +33,7 @@ import { ProceduralSkillModal } from '../components/neural-core/ProceduralSkillM
 import { NodeDissectionModal } from '../components/neural-core/NodeDissectionModal'
 import { ResetAiModal } from '../components/neural-core/ResetAiModal'
 import NeuralDialog from '../components/neural-core/NeuralDialog'
-import { buildMemoryGraph, neuralDate, neuralTab } from '../components/neural-core/neuralCoreData'
+import { buildMemoryGraph, neuralTab } from '../components/neural-core/neuralCoreData'
 import { describePersonality } from '../components/neural-core/traitMeta'
 
 const tabs = {
@@ -42,7 +41,6 @@ const tabs = {
   personality: 'Karakter',
   memory: 'Memori',
   skills: 'Skill dipelajari',
-  journal: 'Buku harian',
   data: 'Kelola data'
 }
 const emptyData = { traits: null, skills: [], archives: [], memories: [], diskSkills: [] }
@@ -122,16 +120,6 @@ export default function NeuralCore() {
     })
   }
   const graphData = useMemo(() => buildMemoryGraph(data), [data])
-  const journals = useMemo(
-    () =>
-      data.memories
-        .filter((item) => ['private_journal', 'journal'].includes(item.type))
-        .sort(
-          (a, b) =>
-            new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0)
-        ),
-    [data.memories]
-  )
   const working = exporting || restoring || resetting || isGrooming
   const download = async () => {
     if (working) return
@@ -257,13 +245,6 @@ export default function NeuralCore() {
       icon: GraduationCap,
       description: 'Buka panduan yang disimpan Mark setelah menyelesaikan tugas.',
       meta: `${data.skills.length} skill dipelajari`
-    },
-    {
-      tab: 'journal',
-      title: 'Buku harian',
-      icon: BookOpen,
-      description: 'Baca catatan refleksi yang tersimpan dari percakapan dan aktivitas sebelumnya.',
-      meta: `${journals.length} catatan`
     }
   ]
   return (
@@ -400,39 +381,6 @@ export default function NeuralCore() {
                 setSkillSearch={setSkillSearch}
                 onSelectSkill={setSelectedSkill}
               />
-            )}
-            {activeTab === 'journal' && (
-              <section aria-labelledby="journal-title">
-                <h2 id="journal-title" className="text-base font-medium text-white/90">
-                  Buku harian <span className="ml-1 text-white/40">{journals.length}</span>
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-white/50">
-                  Catatan refleksi Mark yang tersimpan dari aktivitas sebelumnya.
-                </p>
-                {journals.length ? (
-                  <div className="mt-6 divide-y divide-white/10">
-                    {journals.map((item) => (
-                      <article key={item.id} className="py-6 first:pt-0">
-                        <header>
-                          <h3 className="break-words text-sm font-medium text-white/85">
-                            {item.summary || 'Catatan refleksi'}
-                          </h3>
-                          <time className="mt-2 block text-xs text-white/40">
-                            {neuralDate(item.created_at || item.createdAt)}
-                          </time>
-                        </header>
-                        <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-white/65">
-                          {item.memory}
-                        </p>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p role="status" className="py-12 text-sm text-white/45">
-                    Belum ada catatan buku harian yang tersimpan.
-                  </p>
-                )}
-              </section>
             )}
             {activeTab === 'data' && (
               <section aria-labelledby="neural-data-title">

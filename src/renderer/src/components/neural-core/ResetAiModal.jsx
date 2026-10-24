@@ -66,7 +66,7 @@ export const ResetAiModal = ({ onClose, onConfirm, isResetting = false }) => {
         <div className="space-y-4 text-sm leading-relaxed text-white/65">
           <p>Reset menghapus data berikut dan tidak dapat dibatalkan:</p>
           <ul className="list-disc space-y-2 pl-5">
-            <li>Memori, buku harian, dan riwayat percakapan.</li>
+            <li>Memori dan riwayat percakapan.</li>
             <li>Dokumen tersimpan dan skill yang dipelajari.</li>
             <li>Perkembangan karakter serta riwayat tugas dan sub-agent.</li>
           </ul>
