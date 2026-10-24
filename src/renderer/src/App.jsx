@@ -156,6 +156,7 @@ const MainLayout = () => {
               <Route path="/guidebook" element={<Guidebook />} />
               <Route path="/neural-core" element={<NeuralCore />} />
               <Route path="/subagents" element={<Subagents />} />
+              <Route path="/subagents/:agentId" element={<Subagents />} />
             </Routes>
           </div>
         </div>

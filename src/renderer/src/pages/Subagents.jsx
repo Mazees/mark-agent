@@ -1,342 +1,239 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import {
-  Bot,
-  ArrowLeft,
-  Plus,
-  Cpu,
-  Activity,
-  X,
-  LayoutGrid
-} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Bot, LayoutList, Network, Plus, Square } from 'lucide-react'
 import AgentSidebar from '../components/subagent/AgentSidebar'
 import AgentChatFeed from '../components/subagent/AgentChatFeed'
 import AgentInspector from '../components/subagent/AgentInspector'
 import SubagentTopologyMap from '../components/subagent/SubagentTopologyMap'
-import { runSubagentTurn } from '../api/subagent/subagentExecutor'
+import AgentCreateDialog from '../components/subagent/AgentCreateDialog'
+import { agentStatus } from '../components/subagent/agentPresentation'
+import { runSubagentTurn, killSubagentExecution } from '../api/subagent/subagentExecutor'
 import { subagentStore } from '../api/subagent/subagentStore'
-import { useConfirm } from '../hooks/useConfirm'
 
 export default function Subagents() {
   const navigate = useNavigate()
-  const [selectedSubagentId, setSelectedSubagentId] = useState(null)
+  const { agentId } = useParams()
   const [subagents, setSubagents] = useState([])
-  const [viewMode, setViewMode] = useState('workspace') // 'workspace' | 'topology'
-  const [isInspectorOpen, setIsInspectorOpen] = useState(true)
-
-  // Modal State untuk Spawn Manual
-  const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(false)
-  const [newAgentName, setNewAgentName] = useState('')
-  const [newAgentRole, setNewAgentRole] = useState('')
-  const [newAgentGoal, setNewAgentGoal] = useState('')
-  const [isSpawning, setIsSpawning] = useState(false)
-
-  const loadSubagents = async () => {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [view, setView] = useState('list')
+  const [tab, setTab] = useState('activity')
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [creating, setCreating] = useState(false)
+  const mounted = useRef(false)
+  const revision = useRef(0)
+  const loadData = useCallback(async () => {
+    const current = ++revision.current
     try {
       const list = await subagentStore.listSubagents('all')
-      setSubagents(list || [])
-      if (!selectedSubagentId && list && list.length > 0) {
-        setSelectedSubagentId(list[0].id)
-      }
-    } catch (err) {
-      console.error('[Subagents] Load error:', err)
-    }
-  }
-
-  useEffect(() => {
-    loadSubagents()
-    const interval = setInterval(loadSubagents, 1200)
-    return () => clearInterval(interval)
-  }, [selectedSubagentId])
-
-  const activeCount = subagents?.filter((s) => s.status === 'running').length || 0
-  const selectedAgent = subagents.find((s) => s.id === selectedSubagentId) || null
-
-  const handleSendMessageFromTopology = async (id, messageText) => {
-    try {
-      await runSubagentTurn(id, messageText, 'user')
-      await loadSubagents()
-    } catch (err) {
-      console.error('[Topology] Send error:', err)
-    }
-  }
-
-  const handleSpawnManual = async (e) => {
-    e.preventDefault()
-    if (!newAgentName.trim() || !newAgentGoal.trim() || isSpawning) return
-
-    setIsSpawning(true)
-    try {
-      const sub = await subagentStore.createSubagent({
-        name: newAgentName.trim(),
-        role: newAgentRole.trim() || 'Technical Specialist',
-        goal: newAgentGoal.trim(),
-        status: 'running'
-      })
-
-      // Jika subagent belum aktif berjalan sebelumnya, jalankan initial turn
-      if (!sub.wasRunning) {
-        runSubagentTurn(sub.id, newAgentGoal.trim(), 'user').catch((err) => {
-          console.error('[Subagent Spawn Error]', err)
-        })
-      }
-
-      setSelectedSubagentId(sub.id)
-      setIsSpawnModalOpen(false)
-      setNewAgentName('')
-      setNewAgentRole('')
-      setNewAgentGoal('')
-      await loadSubagents()
-    } catch (err) {
-      console.error('[Spawn Subagent Failed]', err)
+      if (!mounted.current || revision.current !== current) return
+      setSubagents(Array.isArray(list) ? list : [])
+      setError('')
+    } catch (failure) {
+      if (mounted.current && revision.current === current)
+        setError(failure.message || 'Daftar agen belum dapat dimuat.')
     } finally {
-      setIsSpawning(false)
+      if (mounted.current && revision.current === current) setLoading(false)
+    }
+  }, [])
+  useEffect(() => {
+    mounted.current = true
+    let timer
+    let cancelled = false
+    const poll = async () => {
+      await loadData()
+      if (!cancelled) timer = setTimeout(poll, 1500)
+    }
+    poll()
+    return () => {
+      mounted.current = false
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [loadData])
+  const agent = subagents.find((item) => item.id === agentId)
+  const activeCount = subagents.filter((item) => item.status === 'running').length
+  const openAgent = (id) => {
+    setCreating(false)
+    setTab('activity')
+    navigate(`/subagents/${encodeURIComponent(id)}`)
+  }
+  const createAgent = async (values) => {
+    const created = await subagentStore.createSubagent(values)
+    if (!created?.id) throw new Error('Agen belum dapat dibuat. Coba lagi.')
+    await loadData()
+    openAgent(created.id)
+    if (!created.wasRunning) {
+      runSubagentTurn(created.id, values.goal, 'user')
+        .then(loadData)
+        .catch((failure) => {
+          if (mounted.current) setError(failure.message || 'Agen belum dapat mulai bekerja.')
+        })
     }
   }
-
-  const { confirm, ModalComponent } = useConfirm()
-
-  const handleDeleteSubagent = async (id) => {
-    const targetAgent = subagents.find((s) => s.id === id)
-    const agentName = targetAgent?.name || 'Sub-Agent'
-    const result = await confirm({
-      title: 'Hapus Sub-Agent',
-      message: `Apakah kamu yakin ingin menghapus sub-agent "${agentName}" beserta seluruh riwayat eksekusinya?`,
-      isError: true,
-      confirmText: 'Hapus',
-      cancelText: 'Batal'
-    })
-    if (result?.isConfirmed) {
-      // Update UI state seketika (optimistic update)
-      setSubagents((prev) => prev.filter((s) => s.id !== id))
-      if (selectedSubagentId === id) {
-        const remaining = subagents.filter((s) => s.id !== id)
-        setSelectedSubagentId(remaining.length > 0 ? remaining[0].id : null)
-      }
-      await subagentStore.deleteSubagent(id)
-      await loadSubagents()
-    }
+  const stopAgent = () => {
+    killSubagentExecution(agent.id)
+    setSubagents((current) =>
+      current.map((item) => (item.id === agent.id ? { ...item, status: 'killed' } : item))
+    )
   }
-
+  const deleteAgent = async () => {
+    await subagentStore.deleteSubagent(agent.id)
+    await loadData()
+    navigate('/subagents')
+  }
+  const status = agentStatus(agent?.status)
   return (
-    <div className="h-screen w-screen bg-base-300 text-base-content overflow-hidden flex flex-col font-['Poppins',sans-serif]">
-      {/* Top Navigation Bar */}
-      <header className="h-13 bg-base-200/90 border-b border-base-content/10 px-4 flex items-center justify-between shrink-0 select-none z-20 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="btn btn-ghost btn-sm btn-circle"
-            title="Kembali ke Beranda Mark"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xs font-bold font-mono uppercase tracking-wider text-base-content">
-                  Agent Workspace
-                </h1>
-                <span className="text-[10px] text-base-content/40 font-mono">/ Mission Control</span>
-                {activeCount > 0 && (
-                  <span className="badge badge-primary badge-xs gap-1 font-mono text-[9px] py-1.5">
-                    <span className="w-1 h-1 rounded-full bg-base-100 animate-ping" />
-                    {activeCount} active
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Center / Right View Switcher */}
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center p-0.5 bg-base-300/80 rounded-xl border border-base-content/10 font-mono text-xs">
-            <button
-              type="button"
-              onClick={() => setViewMode('workspace')}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                viewMode === 'workspace'
-                  ? 'bg-primary text-primary-content shadow-sm font-semibold'
-                  : 'text-base-content/60 hover:text-base-content'
-              }`}
-              title="Workspace Thread View (Hermes Style)"
-            >
-              <LayoutGrid className="w-3.5 h-3.5" /> Workspace
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('topology')}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                viewMode === 'topology'
-                  ? 'bg-primary text-primary-content shadow-sm font-semibold'
-                  : 'text-base-content/60 hover:text-base-content'
-              }`}
-              title="Visual Constellation Map"
-            >
-              <Activity className="w-3.5 h-3.5" /> Topology
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsSpawnModalOpen(true)}
-            className="btn btn-primary btn-xs rounded-xl gap-1 px-3 font-medium shadow-sm shadow-primary/20"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="text-[11px]">New Agent</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Container Area */}
-      <main className="flex-1 flex overflow-hidden relative">
-        {viewMode === 'topology' ? (
-          <div className="flex-1 p-4 overflow-hidden">
-            <SubagentTopologyMap
-              subagents={subagents}
-              selectedId={selectedSubagentId}
-              onSelectAgent={setSelectedSubagentId}
-              onOpenIntercom={(id) => {
-                setSelectedSubagentId(id)
-                setViewMode('workspace')
-              }}
-              onSendMessage={handleSendMessageFromTopology}
-            />
-          </div>
-        ) : (
-          <div className="flex-1 flex w-full h-full overflow-hidden">
-            {/* 1. Left Sidebar */}
-            <AgentSidebar
-              subagents={subagents}
-              selectedId={selectedSubagentId}
-              onSelectAgent={setSelectedSubagentId}
-              onOpenNewAgentModal={() => setIsSpawnModalOpen(true)}
-              onDeleteAgent={handleDeleteSubagent}
-            />
-
-            {/* 2. Center Panel */}
-            {selectedSubagentId ? (
-              <AgentChatFeed
-                subagentId={selectedSubagentId}
-                onOpenInspector={() => setIsInspectorOpen(!isInspectorOpen)}
-                onDeleteAgent={handleDeleteSubagent}
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-base-content/30 gap-2.5 font-mono text-center">
-                <div className="p-4 bg-base-200 rounded-2xl border border-base-content/10">
-                  <Bot className="w-10 h-10 stroke-[1.5]" />
+    <main className="flex h-screen min-w-0 flex-col overflow-hidden bg-base-300 text-base-content">
+      <div
+        className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-5 pt-7 sm:px-8 sm:pt-10 ${agentId ? '' : 'overflow-y-auto pb-10 custom-scrollbar'}`}
+      >
+        <Link
+          to={agentId ? '/subagents' : '/'}
+          className="mb-9 inline-flex w-fit shrink-0 items-center gap-2 text-sm text-white/50 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          <ArrowLeft size={17} /> Kembali
+        </Link>
+        {agentId ? (
+          agent ? (
+            <>
+              <header className="shrink-0">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-white/10 text-primary">
+                      <Bot size={29} />
+                    </span>
+                    <div className="min-w-0">
+                      <h1 className="break-words text-xl font-semibold text-white sm:text-2xl">
+                        {agent.name}
+                      </h1>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span role="status" className={status.color}>
+                          {status.label}
+                        </span>
+                        <span className="text-white/40">{agent.turnCount || 0} langkah</span>
+                      </div>
+                    </div>
+                  </div>
+                  {agent.status === 'running' && (
+                    <button
+                      type="button"
+                      onClick={stopAgent}
+                      className="btn btn-ghost shrink-0 rounded-full text-error"
+                    >
+                      <Square size={15} /> Hentikan
+                    </button>
+                  )}
                 </div>
-                <p className="text-xs font-semibold text-base-content/60">
-                  Pilih atau buat sub-agent untuk memulai Agent Workspace
+                <p className="mt-4 line-clamp-1 text-sm text-white/50">
+                  {agent.role || 'Spesialis tugas'}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setIsSpawnModalOpen(true)}
-                  className="btn btn-primary btn-xs rounded-xl mt-2"
+                <div
+                  aria-label="Bagian sub-agent"
+                  className="mt-6 flex gap-6 border-b border-white/10"
                 >
-                  <Plus className="w-3 h-3" /> Buat Sub-Agent Baru
-                </button>
+                  {[
+                    ['activity', 'Aktivitas'],
+                    ['details', 'Detail agen']
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={tab === id}
+                      onClick={() => setTab(id)}
+                      className={`border-b-2 pb-3 text-sm focus-visible:outline-2 focus-visible:outline-primary ${tab === id ? 'border-primary text-white' : 'border-transparent text-white/45 hover:text-white/75'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {error && (
+                  <p role="alert" className="py-3 text-sm text-error">
+                    {error}
+                  </p>
+                )}
+              </header>
+              <div className={tab === 'activity' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+                <AgentChatFeed key={agent.id} subagent={agent} onRefresh={loadData} />
               </div>
-            )}
-
-            {/* 3. Right Panel: Agent Inspector */}
-            {isInspectorOpen && selectedAgent && (
-              <AgentInspector
-                subagent={selectedAgent}
-                onClose={() => setIsInspectorOpen(false)}
-                onDeleteAgent={handleDeleteSubagent}
-              />
-            )}
-          </div>
-        )}
-      </main>
-
-      {/* Modal Spawn Agent */}
-      {isSpawnModalOpen && (
-        <div className="modal modal-open bg-black/60 backdrop-blur-sm z-50">
-          <div className="modal-box bg-base-200 border border-base-content/10 rounded-2xl max-w-md shadow-2xl p-5 font-mono">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-base-content/90">
-                <Cpu className="w-4 h-4 text-primary" /> Spawn Sub-Agent Baru
-              </h3>
+              {tab === 'details' && (
+                <AgentInspector key={agent.id} subagent={agent} onDeleteAgent={deleteAgent} />
+              )}
+            </>
+          ) : (
+            <div role="status" className="py-12 text-sm text-white/50">
+              {loading ? 'Memuat agen...' : error || 'Agen tidak ditemukan atau sudah dihapus.'}
+            </div>
+          )
+        ) : (
+          <>
+            <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+              <div>
+                <h1 className="text-2xl font-semibold text-white">Sub-Agents</h1>
+                <p className="mt-3 text-sm leading-relaxed text-white/50">
+                  Kelola agen yang membantu Mark mengerjakan tugas secara mandiri.
+                </p>
+                <p className="mt-2 text-xs text-white/35">
+                  Mission Control{activeCount > 0 ? ` · ${activeCount} agen sedang berjalan` : ''}
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => setIsSpawnModalOpen(false)}
-                className="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-base-content"
+                onClick={() => setCreating(true)}
+                className="btn w-fit shrink-0 rounded-full border-white bg-white px-5 text-neutral-900 hover:bg-white/90"
               >
-                <X className="w-4 h-4" />
+                <Plus size={17} /> Buat agen
               </button>
-            </div>
-            <form onSubmit={handleSpawnManual} className="space-y-3">
-              <div>
-                <label className="label text-[11px] font-medium py-1 text-base-content/70">
-                  Nama Agen
-                </label>
-                <input
-                  type="text"
-                  placeholder="misal: Developer / Mr Tester / Researcher"
-                  value={newAgentName}
-                  onChange={(e) => setNewAgentName(e.target.value)}
-                  className="input input-sm input-bordered w-full rounded-xl bg-base-100/60 text-xs focus:outline-none focus:border-primary/50"
-                  required
-                />
-              </div>
-              <div>
-                <label className="label text-[11px] font-medium py-1 text-base-content/70">
-                  Role / Spesialisasi
-                </label>
-                <input
-                  type="text"
-                  placeholder="misal: Software Engineer / QA Tester"
-                  value={newAgentRole}
-                  onChange={(e) => setNewAgentRole(e.target.value)}
-                  className="input input-sm input-bordered w-full rounded-xl bg-base-100/60 text-xs focus:outline-none focus:border-primary/50"
-                  required
-                />
-              </div>
-              <div>
-                <label className="label text-[11px] font-medium py-1 text-base-content/70">
-                  Tujuan & Instruksi Awal
-                </label>
-                <textarea
-                  placeholder="Deskripsikan misi teknis yang harus diselesaikan sub-agent..."
-                  value={newAgentGoal}
-                  onChange={(e) => setNewAgentGoal(e.target.value)}
-                  className="textarea textarea-sm textarea-bordered w-full rounded-xl h-24 text-xs bg-base-100/60 focus:outline-none focus:border-primary/50"
-                  required
-                />
-              </div>
-              <div className="modal-action pt-2 flex items-center justify-end gap-2">
+            </header>
+            <div aria-label="Tampilan sub-agent" className="mt-7 flex gap-2">
+              {[
+                ['list', 'Daftar', LayoutList],
+                ['topology', 'Topologi', Network]
+              ].map(([id, label, Icon]) => (
                 <button
+                  key={id}
                   type="button"
-                  onClick={() => setIsSpawnModalOpen(false)}
-                  disabled={isSpawning}
-                  className="btn btn-ghost btn-xs rounded-xl px-3"
+                  aria-pressed={view === id}
+                  onClick={() => setView(id)}
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary ${view === id ? 'bg-white/10 text-white' : 'text-white/45 hover:text-white/75'}`}
                 >
-                  Batal
+                  <Icon size={16} />
+                  {label}
                 </button>
-                <button
-                  type="submit"
-                  disabled={!newAgentName.trim() || !newAgentGoal.trim() || isSpawning}
-                  className="btn btn-primary btn-xs rounded-xl px-4 font-medium shadow-sm shadow-primary/20"
-                >
-                  {isSpawning ? (
-                    <span className="loading loading-spinner loading-xs" />
-                  ) : (
-                    'Mulai Eksekusi'
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+              ))}
+            </div>
+            {view === 'list' ? (
+              <AgentSidebar
+                subagents={subagents}
+                query={query}
+                onQueryChange={setQuery}
+                filter={filter}
+                onFilterChange={setFilter}
+                loading={loading}
+                error={error}
+                onRetry={loadData}
+              />
+            ) : (
+              <SubagentTopologyMap
+                subagents={subagents}
+                onOpenAgent={openAgent}
+                loading={loading}
+                error={error}
+                onRetry={loadData}
+              />
+            )}
+          </>
+        )}
+      </div>
+      {creating && (
+        <AgentCreateDialog
+          subagents={subagents}
+          onCreate={createAgent}
+          onClose={() => setCreating(false)}
+          onOpenAgent={openAgent}
+        />
       )}
-      <ModalComponent />
-    </div>
+    </main>
   )
 }
