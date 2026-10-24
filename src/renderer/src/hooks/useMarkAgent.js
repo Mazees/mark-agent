@@ -107,6 +107,7 @@ export const useMarkAgent = () => {
   useChatArchiver({ chatData, activeTopic, config, pushNotification, isLoading })
 
   const activeTgRequestRef = useRef(null)
+  const lastTgProgressRef = useRef({ msgId: null, reason: null })
   const hasGreetedRef = useRef(false)
   const greetingAbortRef = useRef(null)
   const isMountedRef = useRef(true)
@@ -271,14 +272,57 @@ export const useMarkAgent = () => {
       }
 
       activeTgRequestRef.current = data
+      lastTgProgressRef.current = { msgId: data.msgId, reason: null }
       setInputSource('tg')
       setIsSpeak(false) // Disable voice auto-reply for Telegram messages
+      const initialReason = 'Sedang menganalisis permintaan...'
+      lastTgProgressRef.current.reason = initialReason
+      window.api
+        ?.sendTgAgentProgress?.({ msgId: data.msgId, reason: initialReason })
+        ?.catch((error) => console.warn('[useMarkAgent] Telegram progress update failed:', error))
       handlePlanningCommand(data.text, data)
     }
 
     window.addEventListener('tg-admin-message', handleTgAdminMessage)
-    return () => window.removeEventListener('tg-admin-message', handleTgAdminMessage)
-  }, [handlePlanningCommand, setInputSource, handleStop, setIsSpeak])
+    const unsubscribeAbort = window.api?.onTgCommandAbort?.(({ chatId } = {}) => {
+      const activeRequest = activeTgRequestRef.current
+      if (!activeRequest || String(activeRequest.chatId) !== String(chatId)) return
+      activeRequest.abortRequestedAt = Date.now()
+      planHandleStop?.('1')
+    })
+
+    return () => {
+      window.removeEventListener('tg-admin-message', handleTgAdminMessage)
+      unsubscribeAbort?.()
+    }
+  }, [handlePlanningCommand, setInputSource, handleStop, setIsSpeak, planHandleStop])
+
+  useEffect(() => {
+    const request = activeTgRequestRef.current
+    if (inputSource !== 'tg' || !isAgentBusy || !request?.msgId) return
+
+    const activeThinkingMessage = [...(chatData || [])]
+      .reverse()
+      .find((message) => message.isThinking)
+    const toolRuns = activeThinkingMessage?.executedTools || []
+    const latestToolWithReason = [...toolRuns]
+      .reverse()
+      .find((toolRun) => toolRun.status === 'running' && toolRun.reason) ||
+      [...toolRuns].reverse().find((toolRun) => toolRun.reason)
+    const reason = latestToolWithReason?.reason?.trim()
+    if (
+      !reason ||
+      lastTgProgressRef.current.msgId !== request.msgId ||
+      lastTgProgressRef.current.reason === reason
+    ) {
+      return
+    }
+
+    lastTgProgressRef.current = { msgId: request.msgId, reason }
+    window.api
+      ?.sendTgAgentProgress?.({ msgId: request.msgId, reason })
+      ?.catch((error) => console.warn('[useMarkAgent] Telegram progress update failed:', error))
+  }, [chatData, inputSource, isAgentBusy])
 
   // Subagent Push Notification & Completion Listener
   useEffect(() => {
@@ -408,7 +452,14 @@ export const useMarkAgent = () => {
         .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       if (lastAiMsg) {
         const currentReq = activeTgRequestRef.current
+        if (
+          currentReq.abortRequestedAt &&
+          Number(lastAiMsg.created_at || 0) < currentReq.abortRequestedAt
+        ) {
+          return
+        }
         activeTgRequestRef.current = null
+        lastTgProgressRef.current = { msgId: null, reason: null }
         setInputSource('pc')
         lastSyncedMsgIdRef.current = lastAiMsg.timestamp || lastAiMsg.content
 

@@ -837,6 +837,14 @@ export const webApi = {
   sendTgAgentExecutionDone: async (payload) => {
     return await webApi.tgAgentExecutionDone(payload)
   },
+  sendTgAgentProgress: async (payload) => {
+    const res = await fetch(`${API_BASE}/api/telegram/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    return await res.json()
+  },
   tgBroadcastToAdmins: async (message) => {
     const res = await fetch(`${API_BASE}/api/telegram/broadcast`, {
       method: 'POST',
@@ -868,6 +876,10 @@ export const webApi = {
   onTgCommandSession: (cb) => {
     addWebListener('tg:command-session', cb)
     return () => removeWebListener('tg:command-session', cb)
+  },
+  onTgCommandAbort: (cb) => {
+    addWebListener('tg:command-abort', cb)
+    return () => removeWebListener('tg:command-abort', cb)
   },
   onTgConnection: (cb) => {
     addWebListener('tg:connection', cb)
