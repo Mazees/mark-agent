@@ -146,6 +146,15 @@ body,
   margin-block-start: 0;
 }
 
+.chat-process-body > :last-child,
+.chat-process-body > :last-child .message-activity-trace:last-child {
+  margin-block-end: 0;
+}
+
+.chat-process-body > :last-child .process-narration:last-child {
+  padding-block-end: 0;
+}
+
 .chat-process + .chat-process-answer {
   margin-block-start: 0;
 }

@@ -101,7 +101,6 @@ function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
         id: assistantMessages.at(-1)?.id || assistantMessages.at(-1)?.created_at || index,
         messages: assistantMessages,
         steps: mostCompleteToolSnapshot,
-        reasoning: null,
         isActive: true
       })
       index = turnEnd
@@ -139,8 +138,7 @@ function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
       type: 'process',
       id: finalMessage.id || finalMessage.created_at || index,
       messages: progressMessages,
-      steps: mostCompleteToolSnapshot,
-      reasoning: finalMessage.reasoning
+      steps: mostCompleteToolSnapshot
     })
     renderItems.push({ type: 'message', message: finalMessage, hideProcessDetails: true })
     index = turnEnd
@@ -846,7 +844,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                                     }
                                     role={message.role || 'assistant'}
                                     content={message.content || ''}
-                                    reasoning={message.reasoning}
+                                    reasoning={item.isActive ? message.reasoning : null}
                                     compactActivity
                                     isActivityActive={processIndex === activeActivityIndex}
                                     sources={message.sources || []}
@@ -862,14 +860,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                                     executedTools={messageSteps}
                                   />
                                 )
-                              )}
-                              {item.reasoning && (
-                                <ChatList
-                                  role="assistant"
-                                  content=""
-                                  reasoning={item.reasoning}
-                                  executedTools={[]}
-                                />
                               )}
                             </div>
                           </details>
@@ -895,7 +885,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                           role={msg.role}
                           content={cleanContent}
                           followsProcess={item.hideProcessDetails}
-                          reasoning={item.hideProcessDetails ? null : msg.reasoning}
+                          reasoning={msg.reasoning}
                           isThinking={msg.isThinking}
                           isSearching={msg.isSearching}
                           isSummarizing={msg.isSummarizing}

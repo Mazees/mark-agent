@@ -239,7 +239,7 @@ export const MessageBubble = React.memo(
 
         {toolsToRender.length > 0 && (
           <div
-            className={`${compactActivity ? 'mt-2 mb-4 space-y-1' : 'my-2.5 space-y-1.5'} select-none`}
+            className={`message-activity-trace ${compactActivity ? 'mt-2 mb-4 space-y-1' : 'my-2.5 space-y-1.5'} select-none`}
           >
             {(isThinking ||
               toolsToRender.some(
