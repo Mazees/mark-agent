@@ -14,6 +14,8 @@ Implementasi backend:
 - Router Integrasi: [`src/server/routes/integrations.routes.js`](file:///d:/My%20Project/mark-project/mark/src/server/routes/integrations.routes.js)
 - Formatter Respons: [`src/renderer/src/api/ai/utils.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/utils.js)
 
+Pengaturan bot berada pada detail Add-on Telegram di `/addons/telegram`, yang memakai shell bersama `AddonDetail`. Token dan username admin diatur dari halaman tersebut. Halaman `/telegram-bot` hanya menampilkan log pesan masuk dan balasan, dan dapat dibuka dari detail addon. Status Telegram yang diteruskan ke katalog dan planning AI tidak menyertakan token atau kredensial.
+
 ```mermaid
 sequenceDiagram
     autonumber

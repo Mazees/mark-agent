@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
-import { getAllConfig, saveConfiguration } from '../api/db'
-import { getExtractor } from '../api/vectorMemory'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import PropTypes from 'prop-types'
+import { ArrowLeft, Check, HelpCircle, Save } from 'lucide-react'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
-import { useConfirm } from '../hooks/useConfirm'
+import '../components/config/configuration.css'
+import { API_BASE } from '../api/web-bridge'
 import { useChat } from '../contexts/ChatContext'
 import {
   AiEngineSection,
@@ -13,349 +14,375 @@ import {
   PermissionsSection
 } from '../components/config'
 
-const Configuration = ({ isFirstSetup = false, onSetupComplete = null }) => {
-  const [config, setConfig] = useState({
-    personality: 'Santai layaknya seorang teman dan suka bercanda.',
-    model: 'local-model',
-    customModel: 'default-model',
-    temperature: 0,
-    ttsRate: 10,
-    ttsPitch: 55,
-    aiProvider: 'gemini-web',
-    geminiWebModel: 'gemini-3.6-flash',
-    deepseekWebModel: 'deepseek-chat',
-    deepseekUserToken: '',
-    wakeWordEnabled: true,
-    customWakeWords: '',
-    speechLanguage: 'id-ID',
-    tgBotToken: '',
-    tgAdminIds: '',
-    awarenessEnabled: true,
-    cameraDeviceId: 'default',
-    cameraEnabled: true,
-    superEffortEnabled: false,
-    bgOverlayOpacity: 65
-  })
-  const [videoDevices, setVideoDevices] = useState([])
+const defaults = {
+  personality: 'Santai layaknya seorang teman dan suka bercanda.',
+  model: 'local-model',
+  customModel: 'default-model',
+  temperature: 0,
+  ttsRate: 10,
+  ttsPitch: 55,
+  aiProvider: 'gemini-web',
+  geminiWebModel: 'gemini-3.6-flash',
+  deepseekWebModel: 'deepseek-chat',
+  deepseekUserToken: '',
+  wakeWordEnabled: true,
+  customWakeWords: '',
+  speechLanguage: 'id-ID',
+  tgBotToken: '',
+  tgAdminIds: '',
+  awarenessEnabled: true,
+  cameraDeviceId: 'default',
+  cameraEnabled: true,
+  superEffortEnabled: false,
+  bgOverlayOpacity: 65
+}
+const sections = {
+  ai: {
+    label: 'AI',
+    title: 'Provider dan model',
+    description:
+      'Tentukan layanan AI yang digunakan Mark. Pengaturan model mengikuti provider yang Anda pilih.'
+  },
+  behavior: {
+    label: 'Perilaku',
+    title: 'Cara Mark berinteraksi',
+    description: 'Sesuaikan gaya bicara, variasi jawaban, dan cara Mark membantu Anda.'
+  },
+  voice: {
+    label: 'Suara',
+    title: 'Input suara',
+    description: 'Atur bahasa dan kata panggilan untuk berbicara dengan Mark melalui mikrofon.'
+  },
+  camera: {
+    label: 'Kamera',
+    title: 'Akses kamera',
+    description: 'Pilih kamera yang digunakan Mark dan periksa tampilannya sebelum digunakan.'
+  },
+  shortcut: {
+    label: 'Pintasan',
+    title: 'Panggilan cepat',
+    description: 'Tentukan kombinasi tombol untuk memanggil Mark tanpa membuka halaman utama.'
+  },
+  permissions: {
+    label: 'Izin akses',
+    title: 'Izin tersimpan',
+    description:
+      'Kelola folder, berkas, dan perintah yang sudah Anda izinkan tanpa konfirmasi berulang.'
+  }
+}
+
+export default function Configuration({ isFirstSetup = false, onSetupComplete = null }) {
+  const [config, setDraft] = useState(defaults)
+  const [baseline, setBaseline] = useState(defaults)
+  const [active, setActive] = useState('ai')
   const [loading, setLoading] = useState(true)
-  const [isDownloadingModel, setIsDownloadingModel] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState(0)
-  const { ModalComponent } = useConfirm()
+  const [loadError, setLoadError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const mounted = useRef(false)
+  const loadController = useRef(null)
+  const savingRef = useRef(false)
+  const tour = useRef(null)
   const chatContext = useChat()
+  const dirty = JSON.stringify(config) !== JSON.stringify(baseline)
+  const section = sections[active]
+  const setConfig = (update) => {
+    setNotice(null)
+    setDraft(update)
+  }
 
-  useEffect(() => {
-    let isMounted = true
-    const init = async () => {
-      try {
-        setLoading(true)
-        await loadConfig()
-      } catch (err) {
-        console.error('Error loading config:', err)
-      } finally {
-        if (isMounted) setLoading(false)
+  const loadConfig = useCallback(async () => {
+    loadController.current?.abort()
+    const controller = new AbortController()
+    loadController.current = controller
+    setLoading(true)
+    setLoadError('')
+    try {
+      const response = await fetch(`${API_BASE}/api/config`, { signal: controller.signal })
+      if (!response.ok) throw new Error()
+      const result = await response.json()
+      if (result.success === false) throw new Error()
+      const data = result.data ?? {}
+      const value = {
+        ...defaults,
+        ...data,
+        aiProvider: data.aiProvider || defaults.aiProvider,
+        geminiWebModel: data.geminiWebModel || defaults.geminiWebModel
       }
-    }
-    init()
-
-    navigator.mediaDevices
-      .getUserMedia({ video: true })
-      .then((stream) => {
-        navigator.mediaDevices
-          .enumerateDevices()
-          .then((devices) => {
-            const cameras = devices.filter((d) => d.kind === 'videoinput')
-            if (isMounted) setVideoDevices(cameras)
-          })
-          .catch((err) => console.error('Error enumerating devices', err))
-
-        // Stop stream immediately since we just needed permission
-        stream.getTracks().forEach((track) => track.stop())
-      })
-      .catch((err) => console.error('Cam permission denied', err))
-
-    return () => {
-      isMounted = false
+      if (!mounted.current || controller.signal.aborted) return
+      setConfig(value)
+      setBaseline(value)
+    } catch {
+      if (mounted.current && !controller.signal.aborted)
+        setLoadError('Pengaturan belum dapat dimuat.')
+    } finally {
+      if (mounted.current && !controller.signal.aborted) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    if (isFirstSetup) {
-      setTimeout(() => {
-        const driverObj = driver({
-          showProgress: true,
-          animate: true,
-          nextBtnText: 'Lanjut',
-          prevBtnText: 'Kembali',
-          doneBtnText: 'Paham!',
-          steps: [
-            {
-              popover: {
-                title: 'Halo, Selamat Datang di Mark! 👋',
-                description:
-                  'Mark adalah asisten AI pribadimu. Sebelum mulai ngobrol, ayo kita kenalan dulu sama pengaturan utamanya biar Mark bisa kerja maksimal buat kamu!',
-                side: 'top',
-                align: 'center'
-              }
-            },
-            {
-              element: '#tour-ai-provider',
-              popover: {
-                title: '1. Pilih Mesin AI',
-                description:
-                  'Kamu bisa milih mau pakai Gemini Gratis tanpa API Key, AI lokal (LM Studio), atau Custom API OpenAI-Compatible.',
-                side: 'bottom',
-                align: 'start'
-              }
-            },
-            {
-              element: '#tour-embed-provider',
-              popover: {
-                title: '2. Memori AI',
-                description:
-                  'Ini otak tempat Mark mengingat semuanya. Berjalan 100% lokal dengan vector embeddings tanpa setup tambahan.',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
-              element: '#tour-wakeword',
-              popover: {
-                title: '3. Wake Word & Voice',
-                description:
-                  'Mark mendukung deteksi suara "Hey Mark / Mark" otomatis via Web Speech API bawaan Microsoft Edge / Chrome.',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
-              element: '#tour-persona',
-              popover: {
-                title: '4. Kepribadian Mark',
-                description:
-                  'Di sini kamu bebas nentuin gaya bicara Mark. Mau dia formal kayak asisten pro, atau santai kayak temen nongkrong? Tulis aja di sini!',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
-              element: '#tour-temperature',
-              popover: {
-                title: '5. Kreativitas AI',
-                description:
-                  'Temperature nentuin seberapa kreatif Mark. Angka kecil (0-0.3) bikin dia kaku tapi akurat, angka besar (0.7-1.0) bikin dia imajinatif dan luwes.',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
-              element: '#tour-tts',
-              popover: {
-                title: '6. Pengaturan Suara',
-                description:
-                  'Atur kecepatan (Rate) dan tinggi-rendahnya nada suara (Pitch) Mark. Kamu bisa klik "Test Suara Mark" buat dengerin hasil racikanmu!',
-                side: 'top',
-                align: 'start'
-              }
-            },
-            {
-              element: '#tour-save-btn',
-              popover: {
-                title: 'Simpan & Mulai',
-                description:
-                  'Kalau udah diisi semua (termasuk API key kalau pakai Cloud), klik di sini buat mulai ngobrol sama Mark!',
-                side: 'top',
-                align: 'center'
-              }
-            }
-          ]
-        })
-        driverObj.drive()
-      }, 500)
+    mounted.current = true
+    loadConfig()
+    return () => {
+      mounted.current = false
+      loadController.current?.abort()
+      tour.current?.destroy()
     }
-  }, [isFirstSetup])
+  }, [loadConfig])
 
-  const loadConfig = async () => {
-    const data = await getAllConfig()
-    if (data.length > 0) {
-      setConfig((prev) => ({
-        ...prev,
-        ...data[0],
-        aiProvider: data[0].aiProvider || 'gemini-web',
-        geminiWebModel: data[0].geminiWebModel || 'gemini-3.6-flash',
-        deepseekWebModel: data[0].deepseekWebModel || 'deepseek-chat',
-        deepseekUserToken: data[0].deepseekUserToken || '',
-        micDeviceId: data[0].micDeviceId || 'default',
-        awarenessEnabled: data[0].awarenessEnabled ?? true,
-        bgOverlayOpacity:
-          data[0].bgOverlayOpacity !== undefined ? Number(data[0].bgOverlayOpacity) : 65
-      }))
-    }
+  const showGuide = () => {
+    tour.current?.destroy()
+    tour.current = driver({
+      showProgress: true,
+      nextBtnText: 'Lanjut',
+      prevBtnText: 'Kembali',
+      doneBtnText: 'Selesai',
+      steps: [
+        {
+          element: '#configuration-nav',
+          popover: {
+            title: 'Pengaturan menurut kebutuhan',
+            description:
+              'Pilih bagian untuk mengatur AI, perilaku, suara, kamera, pintasan, atau izin akses. Perubahan tetap tersimpan dalam formulir saat Anda berpindah bagian.'
+          }
+        },
+        {
+          element: '#configuration-content',
+          popover: {
+            title: 'Atur sebelum mulai',
+            description:
+              'Mulai dengan memilih provider AI. Jika menggunakan API sendiri, masukkan endpoint, ID model, dan API key yang diperlukan.'
+          }
+        },
+        {
+          element: '#tour-save-btn',
+          popover: {
+            title: 'Simpan perubahan',
+            description:
+              'Semua perubahan diterapkan setelah Anda menekan tombol Simpan. Anda juga dapat membatalkan perubahan yang belum disimpan.'
+          }
+        }
+      ]
+    })
+    tour.current.drive()
   }
 
-  const handleSaveConfiguration = async () => {
+  const handleSave = async () => {
+    if (savingRef.current || loading || loadError) return
     if (config.aiProvider === 'custom') {
       const endpoint = config.customEndpoint?.trim() || ''
-      if (!endpoint.endsWith('/chat/completions')) {
-        alert(
-          'Gagal Menyimpan: Custom Endpoint URL tidak valid! URL wajib diakhiri dengan /chat/completions (Contoh: https://api.openai.com/v1/chat/completions).'
-        )
+      let valid = endpoint.endsWith('/chat/completions')
+      try {
+        valid = valid && ['http:', 'https:'].includes(new URL(endpoint).protocol)
+      } catch {
+        valid = false
+      }
+      if (!valid) {
+        setActive('ai')
+        setNotice({
+          error: true,
+          text: 'Gunakan URL endpoint HTTP atau HTTPS yang diakhiri dengan /chat/completions.'
+        })
+        requestAnimationFrame(() => document.getElementById('custom-endpoint')?.focus())
         return
       }
     }
-
-    setIsDownloadingModel(true)
-    setDownloadProgress(0)
-
+    savingRef.current = true
+    setSaving(true)
+    setNotice(null)
     try {
-      let extStats = {}
-      await getExtractor((info) => {
-        if (info.status === 'initiate') {
-          extStats[info.file] = { loaded: 0, total: info.total || 0 }
-        } else if (info.status === 'progress') {
-          if (extStats[info.file]) {
-            extStats[info.file].loaded = info.loaded
-            extStats[info.file].total = info.total
-          }
-          const values = Object.values(extStats)
-          const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
-          const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
-          if (totalBytes > 0) {
-            setDownloadProgress(Math.round((loadedBytes / totalBytes) * 100))
-          }
-        } else if (info.status === 'done' || info.status === 'ready') {
-          setDownloadProgress(100)
-        }
+      const changes = isFirstSetup
+        ? { ...config }
+        : Object.fromEntries(
+            Object.entries(config).filter(
+              ([key, value]) => JSON.stringify(value) !== JSON.stringify(baseline[key])
+            )
+          )
+      if (changes.customEndpoint) changes.customEndpoint = changes.customEndpoint.trim()
+      const response = await fetch(`${API_BASE}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes)
       })
-    } catch (e) {
-      console.error(e)
-    }
-    setIsDownloadingModel(false)
-    await saveConfiguration(config)
-
-    // Update global state without reloading the page
-    if (chatContext && chatContext.setConfig) {
-      chatContext.setConfig([config])
-    }
-
-    if (isFirstSetup && onSetupComplete) {
-      onSetupComplete()
-    } else {
-      window.location.href = '#/'
+      if (!response.ok) throw new Error()
+      const result = await response.json()
+      if (result.success === false) throw new Error()
+      const saved = { ...config, ...result.data }
+      window.dispatchEvent(new CustomEvent('config-updated', { detail: saved }))
+      chatContext.setConfig?.([saved])
+      if (!mounted.current) return
+      setConfig(saved)
+      setBaseline(saved)
+      setNotice({ text: 'Pengaturan tersimpan.' })
+      if (isFirstSetup) onSetupComplete?.()
+    } catch {
+      if (mounted.current)
+        setNotice({
+          error: true,
+          text: 'Pengaturan belum tersimpan. Periksa koneksi ke Mark, lalu coba lagi.'
+        })
+    } finally {
+      savingRef.current = false
+      if (mounted.current) setSaving(false)
     }
   }
 
-  const handleBack = () => window.history.back()
-
   return (
-    <div className="h-screen text-white overflow-hidden relative font-['Poppins',sans-serif] bg-base-300 rounded-xl border border-white/5 shadow-2xl">
-      {/* Background Ambience */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,oklch(var(--n))_0%,transparent_70%)] opacity-20 pointer-events-none" />
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 pointer-events-none" />
-
-      {/* Main Content Area */}
-      <div className="relative z-10 w-full h-full overflow-y-auto custom-scrollbar">
-        <div className="max-w-2xl mx-auto px-4 py-8 pb-32 space-y-8">
-          {/* Page Header */}
-          <div className="flex items-center gap-4">
-            {!isFirstSetup && (
+    <main className="flex h-screen flex-col bg-base-300 text-base-content">
+      <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="mx-auto w-full max-w-5xl px-5 py-7 sm:px-8 sm:py-10">
+          {!isFirstSetup && (
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="mb-10 inline-flex items-center gap-2 text-sm text-white/50 transition-colors hover:text-white"
+            >
+              <ArrowLeft size={17} />
+              Kembali
+            </button>
+          )}
+          <header className="flex flex-wrap items-start justify-between gap-5">
+            <div>
+              <h1 className="text-2xl font-semibold text-white">
+                {isFirstSetup ? 'Selamat datang di Mark' : 'Pengaturan Mark'}
+              </h1>
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/50">
+                {isFirstSetup
+                  ? 'Pilih provider AI untuk mulai menggunakan Mark. Pengaturan lainnya dapat disesuaikan nanti.'
+                  : 'Sesuaikan AI, perangkat, dan cara Mark berinteraksi dengan Anda.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={loading || Boolean(loadError)}
+              onClick={showGuide}
+              className="btn btn-ghost btn-sm gap-2 rounded-full text-white/60"
+            >
+              <HelpCircle size={16} />
+              Panduan
+            </button>
+          </header>
+          <nav
+            id="configuration-nav"
+            aria-label="Bagian pengaturan"
+            className="mt-8 flex flex-wrap gap-2 border-b border-white/10 pb-5"
+          >
+            {Object.entries(sections).map(([id, item]) => (
+              <button
+                key={id}
+                type="button"
+                aria-current={active === id ? 'page' : undefined}
+                aria-controls="configuration-content"
+                onClick={() => setActive(id)}
+                className={`rounded-full px-4 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary ${active === id ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          {loading ? (
+            <div
+              role="status"
+              className="flex min-h-64 items-center justify-center gap-3 text-sm text-white/50"
+            >
+              <span className="loading loading-spinner loading-sm" />
+              Memuat pengaturan…
+            </div>
+          ) : loadError ? (
+            <div role="alert" className="py-10">
+              <p className="text-sm text-error">
+                Pengaturan belum dapat dimuat. Periksa koneksi ke Mark.
+              </p>
               <button
                 type="button"
-                onClick={handleBack}
-                className="btn btn-ghost btn-sm btn-circle shrink-0"
-                style={{ WebkitAppRegion: 'no-drag' }}
-                title="Kembali"
+                onClick={loadConfig}
+                className="btn btn-ghost mt-4 rounded-full border-white/15"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="1.2em"
-                  height="1.2em"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
+                Coba lagi
               </button>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold">
-                {isFirstSetup ? 'Selamat Datang di Mark!' : 'Pengaturan Mark'}
-              </h1>
-              <p className="opacity-50 text-sm mt-1">
-                {isFirstSetup
-                  ? 'Sebelum mulai ngobrol, atur provider AI dan pengaturan dasar lainnya di bawah ini.'
-                  : 'Sesuaikan perilaku Mark dengan preferensimu.'}
-              </p>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="flex-1 min-h-[50vh] flex flex-col items-center justify-center gap-3">
-              <span className="loading loading-spinner loading-lg text-primary" />
-              <p className="font-mono text-xs text-base-content/50 tracking-widest uppercase">
-                Memuat Pengaturan Mark...
-              </p>
             </div>
           ) : (
-            <>
-              {/* 1. AI Engine & Tools */}
-              <AiEngineSection config={config} setConfig={setConfig} />
-
-              <div className="divider"></div>
-
-              {/* 2. Camera Settings */}
-              <CameraSection config={config} setConfig={setConfig} videoDevices={videoDevices} />
-
-              {/* 3. Global Shortcut Settings */}
-              <ShortcutSection config={config} setConfig={setConfig} />
-
-              <div className="divider"></div>
-
-              {/* 4. Voice & Wake Word Settings */}
-              <VoiceSection config={config} setConfig={setConfig} />
-
-              <div className="divider"></div>
-
-              {/* 6. Security & Whitelist Permissions */}
-              <PermissionsSection />
-
-              {/* 7. Save Bar */}
-              <div className="flex flex-col items-end pt-2">
-                {isDownloadingModel && (
-                  <div className="w-full max-w-xs mb-4">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>Mengunduh Model Embeddings...</span>
-                      <span>{downloadProgress}%</span>
-                    </div>
-                    <progress
-                      className="progress progress-primary w-full"
-                      value={downloadProgress}
-                      max="100"
-                    ></progress>
-                  </div>
-                )}
-                <button
-                  id="tour-save-btn"
-                  onClick={handleSaveConfiguration}
-                  disabled={isDownloadingModel}
-                  className="btn btn-primary px-8 cursor-pointer"
+            <section
+              id="configuration-content"
+              aria-labelledby="configuration-section-title"
+              className="grid gap-7 py-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-12"
+            >
+              <div>
+                <h2
+                  id="configuration-section-title"
+                  className="text-base font-medium text-white/90"
                 >
-                  {isDownloadingModel
-                    ? 'Menyimpan...'
-                    : isFirstSetup
-                      ? 'Simpan & Mulai Gunakan Mark'
-                      : 'Simpan Pengaturan'}
-                </button>
+                  {section.title}
+                </h2>
+                <p className="mt-3 text-sm leading-relaxed text-white/50">{section.description}</p>
               </div>
-            </>
+              <fieldset disabled={saving} className="min-w-0 space-y-6 disabled:opacity-60">
+                {(active === 'ai' || active === 'behavior') && (
+                  <AiEngineSection
+                    key={active}
+                    section={active}
+                    config={config}
+                    setConfig={setConfig}
+                  />
+                )}
+                {active === 'voice' && <VoiceSection config={config} setConfig={setConfig} />}
+                {active === 'camera' && <CameraSection config={config} setConfig={setConfig} />}
+                {active === 'shortcut' && <ShortcutSection config={config} setConfig={setConfig} />}
+                {active === 'permissions' && (
+                  <PermissionsSection config={config} setConfig={setConfig} />
+                )}
+              </fieldset>
+            </section>
           )}
         </div>
-
-        <ModalComponent />
       </div>
-    </div>
+      <footer className="shrink-0 border-t border-white/10 bg-base-300">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
+          <p
+            role={notice?.error ? 'alert' : 'status'}
+            aria-live="polite"
+            className={`flex min-w-0 items-center gap-2 text-xs leading-relaxed ${notice?.error ? 'text-error' : 'text-white/50'}`}
+          >
+            {notice && !notice.error && <Check size={15} className="shrink-0 text-primary" />}
+            {saving
+              ? 'Menyimpan pengaturan…'
+              : notice?.text ||
+                (dirty
+                  ? 'Ada perubahan yang belum disimpan.'
+                  : 'Perubahan diterapkan setelah disimpan.')}
+          </p>
+          <div className="ml-auto flex items-center gap-2">
+            {dirty && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setConfig(baseline)
+                  setNotice(null)
+                }}
+                className="btn btn-ghost rounded-full text-sm text-white/60"
+              >
+                Batalkan
+              </button>
+            )}
+            <button
+              id="tour-save-btn"
+              type="button"
+              onClick={handleSave}
+              disabled={loading || saving || Boolean(loadError) || (!dirty && !isFirstSetup)}
+              className="btn rounded-full border-white bg-white px-5 text-sm text-neutral-900 hover:bg-white/90"
+            >
+              {saving ? (
+                <span className="loading loading-spinner loading-xs" />
+              ) : (
+                <Save size={16} />
+              )}
+              {isFirstSetup ? 'Simpan dan mulai' : 'Simpan perubahan'}
+            </button>
+          </div>
+        </div>
+      </footer>
+    </main>
   )
 }
-
-export default Configuration
+Configuration.propTypes = { isFirstSetup: PropTypes.bool, onSetupComplete: PropTypes.func }

@@ -13,6 +13,7 @@ Sebelum memasang MARK, pastikan komputer memenuhi persyaratan minimum berikut:
 - **Package Manager**: `npm` versi 9.x atau lebih baru (bawaan Node.js).
 - **Browser**: Microsoft Edge (Bawaan Windows) atau Google Chrome untuk mode browser runtime.
 - **PowerShell**: Windows PowerShell 5.1 atau PowerShell 7+ (Wajib untuk Win32 C# PC Automation Daemon).
+- **PowerShell**: Windows PowerShell 5.1 atau PowerShell 7+ (Wajib untuk Win32 C# Computer Use & PC Automation Daemon).
 - **Audio Output & Mic**: Mikrofon fungsional jika ingin menggunakan Wake Word ("Hey Mark") dan speaker untuk TTS.
 
 ---

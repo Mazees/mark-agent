@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, memo } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, memo } from 'react'
 import { useChat } from '../contexts/ChatContext'
 import Avatar from '../components/core/Avatar'
 import InputBar from '../components/core/InputBar'
@@ -6,12 +6,13 @@ import ResponseArea from '../components/core/ResponseArea'
 import StatusIndicator from '../components/core/StatusIndicator'
 import FloatingMenu from '../components/core/FloatingMenu'
 import ToolClustersDeck from '../components/core/ToolClustersDeck'
-import { MessageSquare, Sparkles, Terminal } from 'lucide-react'
+import { MessageSquare, Sparkles, Terminal, PanelRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import musicCoverFallback from '../assets/music-cover.png'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
-import { db, setSessionWorkspace, getAllConfig } from '../api/db'
+import { getAllConfig } from '../api/db'
+import { webApi } from '../api/web-bridge.js'
 
 /**
  * Komponen waveform bar terisolasi (direct ref style update)
@@ -54,7 +55,7 @@ const LiveWaveformBars = memo(() => {
 })
 LiveWaveformBars.displayName = 'LiveWaveformBars'
 
-const MarkHome = () => {
+const MarkHome = ({ isHome = true }) => {
   const navigate = useNavigate()
   const chatContext = useChat()
   const {
@@ -115,10 +116,11 @@ const MarkHome = () => {
 
   // Muat konfigurasi workspace & overlay opacity dari database
   useEffect(() => {
-    db.sessions
-      .get(1)
-      .then((s) => {
-        if (s?.workspaceRoot) setWorkspaceRoot(s.workspaceRoot)
+    let mounted = true
+    webApi
+      .getWorkspaceInfo()
+      .then((info) => {
+        if (mounted) setWorkspaceRoot(info.defaultWorkspaceRoot)
       })
       .catch(() => {})
 
@@ -135,28 +137,12 @@ const MarkHome = () => {
         setBgOverlayOpacity(Number(e.detail.bgOverlayOpacity))
       }
     }
-    const handleWorkspaceUpdated = (e) => {
-      if (String(e.detail?.sessionId) === '1') {
-        setWorkspaceRoot(e.detail?.workspaceRoot || null)
-      }
-    }
     window.addEventListener('config-updated', handleConfigUpdated)
-    window.addEventListener('session-workspace-updated', handleWorkspaceUpdated)
     return () => {
+      mounted = false
       window.removeEventListener('config-updated', handleConfigUpdated)
-      window.removeEventListener('session-workspace-updated', handleWorkspaceUpdated)
     }
   }, [])
-
-  const handleSelectWorkspace = async () => {
-    if (window.api && window.api.selectDirectory) {
-      const selected = await window.api.selectDirectory()
-      if (selected) {
-        await setSessionWorkspace(1, selected)
-        setWorkspaceRoot(selected)
-      }
-    }
-  }
 
   useEffect(() => {
     let lastSpeaking = false
@@ -202,7 +188,7 @@ const MarkHome = () => {
   }, [isMainLoading, chatData, isRecording, isProcessing, setOrbStatus])
 
   // Derived currentResponse from chatData
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (chatData && chatData.length > 0) {
       const lastItem = chatData[chatData.length - 1]
 
@@ -337,12 +323,15 @@ const MarkHome = () => {
       )}
 
       {/* ── 4. CENTER AVATAR (2.5D Cyber-Droid Companion) ── */}
-      <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center pointer-events-none select-none">
+      <div
+        className={`absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center select-none ${!isHome ? 'invisible pointer-events-none' : 'pointer-events-none'}`}
+      >
         <div className="scale-115 md:scale-140 lg:scale-165 xl:scale-180 pointer-events-auto cursor-pointer transition-transform duration-300">
           <Avatar
             status={computedAvatarStatus}
             intensity={audioIntensity}
             mood={mood}
+            isActive={isHome}
             onInteract={handleAvatarInteract}
           />
         </div>
@@ -353,7 +342,7 @@ const MarkHome = () => {
 
       {/* ── 6. RIGHT PANEL: ACTIVE STREAM FEED (Docked Right, Clean Minimalist Glass) ── */}
       <aside className="absolute right-6 top-18 bottom-24 w-80 lg:w-92 z-20 flex flex-col gap-2.5 pointer-events-auto">
-        <div className="flex-1 bg-black/40 backdrop-blur-xl border border-white/5 rounded-2xl p-3.5 shadow-2xl flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 bg-[#0e1614]/85 backdrop-blur-md border border-white/5 rounded-2xl p-3.5 shadow-2xl flex flex-col min-h-0 overflow-hidden">
           {/* Header */}
           <div className="flex flex-col gap-2 pb-2 mb-2 border-b border-white/5">
             <div className="flex items-center justify-between">
@@ -480,7 +469,6 @@ const MarkHome = () => {
             onStop={() => handleStop(1)}
             source={inputSource}
             workspaceRoot={workspaceRoot}
-            onSelectWorkspace={handleSelectWorkspace}
           />
         </div>
       </footer>

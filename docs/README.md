@@ -11,7 +11,7 @@ Selamat datang di repositori dokumentasi arsitektur dan teknis sistem **MARK**. 
 MARK adalah sistem operasi kecerdasan buatan otonom (_Autonomous AI OS Companion_) yang berfokus pada privasi (_privacy-first_), bekerja secara lokal di lingkungan desktop pengguna (Windows 10/11), dan dirancang dengan arsitektur terdesentralisasi:
 
 - **Decoupled Architecture**: Memisahkan backend server berbasis Node.js ESM murni dengan antarmuka pengguna WebUI modern (React 19 / Vite 7 / Tailwind CSS 4) yang berjalan di Microsoft Edge App Mode.
-- **Centralized Local Storage**: Seluruh riwayat percakapan, memori relasional, dokumen, task, dan sub-agent disimpan secara terpusat di engine SQLite lokal (`~/.config/mark-agent/mark.db`) dengan mode WAL (_Write-Ahead Logging_).
+- **Centralized Local Storage**: Riwayat percakapan, memori relasional, task, dan sub-agent disimpan secara terpusat di engine SQLite lokal (`~/.config/mark-agent/mark.db`) dengan mode WAL (_Write-Ahead Logging_). Data dokumen Knowledge lama tetap disimpan untuk kompatibilitas backup, tetapi tidak lagi digunakan sebagai konteks AI.
 - **Hybrid AI Engine**: Mendukung inferensi lokal tanpa batas via LM Studio / Ollama, cloud API berkecepatan tinggi (Groq, Cerebras, Custom OpenAI-compatible), dan Google Gemini Web RPC engine bawaan.
 - **Autonomous Multi-Agent System**: Memiliki mesin Sub-Agent independen (_Mission Control_) dengan isolasi sesi browser Puppeteer konkuren, tanpa batasan giliran (_no maxTurns limit_).
 - **Deep Desktop & Web Automation**: Otomasi Win32 via daemon C# persisten untuk kontrol mouse/keyboard tingkat rendah, serta otomasi browser dengan parsing DOM interaktif (maksimal 80 elemen).
@@ -75,6 +75,7 @@ Sistem otomasi desktop, manipulasi berkas, dan penjelajahan web.
 
 - [Native Tools Registry & Plugins](./04-automation-and-tools/native-tools-registry.md): Peta komposisi tool, registry facade, dan sistem plugin eksternal.
 - [Windows PC Automation Daemon](./04-automation-and-tools/pc-automation.md): Komunikasi IPC dengan C# Win32 daemon, SendInput Unicode, dan window tracking.
+- [Computer Use & Windows PC Automation Daemon](./04-automation-and-tools/pc-automation.md): Kendali visual OS (Visual VLA 1280x720, in-memory GDI capture, input primitives), komunikasi IPC C# Win32 daemon, dan window tracking.
 - [Browser Automation Engine](./04-automation-and-tools/browser-automation.md): Multi-session Puppeteer, DOM parser 80 elemen, blocking overlay, dan Holo preview.
 
 ### [05. Voice & Multimodal](./05-voice-and-multimodal/voice-pipeline.md)

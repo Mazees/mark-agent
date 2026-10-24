@@ -1,16 +1,10 @@
-import {
-  FaFire,
-  FaTheaterMasks,
-  FaHandshake,
-  FaBolt,
-  FaRobot
-} from 'react-icons/fa'
+import { FaFire, FaTheaterMasks, FaHandshake, FaBolt, FaRobot } from 'react-icons/fa'
 
 export const TRAIT_META = [
   {
     key: 'warmth',
     label: 'Kehangatan',
-    desc: 'Kehangatan & keakraban emosional',
+    desc: 'Keakraban dalam percakapan',
     color: 'text-error',
     border: 'border-error/20',
     bg: 'bg-error/10',
@@ -21,7 +15,7 @@ export const TRAIT_META = [
   {
     key: 'sarcasm_level',
     label: 'Sarkasme',
-    desc: 'Level sarkas & toxic-friendly',
+    desc: 'Intensitas humor dan sindiran',
     color: 'text-warning',
     border: 'border-warning/20',
     bg: 'bg-warning/10',
@@ -32,7 +26,7 @@ export const TRAIT_META = [
   {
     key: 'trust',
     label: 'Kepercayaan',
-    desc: 'Kepercayaan & keterbukaan',
+    desc: 'Keterbukaan saat berinteraksi',
     color: 'text-success',
     border: 'border-success/20',
     bg: 'bg-success/10',
@@ -43,7 +37,7 @@ export const TRAIT_META = [
   {
     key: 'energy',
     label: 'Energi',
-    desc: 'Baseline mood & energi',
+    desc: 'Tingkat energi dalam respons',
     color: 'text-info',
     border: 'border-info/20',
     bg: 'bg-info/10',
@@ -54,7 +48,7 @@ export const TRAIT_META = [
   {
     key: 'obedience',
     label: 'Kepatuhan',
-    desc: 'Pelayan vs mandiri',
+    desc: 'Kecenderungan mengikuti arahan',
     color: 'text-secondary',
     border: 'border-secondary/20',
     bg: 'bg-secondary/10',
@@ -81,22 +75,22 @@ export function describePersonality(traits) {
 
   if (warmth >= 0.7) parts.push('hangat dan akrab')
   else if (warmth <= 0.3) parts.push('dingin dan berjarak')
-  else parts.push('ramah standar')
+  else parts.push('ramah')
 
-  if (sarcasm_level >= 0.7) parts.push('suka roasting')
-  else if (sarcasm_level <= 0.3) parts.push('sopan dan kalem')
-  else parts.push('witty tapi sopan')
+  if (sarcasm_level >= 0.7) parts.push('sering menyindir')
+  else if (sarcasm_level <= 0.3) parts.push('sopan dan tenang')
+  else parts.push('humoris tetapi tetap sopan')
 
-  if (trust >= 0.7) parts.push('blak-blakan')
+  if (trust >= 0.7) parts.push('terus terang')
   else if (trust <= 0.3) parts.push('hati-hati dan formal')
   else parts.push('cukup terbuka')
 
   if (energy >= 0.7) parts.push('penuh semangat')
   else if (energy <= 0.3) parts.push('kalem dan tenang')
-  else parts.push('mood stabil')
+  else parts.push('memiliki suasana hati yang stabil')
 
-  if (obedience >= 0.7) parts.push('sangat penurut')
-  else if (obedience <= 0.3) parts.push('berani membantah')
+  if (obedience >= 0.7) parts.push('cenderung mengikuti arahan')
+  else if (obedience <= 0.3) parts.push('lebih mandiri dalam menanggapi arahan')
 
   return `Mark saat ini bersikap ${parts.join(', ')}.`
 }

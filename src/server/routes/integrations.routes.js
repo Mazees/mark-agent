@@ -13,6 +13,7 @@ import {
   sendTelegramScreenshot,
   triggerTelegramMusicDownload,
   finishAgentExecution,
+  updateAgentProgress,
   uiMessageHistory as tgMessageHistory
 } from '../../main/telegram/telegram-service.js'
 
@@ -84,6 +85,11 @@ integrationsRouter.post('/telegram/agent-done', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }
+})
+
+integrationsRouter.post('/telegram/progress', (req, res) => {
+  const { msgId, reason } = req.body || {}
+  res.json({ success: updateAgentProgress({ msgId, reason }) })
 })
 
 integrationsRouter.post('/telegram/broadcast', async (req, res) => {

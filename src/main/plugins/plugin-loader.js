@@ -6,6 +6,7 @@ import { execSync } from 'child_process'
 
 let loadedPlugins = []
 let pluginActionHandlers = new Map()
+let loadPluginsPromise = null
 
 export function getPluginsDirectory() {
   const dir = path.join(os.homedir(), 'Documents', 'Mark Plugins')
@@ -17,95 +18,139 @@ export function getPluginsDirectory() {
 
 export const getPluginsDir = getPluginsDirectory
 
+async function assertUnmanagedPlugin(pluginName) {
+  if (typeof pluginName !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(pluginName)) {
+    throw new Error('Nama folder plugin tidak valid.')
+  }
+  const file = path.join(getPluginsDirectory(), pluginName, 'plugin.json')
+  const manifest = await fs.promises
+    .readFile(file, 'utf8')
+    .then(JSON.parse)
+    .catch(() => null)
+  if (manifest?.managedByAddon) {
+    throw Object.assign(new Error('Plugin ini dikelola melalui Add-ons > Chrome Bridge.'), {
+      status: 409
+    })
+  }
+  return manifest
+}
+
 export async function loadAllPlugins() {
-  const dir = getPluginsDirectory()
-  loadedPlugins = []
-  pluginActionHandlers.clear()
+  if (loadPluginsPromise) {
+    return loadPluginsPromise
+  }
 
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true })
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const pluginDir = path.join(dir, entry.name)
-      const manifestPath = path.join(pluginDir, 'plugin.json')
-      const indexPath = path.join(pluginDir, 'index.js')
+  loadPluginsPromise = (async () => {
+    try {
+      const dir = getPluginsDirectory()
+      const newPlugins = []
+      const newHandlers = new Map()
+      const seenNames = new Set()
 
-      if (fs.existsSync(manifestPath) && fs.existsSync(indexPath)) {
-        try {
-          const manifestRaw = await fs.promises.readFile(manifestPath, 'utf-8')
-          const manifest = JSON.parse(manifestRaw)
-          manifest.folderName = entry.name
-          manifest.folderPath = pluginDir
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const pluginDir = path.join(dir, entry.name)
+          const manifestPath = path.join(pluginDir, 'plugin.json')
+          const indexPath = path.join(pluginDir, 'index.js')
 
-          const moduleUrl = `${pathToFileURL(indexPath).href}?t=${Date.now()}`
-          const module = await import(moduleUrl)
-          const handlerInstance = module.default || module
+          if (fs.existsSync(manifestPath) && fs.existsSync(indexPath)) {
+            try {
+              const manifestRaw = await fs.promises.readFile(manifestPath, 'utf-8')
+              const manifest = JSON.parse(manifestRaw)
+              manifest.editable = manifest.editable !== false
 
-          const indexContent = await fs.promises.readFile(indexPath, 'utf-8')
-
-          if (manifest.isEnabled !== false && Array.isArray(manifest.actions)) {
-            for (const act of manifest.actions) {
-              const actHandler =
-                handlerInstance[act.name] ||
-                (typeof handlerInstance === 'function' ? handlerInstance : null)
-              if (typeof actHandler === 'function') {
-                pluginActionHandlers.set(act.name, {
-                  handler: actHandler,
-                  pluginName: manifest.name,
-                  actionName: act.name
-                })
+              if (!manifest.name || seenNames.has(manifest.name.toLowerCase())) {
+                continue
               }
+              seenNames.add(manifest.name.toLowerCase())
 
-              // Extract function body for Monaco editor
-              const searchPatterns = [
-                `'${act.name}': async ({ query }) => {`,
-                `"${act.name}": async ({ query }) => {`,
-                `${act.name}: async ({ query }) => {`,
-                `'${act.name}': async (query) => {`,
-                `"${act.name}": async (query) => {`,
-                `${act.name}: async (query) => {`
-              ]
+              manifest.folderName = entry.name
+              manifest.folderPath = pluginDir
 
-              let startIdx = -1
-              let matchedPatternLen = 0
-              for (const pat of searchPatterns) {
-                const idx = indexContent.indexOf(pat)
-                if (idx !== -1) {
-                  startIdx = idx
-                  matchedPatternLen = pat.length
-                  break
-                }
-              }
+              const moduleUrl = `${pathToFileURL(indexPath).href}?t=${Date.now()}`
+              const module = await import(moduleUrl)
+              const handlerInstance = module.default || module
 
-              if (startIdx !== -1) {
-                let i = startIdx + matchedPatternLen
-                let openBrackets = 1
-                for (; i < indexContent.length; i++) {
-                  if (indexContent[i] === '{') openBrackets++
-                  if (indexContent[i] === '}') {
-                    openBrackets--
-                    if (openBrackets === 0) break
+              const indexContent = await fs.promises.readFile(indexPath, 'utf-8')
+
+              if (Array.isArray(manifest.actions)) {
+                for (const act of manifest.actions) {
+                  const actHandler =
+                    handlerInstance[act.name] ||
+                    (typeof handlerInstance === 'function' ? handlerInstance : null)
+                  if (manifest.isEnabled !== false && typeof actHandler === 'function') {
+                    newHandlers.set(`${manifest.name}/${act.name}`, {
+                      handler: actHandler,
+                      pluginName: manifest.name,
+                      actionName: act.name
+                    })
+                  }
+
+                  // Extract function body for Monaco editor
+                  const searchPatterns = [
+                    `'${act.name}': async ({ query }) => {`,
+                    `"${act.name}": async ({ query }) => {`,
+                    `${act.name}: async ({ query }) => {`,
+                    `'${act.name}': async (query) => {`,
+                    `"${act.name}": async (query) => {`,
+                    `${act.name}: async (query) => {`
+                  ]
+
+                  let startIdx = -1
+                  let matchedPatternLen = 0
+                  for (const pat of searchPatterns) {
+                    const idx = indexContent.indexOf(pat)
+                    if (idx !== -1) {
+                      startIdx = idx
+                      matchedPatternLen = pat.length
+                      break
+                    }
+                  }
+
+                  if (startIdx !== -1) {
+                    let i = startIdx + matchedPatternLen
+                    let openBrackets = 1
+                    for (; i < indexContent.length; i++) {
+                      if (indexContent[i] === '{') openBrackets++
+                      if (indexContent[i] === '}') {
+                        openBrackets--
+                        if (openBrackets === 0) break
+                      }
+                    }
+                    const rawCode = indexContent.substring(startIdx + matchedPatternLen, i)
+                    act.code = rawCode
+                      .split('\n')
+                      .map((l) =>
+                        l.startsWith('    ')
+                          ? l.substring(4)
+                          : l.startsWith('  ')
+                            ? l.substring(2)
+                            : l
+                      )
+                      .join('\n')
+                      .trim()
                   }
                 }
-                const rawCode = indexContent.substring(startIdx + matchedPatternLen, i)
-                act.code = rawCode
-                  .split('\n')
-                  .map((l) =>
-                    l.startsWith('    ') ? l.substring(4) : l.startsWith('  ') ? l.substring(2) : l
-                  )
-                  .join('\n')
-                  .trim()
               }
+
+              newPlugins.push(manifest)
+            } catch (err) {
+              console.error(`[Plugin Loader] Gagal memuat plugin ${entry.name}:`, err)
             }
           }
-
-          loadedPlugins.push(manifest)
-        } catch (err) {
-          console.error(`[Plugin Loader] Gagal memuat plugin ${entry.name}:`, err)
         }
       }
+
+      loadedPlugins = newPlugins
+      pluginActionHandlers = newHandlers
+      return loadedPlugins
+    } finally {
+      loadPluginsPromise = null
     }
-  }
-  return loadedPlugins
+  })()
+
+  return loadPluginsPromise
 }
 
 export const loadPlugins = loadAllPlugins
@@ -141,41 +186,37 @@ export function normalizePluginQuery(rawQuery) {
 }
 
 function findRegisteredAction(actionName) {
-  let registered = pluginActionHandlers.get(actionName)
-  if (!registered && typeof actionName === 'string') {
-    const lowerName = actionName.toLowerCase()
-    for (const [key, value] of pluginActionHandlers.entries()) {
-      const fullKey = `plugin-${value.pluginName}-${value.actionName}`.toLowerCase()
-      if (
-        key.toLowerCase() === lowerName ||
-        fullKey === lowerName ||
-        lowerName.endsWith(`-${key.toLowerCase()}`) ||
-        lowerName.endsWith(`_${key.toLowerCase()}`)
-      ) {
-        return value
-      }
-    }
+  if (typeof actionName !== 'string') return null
+  const name = actionName.toLowerCase()
+  const matches = [...pluginActionHandlers.values()].filter((action) => {
+    const legacyName = `plugin-${action.pluginName}-${action.actionName}`.toLowerCase()
+    return action.actionName.toLowerCase() === name || legacyName === name
+  })
+  if (matches.length > 1) {
+    throw new Error(
+      `Nama tool '${actionName}' digunakan beberapa plugin. Ubah nama aksi agar unik.`
+    )
   }
-  return registered
+  return matches[0] || null
 }
 
 export async function executePluginAction(actionName, query) {
-  let registered = findRegisteredAction(actionName)
-
-  // Lazy reload on cache miss jika plugin baru ditambah ke disk saat runtime
-  if (!registered) {
-    await loadAllPlugins()
-    registered = findRegisteredAction(actionName)
-  }
-
-  if (!registered) {
-    return {
-      success: false,
-      error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.`
-    }
-  }
-
   try {
+    let registered = findRegisteredAction(actionName)
+
+    // Lazy reload on cache miss jika plugin baru ditambah ke disk saat runtime
+    if (!registered) {
+      await loadAllPlugins()
+      registered = findRegisteredAction(actionName)
+    }
+
+    if (!registered) {
+      return {
+        success: false,
+        error: `Action plugin '${actionName}' tidak ditemukan atau sedang dinonaktifkan.`
+      }
+    }
+
     const cleanQuery = normalizePluginQuery(query)
 
     // Buat polymorphic payload agar kompatibel dengan handler `{ query }` maupun `(query)` atau direct template literals
@@ -203,15 +244,40 @@ export async function savePluginDefinition(payload) {
     description,
     actions = [],
     dependencies = [],
-    isEdit = false
+    isEdit = false,
+    editable = true
   } = payload
+  if (typeof editable !== 'boolean') {
+    throw Object.assign(new Error('Properti editable harus berupa true atau false.'), {
+      status: 400
+    })
+  }
   const cleanName = (name || '').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()
   if (!cleanName) {
     throw new Error('Nama plugin wajib diisi.')
   }
 
   const dir = getPluginsDirectory()
-  const pluginDir = path.join(dir, cleanName)
+  let folderName = cleanName
+  for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const candidate = await fs.promises
+      .readFile(path.join(dir, entry.name, 'plugin.json'), 'utf8')
+      .then(JSON.parse)
+      .catch(() => null)
+    if (typeof candidate?.name === 'string' && candidate.name.toLowerCase() === cleanName) {
+      folderName = entry.name
+      break
+    }
+  }
+  const pluginDir = path.join(dir, folderName)
+  const existing = await assertUnmanagedPlugin(folderName)
+  if (existing?.editable === false) {
+    throw Object.assign(
+      new Error('Plugin ini tidak dapat diedit karena editable bernilai false.'),
+      { status: 403 }
+    )
+  }
 
   if (!isEdit && fs.existsSync(pluginDir)) {
     throw new Error(`Plugin dengan nama '${cleanName}' sudah ada.`)
@@ -238,11 +304,13 @@ export async function savePluginDefinition(payload) {
   }))
 
   const manifest = {
+    ...existing,
     name: cleanName,
     displayName: displayName || cleanName,
     description: description || '',
-    version: '1.0.0',
-    isEnabled: true,
+    version: existing?.version || '1.0.0',
+    isEnabled: existing?.isEnabled !== false,
+    editable,
     dependencies: depsList,
     actions: manifestActions
   }
@@ -281,6 +349,7 @@ export async function savePluginDefinition(payload) {
 }
 
 export async function togglePluginState(pluginName, isEnabled) {
+  await assertUnmanagedPlugin(pluginName)
   const dir = getPluginsDirectory()
   const manifestPath = path.join(dir, pluginName, 'plugin.json')
   if (fs.existsSync(manifestPath)) {
@@ -295,6 +364,7 @@ export async function togglePluginState(pluginName, isEnabled) {
 }
 
 export async function deletePlugin(pluginName) {
+  await assertUnmanagedPlugin(pluginName)
   const dir = getPluginsDirectory()
   const pluginDir = path.join(dir, pluginName)
   if (fs.existsSync(pluginDir)) {

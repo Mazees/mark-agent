@@ -745,10 +745,11 @@ export async function executeAgentTool({
     if (!groupName) {
       res = {
         success: false,
-        message: 'Harap sebutkan group_name yang ingin dimuat (misal: "advanced_browser").'
+        message:
+          'Harap sebutkan group_name yang ingin dimuat (misal: "advanced_browser", "youtube_music").'
       }
     } else if (groups[groupName]) {
-      const toolDescriptions = Object.entries(groups[groupName].tools)
+      const toolDescriptions = Object.entries(groups[groupName].tools || {})
         .map(([k, v]) => `- ${k}: ${v}`)
         .join('\n')
       res = {
@@ -771,7 +772,7 @@ export async function executeAgentTool({
         const actionDescs = (matchedPlugin.actions || [])
           .map(
             (act) =>
-              `- plugin-${matchedPlugin.name}-${act.name}: ${act.description || act.triggerHint || ''}`
+              `- ${act.name}: ${act.description || act.triggerHint || ''}`
           )
           .join('\n')
         res = {
@@ -876,6 +877,10 @@ export async function executeAgentTool({
     const activeConfig = {
       ...(Array.isArray(config) ? config[0] : config),
       workspaceRoot: context?.workspaceRoot
+    }
+    if (tool.startsWith('browser-')) {
+      const sessionId = String(context?.sessionId || activeSessionNum || 1)
+      activeConfig.sessionId = sessionId === '1' ? 'main' : `workspace-${sessionId}`
     }
     const nativePromise = window.api.executeNativeTool(tool, rawArgs, activeConfig)
     const abortPromise = new Promise((_, reject) => {

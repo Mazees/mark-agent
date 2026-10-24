@@ -160,7 +160,11 @@ export const subagentStore = {
    */
   async getMessages(subagentId) {
     if (!subagentId || deletedSubagentIds.has(subagentId)) return []
-    return await db.subagent_messages.where('subagentId').equals(subagentId).sortBy('timestamp')
+    return await db.subagent_messages
+      .where('subagentId')
+      .equals(subagentId)
+      .sortBy('timestamp')
+      .toArray()
   },
 
   /**

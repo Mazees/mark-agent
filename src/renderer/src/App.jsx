@@ -5,13 +5,13 @@ import TelegramBot from './pages/TelegramBot'
 import Plugins from './pages/Plugins'
 import Skills from './pages/Skills'
 import SkillEditor from './pages/SkillEditor'
-import Knowledge from './pages/Knowledge'
 import Guidebook from './pages/Guidebook'
 import NeuralCore from './pages/NeuralCore'
-import GoogleWorkspace from './pages/GoogleWorkspace'
+import AddonDetailRoute from './pages/AddonDetailRoute'
+import Addons from './pages/Addons'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
-import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { ChatProvider } from './contexts/ChatContext'
 import { YoutubeMusicProvider } from './contexts/YoutubeMusicContext'
 import { ApprovalProvider } from './contexts/ApprovalContext'
@@ -131,7 +131,7 @@ const MainLayout = () => {
     <div className="relative h-screen w-screen overflow-hidden bg-[#0f1715] text-[#cac9c9]">
       {/* Base Home Page - Always Mounted so AI Agent & Telegram Listeners Never Die */}
       <div className="h-full w-full">
-        <MarkHome />
+        <MarkHome isHome={isHome} />
       </div>
 
       {/* Floating Glass Sub-page Overlay */}
@@ -142,14 +142,21 @@ const MainLayout = () => {
               <Route path="/chat" element={<ChatStudio />} />
               <Route path="/config" element={<Configuration />} />
               <Route path="/plugins" element={<Plugins />} />
+              <Route path="/plugins/:pluginName" element={<Plugins />} />
               <Route path="/skills" element={<Skills />} />
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />
-              <Route path="/google-workspace" element={<GoogleWorkspace />} />
-              <Route path="/knowledge" element={<Knowledge />} />
+              <Route path="/addons" element={<Addons />} />
+              <Route path="/addons/:addonId" element={<AddonDetailRoute />} />
+              <Route
+                path="/google-workspace"
+                element={<Navigate to="/addons/google-workspace" replace />}
+              />
+              <Route path="/knowledge" element={<Navigate to="/" replace />} />
               <Route path="/guidebook" element={<Guidebook />} />
               <Route path="/neural-core" element={<NeuralCore />} />
               <Route path="/subagents" element={<Subagents />} />
+              <Route path="/subagents/:agentId" element={<Subagents />} />
             </Routes>
           </div>
         </div>
@@ -173,9 +180,25 @@ function App() {
 
   useEffect(() => {
     const checkConfig = async () => {
-      // 1. Init Orama and Hydrate from Database
+      // 0. Cek konfigurasi terlebih dahulu: jika fresh install / DB kosong, langsung buka Configuration tanpa loading berat
       try {
-        setLoadingText('Memuat Knowledge Base...')
+        const data = await getAllConfig()
+        if (!data || data.length === 0) {
+          setHasConfig(false)
+          setIsChecking(false)
+          return
+        }
+        setHasConfig(true)
+        if (window.api && window.api.syncConfig) {
+          window.api.syncConfig(data[0])
+        }
+      } catch (err) {
+        console.error('[App] Failed to check initial config:', err)
+      }
+
+      // 1. Init Orama and Hydrate from Database (hanya saat config sudah tersedia)
+      try {
+        setLoadingText('Memuat indeks memori...')
         await initOramaIndices()
         await hydrateFromDb((current, total) => {
           setLoadingText(`Mengindeks memori percakapan lama (${current}/${total})...`)
@@ -220,16 +243,6 @@ function App() {
         console.error('[App] Failed to load Transformers:', e)
       }
 
-      // 2. Load config
-      const data = await getAllConfig()
-      if (!data || data.length === 0) {
-        setHasConfig(false)
-      } else {
-        setHasConfig(true)
-        if (window.api && window.api.syncConfig) {
-          window.api.syncConfig(data[0])
-        }
-      }
       setIsChecking(false)
     }
     checkConfig()
@@ -275,7 +288,9 @@ function App() {
     return <Configuration isFirstSetup={true} onSetupComplete={() => window.location.reload()} />
   }
 
-  const isStandalone = window.location.hash.includes('telegram-bot')
+  const isStandalone =
+    window.location.hash.includes('telegram-bot') ||
+    window.location.hash.includes('/addons/telegram')
 
   return (
     <HashRouter>

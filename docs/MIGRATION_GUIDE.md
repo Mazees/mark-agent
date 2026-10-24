@@ -68,7 +68,7 @@ Jika pada MARK versi sebelumnya belum tersedia tombol ekspor di menu Pengaturan,
 ```
 
 5. Browser / aplikasi akan otomatis mendownload file JSON (misalnya `mark-backup-2026-xx-xx.json`).
-6. Simpan file tersebut di lokasi yang aman. File ini mencakup seluruh memori kognitif, chat turns, riwayat sesi, knowledge document, relasi 4D, dan skill yang pernah dipelajari.
+6. Simpan file tersebut di lokasi yang aman. File ini mencakup seluruh memori kognitif, chat turns, riwayat sesi, data dokumen lama, relasi 4D, dan skill yang pernah dipelajari. Data `documents` tetap dipulihkan dan ikut export berikutnya, tetapi fitur Knowledge sudah dihapus sehingga data tersebut tidak lagi diindeks atau disisipkan ke konteks AI.
 
 ---
 

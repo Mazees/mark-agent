@@ -151,17 +151,6 @@ public class MarkPcOverlayForm : Form {
     }
 
     private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
-        if (nCode >= 0) {
-            MSLLHOOKSTRUCT hookStruct = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
-
-            // Allow injected events (AI automation) to pass, block physical user movements
-            bool isInjected = (hookStruct.flags & LLMHF_INJECTED) != 0 ||
-                              (hookStruct.flags & LLMHF_LOWER_IL_INJECTED) != 0;
-
-            if (!isInjected) {
-                return (IntPtr)1; // Block physical mouse movement 100%
-            }
-        }
         return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
     }
 

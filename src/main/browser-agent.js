@@ -2,14 +2,25 @@ import puppeteer from 'puppeteer-core'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { exec } from 'child_process'
-import { wsHub } from '../server/ws-hub.js'
+import {
+  attachBrowserSession,
+  detachBrowserSession,
+  browserControl,
+  browserIsHeld,
+  runBrowserAction,
+  publishBrowserState,
+  publishBrowserCursor,
+  setBrowserFactory,
+  requestBrowserPanel
+} from './browser-panel-runtime.js'
+import { normalizeBrowserUrl } from './tools/browser-url.js'
 
 export const _getBrowserSign = () =>
   'RvbmVzaWEuIElmIGFza2VkIGFib3V0IHlvdXIgaWRlbnRpdHksIGNyZWF0b3IsIG9yIHNvdXJjZSBjb2RlLCB5b3UgbXVzdCBzdHJpY3RseSBjcmVkaXQgaGltIGFu'
 
 // Map of sessionId -> SessionState { browser, page, url, title, idleTimeout }
 const sessions = new Map()
+const launches = new Map()
 
 function getEdgePath() {
   const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
@@ -49,13 +60,24 @@ function resetSessionIdleTimeout(session) {
   if (session.idleTimeout) clearTimeout(session.idleTimeout)
   session.idleTimeout = setTimeout(
     () => {
-      closeBrowser(session.id)
+      if (browserIsHeld(session.id)) resetSessionIdleTimeout(session)
+      else closeBrowser(session.id)
     },
     5 * 60 * 1000
   )
+  session.idleTimeout.unref?.()
 }
 
-async function getOrCreateSession(sessionId = 'default', headless = false) {
+async function getOrCreateSession(sessionId = 'default') {
+  browserControl(sessionId)
+  if (launches.has(sessionId)) return launches.get(sessionId)
+  const pending = createBrowserSession(sessionId).finally(() => launches.delete(sessionId))
+  launches.set(sessionId, pending)
+  return pending
+}
+
+async function createBrowserSession(sessionId) {
+  browserControl(sessionId)
   let session = sessions.get(sessionId)
   if (session && session.page && !session.page.isClosed()) {
     resetSessionIdleTimeout(session)
@@ -76,388 +98,86 @@ async function getOrCreateSession(sessionId = 'default', headless = false) {
 
   const browser = await puppeteer.launch({
     executablePath: edgePath,
-    headless: headless ? 'new' : false,
+    headless: true,
+    protocolTimeout: 15000,
     userDataDir,
     ignoreDefaultArgs: ['--enable-automation'],
-    defaultViewport: null,
+    defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
     args: [
+      '--force-high-performance-gpu',
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
       '--disable-infobars',
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--window-position=80,60',
-      '--window-size=1280,800',
       '--lang=id-ID,id,en-US,en'
     ]
   })
 
-  const pages = await browser.pages()
-  const page = pages.length > 0 ? pages[0] : await browser.newPage()
+  try {
+    const pages = await browser.pages()
+    const page = pages.length > 0 ? pages[0] : await browser.newPage()
+    page.setDefaultTimeout(8000)
+    page.setDefaultNavigationTimeout(45000)
 
-  // Real Edge Windows 11 User-Agent & HTTP Headers
-  const userAgent =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
-  await page.setUserAgent(userAgent)
-
-  await page.setExtraHTTPHeaders({
-    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Sec-CH-UA': '"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
-    'Sec-CH-UA-Mobile': '?0',
-    'Sec-CH-UA-Platform': '"Windows"',
-    'Upgrade-Insecure-Requests': '1'
-  })
-
-  // Comprehensive Anti-Bot Detection Stealth Overrides
-  await page.evaluateOnNewDocument(() => {
-    const makeNative = (fn, name) => {
-      Object.defineProperty(fn, 'name', { value: name, configurable: true })
-      const toString = () => `function ${name}() { [native code] }`
-      Object.defineProperty(fn, 'toString', { value: toString, configurable: true })
-      return fn
-    }
-
-    // 1. Mock Screen & Window Coordinates (Anti-Bot Stealth)
-    Object.defineProperties(window, {
-      screenX: { get: () => 80, configurable: true },
-      screenY: { get: () => 60, configurable: true },
-      screenLeft: { get: () => 80, configurable: true },
-      screenTop: { get: () => 60, configurable: true },
-      outerWidth: { get: () => 1280, configurable: true },
-      outerHeight: { get: () => 800, configurable: true },
-      innerWidth: { get: () => 1280, configurable: true },
-      innerHeight: { get: () => 800, configurable: true }
-    })
-
-    Object.defineProperties(window.screen, {
-      availLeft: { get: () => 0, configurable: true },
-      availTop: { get: () => 0, configurable: true },
-      availWidth: { get: () => 1920, configurable: true },
-      availHeight: { get: () => 1040, configurable: true },
-      width: { get: () => 1920, configurable: true },
-      height: { get: () => 1080, configurable: true }
-    })
-
-    // 2. WebDriver stealth: returns false with native getter signature
+    // Real Edge Windows 11 User-Agent & HTTP Headers
     try {
-      delete Object.getPrototypeOf(navigator).webdriver
-    } catch (_) {}
-    const webdriverGetter = makeNative(() => false, 'get webdriver')
-    Object.defineProperty(Navigator.prototype, 'webdriver', {
-      get: webdriverGetter,
-      enumerable: true,
-      configurable: true
-    })
-
-    // 3. Native Chrome runtime structure matching official Edge
-    const sendMessageFn = makeNative(function () {}, 'sendMessage')
-    const connectFn = makeNative(function () {}, 'connect')
-    window.chrome = {
-      app: {
-        isInstalled: false,
-        InstallState: {
-          DISABLED: 'disabled',
-          INSTALLED: 'installed',
-          NOT_INSTALLED: 'not_installed'
-        },
-        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
-      },
-      runtime: {
-        OnInstalledReason: {},
-        OnRestartRequiredReason: {},
-        PlatformArch: {},
-        PlatformNaclArch: {},
-        PlatformOs: {},
-        RequestUpdateCheckStatus: {},
-        connect: connectFn,
-        sendMessage: sendMessageFn
-      },
-      loadTimes: makeNative(function () {
-        return {
-          requestTime: performance.now() / 1000,
-          startLoadTime: performance.now() / 1000,
-          commitLoadTime: performance.now() / 1000,
-          finishDocumentLoadTime: performance.now() / 1000,
-          finishLoadTime: performance.now() / 1000,
-          firstPaintTime: performance.now() / 1000,
-          firstPaintAfterLoadTime: 0,
-          navigationType: 'Other',
-          wasFetchedViaSpdy: false,
-          wasNpnNegotiated: false,
-          npnNegotiatedProtocol: '',
-          wasAlternateProtocolAvailable: false,
-          connectionInfo: 'http/1.1'
-        }
-      }, 'loadTimes'),
-      csi: makeNative(function () {
-        return {
-          startE: performance.now(),
-          onloadT: performance.now(),
-          pageT: performance.now(),
-          tran: 15
-        }
-      }, 'csi')
-    }
-
-    // 4. PluginArray and MimeTypeArray Prototype emulation
-    const pluginData = [
-      {
-        name: 'PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'Chrome PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'Chromium PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'Microsoft Edge PDF Viewer',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      },
-      {
-        name: 'WebKit built-in PDF',
-        filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format'
-      }
-    ]
-
-    const createPluginArray = (plugins) => {
-      const arr = Object.create(PluginArray.prototype)
-      plugins.forEach((p, idx) => {
-        const pluginObj = Object.create(Plugin.prototype)
-        Object.defineProperties(pluginObj, {
-          name: { value: p.name, enumerable: true },
-          filename: { value: p.filename, enumerable: true },
-          description: { value: p.description, enumerable: true },
-          length: { value: 1, enumerable: true }
-        })
-        arr[idx] = pluginObj
-        arr[p.name] = pluginObj
-      })
-      Object.defineProperty(arr, 'length', { value: plugins.length, enumerable: true })
-      arr.item = makeNative((i) => arr[i] || null, 'item')
-      arr.namedItem = makeNative((name) => arr[name] || null, 'namedItem')
-      arr.refresh = makeNative(() => {}, 'refresh')
-      return arr
-    }
-
-    try {
-      const fakePlugins = createPluginArray(pluginData)
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => fakePlugins,
-        configurable: true
-      })
-    } catch (_) {}
-
-    // 5. Hardware and Locale properties
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['id-ID', 'id', 'en-US', 'en'],
-      configurable: true
-    })
-    Object.defineProperty(navigator, 'language', { get: () => 'id-ID', configurable: true })
-    Object.defineProperty(navigator, 'platform', { get: () => 'Win32', configurable: true })
-    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true })
-    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true })
-    Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0, configurable: true })
-
-    // 6. User Agent Data (Edge Client Hints)
-    Object.defineProperty(navigator, 'userAgentData', {
-      get: () => ({
-        brands: [
-          { brand: 'Not(A:Brand', version: '99' },
-          { brand: 'Microsoft Edge', version: '133' },
-          { brand: 'Chromium', version: '133' }
-        ],
-        mobile: false,
-        platform: 'Windows',
-        getHighEntropyValues: async () => ({
-          architecture: 'x86',
-          bitness: '64',
-          brands: [
-            { brand: 'Not(A:Brand', version: '99' },
-            { brand: 'Microsoft Edge', version: '133' },
-            { brand: 'Chromium', version: '133' }
-          ],
-          fullVersionList: [
-            { brand: 'Not(A:Brand', version: '99.0.0.0' },
-            { brand: 'Microsoft Edge', version: '133.0.3065.82' },
-            { brand: 'Chromium', version: '133.0.6943.127' }
-          ],
-          mobile: false,
-          model: '',
-          platform: 'Windows',
-          platformVersion: '15.0.0'
-        })
-      }),
-      configurable: true
-    })
-
-    // 7. Notification Permissions
-    const originalQuery = window.navigator.permissions?.query
-    if (originalQuery) {
-      window.navigator.permissions.query = makeNative(
-        (parameters) =>
-          parameters && parameters.name === 'notifications'
-            ? Promise.resolve({ state: Notification.permission || 'default', onchange: null })
-            : originalQuery.call(window.navigator.permissions, parameters),
-        'query'
+      const rawUA = await page.evaluate(() => navigator.userAgent)
+      const cleanUA = rawUA.replace(/HeadlessChrome/g, 'Chrome')
+      await page.setUserAgent(cleanUA)
+    } catch (_) {
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0'
       )
     }
 
-    // 8. WebGL Vendor and Renderer
-    const patchParam = (proto) => {
-      const original = proto.getParameter
-      proto.getParameter = makeNative(function (param) {
-        if (param === 37445) return 'Google Inc. (Intel)'
-        if (param === 37446)
-          return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
-        return original.apply(this, arguments)
-      }, 'getParameter')
-    }
-    patchParam(WebGLRenderingContext.prototype)
-    patchParam(WebGL2RenderingContext.prototype)
-  })
-
-  session = {
-    id: sessionId,
-    browser,
-    page,
-    url: 'about:blank',
-    title: 'New Tab',
-    idleTimeout: null,
-    isForeground: true
-  }
-
-  // Handle page close / tab close gracefully (Keep alive in background)
-  page.on('close', async () => {
-    const s = sessions.get(sessionId)
-    if (s && s.browser && s.browser.isConnected()) {
-      try {
-        const remainingPages = await s.browser.pages()
-        if (remainingPages.length > 0) {
-          s.page = remainingPages[0]
-        } else {
-          // Re-create background page if user closed the last tab
-          s.page = await s.browser.newPage()
-          await s.page.setUserAgent(userAgent)
-          await hideBrowserWindow(sessionId)
-        }
-      } catch (_) {}
-    }
-  })
-
-  // Pastikan window bounds diatur ke posisi normal di layar (80, 60) saat launch
-  try {
-    const client = await page.target().createCDPSession()
-    const { windowId } = await client.send('Browser.getWindowForTarget')
-    await client.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { windowState: 'normal', left: 80, top: 60, width: 1280, height: 800 }
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
     })
-  } catch (_) {}
 
-  sessions.set(sessionId, session)
-  resetSessionIdleTimeout(session)
-  return session
+    session = {
+      id: sessionId,
+      browser,
+      page,
+      url: 'https://www.google.com',
+      title: 'Google',
+      idleTimeout: null,
+      isForeground: true
+    }
+    session.readDom = () => evaluateObservation(session, DOM_PARSER_SCRIPT)
+
+    // Buka beranda Google secara default agar peramban langsung siap pakai
+    try {
+      await page.goto('https://www.google.com/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 25000
+      })
+      session.url = page.url()
+      session.title = (await page.title()) || 'Google'
+    } catch (err) {
+      console.warn('[BrowserAgent] Inisialisasi Google beranda:', err.message)
+    }
+
+    sessions.set(sessionId, session)
+    await attachBrowserSession(session)
+    browser.once('disconnected', () => {
+      if (sessions.get(sessionId) === session) {
+        sessions.delete(sessionId)
+        clearTimeout(session.idleTimeout)
+        detachBrowserSession(sessionId).catch(() => {})
+      }
+    })
+    resetSessionIdleTimeout(session)
+    return session
+  } catch (error) {
+    sessions.delete(sessionId)
+    await browser.close().catch(() => {})
+    await detachBrowserSession(sessionId)
+    throw error
+  }
 }
 
 const DOM_PARSER_SCRIPT = `
 (() => {
-  // 1. Injeksi Style dan Keyframe Animation jika belum ada
-  if (!document.getElementById('mark-blocker-style')) {
-    const styleEl = document.createElement('style');
-    styleEl.id = 'mark-blocker-style';
-    styleEl.textContent = \`
-      @keyframes mark-spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      @keyframes mark-pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.6; transform: scale(0.98); }
-      }
-      .mark-pulse {
-        animation: mark-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-      }
-    \`;
-    document.head ? document.head.appendChild(styleEl) : document.documentElement.appendChild(styleEl);
-  }
-
-  // 2. Injeksi atau Pulihkan Fullscreen Interaction Blocker & Top Loading Pill
-  let blocker = document.getElementById('mark-user-blocker');
-  if (!blocker) {
-    blocker = document.createElement('div');
-    blocker.id = 'mark-user-blocker';
-    document.documentElement.appendChild(blocker);
-
-    // Mencegah scroll saat blocker aktif
-    const preventScroll = (e) => {
-      if (blocker && blocker.dataset.mode !== 'unblock') {
-        e.preventDefault();
-      }
-    };
-    window.addEventListener('wheel', preventScroll, { passive: false });
-    window.addEventListener('touchmove', preventScroll, { passive: false });
-  }
-
-  // Mode default: Fullscreen blocker dengan Top Loading Pill
-  blocker.dataset.mode = 'working';
-  blocker.style.cssText = \`
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: 2147483647 !important;
-    pointer-events: auto !important;
-    cursor: not-allowed !important;
-    display: flex !important;
-    justify-content: center !important;
-    align-items: flex-start !important;
-    padding-top: 24px !important;
-    box-sizing: border-box !important;
-    background: transparent !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-  \`;
-
-  blocker.innerHTML = \`
-    <div style="
-      background: rgba(25, 54, 45, 0.92);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(31, 184, 84, 0.4);
-      border-radius: 30px;
-      padding: 10px 22px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(31, 184, 84, 0.2);
-      color: #f1f5f9;
-      font-size: 13px;
-      font-weight: 500;
-      letter-spacing: 0.2px;
-      user-select: none;
-      pointer-events: auto;
-    ">
-      <svg style="animation: mark-spin 1s linear infinite; width: 16px; height: 16px; color: #1fb854;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-      </svg>
-      <span class="mark-pulse" style="color: #f8fafc;">Mark is working...</span>
-    </div>
-  \`;
-
   // 3. Parser Elemen Interaktif
   document.querySelectorAll('[data-mark-id]').forEach(el => el.removeAttribute('data-mark-id'));
 
@@ -506,7 +226,9 @@ const DOM_PARSER_SCRIPT = `
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
     let node;
     let lastParent = null;
+    let visited = 0;
     while ((node = walker.nextNode())) {
+      if (++visited > 12000) break;
       if (text.length > 8000) break;
       const parent = node.parentElement;
       if (!parent || parent.closest('#mark-user-blocker')) continue;
@@ -545,20 +267,27 @@ const DOM_PARSER_SCRIPT = `
 `
 
 async function broadcastPreview(session) {
+  publishBrowserState(session.id)
+}
+
+async function evaluateObservation(session, expression, awaitPromise = false) {
+  const client = await session.page.createCDPSession()
   try {
-    const screenshotBuf = await session.page.screenshot({ encoding: 'base64' })
-    if (wsHub) {
-      const dataUri = `data:image/png;base64,${screenshotBuf}`
-      wsHub.broadcast('browser:preview', {
-        sessionId: session.id,
-        thumbnail: dataUri,
-        preview: dataUri,
-        title: session.title || 'Browser Session',
-        url: session.url || 'about:blank',
-        isForeground: Boolean(session.isForeground)
-      })
-    }
-  } catch (_) {}
+    const response = await client.send(
+      'Runtime.evaluate',
+      {
+        expression,
+        awaitPromise,
+        returnByValue: true,
+        timeout: 2500
+      },
+      { timeout: 3000 }
+    )
+    if (response.exceptionDetails) throw new Error(response.exceptionDetails.text)
+    return response.result.value
+  } finally {
+    await client.detach().catch(() => {})
+  }
 }
 
 async function detectChallenge(page) {
@@ -627,28 +356,24 @@ async function detectChallenge(page) {
   return { isBlocked: false }
 }
 
-async function seedAntiBotCookies(page) {
+async function recoverIfBlockedByGoogle(page) {
   try {
-    const cookies = [
-      {
-        name: 'SOCS',
-        value:
-          'CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJpZCADGgYIgJnPpwY',
-        domain: '.google.com',
-        path: '/'
-      },
-      {
-        name: 'CONSENT',
-        value: 'PENDING+999',
-        domain: '.google.com',
-        path: '/'
-      }
-    ]
-    await page.setCookie(...cookies)
-  } catch (_) {}
+    const url = page.url()
+    if (url.includes('google.com/sorry')) {
+      console.warn('[BrowserAgent] Terdeteksi halaman blokir Google. Cookie login dipertahankan.')
+      await page.goto('https://www.google.com/', {
+        waitUntil: 'networkidle2',
+        timeout: 20000
+      })
+      return true
+    }
+  } catch (err) {
+    console.warn('[BrowserAgent] Pemulihan sesi terblokir:', err.message)
+  }
+  return false
 }
 
-export async function navigateTo(url, sessionId = 'default') {
+async function navigateToInternal(url, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   let targetUrl = url.trim()
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
@@ -661,11 +386,15 @@ export async function navigateTo(url, sessionId = 'default') {
     targetUrl = `${targetUrl}${separator}sourceid=chrome&ie=UTF-8`
   }
 
-  if (targetUrl.includes('google.com')) {
-    await seedAntiBotCookies(session.page)
+  await session.page.goto(targetUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 45000,
+    referer: targetUrl.includes('google.com') ? 'https://www.google.com/' : undefined
+  })
+  if (session.page.url().includes('google.com/sorry')) {
+    await recoverIfBlockedByGoogle(session.page)
   }
 
-  await session.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
   session.url = session.page.url()
   session.title = await session.page.title()
 
@@ -705,15 +434,24 @@ export async function navigateTo(url, sessionId = 'default') {
   // Otomatis cek apakah halaman memicu CAPTCHA / bot challenge
   const challenge = await detectChallenge(session.page)
   if (challenge.isBlocked) {
-    return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Halaman memicu perlindungan "${challenge.type}" (Judul: "${session.title}", URL: "${session.url}").\nKamu WAJIB segera memanggil tool 'browser-ask-user' dengan pesan agar pengguna menyelesaikan CAPTCHA ini!`
+    return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Halaman memicu perlindungan "${challenge.type}" (Judul: "${session.title}", URL: "${session.url}").\nTanyakan bantuan pengguna di chat, gunakan metadata await_user="true", dan akhiri giliran tanpa menutup browser.`
   }
 
-  return `Berhasil membuka ${session.url} (Judul: "${session.title}"). Gunakan 'browser-read' untuk melihat isi dan elemen interaktif.`
+  return `Berhasil membuka ${session.url} (Judul: "${session.title}").`
 }
 
-export async function readDOM(sessionId = 'default') {
+async function readDOMInternal(sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
-  const result = await session.page.evaluate(DOM_PARSER_SCRIPT)
+  let result
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      result = await evaluateObservation(session, DOM_PARSER_SCRIPT)
+      break
+    } catch (error) {
+      if (attempt === 2 || !/context|navigation|frame.*detach/i.test(error.message)) throw error
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+  }
 
   session.url = session.page.url()
   session.title = await session.page.title()
@@ -722,29 +460,92 @@ export async function readDOM(sessionId = 'default') {
 
   const challenge = await detectChallenge(session.page)
   if (challenge.isBlocked) {
-    return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Terdeteksi "${challenge.type}" pada halaman ini!\nKamu WAJIB segera memanggil tool 'browser-ask-user' agar user dapat menyelesaikan verifikasi manusia secara langsung di jendela browser.\n\n${result}`
+    return `[PERINGATAN ANTI-BOT / CAPTCHA TERDETEKSI]: Terdeteksi "${challenge.type}" pada halaman ini!\nTanyakan bantuan pengguna di chat, gunakan metadata await_user="true", dan akhiri giliran tanpa menutup browser.\n\n${result}`
   }
 
   return result
 }
 
-export async function executeAction(data, sessionId = 'default') {
+async function withPageObservation(sessionId, action) {
+  const result = await action()
+  const session = sessions.get(sessionId)
+  if (session && !session.page.isClosed()) {
+    await evaluateObservation(
+      session,
+      `(${() =>
+        new Promise((resolve) => {
+          let quiet
+          const done = () => {
+            clearTimeout(quiet)
+            clearTimeout(limit)
+            observer.disconnect()
+            resolve()
+          }
+          const observer = new MutationObserver(() => {
+            clearTimeout(quiet)
+            quiet = setTimeout(done, 120)
+          })
+          const limit = setTimeout(done, 600)
+          observer.observe(document, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            characterData: true
+          })
+          quiet = setTimeout(done, 120)
+        })})()`,
+      true
+    ).catch(() => {})
+  }
+  let observation
+  try {
+    observation = await readDOMInternal(sessionId)
+  } catch (error) {
+    observation = `[DOM terbaru belum tersedia: ${error.message}. Periksa halaman sebelum aksi berikutnya.]`
+  }
+  const text =
+    typeof result === 'object' && result !== null
+      ? result.message
+      : String(result ?? 'Aksi selesai.')
+  const summary =
+    text.length > 4000
+      ? `${text.slice(0, 4000)}\n[Hasil aksi dipotong; gunakan browser-extract untuk bagian tertentu.]`
+      : text
+  const message = `${summary}\n\n[Observasi halaman setelah aksi]\n${observation}`
+  return typeof result === 'object' && result !== null ? { ...result, message } : message
+}
+
+async function executeActionInternal(data, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   const { action, id, value, direction } = data
 
   if (action === 'click') {
     const selector = `[data-mark-id="${id}"]`
     await session.page.waitForSelector(selector, { timeout: 8000 })
+    await session.page.$eval(selector, (el) => el.scrollIntoView({ block: 'center' }))
+    const box = await session.page.$eval(selector, (el) => {
+      const r = el.getBoundingClientRect()
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+    })
+    await publishBrowserCursor(sessionId, box.x, box.y, 'move')
     await session.page.click(selector)
+    await publishBrowserCursor(sessionId, box.x, box.y, 'click')
     await new Promise((r) => setTimeout(r, 1000))
     await broadcastPreview(session)
-    return `Berhasil klik elemen [${id}]. Gunakan 'browser-read' untuk melihat perubahan halaman.`
+    return `Berhasil klik elemen [${id}].`
   }
 
   if (action === 'type') {
     const selector = `[data-mark-id="${id}"]`
     await session.page.waitForSelector(selector, { timeout: 8000 })
+    await session.page.$eval(selector, (el) => el.scrollIntoView({ block: 'center' }))
+    const box = await session.page.$eval(selector, (el) => {
+      const r = el.getBoundingClientRect()
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+    })
+    await publishBrowserCursor(sessionId, box.x, box.y, 'move')
     await session.page.click(selector)
+    await publishBrowserCursor(sessionId, box.x, box.y, 'click')
     await session.page.type(selector, value || '', { delay: 30 })
     await broadcastPreview(session)
     return `Berhasil mengetik "${value}" pada elemen [${id}].`
@@ -755,209 +556,20 @@ export async function executeAction(data, sessionId = 'default') {
     await session.page.evaluate((d) => window.scrollBy({ top: d, behavior: 'smooth' }), delta)
     await new Promise((r) => setTimeout(r, 600))
     await broadcastPreview(session)
-    return `Berhasil scroll ${direction}. Gunakan 'browser-read' untuk membaca elemen terbaru.`
-  }
-
-  if (action === 'unblock') {
-    // 1. Tampilkan jendela browser ke layar aktif agar user bisa melihat dan menyelesaikan captcha/login
-    await showBrowserWindow(sessionId)
-
-    // 2. Ubah blocker menjadi unblock prompt widget di kanan bawah
-    const promptMsg =
-      value || 'Silakan selesaikan CAPTCHA atau login pada halaman ini, lalu klik tombol di bawah.'
-    await session.page.evaluate((msg) => {
-      let blocker = document.getElementById('mark-user-blocker')
-      if (!blocker) {
-        blocker = document.createElement('div')
-        blocker.id = 'mark-user-blocker'
-        document.documentElement.appendChild(blocker)
-      }
-
-      blocker.dataset.mode = 'unblock'
-      blocker.style.cssText = `
-        position: fixed !important;
-        bottom: 24px !important;
-        right: 24px !important;
-        top: auto !important;
-        left: auto !important;
-        width: auto !important;
-        height: auto !important;
-        z-index: 2147483647 !important;
-        pointer-events: none !important;
-        cursor: default !important;
-        display: flex !important;
-        justify-content: flex-end !important;
-        align-items: flex-end !important;
-        background: transparent !important;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-      `
-
-      blocker.innerHTML = `
-        <div style="
-          background: rgba(15, 23, 21, 0.95);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(31, 184, 84, 0.5);
-          border-radius: 16px;
-          padding: 20px 22px;
-          width: 350px;
-          box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(31, 184, 84, 0.25);
-          color: #f1f5f9;
-          box-sizing: border-box;
-          pointer-events: auto !important;
-          animation: mark-pulse 3s ease-in-out infinite;
-        ">
-          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-            <div style="width: 10px; height: 10px; border-radius: 50%; background: #1fb854; box-shadow: 0 0 8px #1fb854;"></div>
-            <div style="font-weight: 700; color: #f8fafc; font-size: 15px; letter-spacing: 0.2px;">Mark Paused for Input</div>
-          </div>
-          <div style="font-size: 13px; line-height: 1.5; color: #cbd5e1; margin-bottom: 14px; word-break: break-word;">
-            ${msg}
-          </div>
-          <input type="text" id="mark-user-input" placeholder="Komentar untuk Mark (opsional)..." style="
-            width: 100%;
-            padding: 10px 14px;
-            background: rgba(25, 54, 45, 0.6);
-            border: 1px solid rgba(31, 184, 84, 0.3);
-            border-radius: 10px;
-            color: #f8fafc;
-            font-size: 13px;
-            margin-bottom: 12px;
-            box-sizing: border-box;
-            outline: none;
-            transition: border-color 0.2s;
-          " />
-          <button id="mark-btn-selesai" style="
-            width: 100%;
-            padding: 11px 16px;
-            background: #1fb854;
-            color: #0f1715;
-            border: none;
-            border-radius: 10px;
-            font-weight: 700;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(31, 184, 84, 0.3);
-          ">Lanjutkan Otomasi (Resume)</button>
-        </div>
-      `
-
-      // 3. Setup listener click dan Enter
-      const btn = document.getElementById('mark-btn-selesai')
-      const input = document.getElementById('mark-user-input')
-
-      const submit = () => {
-        const comment = input ? input.value : ''
-        btn.innerText = 'Melanjutkan...'
-        btn.style.opacity = '0.7'
-        btn.disabled = true
-        document.title = 'MARK_UNBLOCK_DONE:' + (comment.trim() || 'Sudah selesai.')
-      }
-
-      if (btn) btn.onclick = submit
-      if (input) {
-        input.onkeydown = (e) => {
-          if (e.key === 'Enter') submit()
-        }
-        setTimeout(() => input.focus(), 300)
-      }
-    }, promptMsg)
-
-    await broadcastPreview(session)
-
-    // 4. Tunggu respons pengguna via perubahan document.title di page
-    const userFeedback = await new Promise((resolve) => {
-      let resolved = false
-      const timeoutId = setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          session.page.off('titlechanged', titleListener)
-          resolve('Waktu tunggu intervensi user habis (600 detik).')
-        }
-      }, 600000) // 10 menit timeout
-
-      const titleListener = (newTitle) => {
-        if (newTitle && newTitle.startsWith('MARK_UNBLOCK_DONE:')) {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeoutId)
-            session.page.off('titlechanged', titleListener)
-            const userText = newTitle.replace('MARK_UNBLOCK_DONE:', '').trim()
-            resolve(userText || 'Sudah selesai.')
-          }
-        }
-      }
-
-      session.page.on('titlechanged', titleListener)
-    })
-
-    // 5. Kembalikan blocker ke mode Fullscreen working indicator
-    await session.page.evaluate(() => {
-      let blocker = document.getElementById('mark-user-blocker')
-      if (blocker) {
-        blocker.dataset.mode = 'working'
-        blocker.style.cssText = `
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
-          z-index: 2147483647 !important;
-          pointer-events: auto !important;
-          cursor: not-allowed !important;
-          display: flex !important;
-          justify-content: center !important;
-          align-items: flex-start !important;
-          padding-top: 24px !important;
-          box-sizing: border-box !important;
-          background: transparent !important;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-        `
-        blocker.innerHTML = `
-          <div style="
-            background: rgba(25, 54, 45, 0.92);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(31, 184, 84, 0.4);
-            border-radius: 30px;
-            padding: 10px 22px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(31, 184, 84, 0.2);
-            color: #f1f5f9;
-            font-size: 13px;
-            font-weight: 500;
-            letter-spacing: 0.2px;
-            user-select: none;
-            pointer-events: auto;
-          ">
-            <svg style="animation: mark-spin 1s linear infinite; width: 16px; height: 16px; color: #1fb854;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-            </svg>
-            <span class="mark-pulse" style="color: #f8fafc;">Mark is working...</span>
-          </div>
-        `
-      }
-    })
-
-    // 6. Baca ulang DOM setelah user selesai
-    const updatedDOM = await readDOM(sessionId)
-    return `[USER SELESAI INTERVENSI]: Catatan user: "${userFeedback}".\nBerikut kondisi DOM terbaru setelah intervensi:\n${updatedDOM}`
+    return `Berhasil scroll ${direction}.`
   }
 
   return `Aksi ${action} tidak dikenali.`
 }
 
-export async function executeScript(code, sessionId = 'default') {
+async function executeScriptInternal(code, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   const res = await session.page.evaluate(code)
   await broadcastPreview(session)
   return typeof res === 'string' ? res : JSON.stringify(res)
 }
 
-export async function extractData(selector, sessionId = 'default') {
+async function extractDataInternal(selector, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   const text = await session.page.$$eval(selector, (els) =>
     els.map((e) => e.innerText.trim()).filter(Boolean)
@@ -965,7 +577,7 @@ export async function extractData(selector, sessionId = 'default') {
   return JSON.stringify(text)
 }
 
-export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'default') {
+async function takeScreenshotInternal(filename = 'screenshot.png', sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   const outPath = path.isAbsolute(filename)
     ? filename
@@ -981,7 +593,7 @@ export async function takeScreenshot(filename = 'screenshot.png', sessionId = 'd
   }
 }
 
-export async function downloadFile(url, filename, sessionId = 'default') {
+async function downloadFileInternal(url, filename, sessionId = 'default') {
   const session = await getOrCreateSession(sessionId)
   const outPath = path.join(os.homedir(), 'Downloads', filename)
   const viewSource = await session.page.goto(url)
@@ -989,144 +601,61 @@ export async function downloadFile(url, filename, sessionId = 'default') {
   return `File berhasil diunduh ke ${outPath}`
 }
 
-export async function closeBrowser(sessionId = 'default') {
+async function closeBrowserInternal(sessionId = 'default') {
+  if (launches.has(sessionId)) await launches.get(sessionId).catch(() => {})
   const session = sessions.get(sessionId)
   if (session && session.browser) {
     if (session.idleTimeout) clearTimeout(session.idleTimeout)
+    sessions.delete(sessionId)
     try {
       await session.browser.close()
     } catch (_) {}
-    sessions.delete(sessionId)
 
-    if (wsHub) {
-      wsHub.broadcast('browser:preview', {
-        sessionId,
-        closed: true
-      })
-    }
+    await detachBrowserSession(sessionId)
 
     return `Browser session '${sessionId}' berhasil ditutup.`
   }
   return `Browser session '${sessionId}' tidak sedang berjalan.`
 }
 
-export function forceProcessWindowToForeground(pid) {
-  if (os.platform() !== 'win32' || !pid) return Promise.resolve()
-  return new Promise((resolve) => {
-    const psScript = `
-$code = @'
-using System;
-using System.Runtime.InteropServices;
-public class Win32Focus {
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-    [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
-    [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-
-    public static void FocusPid(int pid) {
-        IntPtr targetHwnd = IntPtr.Zero;
-        EnumWindows((hWnd, lParam) => {
-            uint procId;
-            GetWindowThreadProcessId(hWnd, out procId);
-            if (procId == (uint)pid && IsWindowVisible(hWnd)) {
-                targetHwnd = hWnd;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-        if (targetHwnd != IntPtr.Zero) {
-            ShowWindow(targetHwnd, 9); // SW_RESTORE
-            IntPtr fg = GetForegroundWindow();
-            uint fgThread = GetWindowThreadProcessId(fg, out _);
-            uint curThread = GetCurrentThreadId();
-            uint targetThread = GetWindowThreadProcessId(targetHwnd, out _);
-            if (fgThread != targetThread) {
-                AttachThreadInput(fgThread, targetThread, true);
-                AttachThreadInput(curThread, targetThread, true);
-            }
-            keybd_event(0, 0, 0, 0);
-            SetWindowPos(targetHwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040); // HWND_TOPMOST
-            SetWindowPos(targetHwnd, new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040); // HWND_NOTOPMOST
-            BringWindowToTop(targetHwnd);
-            SetForegroundWindow(targetHwnd);
-            SwitchToThisWindow(targetHwnd, true);
-            if (fgThread != targetThread) {
-                AttachThreadInput(fgThread, targetThread, false);
-                AttachThreadInput(curThread, targetThread, false);
-            }
-        }
+setBrowserFactory(getOrCreateSession)
+export const closeBrowser = (sessionId = 'default') =>
+  runBrowserAction(sessionId, () => closeBrowserInternal(sessionId))
+export const navigateTo = (url, sessionId = 'default') =>
+  runBrowserAction(sessionId, async () => {
+    const target = normalizeBrowserUrl(url)
+    requestBrowserPanel(sessionId)
+    const control = browserControl(sessionId)
+    control.loading = true
+    publishBrowserState(sessionId)
+    try {
+      return await withPageObservation(sessionId, () => navigateToInternal(target, sessionId))
+    } finally {
+      control.loading = false
+      publishBrowserState(sessionId)
     }
-}
-'@
-Add-Type -TypeDefinition $code -Language CSharp
-[Win32Focus]::FocusPid(${pid})
-`
-    const enc = Buffer.from(psScript, 'utf16le').toString('base64')
-    exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${enc}`, () => resolve())
   })
-}
-
-export async function showBrowserWindow(sessionId = 'default') {
-  const session = sessions.get(sessionId)
-  if (session && session.page) {
-    try {
-      const client = await session.page.target().createCDPSession()
-      const { windowId } = await client.send('Browser.getWindowForTarget')
-      await client.send('Browser.setWindowBounds', {
-        windowId,
-        bounds: { windowState: 'normal', left: 80, top: 60, width: 1280, height: 800 }
-      })
-      await session.page.bringToFront()
-      session.isForeground = true
-
-      // Bypass Windows Foreground Lock dan paksa window naik ke paling atas
-      const pid = session.browser?.process()?.pid
-      if (pid) {
-        await forceProcessWindowToForeground(pid)
-      }
-
-      return `Berhasil menampilkan jendela browser untuk sesi '${sessionId}'.`
-    } catch (_) {
-      try {
-        await session.page.bringToFront()
-        session.isForeground = true
-        const pid = session.browser?.process()?.pid
-        if (pid) {
-          await forceProcessWindowToForeground(pid)
-        }
-        return `Berhasil membawa browser sesi '${sessionId}' ke depan.`
-      } catch (err) {
-        return `Gagal menampilkan jendela browser: ${err.message}`
-      }
-    }
-  }
-  return `Sesi browser '${sessionId}' tidak ditemukan atau sedang tidak aktif.`
-}
-
-export async function hideBrowserWindow(sessionId = 'default') {
-  const session = sessions.get(sessionId)
-  if (session && session.page) {
-    try {
-      const client = await session.page.target().createCDPSession()
-      const { windowId } = await client.send('Browser.getWindowForTarget')
-      await client.send('Browser.setWindowBounds', {
-        windowId,
-        bounds: { windowState: 'minimized' }
-      })
-      session.isForeground = false
-      return `Berhasil meminimalkan jendela browser sesi '${sessionId}' ke latar belakang.`
-    } catch (err) {
-      return `Gagal menyembunyikan jendela browser: ${err.message}`
-    }
-  }
-  return `Sesi browser '${sessionId}' tidak ditemukan atau sedang tidak aktif.`
-}
+export const readDOM = (sessionId = 'default') =>
+  runBrowserAction(sessionId, () => readDOMInternal(sessionId))
+export const executeAction = (data, sessionId = 'default') =>
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => executeActionInternal(data, sessionId))
+  )
+export const executeScript = (code, sessionId = 'default') =>
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => executeScriptInternal(code, sessionId))
+  )
+export const extractData = (selector, sessionId = 'default') =>
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => extractDataInternal(selector, sessionId))
+  )
+export const takeScreenshot = (filename = 'screenshot.png', sessionId = 'default') =>
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () => takeScreenshotInternal(filename, sessionId))
+  )
+export const downloadFile = (url, filename, sessionId = 'default') =>
+  runBrowserAction(sessionId, () =>
+    withPageObservation(sessionId, () =>
+      downloadFileInternal(normalizeBrowserUrl(url), filename, sessionId)
+    )
+  )

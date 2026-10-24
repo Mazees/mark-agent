@@ -5,11 +5,10 @@ const VECTOR_SIZE = 384
 
 let memoryIndex = null
 let archiveIndex = null
-let documentIndex = null
 let turnPairIndex = null
 
 /**
- * Inisialisasi 4 indeks pencarian Orama di server
+ * Inisialisasi indeks memori, arsip, dan pasangan percakapan di server.
  */
 export async function initOramaIndices() {
   memoryIndex = await create({
@@ -27,17 +26,6 @@ export async function initOramaIndices() {
     schema: {
       summary: 'string',
       topic: 'string',
-      timestamp: 'number',
-      dbId: 'string',
-      vector: `vector[${VECTOR_SIZE}]`
-    }
-  })
-
-  documentIndex = await create({
-    schema: {
-      docName: 'string',
-      chunkIndex: 'number',
-      content: 'string',
       timestamp: 'number',
       dbId: 'string',
       vector: `vector[${VECTOR_SIZE}]`
@@ -153,25 +141,4 @@ export async function searchArchives(queryText, threshold = 0.3, limit = 3) {
   }
 }
 
-/**
- * Search Documents (RAG) di Orama
- */
-export async function searchDocuments(queryText, threshold = 0.3, limit = 4) {
-  if (!documentIndex || !queryText) return []
-  const queryVector = await generateVector(queryText)
-  if (!queryVector) return []
-
-  try {
-    const results = await search(documentIndex, {
-      mode: 'vector',
-      vector: { value: queryVector, property: 'vector' },
-      similarity: threshold,
-      limit
-    })
-    return results.hits.map((h) => ({ ...h.document, score: h.score }))
-  } catch (_) {
-    return []
-  }
-}
-
-export { memoryIndex, archiveIndex, documentIndex, turnPairIndex, insertMultiple }
+export { memoryIndex, archiveIndex, turnPairIndex, insertMultiple }

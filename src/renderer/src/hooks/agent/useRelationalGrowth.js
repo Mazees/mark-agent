@@ -131,41 +131,6 @@ export const useRelationalGrowth = ({
     evaluateGrowth()
   }, [chatData, currentActiveSessionId, isLoading])
 
-  // Listener untuk evaluasi relasi berbasis event (misal dari Private Journal / akhir sesi)
-  useEffect(() => {
-    const handleForceRelationalEval = async (e) => {
-      try {
-        const oldTraits = await getRelationship('owner')
-        const contextText =
-          e.detail?.summary || 'Sesi kerja panjang dan refleksi batin harian bersama pengguna.'
-        const newTraits = await evaluateTraitDrift(oldTraits, contextText, 'owner')
-        const updatedRecord = {
-          userId: 'owner',
-          ...newTraits,
-          lastEvaluation: new Date().toISOString(),
-          evalCount: (oldTraits.evalCount || 0) + 1
-        }
-        await saveRelationship(updatedRecord)
-        window.dispatchEvent(
-          new CustomEvent('relationship-updated', {
-            detail: updatedRecord
-          })
-        )
-        if (newTraits.new_relational_memory) {
-          await insertMemory({
-            type: 'notes',
-            summary: '[Relational] Catatan hubungan otomatis',
-            memory: newTraits.new_relational_memory
-          })
-        }
-      } catch (err) {
-        console.warn('[Relational Growth] Gagal evaluasi relasi dari event:', err)
-      }
-    }
-    window.addEventListener('mark:evaluate-relationship', handleForceRelationalEval)
-    return () => window.removeEventListener('mark:evaluate-relationship', handleForceRelationalEval)
-  }, [])
-
   // --- TACTILE INTERACTION DRIFT (Touch, Pet, Bonk) ---
   useEffect(() => {
     const handleTactile = async (e) => {
@@ -193,7 +158,9 @@ export const useRelationalGrowth = ({
         }
         await saveRelationship(updatedRecord)
         window.dispatchEvent(new CustomEvent('relationship-updated', { detail: updatedRecord }))
-      } catch (_) {}
+      } catch (error) {
+        console.warn('[Relational Growth] Gagal memperbarui interaksi sentuhan:', error)
+      }
     }
     window.addEventListener('mark-tactile-interaction', handleTactile)
     return () => window.removeEventListener('mark-tactile-interaction', handleTactile)

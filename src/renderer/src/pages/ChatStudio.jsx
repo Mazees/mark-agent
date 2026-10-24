@@ -1,41 +1,32 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
+import { ChevronRight, Folder, PanelRight } from 'lucide-react'
+import BrowserPanel from '../components/BrowserPanel.jsx'
 import {
-  MessageSquare,
-  Plus,
-  Trash2,
-  Edit2,
-  Search,
-  Pin,
-  X,
-  Maximize2,
-  Minimize2,
-  Sparkles,
-  Check,
-  RotateCcw,
-  Send,
-  Loader2,
-  ArrowLeft,
-  Bot,
-  Folder
-} from 'lucide-react'
+  browserSessionId,
+  browserCommand,
+  getBrowserState,
+  subscribeBrowserState
+} from '../api/browser-panel.js'
 import {
   db,
-  getAllSessions,
-  getSession,
+  getSessionSummaries,
+  getSessionSummary,
   createSession,
   saveSession,
   deleteSession,
   renameSession,
   getChatData,
-  setSessionWorkspace,
+  updateSessionMetadata,
   getSessionCompact
 } from '../api/db'
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
-import { useConfirm } from '../hooks/useConfirm'
-import { useApproval, extractToolTarget } from '../contexts/ApprovalContext'
+import WorkspaceSidebar from '../components/Chat/WorkspaceSidebar.jsx'
+import { webApi } from '../api/web-bridge.js'
+import { isMainSession, resolveSessionWorkspace } from '@shared/workspaces.js'
+import { useApproval } from '../contexts/ApprovalContext'
 import { stripMarkTags } from '@shared/parsers/mark-tag-parser.js'
 
 /**
@@ -74,8 +65,105 @@ export function filterMessagePrefixes(content) {
   return { cleanContent, prefixes }
 }
 
+function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
+  const renderItems = []
+  let index = 0
+
+  while (index < messages.length) {
+    const current = messages[index]
+    if (current.role !== 'user') {
+      renderItems.push({ type: 'message', message: current })
+      index += 1
+      continue
+    }
+
+    renderItems.push({ type: 'message', message: current })
+    let turnEnd = index + 1
+    while (turnEnd < messages.length && messages[turnEnd].role !== 'user') turnEnd += 1
+
+    const turnMessages = messages.slice(index + 1, turnEnd)
+    const assistantMessages = turnMessages.filter((message) => message.role !== 'user')
+    const isLatestTurn = turnEnd === messages.length
+    const isTurnActive = assistantMessages.some(
+      (message) =>
+        message.isThinking ||
+        message.taskStatus === 'running' ||
+        (message.isApproval && message.status === 'pending')
+    )
+    const mostCompleteToolSnapshot = assistantMessages.reduce((best, message) => {
+      const candidate = Array.isArray(message.executedTools) ? message.executedTools : []
+      return candidate.length >= best.length ? candidate : best
+    }, [])
+
+    if (isLatestTurn && (isTurnActive || isLoading)) {
+      renderItems.push({
+        type: 'process',
+        id: assistantMessages.at(-1)?.id || assistantMessages.at(-1)?.created_at || index,
+        messages: assistantMessages,
+        steps: mostCompleteToolSnapshot,
+        isActive: true
+      })
+      index = turnEnd
+      continue
+    }
+
+    const finalIndex = turnMessages.findLastIndex(
+      (message) =>
+        message.role !== 'user' &&
+        !message.isThinking &&
+        !message.isApproval &&
+        !(message.isPlanSteps && message.taskStatus === 'running')
+    )
+
+    const shouldCollapse =
+      finalIndex >= 0 &&
+      !isTurnActive &&
+      !(isLoading && isLatestTurn) &&
+      (assistantMessages.length > 1 ||
+        assistantMessages.some(
+          (message) => Array.isArray(message.executedTools) && message.executedTools.length > 0
+        ))
+
+    if (!shouldCollapse) {
+      turnMessages.forEach((message) => renderItems.push({ type: 'message', message }))
+      index = turnEnd
+      continue
+    }
+
+    const finalMessage = turnMessages[finalIndex]
+    const progressMessages = turnMessages.filter(
+      (message, messageIndex) => messageIndex !== finalIndex && message.role !== 'user'
+    )
+    renderItems.push({
+      type: 'process',
+      id: finalMessage.id || finalMessage.created_at || index,
+      messages: progressMessages,
+      steps: mostCompleteToolSnapshot
+    })
+    renderItems.push({ type: 'message', message: finalMessage, hideProcessDetails: true })
+    index = turnEnd
+  }
+
+  return renderItems
+}
+
 export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [initialDraft] = useState(() =>
+    typeof location.state?.composerDraft === 'string' ? location.state.composerDraft : ''
+  )
+
+  useEffect(() => {
+    if (typeof location.state?.composerDraft !== 'string') return
+    const remainingState = { ...location.state }
+    delete remainingState.composerDraft
+    navigate(location.pathname + location.search + location.hash, {
+      replace: true,
+      state: remainingState
+    })
+  }, [location, navigate])
+
   const contextChat = useChat()
   const chatContext = propChatContext || contextChat
   const {
@@ -97,13 +185,48 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     setCurrentActiveSessionId
   } = chatContext || {}
 
-  const { activeApproval, resolveApproval } = useApproval() || {}
+  const { activeApproval } = useApproval() || {}
 
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
+  const [browserOpen, setBrowserOpen] = useState(!!location.state?.openBrowser)
+  const [browserExpanded, setBrowserExpanded] = useState(false)
+  const [chatWidth, setChatWidth] = useState(380)
+  const [sidebarMinimized, setSidebarMinimized] = useState(false)
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 1200)
+  const browserId = browserSessionId(activeSessionId)
+  const browserRevisions = useRef(new Map())
+  useEffect(() => {
+    if (browserOpen) setSidebarMinimized(true)
+  }, [browserOpen])
+  useEffect(() => {
+    const resize = () => setNarrow(window.innerWidth < 1200)
+    window.addEventListener('resize', resize)
+    const check = () => {
+      const state = getBrowserState(browserId)
+      if (!state) return
+      const previous = browserRevisions.current.get(browserId) || 0
+      browserRevisions.current.set(browserId, state.panelRevision || 0)
+      if ((state.panelRevision || 0) > previous) setBrowserOpen(true)
+    }
+    check()
+    const off = subscribeBrowserState(check)
+    return () => {
+      off()
+      window.removeEventListener('resize', resize)
+    }
+  }, [browserId])
+  const resumeBrowser = () => {
+    if (!isCurrentLoading)
+      handleSendMessage(
+        'Lanjutkan berdasarkan kondisi halaman terbaru. Periksa hasil langkah pengguna sebelum melanjutkan.'
+      )
+  }
   const [lastCompactedMessageId, setLastCompactedMessageId] = useState(null)
   const [activeSessionCompact, setActiveSessionCompact] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [isSessionsLoading, setIsSessionsLoading] = useState(true)
+  const [sessionsError, setSessionsError] = useState('')
+  const sessionsRequestRef = useRef(0)
 
   useEffect(() => {
     if (typeof setCurrentActiveSessionId === 'function') {
@@ -149,41 +272,41 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }, [activeSessionId])
 
   const [activeSessionData, setActiveSessionData] = useState([])
-  const [visibleMessageCount, setVisibleMessageCount] = useState(40)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [editingSessionId, setEditingSessionId] = useState(null)
-  const [editingTitle, setEditingTitle] = useState('')
+  const [visibleMessageCount, setVisibleMessageCount] = useState(30)
+  const [defaultRoot, setDefaultRoot] = useState('')
+  const [isWorkspaceBusy, setIsWorkspaceBusy] = useState(false)
+  const workspaceBusyRef = useRef(false)
 
   const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
-  const { confirm, ModalComponent } = useConfirm()
 
-  const loadAllSessions = async () => {
+  const loadAllSessions = useCallback(async () => {
+    const requestId = ++sessionsRequestRef.current
+    setIsSessionsLoading(true)
+    setSessionsError('')
     try {
-      const list = await getAllSessions()
-      setSessions(list || [])
+      const [list, info] = await Promise.all([getSessionSummaries(), webApi.getWorkspaceInfo()])
+      if (requestId === sessionsRequestRef.current) {
+        setSessions(list)
+        setDefaultRoot(info.defaultWorkspaceRoot)
+      }
     } catch (e) {
       console.error('Error loading sessions:', e)
-    }
-  }
-
-  useEffect(() => {
-    let isMounted = true
-    const initStudio = async () => {
-      try {
-        setLoading(true)
-        await loadAllSessions()
-      } catch (err) {
-        console.error('Error loading sessions:', err)
-      } finally {
-        if (isMounted) setLoading(false)
-      }
-    }
-    initStudio()
-    return () => {
-      isMounted = false
+      if (requestId === sessionsRequestRef.current)
+        setSessionsError('Daftar sesi belum dapat dimuat.')
+    } finally {
+      if (requestId === sessionsRequestRef.current) setIsSessionsLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    loadAllSessions()
+    const unsubscribe = webApi.onDatabaseRestored(loadAllSessions)
+    return () => {
+      sessionsRequestRef.current += 1
+      unsubscribe()
+    }
+  }, [loadAllSessions])
 
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
   const currentDisplayMessages =
@@ -210,6 +333,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   // Sinkronisasi status karakter gauge ke UI saat sesi aktif dimuat/berganti
   useEffect(() => {
+    if (isCurrentLoading) return
     if (!currentDisplayMessages || currentDisplayMessages.length === 0) {
       window.dispatchEvent(
         new CustomEvent('context-tracker-updated', {
@@ -257,14 +381,16 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     return () => {
       isMounted = false
     }
-  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact])
+  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact, isCurrentLoading])
 
   const handleSendMessage = async (prompt, sendOptions = {}) => {
     if (!prompt.trim()) return
 
     const rawDisplay = sendOptions?.displayPrompt || prompt
     // Auto-update session title if it's default
-    const currentSession = sessions.find((s) => String(s.id) === String(activeSessionId))
+    const currentSession =
+      sessions.find((s) => String(s.id) === String(activeSessionId)) ||
+      (await getSessionSummary(activeSessionId))
     let newTitle = currentSession?.title
     if (newTitle === 'Percakapan Baru' && rawDisplay.length > 0) {
       newTitle = rawDisplay.slice(0, 30) + (rawDisplay.length > 30 ? '...' : '')
@@ -279,10 +405,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     const isMain = String(activeSessionId) === '1' || String(activeSessionId) === '1.0'
     const commandOpts = {
-      workspaceRoot: currentSession?.workspaceRoot || null,
       displayPrompt: rawDisplay,
       attachedFiles: sendOptions?.attachedFiles,
       ...sendOptions,
+      workspaceRoot: resolveSessionWorkspace(
+        { ...currentSession, id: activeSessionId },
+        defaultRoot
+      ),
       ...(!isMain ? { sessionId: activeSessionId, customChatData: activeSessionData } : {})
     }
 
@@ -334,11 +463,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }
 
-  // Auto scroll to bottom on session change
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (isOpen === false) return
+    const container = messagesContainerRef.current
+    if (!container) return
     isAutoScrollEnabledRef.current = true
-    scrollToBottom('auto')
-  }, [activeSessionId])
+    container.scrollTop = container.scrollHeight
+  }, [activeSessionId, isOpen])
 
   // Direct stick-to-bottom without conflicting timers or layout thrashing
   useEffect(() => {
@@ -366,75 +497,60 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }, [activeApproval?.id, activeApproval?.status])
 
-  const handleCreateNewChat = async () => {
+  const createWorkspaceChat = async (root = null) => {
+    const newSession = await createSession('Percakapan Baru', { workspaceRoot: root })
+    setSessions((prev) => [...prev, newSession])
+    setActiveSessionData([])
+    setActiveSessionId(newSession.id)
+  }
+
+  const runWorkspaceAction = async (action) => {
+    if (workspaceBusyRef.current) return
+    workspaceBusyRef.current = true
+    setIsWorkspaceBusy(true)
+    setSessionsError('')
     try {
-      window.api?.resetAiSession?.().catch(() => {})
-      const newSession = await createSession('Percakapan Baru', [])
-      await loadAllSessions()
-      setActiveSessionId(newSession.id)
-      setActiveSessionData([])
-    } catch (err) {
-      console.error('Failed to create session:', err)
+      await action()
+    } catch (error) {
+      setSessionsError(error.message || 'Workspace belum dapat disimpan.')
+    } finally {
+      workspaceBusyRef.current = false
+      setIsWorkspaceBusy(false)
     }
   }
 
-  const handleDeleteSessionClick = async (e, id) => {
-    e.stopPropagation()
-    if (id === 1) return
-
-    const confirmed = await confirm({
-      title: 'Hapus Sesi Obrolan',
-      message: 'Apakah kamu yakin ingin menghapus sesi percakapan ini secara permanen?',
-      confirmText: 'Hapus',
-      confirmColor: 'btn-error'
+  const handleCreateNewChat = (root = null) => runWorkspaceAction(() => createWorkspaceChat(root))
+  const handleAddWorkspace = () =>
+    runWorkspaceAction(async () => {
+      const selected = await webApi.selectDirectory()
+      if (selected) await createWorkspaceChat(selected)
     })
 
-    if (confirmed?.isConfirmed) {
-      await deleteSession(id)
-      await loadAllSessions()
-      if (String(activeSessionId) === String(id)) {
-        setActiveSessionId('1')
-      }
-    }
+  const handleSaveSession = async (id, updates) => {
+    if (isMainSession(id)) throw new Error('Main Thread tidak dapat diubah.')
+    const sessionIsRunning = runningSessionIds.map(String).includes(String(id))
+    if (sessionIsRunning && Object.hasOwn(updates, 'workspaceRoot'))
+      throw new Error('Tunggu proses percakapan selesai sebelum mengubah workspace.')
+    const saved = await updateSessionMetadata(id, updates)
+    setSessions((prev) =>
+      prev.map((session) =>
+        String(session.id) === String(id) ? { ...session, ...saved } : session
+      )
+    )
   }
 
-  const handleStartRename = (e, session) => {
-    e.stopPropagation()
-    setEditingSessionId(session.id)
-    setEditingTitle(session.title)
-  }
-
-  const handleSaveRename = async (id) => {
-    if (editingTitle.trim()) {
-      await renameSession(id, editingTitle.trim())
-      await loadAllSessions()
-    }
-    setEditingSessionId(null)
-  }
-
-  const handleSelectSessionWorkspace = async () => {
-    if (window.api && window.api.selectDirectory) {
-      const selected = await window.api.selectDirectory()
-      if (selected) {
-        await setSessionWorkspace(activeSessionId, selected)
-        setSessions((prev) =>
-          prev.map((s) =>
-            String(s.id) === String(activeSessionId) ? { ...s, workspaceRoot: selected } : s
-          )
-        )
-      }
-    }
+  const handleDeleteSession = async (id) => {
+    if (isMainSession(id)) throw new Error('Main Thread tidak dapat dihapus.')
+    if (runningSessionIds.map(String).includes(String(id)))
+      throw new Error('Tunggu proses percakapan selesai sebelum menghapus sesi.')
+    const result = await deleteSession(id)
+    if (!result?.success) throw new Error('Percakapan belum dapat dihapus.')
+    setSessions((prev) => prev.filter((session) => String(session.id) !== String(id)))
+    if (String(activeSessionId) === String(id)) setActiveSessionId('1')
   }
 
   const handleStopSession = () => {
     if (handleStop) handleStop(activeSessionId)
-    if (window.api && window.api.browserClose) {
-      window.api
-        .browserClose({
-          sessionId: String(activeSessionId) === '1' ? 'main' : `workspace-${activeSessionId}`
-        })
-        .catch(() => {})
-    }
   }
 
   const handleManualCompaction = async () => {
@@ -548,458 +664,353 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   // Jika dipanggil via route (tanpa prop isOpen), default ke true
   if (isOpen === false) return null
 
-  const filteredSessions = sessions.filter((s) =>
-    (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   const activeSessionObj = sessions.find((s) => String(s.id) === String(activeSessionId)) || {
     id: '1',
     title: 'Main Thread'
   }
-  const activeSessionWorkspace = activeSessionObj?.workspaceRoot || null
+  const activeSessionWorkspace = resolveSessionWorkspace(activeSessionObj, defaultRoot)
 
   return (
     <>
       <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
-        {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 relative">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="absolute top-4 left-4 btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white pointer-events-auto"
-              title="Tutup Studio (Esc)"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <span className="loading loading-spinner loading-lg text-primary" />
-            <p className="font-mono text-xs text-base-content/50 tracking-widest uppercase">
-              Memuat Chat Studio...
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="w-80 border-r border-white/10 bg-base-200/50 flex flex-col h-full shrink-0">
-              {/* Sidebar Header */}
-              <div className="p-4 border-b border-white/10 space-y-3 z-30 relative select-none">
-                <div className="flex items-center justify-between pointer-events-auto">
-                  <div className="flex items-center gap-2 font-bold text-sm tracking-wide text-white">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleClose()
-                      }}
-                      className="btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white mr-1 cursor-pointer shrink-0 pointer-events-auto"
-                      title="Tutup Studio (Esc)"
-                    >
-                      <ArrowLeft className="w-5 h-5" />
-                    </button>
-                    <span className="truncate">Chat Studio</span>
-                  </div>
-                  <div className="flex items-center gap-1 pointer-events-auto">
-                    <button
-                      type="button"
-                      onClick={handleCreateNewChat}
-                      className="btn btn-xs btn-primary rounded-lg gap-1 font-medium shadow-md shadow-primary/20 cursor-pointer pointer-events-auto"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Sesi Baru
-                    </button>
-                  </div>
-                </div>
+        <div className={narrow && browserOpen ? 'hidden' : 'contents'}>
+          <WorkspaceSidebar
+            sessions={sessions}
+            defaultRoot={defaultRoot}
+            activeId={activeSessionId}
+            runningIds={[
+              ...runningSessionIds,
+              ...(!runningSessionIds.length && (isMainLoading || isAgentBusy) ? ['1'] : [])
+            ]}
+            loading={isSessionsLoading}
+            error={sessionsError}
+            busy={isWorkspaceBusy || !defaultRoot}
+            onRetry={loadAllSessions}
+            onClose={handleClose}
+            minimized={sidebarMinimized}
+            onToggleMinimized={() => setSidebarMinimized((value) => !value)}
+            onSelect={setActiveSessionId}
+            onCreate={handleCreateNewChat}
+            onAddWorkspace={handleAddWorkspace}
+            onSave={handleSaveSession}
+            onDelete={handleDeleteSession}
+          />
+        </div>
 
-                {/* Search Input */}
-                <div className="relative pointer-events-auto">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                  <input
-                    type="text"
-                    placeholder="Cari obrolan..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="input input-sm bg-base-300 border-white/10 pl-9 w-full rounded-xl text-xs text-white placeholder:text-white/30 focus:border-primary/50"
-                  />
-                </div>
-              </div>
-
-              {/* Sessions Scroll List */}
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-1 custom-scrollbar">
-                {/* PINNED MAIN THREAD */}
-                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
-                  <span>Sesi Utama</span>
-                </div>
-
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setActiveSessionId('1')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setActiveSessionId('1')
-                  }}
-                  className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/item cursor-pointer ${
-                    String(activeSessionId) === '1'
-                      ? 'bg-primary/20 border border-primary/40 text-white shadow-sm'
-                      : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        runningSessionIds.map(String).includes('1') ||
-                        (!runningSessionIds.length && (isMainLoading || isAgentBusy))
-                          ? 'bg-warning animate-ping'
-                          : 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
-                      }`}
-                    />
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-semibold truncate">Main Thread</h4>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="my-2 border-t border-white/5" />
-
-                {/* WORKSPACE SESSIONS */}
-                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
-                  Semua Sesi
-                </div>
-
-                {filteredSessions
-                  .filter(
-                    (s) =>
-                      String(s.id) !== '1' && String(s.id) !== '1.0' && s.title !== 'Main Thread'
-                  )
-                  .map((s) => {
-                    const isActive = String(activeSessionId) === String(s.id)
-                    const isEditing = String(editingSessionId) === String(s.id)
-                    const isThisSessionRunning = runningSessionIds
-                      .map(String)
-                      .includes(String(s.id))
-
-                    return (
-                      <div
-                        key={s.id}
-                        onClick={() => setActiveSessionId(s.id)}
-                        className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center justify-between group/session cursor-pointer ${
-                          isActive
-                            ? 'bg-white/10 border border-white/20 text-white shadow-sm'
-                            : 'hover:bg-white/5 text-white/70 hover:text-white border border-transparent'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                          <div
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              isThisSessionRunning
-                                ? 'bg-warning animate-ping'
-                                : isActive
-                                  ? 'bg-primary shadow-[0_0_6px_var(--color-primary)]'
-                                  : 'bg-white/20'
-                            }`}
-                          />
-                          <MessageSquare className="w-3.5 h-3.5 opacity-50 shrink-0" />
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={editingTitle}
-                              onChange={(e) => setEditingTitle(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveRename(s.id)
-                                if (e.key === 'Escape') setEditingSessionId(null)
-                              }}
-                              autoFocus
-                              className="input input-xs bg-base-300 border-primary/50 text-xs text-white p-1 h-6 w-full rounded"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <div className="min-w-0 flex-1">
-                              <h4 className="text-xs font-medium truncate">
-                                {s.title || 'Percakapan'}
-                              </h4>
-                              <p className="text-[10px] opacity-40">
-                                {s.timestamp
-                                  ? new Date(s.timestamp).toLocaleDateString('id-ID', {
-                                      month: 'short',
-                                      day: 'numeric'
-                                    })
-                                  : ''}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Action buttons on hover */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
-                          {isEditing ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleSaveRename(s.id)
-                              }}
-                              className="btn btn-ghost btn-xs p-1 text-success hover:bg-success/20"
-                            >
-                              <Check className="w-3 h-3" />
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                onClick={(e) => handleStartRename(e, s)}
-                                className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-white"
-                                title="Ubah judul sesi"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => handleDeleteSessionClick(e, s.id)}
-                                className="btn btn-ghost btn-xs p-1 text-white/40 hover:text-error"
-                                title="Hapus sesi"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                {filteredSessions.filter((s) => s.id !== 1).length === 0 && (
-                  <div className="text-center py-6 text-xs text-white/30">
-                    Belum ada sesi workspace lain.
-                  </div>
+        {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
+        <div
+          className={`flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden ${browserOpen && (narrow || browserExpanded) ? 'hidden' : ''}`}
+          style={
+            browserOpen && !narrow && !browserExpanded
+              ? { flex: '0 0 auto', width: chatWidth, maxWidth: '40%' }
+              : undefined
+          }
+        >
+          {/* Header */}
+          <div className="h-14 px-3 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
+            <div className="flex flex-col min-w-0 pr-4">
+              <div className="flex items-center gap-2 min-w-0">
+                <h3 className="text-sm font-bold text-white truncate">
+                  {activeSessionObj.title || 'Percakapan'}
+                </h3>
+                {activeSessionWorkspace && (
+                  <span
+                    className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-28 shrink-0 truncate inline-flex items-center gap-1"
+                    title={`Workspace: ${activeSessionWorkspace}`}
+                  >
+                    <Folder className="w-2.5 h-2.5 shrink-0" />
+                    <span className="truncate">{activeSessionWorkspace.split(/[\\/]/).pop()}</span>
+                  </span>
                 )}
               </div>
+              <span className="text-[10px] text-white/40">
+                {currentDisplayMessages.length} pesan terdaftar
+              </span>
             </div>
 
-            {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
-            <div className="flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden">
-              {/* Header */}
-              <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
-                <div className="flex flex-col min-w-0 pr-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white truncate max-w-md">
-                      {activeSessionObj.title || 'Percakapan'}
-                    </h3>
-                    {activeSessionWorkspace && (
-                      <span
-                        className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-65 truncate inline-flex items-center gap-1"
-                        title={`Workspace: ${activeSessionWorkspace}`}
-                      >
-                        <Folder className="w-2.5 h-2.5 shrink-0" />
-                        <span className="truncate">
-                          {activeSessionWorkspace.split(/[\\/]/).pop()}
-                        </span>
-                      </span>
-                    )}
+            <button
+              type="button"
+              onClick={() => setBrowserOpen(true)}
+              className="flex shrink-0 items-center gap-2 text-xs text-white/60 hover:text-white"
+              title="Buka browser percakapan"
+              aria-label="Buka browser percakapan"
+            >
+              <PanelRight size={16} />
+              {!browserOpen && 'Browser'}
+            </button>
+          </div>
+
+          {/* Messages Stream Container */}
+          <div
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
+          >
+            <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col space-y-8">
+              {currentDisplayMessages.length > visibleMessageCount && (
+                <div className="flex justify-center py-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleMessageCount((prev) => prev + 30)}
+                    className="btn btn-xs btn-ghost text-[11px] text-white/50 hover:text-white border border-white/10 rounded-full px-4 normal-case cursor-pointer"
+                  >
+                    Muat pesan sebelumnya ({currentDisplayMessages.length - visibleMessageCount}{' '}
+                    pesan lagi)
+                  </button>
+                </div>
+              )}
+
+              {currentDisplayMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4 my-auto">
+                  <img src="/icon-256.png" alt="icon" className="size-30" />
+                  <div className="max-w-lg space-y-1">
+                    <h4 className="text-xl font-bold text-white">Selamat Datang di Mark Agent</h4>
+                    <p className="text-lg text-white/50">
+                      Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
+                    </p>
                   </div>
-                  <span className="text-[10px] text-white/40">
-                    {currentDisplayMessages.length} pesan terdaftar
-                  </span>
                 </div>
+              ) : (
+                (() => {
+                  const hasActivePlan = (currentDisplayMessages || []).some(
+                    (m) => m.isPlanSteps && m.taskStatus === 'running'
+                  )
+                  const activeThinkingMsg =
+                    [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking) || null
 
-                <div className="flex items-center gap-2 pointer-events-auto mr-28"></div>
-              </div>
-
-              {/* Messages Stream Container */}
-              <div
-                ref={messagesContainerRef}
-                onScroll={handleScroll}
-                className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
-              >
-                <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col space-y-8">
-                  {currentDisplayMessages.length > visibleMessageCount && (
-                    <div className="flex justify-center py-2">
-                      <button
-                        type="button"
-                        onClick={() => setVisibleMessageCount((prev) => prev + 30)}
-                        className="btn btn-xs btn-ghost text-[11px] text-white/50 hover:text-white border border-white/10 rounded-full px-4 normal-case cursor-pointer"
-                      >
-                        Muat pesan sebelumnya ({currentDisplayMessages.length - visibleMessageCount}{' '}
-                        pesan lagi)
-                      </button>
-                    </div>
-                  )}
-
-                  {currentDisplayMessages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4 my-auto">
-                      <img src="/icon-256.png" alt="icon" className="size-30" />
-                      <div className="max-w-lg space-y-1">
-                        <h4 className="text-xl font-bold text-white">
-                          Selamat Datang di Mark Agent
-                        </h4>
-                        <p className="text-lg text-white/50">
-                          Tanyakan apapun, analisis kode, atau diskusikan ide riset bersama Mark.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    (() => {
-                      const hasActivePlan = (currentDisplayMessages || []).some(
-                        (m) => m.isPlanSteps && m.taskStatus === 'running'
-                      )
-                      const activeThinkingMsg =
-                        [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking) ||
-                        null
-
-                      return currentDisplayMessages.slice(-visibleMessageCount).map((msg, idx) => {
-                        if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
-                          return null
+                  const visibleMessages = currentDisplayMessages.slice(-visibleMessageCount)
+                  return buildCompletedTurnRenderItems(visibleMessages, isCurrentLoading).map(
+                    (item, idx) => {
+                      if (item.type === 'process') {
+                        const progressMessages = item.messages.filter((message) => {
+                          if (message.isPlanSteps) return true
+                          const content = message.content
+                          if (
+                            message.isThinking &&
+                            typeof content === 'string' &&
+                            /^(?:Mengeksekusi\b|Selesai mengeksekusi\b)/i.test(content.trim())
+                          ) {
+                            return false
+                          }
+                          return typeof content === 'string'
+                            ? Boolean(content.trim())
+                            : Boolean(content?.length)
+                        })
+                        let stepCursor = 0
+                        const processItems = progressMessages.map((message, messageIndex) => {
+                          const messageStepCount = Array.isArray(message.executedTools)
+                            ? message.executedTools.length
+                            : 0
+                          const stepEnd = Math.max(stepCursor, messageStepCount)
+                          const messageSteps = item.steps.slice(stepCursor, stepEnd)
+                          stepCursor = stepEnd
+                          return { message, messageSteps, messageIndex }
+                        })
+                        if (stepCursor < item.steps.length) {
+                          processItems.push({
+                            message: { role: 'assistant', content: '' },
+                            messageSteps: item.steps.slice(stepCursor),
+                            messageIndex: 'remaining'
+                          })
                         }
-                        const { cleanContent } = filterMessagePrefixes(msg.content)
+                        const activeActivityIndex = item.isActive
+                          ? processItems.findLastIndex(({ messageSteps }) =>
+                              messageSteps.some((step) => step.tool || step.action)
+                            )
+                          : -1
+
                         return (
-                          <ChatList
-                            key={
-                              msg.id
-                                ? `${msg.id}-${idx}`
-                                : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
-                            }
-                            id={msg.id || msg.timestamp || msg.created_at}
-                            lastCompactedMessageId={lastCompactedMessageId}
-                            isCompacting={msg.isCompacting}
-                            compactProgress={msg.compactProgress}
-                            role={msg.role}
-                            content={cleanContent}
-                            reasoning={msg.reasoning}
-                            isThinking={msg.isThinking}
-                            isSearching={msg.isSearching}
-                            isSummarizing={msg.isSummarizing}
-                            isSearchingMusic={msg.isSearchingMusic}
-                            sources={msg.sources}
-                            executedTools={msg.executedTools}
-                            isMemorySaved={msg.isMemorySaved}
-                            isMemoryUpdated={msg.isMemoryUpdated}
-                            isMemoryDeleted={msg.isMemoryDeleted}
-                            timestamp={msg.timestamp}
-                            mood={msg.mood}
-                            source={msg.source}
-                            sender={msg.sender}
-                            isPlanSteps={msg.isPlanSteps}
-                            plan={msg.plan}
-                            currentStep={msg.currentStep}
-                            taskId={msg.taskId}
-                            taskTitle={msg.taskTitle}
-                            taskObjective={msg.taskObjective}
-                            taskStatus={msg.taskStatus}
-                            artifactRoot={msg.artifactRoot}
-                            activeLiveTools={
-                              hasActivePlan && msg.isPlanSteps
-                                ? activeThinkingMsg?.executedTools || null
-                                : null
-                            }
-                            activeThinkingContent={
-                              hasActivePlan && msg.isPlanSteps
-                                ? (activeThinkingMsg?.reasoning
-                                    ? activeThinkingMsg.reasoning
-                                        .split('\n')
-                                        .map((s) => s.trim())
-                                        .filter(Boolean)
-                                        .pop()
-                                    : null) ||
-                                  activeThinkingMsg?.content ||
-                                  null
-                                : null
-                            }
-                            onStop={handleStopSession}
-                            isApproval={msg.isApproval}
-                            approvalId={msg.approvalId}
-                            approvalTool={msg.tool}
-                            approvalQuery={msg.query}
-                            approvalStatus={msg.status}
-                          />
+                          <details
+                            key={`process-${item.id}-${idx}`}
+                            className="chat-process group/completed-process w-full outline-none"
+                            open={item.isActive}
+                          >
+                            <summary className="group/row list-none flex w-full items-center gap-1.5 cursor-pointer border-b border-white/10 mt-1 pt-1.5 pb-2 text-sm font-sans text-white/55 hover:text-white/80 focus-visible:text-white/80 select-none transition-colors">
+                              <span>Proses</span>
+                              <ChevronRight className="w-3.5 h-3.5 shrink-0 text-white/55 transition-transform duration-150 group-open/completed-process:rotate-90" />
+                            </summary>
+                            <div className="chat-process-body space-y-2">
+                              {item.isActive && processItems.length === 0 && (
+                                <div role="status" className="text-sm text-white/60">
+                                  Sedang menganalisis permintaan…
+                                </div>
+                              )}
+                              {processItems.map(
+                                ({ message, messageSteps, messageIndex }, processIndex) => (
+                                  <ChatList
+                                    key={
+                                      message.id ||
+                                      `${message.timestamp || 'progress'}-${messageIndex}`
+                                    }
+                                    role={message.role || 'assistant'}
+                                    content={message.content || ''}
+                                    reasoning={item.isActive ? message.reasoning : null}
+                                    compactActivity
+                                    isActivityActive={processIndex === activeActivityIndex}
+                                    sources={message.sources || []}
+                                    timestamp={message.timestamp}
+                                    isPlanSteps={message.isPlanSteps}
+                                    plan={message.plan}
+                                    currentStep={message.currentStep}
+                                    taskId={message.taskId}
+                                    taskTitle={message.taskTitle}
+                                    taskObjective={message.taskObjective}
+                                    taskStatus={message.taskStatus}
+                                    artifactRoot={message.artifactRoot}
+                                    executedTools={messageSteps}
+                                  />
+                                )
+                              )}
+                            </div>
+                          </details>
                         )
-                      })
-                    })()
-                  )}
-                  {/* Spacer besar dan anti-shrink agar pesan paling bawah (termasuk tombol ApprovalBubble) tidak pernah terpotong saat scroll mentok */}
-                  <div
-                    ref={messagesEndRef}
-                    className="h-32 min-h-32 shrink-0 w-full pointer-events-none"
-                    aria-hidden="true"
-                  />
-                </div>
-              </div>
+                      }
 
-              {/* Bottom Input Area */}
-              <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0 z-20">
-                <div className="max-w-6xl mx-auto w-full h-full">
-                  {/* Sticky Quick Approval Bar jika ada izin tertunda */}
-                  {activeApproval && activeApproval.status === 'pending' && (
-                    <div className="mb-2.5 p-2.5 bg-warning/15 border border-warning/40 rounded-xl flex items-center justify-between gap-3 text-xs shadow-lg backdrop-blur-md animate-[response-fade-in_0.15s_ease-out_forwards]">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="badge badge-warning badge-xs font-mono font-bold uppercase shrink-0">
-                          Persetujuan
-                        </span>
-                        <span className="font-semibold text-white/95 truncate">
-                          {activeApproval.tool || 'Operasi'}
-                        </span>
-                        <span className="text-white/60 truncate hidden sm:inline text-[11px] font-mono">
-                          {extractToolTarget(activeApproval.tool, activeApproval.query).value ||
-                            activeApproval.message}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            resolveApproval && resolveApproval(activeApproval.id, 'reject')
+                      const msg = item.message
+                      if (hasActivePlan && msg.isThinking && !msg.isPlanSteps) {
+                        return null
+                      }
+                      const { cleanContent } = filterMessagePrefixes(msg.content)
+                      return (
+                        <ChatList
+                          key={
+                            msg.id
+                              ? `${msg.id}-${idx}`
+                              : `${msg.created_at || msg.timestamp || 'msg'}-${idx}`
                           }
-                          className="btn btn-ghost btn-xs text-error/90 hover:text-error hover:bg-error/15 rounded-lg px-2.5 font-medium"
-                        >
-                          Tolak
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            resolveApproval && resolveApproval(activeApproval.id, 'approve_session')
+                          id={msg.id || msg.timestamp || msg.created_at}
+                          lastCompactedMessageId={lastCompactedMessageId}
+                          isCompacting={msg.isCompacting}
+                          compactProgress={msg.compactProgress}
+                          role={msg.role}
+                          content={cleanContent}
+                          followsProcess={item.hideProcessDetails}
+                          reasoning={msg.reasoning}
+                          isThinking={msg.isThinking}
+                          isSearching={msg.isSearching}
+                          isSummarizing={msg.isSummarizing}
+                          isSearchingMusic={msg.isSearchingMusic}
+                          sources={msg.sources}
+                          executedTools={item.hideProcessDetails ? [] : msg.executedTools}
+                          isMemorySaved={msg.isMemorySaved}
+                          isMemoryUpdated={msg.isMemoryUpdated}
+                          isMemoryDeleted={msg.isMemoryDeleted}
+                          timestamp={msg.timestamp}
+                          mood={msg.mood}
+                          source={msg.source}
+                          sender={msg.sender}
+                          isPlanSteps={msg.isPlanSteps}
+                          plan={msg.plan}
+                          currentStep={msg.currentStep}
+                          taskId={msg.taskId}
+                          taskTitle={msg.taskTitle}
+                          taskObjective={msg.taskObjective}
+                          taskStatus={msg.taskStatus}
+                          artifactRoot={msg.artifactRoot}
+                          activeLiveTools={
+                            hasActivePlan && msg.isPlanSteps
+                              ? activeThinkingMsg?.executedTools || null
+                              : null
                           }
-                          className="btn btn-ghost btn-xs text-warning/90 hover:text-warning hover:bg-warning/15 rounded-lg px-2.5 font-medium"
-                        >
-                          Sesi Ini
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            resolveApproval && resolveApproval(activeApproval.id, 'approve_always')
+                          activeThinkingContent={
+                            hasActivePlan && msg.isPlanSteps
+                              ? (activeThinkingMsg?.reasoning
+                                  ? activeThinkingMsg.reasoning
+                                      .split('\n')
+                                      .map((s) => s.trim())
+                                      .filter(Boolean)
+                                      .pop()
+                                  : null) ||
+                                activeThinkingMsg?.content ||
+                                null
+                              : null
                           }
-                          className="btn btn-ghost btn-xs text-white/50 hover:text-error hover:bg-error/15 rounded-lg px-2 font-medium hidden md:inline-flex"
-                        >
-                          Selamanya
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            resolveApproval && resolveApproval(activeApproval.id, 'approve_once')
-                          }
-                          className="btn btn-primary btn-xs text-black font-semibold rounded-lg px-3 shadow-sm"
-                        >
-                          Izinkan Sekali
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                          onStop={handleStopSession}
+                          isApproval={msg.isApproval}
+                          approvalId={msg.approvalId}
+                          approvalTool={msg.tool}
+                          approvalQuery={msg.query}
+                          approvalStatus={msg.status}
+                        />
+                      )
+                    }
+                  )
+                })()
+              )}
+              {/* Spacer besar dan anti-shrink agar pesan paling bawah (termasuk tombol ApprovalBubble) tidak pernah terpotong saat scroll mentok */}
+              <div
+                ref={messagesEndRef}
+                className="h-32 min-h-32 shrink-0 w-full pointer-events-none"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
 
-                  <InputBar
-                    sessionId={String(activeSessionId)}
-                    inline={true}
-                    onSubmit={handleSendMessage}
-                    isLoading={isCurrentLoading}
-                    isRecording={isRecording}
-                    isProcessing={isProcessing}
-                    audioIntensity={audioIntensity}
-                    onStartRecord={startRecording}
-                    onStopRecord={stopRecording}
-                    onStop={handleStopSession}
-                    source={inputSource || 'pc'}
-                    workspaceRoot={activeSessionWorkspace}
-                    onSelectWorkspace={handleSelectSessionWorkspace}
-                    onManualCompact={handleManualCompaction}
-                  />
-                </div>
-              </div>
+          {/* Bottom Input Area */}
+          <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0 z-20">
+            <div className="max-w-6xl mx-auto w-full h-full">
+              <InputBar
+                contextManagedExternally={true}
+                initialDraft={initialDraft}
+                sessionId={String(activeSessionId)}
+                inline={true}
+                onSubmit={handleSendMessage}
+                isLoading={isCurrentLoading}
+                isRecording={isRecording}
+                isProcessing={isProcessing}
+                audioIntensity={audioIntensity}
+                onStartRecord={startRecording}
+                onStopRecord={stopRecording}
+                onStop={handleStopSession}
+                source={inputSource || 'pc'}
+                workspaceRoot={activeSessionWorkspace}
+                onManualCompact={handleManualCompaction}
+              />
+            </div>
+          </div>
+        </div>
+        {browserOpen && (
+          <>
+            {!narrow && !browserExpanded && (
+              <div
+                role="separator"
+                aria-label="Lebar percakapan dan browser"
+                aria-orientation="vertical"
+                tabIndex={0}
+                className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40 focus:bg-primary/40"
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+                    setChatWidth((w) =>
+                      Math.max(300, Math.min(600, w + (e.key === 'ArrowLeft' ? -30 : 30)))
+                    )
+                }}
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                }}
+                onPointerMove={(e) => {
+                  if (e.currentTarget.hasPointerCapture(e.pointerId))
+                    setChatWidth(
+                      Math.max(300, Math.min(600, e.clientX - (sidebarMinimized ? 48 : 320)))
+                    )
+                }}
+                onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
+              />
+            )}
+            <div className="min-w-0 h-full flex-1 overflow-hidden">
+              <BrowserPanel
+                key={browserId}
+                sessionId={browserId}
+                onClose={() => setBrowserOpen(false)}
+                onResume={resumeBrowser}
+                expanded={browserExpanded || narrow}
+                onExpand={() =>
+                  narrow ? setBrowserOpen(false) : setBrowserExpanded((value) => !value)
+                }
+              />
             </div>
           </>
         )}
       </div>
-
-      <ModalComponent />
     </>
   )
 }

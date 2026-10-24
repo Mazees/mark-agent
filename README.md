@@ -13,6 +13,7 @@
 
 > **Mark BUKAN sekadar asisten virtual biasa. Mark adalah entitas AI yang dirancang untuk memiliki emosi, bertindak selayaknya manusia, dan memimpin tim agen cerdas.**
 > Lebih dari sekadar chatbot kaku, Mark adalah _Personal AI OS Companion_ yang berjalan di ekosistem lokal Anda—dilengkapi dengan arsitektur modern **Node.js Core + WebUI (React 19 / Vite 7)** dalam antarmuka Microsoft Edge App Mode (dengan fallback otomatis ke browser default) dan CLI Live Activity Monitor (`mark`). Didukung oleh **Centralized SQLite Database**, sistem memori jangka panjang berbasis _Vector Memory_, **Relational Growth System**, **Autonomous Multi-Agent Sub-Agent Engine**, serta **Multi-Session Browser Automation**. Ditenagai oleh _Hybrid AI Engine_, Mark dapat beroperasi secara lokal untuk privasi maksimal, atau menggunakan _Cloud APIs_ untuk mengeksekusi tugas kompleks, menyusun rencana (_Agentic Planning_), mengotomatisasi desktop PC, merangkum video YouTube, mengobservasi layar atau dunia nyata (_Vision_), hingga kendali jarak jauh via **Telegram Bot**.
+> Lebih dari sekadar chatbot kaku, Mark adalah _Personal AI OS Companion_ yang berjalan di ekosistem lokal Anda—dilengkapi dengan arsitektur modern **Node.js Core + WebUI (React 19 / Vite 7)** dalam antarmuka Microsoft Edge App Mode (dengan fallback otomatis ke browser default) dan CLI Live Activity Monitor (`mark`). Didukung oleh **Centralized SQLite Database**, sistem memori jangka panjang berbasis _Vector Memory_, **Relational Growth System**, **Autonomous Multi-Agent Sub-Agent Engine**, serta **Multi-Session Browser Automation**. Ditenagai oleh _Hybrid AI Engine_, Mark dapat beroperasi secara lokal untuk privasi maksimal, atau menggunakan _Cloud APIs_ untuk mengeksekusi tugas kompleks, menyusun rencana (_Agentic Planning_), mengendalikan komputer tingkat OS (Computer Use), merangkum video YouTube, mengobservasi layar atau dunia nyata (_Vision_), hingga kendali jarak jauh via **Telegram Bot**.
 
 > [!IMPORTANT]
 > Proyek ini dioptimalkan khusus untuk **Windows** (Windows 10/11 64-bit).
@@ -32,12 +33,13 @@
 - **Dynamic Agentic Planning (ReAct Loop):** Mengganti sistem penjawab statis dengan arsitektur penalaran cerdas. Mark mampu memecah masalah, memikirkan strategi, menggunakan _tools_ secara otonom berulang kali, dan mengevaluasi hasilnya sebelum memberikan jawaban akhir yang komprehensif.
 - **Agent Task Workflows (Durable Tasks & Mission Control):** Untuk pekerjaan multi-langkah yang panjang, Mark secara otonom mendekomposisi tugas menjadi tahapan konkret via tool `create_agent_task` (atau dipicu manual via perintah `/task` dan alias `/plan`). Setiap langkah divalidasi, di-checkpoint persisten ke basis data SQLite, dapat di-retry otomatis, dan menghasilkan berkas artefak markdown resmi di folder `Documents/Mark Tasks/<task-id>/` yang terpantau real-time pada komponen antarmuka `DurableTaskBubble` di chat stream.
 - **Zero-Vision Physical PC & Desktop Automation (Windows UIAutomation + C# Daemon):** Menggunakan daemon PowerShell C# persisten (`pc-daemon.ps1`), Mark dapat membaca elemen GUI desktop secara struktural, mengklik koordinat, mengetik teks Unicode, menekan kombinasi _shortcut_, hingga mengelola jendela aplikasi di Windows secara fisik dengan kecepatan tinggi tanpa biaya vision API. Dilengkapi _Floating Security Banner_ dan tombol darurat **Emergency Stop (`Ctrl+Shift+S`)**.
+- **Visual Computer Use & High-Speed Desktop Automation (VLA + C# Daemon):** Menggunakan daemon PowerShell C# persisten (`pc-daemon.ps1`), Mark dapat membaca elemen GUI desktop secara struktural maupun visual via tangkapan layar JPEG in-memory berkecepatan tinggi, mengklik koordinat ternormalisasi (1280x720 canvas), mengetik teks Unicode, menekan kombinasi _shortcut_, drag-and-drop, hingga mengelola jendela aplikasi di Windows secara fisik. Dilengkapi _Floating Security Banner_, HUD visual preview (`DesktopPreviewWidget`), dan tombol darurat **Emergency Stop (`Ctrl+Shift+S`)**.
 - **Integrasi Google Workspace Suite & GDrive Share:** Terhubung dengan ekosistem Google Workspace via OAuth2 untuk mengelola Google Calendar (jadwal/agenda), Google Drive (pencarian, pengunggahan, pembagian berkas / _GDrive Share_), dan Gmail (pembacaan serta pengiriman email).
 - **Workspace Tagging (`@workspace`) & Context Clusters:** Dukungan penandaan konteks direktori kerja secara eksplisit (`@workspace`), pencarian semantik file kerja lokal (_Workspace RAG_), dan pengelompokan tool dinamis (_tool clusters_) sesuai kebutuhan tugas.
 - **Developer-Grade Responsive CLI Live Monitor & Auto-Updater:** Antarmuka terminal interaktif yang beradaptasi secara dinamis dengan lebar layar terminal mana pun (`process.stdout.columns`), notifikasi pembaruan resmi otomatis di latar belakang, zero emoji, dan shortcut kontrol cepat (`[u]` buka UI, `[p]` update info, `[c]` bersihkan layar, `[q]` keluar).
-- **Infinite Memory & Injection Knowledge RAG:** Sistem Vector Retrieval-Augmented Generation (RAG) berjalan secara _offline_. Mark menyimpan riwayat memori obrolan masif tanpa batas dan pengguna dapat menambahkan dokumen (.pdf, .docx, .txt, .md) ke dalam _knowledge base_ tanpa membebani _context window_ LLM.
+- **Infinite Memory:** Sistem Vector Retrieval-Augmented Generation (RAG) berjalan secara _offline_. Mark menyimpan riwayat memori obrolan masif tanpa batas.
 - **Automatic Memory Groomer (Hippocampus Engine):** Sistem pembersihan dan konsolidasi memori mandiri berbasis _Orama Clustering_ dan _LLM Batch Processing_. Hippocampus Engine mendeteksi klaster memori serupa (`profile` & `preference`) lalu menggabungkannya secara kronologis tanpa kehilangan riwayat penting.
-- **Visualisasi Jaringan Otak (Memory Visualizer):** Antarmuka _Live Feed_ "Mark Neural Core" berbasis grafis Neural Network 2D interaktif (`react-force-graph-2d`) untuk menjelajahi jaringan _Chat History_, _Knowledge Base_, hingga _Document Vault_.
+- **Visualisasi Jaringan Otak (Memory Visualizer):** Antarmuka _Live Feed_ "Mark Neural Core" berbasis grafis Neural Network 2D interaktif (`react-force-graph-2d`) untuk menjelajahi riwayat chat, memori pengguna, dan skill yang dipelajari.
 - **Relational Growth System & Tactile Avatar:** Hubungan Anda dengan Mark dievaluasi layaknya manusia sungguhan melalui 4 parameter krusial (_Warmth, Sarcasm, Trust, Energy_) dengan preservasi riwayat mood AI dan respons interaksi visual taktil pada avatar. Tingkat kesopanan, kelancangan (_roasting_), dan kepribadian Mark akan berevolusi organik sesuai gaya komunikasi Anda.
 - **Multi AI Provider (Built-in Gemini / DeepSeek / Local / Cloud):** Mark hadir dengan **Google Gemini Engine (Gratis)** sebagai _provider_ bawaan yang siap pakai tanpa API Key. Anda juga memiliki fleksibilitas penuh untuk menggunakan **DeepSeek Web RPC**, **Local AI** (LM Studio), **Cloud AI** (Groq / Cerebras), maupun _Custom OpenAI-Compatible API_.
 - **Asisten Bot Telegram Mandiri (Telegraf Engine):** Terhubung langsung dengan Telegram Bot API. Mark dapat dikontrol jarak jauh via Telegram, merangkum obrolan, mengunduh MP3 YouTube, mengambil tangkapan layar PC, dan secara otomatis menyinkronkan seluruh balasan & _Awareness Engine_ ke Telegram Admin secara _real-time_.
@@ -47,13 +49,15 @@
 
 ## Kemampuan Utama (Tools)
 
+- **Chrome Bridge:** Add-on bawaan untuk mengendalikan satu tab Chrome pilihan pengguna melalui ekstensi **Mark Agent Bridge**. Mendukung sesi login Chrome yang sudah aktif, formulir, JavaScript, dan screenshot di chat. Engine tetap `chrome-use`; lihat [panduan pemasangan dan pengujian](docs/chrome-bridge.md).
+
 - **Autonomous Multi-Agent Tools:** `spawn_subagent`, `wait_subagents`, `send_message`, `list_subagents`, `kill_subagent`.
 - **Durable Task Workflow Engine:** `create_agent_task` (pemecahan tugas multi-tahap terstruktur, checkpointing berkala, validasi kelayakan deliverable, dan generasi berkas artefak).
 - **Git Workspace Tools (`git-*`):** `git-status`, `git-diff`, `git-commit`, `git-revert`.
 - **Google Workspace Suite (`google-*` / `gdrive-*` / `gcal-*` / `gmail-*`):** `gdrive-search`, `gdrive-list`, `gdrive-read`, `gdrive-upload`, `gdrive-create`, `gdrive-move`, `gdrive-copy`, `gdrive-share`, `gdrive-info`, `gcal-list`, `gcal-create`, `gcal-delete`, `gmail-search`, `gmail-read`, `gmail-send`, `gmail-mark-read`.
 - **Memory & Recall Tools (`memory-search`):** Pencarian semantik memori, preferensi, catatan teknis, dan pasangan percakapan asli (Turn Pairs) dengan _similarity threshold_ dinamis (`keyword||threshold||limit`, default threshold `0.5`, limit `5`).
-- **Multi-Session Web Browsing (`browser-*`):** `browser-navigate`, `browser-read`, `browser-click`, `browser-type`, `browser-scroll`, `browser-extract`, `browser-ask-user`, `browser-close`.
-- **Desktop Automation (`os-*`):** `os-read`, `os-click`, `os-type`, `os-key`, `os-scroll`, `os-open`, `os-list-windows`, `os-focus-window`.
+- **Multi-Session Web Browsing (`browser-*`):** `browser-navigate`, `browser-read`, `browser-click`, `browser-type`, `browser-scroll`, `browser-extract`, `browser-script`, `browser-screenshot`, `browser-close`. Aksi browser menyertakan DOM terbaru; cookie login tersimpan per percakapan.
+- **Computer Use & Desktop Automation (`computer_use`):** `computer_use` (primitif visual VLA terpadu: screenshot, click, double_click, right_click, middle_click, mouse_down, mouse_up, move, drag, burst_click, type, key, key_down, key_up, hotkey, scroll, wait, batch, open_app, list_windows, focus_window, maximize_window).
 - **Native File Handling & PowerShell:** `read-file`, `write-file`, `replace-content`, `delete-file`, `list-dir`, `grep-search`, `run-powershell`.
 - **Background Tasks Engine:** `run-task`, `read-task-output`, `kill-task`, `list-tasks`.
 - **Vision Awareness:** `analyze-screen` (analisis layar multi-monitor) dan `camera-look` (observasi visual webcam).
@@ -107,6 +111,7 @@ mark/
 │   │   │   └── gemini-web.js  # Native Gemini Web RPC Engine
 │   │   └── tools/
 │   │       ├── pc-agent.js    # Win32 Desktop Automation Driver
+│   │       ├── pc-agent.js    # Win32 Computer Use & Desktop Automation Driver
 │   │       ├── awareness-tracker.js # OS-level Active Window & Idle Tracker
 │   │       ├── screen-service.js # GDI+ Zero-Dependency Screen Capture
 │   │       └── media-tools.js # Audio, STT & TTS Service
@@ -139,17 +144,18 @@ mark/
 
 ## Teknologi Terkait
 
-| Kategori               | Teknologi                                                                               |
-| :--------------------- | :-------------------------------------------------------------------------------------- |
-| **Arsitektur Core**    | Node.js 20+, Express 4, WebSocket Hub (`ws`)                                            |
-| **Antarmuka (UI)**     | React 19, Vite 7, Tailwind CSS 4, DaisyUI 5, Monaco Editor, Lucide Icons                |
-| **Desktop Launcher**   | Node.js CLI Live Monitor (`mark`), Microsoft Edge App Mode                              |
-| **Database & Storage** | Centralized SQLite (`better-sqlite3` WAL Mode), REST Proxy Layer                        |
-| **Pencarian & Vektor** | `@orama/orama` WASM, Transformers.js (`@huggingface/transformers`, 384d)                |
-| **Mesin AI**           | Google Gemini (Bawaan Gratis) / Custom Open AI API Format / LM Studio (Offline)         |
-| **Browser Automation** | `puppeteer-core` (Multi-Session Chromium Isolation)                                     |
-| **Desktop Automation** | Win32 UIAutomation, persistent PowerShell C# Daemon, WinRT OCR                          |
-| **Suara & Audio**      | Groq Whisper-Large-v3 / Local Whisper, Edge-TTS (`id-ID-ArdiNeural`), Web Audio API VAD |
+| Kategori                   | Teknologi                                                                               |
+| :------------------------- | :-------------------------------------------------------------------------------------- |
+| **Arsitektur Core**        | Node.js 20+, Express 4, WebSocket Hub (`ws`)                                            |
+| **Antarmuka (UI)**         | React 19, Vite 7, Tailwind CSS 4, DaisyUI 5, Monaco Editor, Lucide Icons                |
+| **Desktop Launcher**       | Node.js CLI Live Monitor (`mark`), Microsoft Edge App Mode                              |
+| **Database & Storage**     | Centralized SQLite (`better-sqlite3` WAL Mode), REST Proxy Layer                        |
+| **Pencarian & Vektor**     | `@orama/orama` WASM, Transformers.js (`@huggingface/transformers`, 384d)                |
+| **Mesin AI**               | Google Gemini (Bawaan Gratis) / Custom Open AI API Format / LM Studio (Offline)         |
+| **Browser Automation**     | `puppeteer-core` (Multi-Session Chromium Isolation)                                     |
+| **Desktop Automation**     | Win32 UIAutomation, persistent PowerShell C# Daemon, WinRT OCR                          |
+| **Computer Use & Desktop** | Win32 UIAutomation, persistent PowerShell C# Daemon, GDI JPEG VLA Capture               |
+| **Suara & Audio**          | Groq Whisper-Large-v3 / Local Whisper, Edge-TTS (`id-ID-ArdiNeural`), Web Audio API VAD |
 
 ---
 
@@ -248,6 +254,8 @@ Jika Anda ingin memodifikasi kode sumber atau berkontribusi pada pengembangan MA
 ## Panduan Migrasi Basis Data
 
 Bagi pengguna MARK versi sebelumnya (berbasis Electron/Dexie) yang ingin memindahkan seluruh memori, dokumen, dan riwayat obrolan ke MARK (berbasis SQLite), silakan baca panduan lengkap di [docs/MIGRATION_GUIDE.md](./docs/MIGRATION_GUIDE.md).
+
+Fitur Knowledge dan pencarian otomatis dokumen telah dihapus. Tabel `documents` dari backup lama tetap dipertahankan untuk export/restore, tetapi tidak lagi dimuat ke indeks pencarian, ditampilkan di Neural Core, atau dimasukkan ke konteks AI.
 
 ---
 

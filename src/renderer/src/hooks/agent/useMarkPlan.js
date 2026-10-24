@@ -13,6 +13,7 @@ import {
   updateMemory,
   saveSession,
   getChatData,
+  getSessionSummary,
   getSessionCompact,
   db
 } from '../../api/db'
@@ -26,6 +27,8 @@ import {
   GATEWAY_HYGIENE_THRESHOLD,
   IN_LOOP_COMPACT_THRESHOLD,
   calculateSessionTokens,
+  calculatePayloadTokens,
+  countTokens,
   calculateMessageTokens,
   calculateSessionChars,
   executeSessionCompaction,
@@ -35,12 +38,148 @@ import {
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
+import { recordProgressMessage, buildProgressReminder } from '../../utils/processSteps'
+import { resolveSessionWorkspace } from '@shared/workspaces.js'
+import {
+  browserSessionId,
+  browserCommand,
+  browserPaused,
+  browserRevision,
+  getBrowserState,
+  waitForBrowserAgent,
+  browserObservation,
+  withBrowserRequest
+} from '../../api/browser-panel.js'
 
 // ============================================================================
 // HELPER UTILITIES
 // ============================================================================
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
+const LOCAL_IMAGE_PATH_PATTERN =
+  /(?:[a-z]:[\\/]|\.\.?[\\/]|\/)[^\r\n"'<>]*\.(?:avif|bmp|gif|jpe?g|png|svg|webp)/i
+
+function findPluginImageReference(value, key = '', depth = 0) {
+  if (depth > 5 || value == null) return null
+  if (typeof value === 'string') {
+    const imageData = value.match(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/i)?.[0]
+    if (imageData) return { previewUrl: imageData, modelUrl: imageData }
+    const remoteImage =
+      value.match(
+        /https?:\/\/[^\s"'<>]+\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:\?[^\s"'<>]*)?/i
+      )?.[0] ||
+      (['imageurl', 'qrurl'].includes(key.toLowerCase()) && /^https?:\/\//i.test(value)
+        ? value.trim()
+        : null)
+    if (remoteImage) return { previewUrl: remoteImage, modelUrl: remoteImage }
+
+    let valueToScan = value
+    if (/^file:\/\//i.test(value)) {
+      try {
+        const fileUrl = new URL(value)
+        if (fileUrl.host && fileUrl.host !== 'localhost') return null
+        valueToScan = decodeURIComponent(fileUrl.pathname).replace(/^\/(\w:)/, '$1')
+      } catch {
+        return null
+      }
+    }
+    const localPath =
+      LOCAL_IMAGE_PATH_PATTERN.exec(valueToScan)?.[0] ||
+      (/^(?:[^\s]+\.(?:avif|bmp|gif|jpe?g|png|svg|webp))$/i.test(value.trim()) &&
+      ['path', 'filepath', 'filename', 'qrpath'].includes(key.toLowerCase())
+        ? valueToScan.trim()
+        : null)
+    if (localPath) {
+      return {
+        previewUrl: `/api/chat/local-image?path=${encodeURIComponent(localPath.replace(/[),.;]+$/, ''))}`,
+        modelUrl: null
+      }
+    }
+    return null
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const image = findPluginImageReference(entry, key, depth + 1)
+      if (image) return image
+    }
+    return null
+  }
+
+  if (typeof value === 'object') {
+    const preferredKeys = [
+      'dataUrl',
+      'imageUrl',
+      'image',
+      'screenshot',
+      'qrImage',
+      'qrUrl',
+      'qrPath',
+      'filePath',
+      'filename',
+      'path',
+      'qr'
+    ]
+    for (const childKey of preferredKeys) {
+      if (Object.hasOwn(value, childKey)) {
+        const image = findPluginImageReference(value[childKey], childKey, depth + 1)
+        if (image) return image
+      }
+    }
+    for (const [childKey, child] of Object.entries(value)) {
+      if (preferredKeys.includes(childKey)) continue
+      const image = findPluginImageReference(child, childKey, depth + 1)
+      if (image) return image
+    }
+  }
+  return null
+}
+
+function redactPluginImagePayload(value) {
+  if (typeof value === 'string') {
+    return value.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi, '[Gambar dilampirkan]')
+  }
+  if (Array.isArray(value)) return value.map(redactPluginImagePayload)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, redactPluginImagePayload(child)])
+    )
+  }
+  return value
+}
+
+const publishContextUsage = async (
+  sessionId,
+  tokens,
+  lastCompactedAt,
+  beforeCompaction = false
+) => {
+  window.dispatchEvent(
+    new CustomEvent('context-tracker-updated', {
+      detail: {
+        sessionId: String(sessionId),
+        currentTokens: tokens,
+        maxTokens: MAX_CONTEXT_TOKENS,
+        percentage: Math.min(100, (tokens / MAX_CONTEXT_TOKENS) * 100),
+        lastCompactedAt: lastCompactedAt || null
+      }
+    })
+  )
+  if (!beforeCompaction || document.visibilityState !== 'visible') return
+  await new Promise((resolve) => {
+    let firstFrame, secondFrame
+    const done = () => {
+      clearTimeout(timer)
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+      resolve()
+    }
+    const timer = setTimeout(done, 100)
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(done)
+    })
+  })
+}
 
 const isImagePath = (filePath = '') => {
   if (typeof filePath === 'string' && filePath.startsWith('data:image/')) return true
@@ -87,6 +226,7 @@ const MUTATION_TOOLS = new Set([
   'edit-file',
   'append-file',
   'delete-file',
+  'computer_use',
   'os-click',
   'os-type',
   'os-key',
@@ -112,6 +252,30 @@ const VERIFICATION_TOOLS = new Set([
   'readDesktop',
   'takeScreenshot'
 ])
+
+const awaitWithTimeout = async (promise, timeoutMs, stage, signal) => {
+  let timeoutId
+  let onAbort
+  try {
+    if (signal?.aborted) throw new Error('AbortError')
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        onAbort = () => reject(new Error('AbortError'))
+        signal?.addEventListener('abort', onAbort, { once: true })
+      }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`${stage} tidak selesai dalam ${timeoutMs / 1000} detik.`)),
+          timeoutMs
+        )
+      })
+    ])
+  } finally {
+    clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', onAbort)
+  }
+}
 
 // ============================================================================
 // MAIN HOOK: useMarkPlan
@@ -157,34 +321,30 @@ export const useMarkPlan = ({
 
   // Listener event status AI dari Main Process (IPC)
   useEffect(() => {
+    let unsubStatus = null
     if (window.api && window.api.onAiStatus) {
-      window.api.onAiStatus((msg) => {
-        if (activeSessionUpdatersRef.current.size > 0) {
-          for (const updater of activeSessionUpdatersRef.current.values()) {
-            try {
-              updater((prev) => {
-                const filtered = prev.filter((item) => !item.isThinking)
-                return [...filtered, { role: 'ai', content: msg, isThinking: true }]
-              })
-            } catch (e) {}
-          }
-        } else {
-          setChatData((prev) => {
-            const filtered = prev.filter((item) => !item.isThinking)
-            return [...filtered, { role: 'ai', content: msg, isThinking: true }]
-          })
+      unsubStatus = window.api.onAiStatus((msg) => {
+        for (const updater of activeSessionUpdatersRef.current.values()) {
+          try {
+            updater((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [...filtered, { role: 'ai', content: msg, isThinking: true }]
+            })
+          } catch (e) {}
         }
       })
     }
 
+    let unsubAbort = null
     if (window.api && window.api.onAiAbort) {
-      const unsub = window.api.onAiAbort((payload) => {
+      unsubAbort = window.api.onAiAbort((payload) => {
         console.warn('[useMarkPlan] Sinyal ai:abort diterima:', payload)
         handleStop()
       })
-      return () => {
-        if (typeof unsub === 'function') unsub()
-      }
+    }
+    return () => {
+      if (typeof unsubStatus === 'function') unsubStatus()
+      if (typeof unsubAbort === 'function') unsubAbort()
     }
   }, [setChatData])
 
@@ -208,7 +368,7 @@ export const useMarkPlan = ({
     const displayMsg = opts.displayPrompt || textMsg
     const sId =
       targetSessionId !== null && targetSessionId !== undefined
-        ? Number(targetSessionId)
+        ? targetSessionId
         : activeRunningSessionIdRef.current || 1
 
     const interventionItem = {
@@ -217,8 +377,12 @@ export const useMarkPlan = ({
       timestamp: Date.now()
     }
 
-    const session = activeSessionsRef.current.get(sId)
+    const session =
+      activeSessionsRef.current.get(sId) ||
+      activeSessionsRef.current.get(String(sId)) ||
+      (!isNaN(Number(sId)) ? activeSessionsRef.current.get(Number(sId)) : null)
     if (session) {
+      session.needsFreshBrowserObservation = true
       session.lastActivityTime = Date.now()
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
@@ -227,7 +391,11 @@ export const useMarkPlan = ({
       }
     }
 
-    const updater = activeSessionUpdatersRef.current.get(sId) || (sId === 1 ? setChatData : null)
+    const updater =
+      activeSessionUpdatersRef.current.get(sId) ||
+      activeSessionUpdatersRef.current.get(String(sId)) ||
+      (!isNaN(Number(sId)) ? activeSessionUpdatersRef.current.get(Number(sId)) : null) ||
+      (String(sId) === '1' ? setChatData : null)
     if (updater) {
       updater((prev) => {
         const thinkingIndex = prev.findIndex((item) => item.isThinking)
@@ -253,18 +421,16 @@ export const useMarkPlan = ({
       speechQueue.reset()
     } catch (_) {}
 
-    const numId =
-      targetSessionId !== null && targetSessionId !== undefined ? Number(targetSessionId) : null
-    const strId =
-      targetSessionId !== null && targetSessionId !== undefined ? String(targetSessionId) : null
-
     const sessionsToAbort = []
-    if (numId !== null) {
-      const s = activeSessionsRef.current.get(numId) || activeSessionsRef.current.get(strId)
+    if (targetSessionId !== null && targetSessionId !== undefined) {
+      const s =
+        activeSessionsRef.current.get(targetSessionId) ||
+        activeSessionsRef.current.get(String(targetSessionId)) ||
+        (!isNaN(Number(targetSessionId))
+          ? activeSessionsRef.current.get(Number(targetSessionId))
+          : null)
       if (s) sessionsToAbort.push(s)
-    }
-
-    if (sessionsToAbort.length === 0) {
+    } else {
       for (const s of activeSessionsRef.current.values()) {
         sessionsToAbort.push(s)
       }
@@ -278,27 +444,24 @@ export const useMarkPlan = ({
       }
     }
 
-    if (abortControllerRef?.current) {
+    if (targetSessionId == null && abortControllerRef?.current) {
       try {
         abortControllerRef.current.abort()
       } catch (_) {}
     }
 
-    if (window.api && window.api.abortFetchAI) {
+    if (targetSessionId == null && window.api && window.api.abortFetchAI) {
       try {
         window.api.abortFetchAI()
       } catch (_) {}
     }
 
-    if (window.api && window.api.browserClose) {
-      const closeId = numId === 1 || !numId ? 'main' : `workspace-${numId}`
-      window.api.browserClose({ sessionId: closeId }).catch(() => {})
-    }
-
     // Fail-safe: Langsung batalkan semua agent tasks yang berstatus running di SQLite
     try {
       const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-      for (const t of runningTasks) {
+      for (const t of runningTasks.filter(
+        (t) => targetSessionId == null || sessionsToAbort.some((session) => session.taskId === t.id)
+      )) {
         await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
       }
     } catch (_) {}
@@ -319,8 +482,18 @@ export const useMarkPlan = ({
       })
     }
 
-    if (numId !== null && activeSessionUpdatersRef.current.has(numId)) {
-      activeSessionUpdatersRef.current.get(numId)(stopUpdater)
+    if (targetSessionId !== null && targetSessionId !== undefined) {
+      const updater =
+        activeSessionUpdatersRef.current.get(targetSessionId) ||
+        activeSessionUpdatersRef.current.get(String(targetSessionId)) ||
+        (!isNaN(Number(targetSessionId))
+          ? activeSessionUpdatersRef.current.get(Number(targetSessionId))
+          : null)
+      if (updater) {
+        updater(stopUpdater)
+      } else if (String(targetSessionId) === '1') {
+        setChatData(stopUpdater)
+      }
     } else {
       setChatData(stopUpdater)
       for (const updater of activeSessionUpdatersRef.current.values()) {
@@ -328,9 +501,14 @@ export const useMarkPlan = ({
       }
     }
 
-    if (numId === 1 || numId === null) {
+    if (targetSessionId !== null && targetSessionId !== undefined) {
+      if (removeRunningSessionId) removeRunningSessionId(targetSessionId)
+      if (String(targetSessionId) === '1') setIsLoading(false)
+      setIsAgentBusy(activeSessionsRef.current.size > sessionsToAbort.length)
+    } else {
       setIsLoading(false)
       setIsAgentBusy(false)
+      if (setRunningSessionIds) setRunningSessionIds([])
     }
   }
 
@@ -676,9 +854,43 @@ export const useMarkPlan = ({
 
         const res = executionResult.res
 
+        // Ekstraksi dataUrl/image jika ada dari tool apapun (computer_use, screenshot, read-image, dll)
+        const extractedImageUrl =
+          res?.dataUrl ||
+          res?.image ||
+          res?.screenshot ||
+          res?.imageUrl ||
+          res?.data?.dataUrl ||
+          res?.data?.image ||
+          res?.data?.screenshot ||
+          (typeof res?.data === 'string' && res.data.startsWith('data:image/') ? res.data : null)
+
         if (res && res.success) {
           if (res.data !== undefined) {
-            resultString = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+            if (typeof res.data === 'string') {
+              resultString = res.data.startsWith('data:image/')
+                ? '[Tangkapan Layar Gambar Diteruskan ke Observasi Visual]'
+                : res.data
+            } else if (typeof res.data === 'object' && res.data !== null) {
+              const cleanData = { ...res.data }
+              if (
+                cleanData.image &&
+                typeof cleanData.image === 'string' &&
+                cleanData.image.startsWith('data:image/')
+              ) {
+                cleanData.image = `[VISUAL_ATTACHED: ${cleanData.viewport || '1280x720'}]`
+              }
+              if (
+                cleanData.dataUrl &&
+                typeof cleanData.dataUrl === 'string' &&
+                cleanData.dataUrl.startsWith('data:image/')
+              ) {
+                cleanData.dataUrl = `[VISUAL_ATTACHED]`
+              }
+              resultString = JSON.stringify(cleanData)
+            } else {
+              resultString = JSON.stringify(res.data)
+            }
           } else if (res.output !== undefined) {
             resultString = typeof res.output === 'string' ? res.output : JSON.stringify(res.output)
           } else if (res.result !== undefined) {
@@ -705,7 +917,8 @@ export const useMarkPlan = ({
           }
 
           // Analisis visual untuk read-image
-          if (tool === 'read-image' && res.dataUrl) {
+          if (tool === 'read-image' && (res.dataUrl || extractedImageUrl)) {
+            const activeImg = res.dataUrl || extractedImageUrl
             const promptText =
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               (typeof rawArgs === 'string' ? rawArgs : '') ||
@@ -725,7 +938,7 @@ export const useMarkPlan = ({
                     role: 'user',
                     content: [
                       { type: 'text', text: promptText },
-                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                      { type: 'image_url', image_url: { url: activeImg } }
                     ]
                   }
                 ],
@@ -743,7 +956,12 @@ export const useMarkPlan = ({
           }
 
           // Analisis visual untuk browser-screenshot jika query disertakan
-          if (tool === 'browser-screenshot' && res.dataUrl && (rawArgs?.query || res.query)) {
+          if (
+            tool === 'browser-screenshot' &&
+            (res.dataUrl || extractedImageUrl) &&
+            (rawArgs?.query || res.query)
+          ) {
+            const activeImg = res.dataUrl || extractedImageUrl
             const promptText =
               (typeof rawArgs === 'object' && (rawArgs?.query || rawArgs?.prompt)) ||
               res.query ||
@@ -759,7 +977,7 @@ export const useMarkPlan = ({
                     role: 'user',
                     content: [
                       { type: 'text', text: promptText },
-                      { type: 'image_url', image_url: { url: res.dataUrl } }
+                      { type: 'image_url', image_url: { url: activeImg } }
                     ]
                   }
                 ],
@@ -779,8 +997,8 @@ export const useMarkPlan = ({
           resultString = `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
         }
 
-        const toolImageUrls = res?.dataUrl ? [res.dataUrl] : null
-        const toolPreviewUrl = res?.dataUrl || null
+        const toolImageUrls = extractedImageUrl ? [extractedImageUrl] : null
+        const toolPreviewUrl = extractedImageUrl || null
 
         return {
           res,
@@ -815,17 +1033,27 @@ export const useMarkPlan = ({
         })
         const res = await Promise.race([pluginPromise, abortPromise])
 
+        const pluginImage = res?.success ? findPluginImageReference(res.data) : null
+        const safePluginData = redactPluginImagePayload(res?.data)
         resultString = res.success
-          ? typeof res.data === 'string'
-            ? res.data
-            : JSON.stringify(res.data)
+          ? typeof safePluginData === 'string'
+            ? safePluginData
+            : JSON.stringify(safePluginData)
           : `[ERROR] Plugin ${tool} gagal: ${res.error}`
+        if (pluginImage && !resultString.includes('[Gambar dilampirkan]')) {
+          resultString = `${resultString}\n[Gambar tersedia untuk ditampilkan di bubble chat]`
+        }
 
         targetPushProcess({
           id: pluginProcessId,
           type: 'plugin-execution',
           status: 'done',
-          data: { action: tool, query: stringQuery, result: resultString }
+          data: {
+            action: tool,
+            query: stringQuery,
+            result: resultString,
+            imageUrl: pluginImage?.previewUrl || null
+          }
         })
 
         return {
@@ -833,6 +1061,8 @@ export const useMarkPlan = ({
           success: Boolean(res?.success),
           resultString,
           rejected: false,
+          imageUrls: pluginImage?.modelUrl ? [pluginImage.modelUrl] : null,
+          previewUrl: pluginImage?.previewUrl || null,
           toolExecution: { action: tool, query: stringQuery, result: resultString }
         }
       }
@@ -842,7 +1072,7 @@ export const useMarkPlan = ({
         toolError.message?.includes('AbortError') ||
         toolError.message?.includes('aborted') ||
         toolError.message?.includes('Aborted') ||
-        Boolean(sessionAbortController?.signal?.aborted)
+        Boolean(currentSignal?.aborted)
       ) {
         throw toolError
       }
@@ -919,7 +1149,11 @@ export const useMarkPlan = ({
         now - (existingSession?.lastActivityTime || existingSession?.startTime || now)
       const MAX_INACTIVE_SESSION_MS = 90000 // 90 detik tanpa aktivitas apa pun
 
-      if (existingSession && inactiveDuration > MAX_INACTIVE_SESSION_MS) {
+      if (
+        existingSession &&
+        !existingSession.browserPaused &&
+        inactiveDuration > MAX_INACTIVE_SESSION_MS
+      ) {
         console.warn(
           `[useMarkPlan] Terdeteksi Ghost Session ${activeSessionNum} macet/tidak aktif selama ${Math.round(inactiveDuration / 1000)} detik. Melakukan auto-recovery.`
         )
@@ -941,6 +1175,7 @@ export const useMarkPlan = ({
     const sessionAbortController = new AbortController()
     const sessionRecord = {
       abortController: sessionAbortController,
+      thinkingId: `thinking_${activeSessionNum}_${Date.now()}`,
       startTime: Date.now(),
       lastActivityTime: Date.now(),
       prompt: userInput,
@@ -1014,7 +1249,7 @@ export const useMarkPlan = ({
     }
 
     if (isAutonomous) {
-      finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'os-*' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
+      finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'computer_use' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
     }
 
     let imageVisionPayloads = []
@@ -1124,7 +1359,7 @@ export const useMarkPlan = ({
     // Ambil workspaceRoot dari database jika belum disertakan di opts
     if (!opts.workspaceRoot) {
       try {
-        const sessionRecord = await db.sessions.get(activeSessionNum)
+        const sessionRecord = await getSessionSummary(activeSessionNum)
         if (sessionRecord?.workspaceRoot) {
           opts.workspaceRoot = sessionRecord.workspaceRoot
         }
@@ -1191,15 +1426,25 @@ export const useMarkPlan = ({
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
     let accumulatedThoughts = []
     let executedToolsList = []
+    let pluginImagesForTurn = []
     let currentInFlightTool = null
     let currentTurnReasoning = ''
     let finalContentAccumulator = ''
 
     try {
+      const workspaceInfo = await awaitWithTimeout(
+        webApi.getWorkspaceInfo(),
+        10000,
+        'Memuat workspace',
+        sessionAbortController.signal
+      )
+      opts.workspaceRoot = resolveSessionWorkspace(
+        { id: activeSessionNum, workspaceRoot: opts.workspaceRoot },
+        workspaceInfo.defaultWorkspaceRoot
+      )
       let durableTask = null
       let durableActiveStep = null
 
-      const allMemory = await getAllMemory()
       let searchQuery = userInput
       if (validHistory.length > 0) {
         const lastMsg = validHistory[validHistory.length - 1]
@@ -1213,13 +1458,47 @@ export const useMarkPlan = ({
         }
       }
 
-      const contextPromise = getUnifiedContext(searchQuery, allMemory)
-      const abortPromise = new Promise((_, reject) => {
-        const onAbort = () => reject(new Error('AbortError'))
-        if (sessionAbortController.signal.aborted) return onAbort()
-        sessionAbortController.signal.addEventListener('abort', onAbort)
-      })
-      const unifiedContext = await Promise.race([contextPromise, abortPromise])
+      const preparationSignal = sessionAbortController.signal
+      const optionalContext = (load, fallback) =>
+        awaitWithTimeout(
+          Promise.resolve().then(load),
+          2000,
+          'Memuat konteks tambahan',
+          preparationSignal
+        ).catch((error) => {
+          if (preparationSignal.aborted) throw error
+          return fallback
+        })
+
+      const [unifiedContext, activityBuffer, allSubs, systemTelemetry, storedCompact] =
+        await Promise.all([
+          (async () => {
+            const allMemory = await awaitWithTimeout(
+              getAllMemory(),
+              15000,
+              'Memuat memori',
+              preparationSignal
+            )
+            return awaitWithTimeout(
+              getUnifiedContext(searchQuery, allMemory),
+              30000,
+              'Menyiapkan konteks',
+              preparationSignal
+            )
+          })(),
+          optionalContext(() => window.api?.getActivityBuffer?.(), []),
+          optionalContext(async () => {
+            const { subagentStore } = await import('../../api/subagent/subagentStore.js')
+            return subagentStore.listSubagents()
+          }, []),
+          optionalContext(() => window.api?.getSystemTelemetry?.(), null),
+          awaitWithTimeout(
+            getSessionCompact(String(activeSessionNum)),
+            10000,
+            'Memuat ringkasan sesi',
+            preparationSignal
+          )
+        ])
 
       let contextMsgStr = ''
       if (tgContext)
@@ -1234,62 +1513,49 @@ export const useMarkPlan = ({
       }
 
       // Inject 5 aktivitas OS terakhir dari window tracker
-      try {
-        const activityBuffer = await window.api.getActivityBuffer()
-        if (activityBuffer && activityBuffer.length > 0) {
-          const recent = activityBuffer.slice(-5)
-          const activitySummary = recent
-            .map((a) => `[${a.time || a.timestamp}] ${a.app}${a.title ? ` — ${a.title}` : ''}`)
-            .join('\n')
-          contextMsgStr += `[AKTIVITAS PC USER (terakhir)]\n${activitySummary}\n`
-        }
-      } catch (_) {}
+      if (activityBuffer && activityBuffer.length > 0) {
+        const recent = activityBuffer.slice(-5)
+        const activitySummary = recent
+          .map((a) => `[${a.time || a.timestamp}] ${a.app}${a.title ? ` — ${a.title}` : ''}`)
+          .join('\n')
+        contextMsgStr += `[AKTIVITAS PC USER (terakhir)]\n${activitySummary}\n`
+      }
 
       // Ambil daftar sub-agent yang tersedia
       let existingSubagents = ''
-      try {
-        const { subagentStore } = await import('../../api/subagent/subagentStore.js')
-        const allSubs = await subagentStore.listSubagents()
-        if (allSubs && allSubs.length > 0) {
-          existingSubagents = allSubs
-            .slice(0, 10)
-            .map(
-              (s) =>
-                `- [ID: ${s.id}] "${s.name}" (${s.role}) | Status: ${s.status} | Turns: ${s.turnCount || 0} | Goal: "${s.goal}"`
-            )
-            .join('\n')
-        }
-      } catch (e) {}
+      if (allSubs && allSubs.length > 0) {
+        existingSubagents = allSubs
+          .slice(0, 10)
+          .map(
+            (s) =>
+              `- [ID: ${s.id}] "${s.name}" (${s.role}) | Status: ${s.status} | Turns: ${s.turnCount || 0} | Goal: "${s.goal}"`
+          )
+          .join('\n')
+      }
 
-      // Susun System Prompt Mark V5
-      let systemTelemetry = null
-      try {
-        if (window.api && typeof window.api.getSystemTelemetry === 'function') {
-          systemTelemetry = await window.api.getSystemTelemetry()
-        }
-      } catch (_) {}
-
-      const systemPrompt = await buildPlanningSystemPrompt(
-        userInput,
-        {
-          ...opts,
-          tgContext,
-          currentMusicTrack,
-          systemTelemetry,
-          activeTaskObjective: activeTaskObjectiveRef.current,
-          existingSubagents
-        },
-        unifiedContext,
-        contextMsgStr
+      const systemPrompt = await awaitWithTimeout(
+        buildPlanningSystemPrompt(
+          userInput,
+          {
+            ...opts,
+            tgContext,
+            currentMusicTrack,
+            systemTelemetry,
+            activeTaskObjective: activeTaskObjectiveRef.current,
+            existingSubagents
+          },
+          unifiedContext,
+          contextMsgStr
+        ),
+        30000,
+        'Menyiapkan instruksi sistem',
+        preparationSignal
       )
 
       // ------------------------------------------------------------------------
       // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 256.000 Tokens)
       // ------------------------------------------------------------------------
-      let activeSessionCompact = null
-      try {
-        activeSessionCompact = await getSessionCompact(String(activeSessionNum))
-      } catch (_) {}
+      let activeSessionCompact = storedCompact
 
       const activeSummaryBlock =
         activeSessionCompact?.summaryBlock || activeSessionCompact?.summary_block || ''
@@ -1315,8 +1581,14 @@ export const useMarkPlan = ({
         isSystem || isAutonomous || opts.skipCompaction || opts.disableTools
       )
 
-      // Layer 1: Gateway Session Hygiene (Hermes 85% safety net)
+      // Layer 1: Gateway Session Hygiene (90%).
       const gatewayHygieneTriggerTokens = MAX_CONTEXT_TOKENS * GATEWAY_HYGIENE_THRESHOLD
+      await publishContextUsage(
+        activeSessionNum || 1,
+        currentEstimatedTokens,
+        activeSessionCompact?.lastCompactedAt,
+        !isInternalTurn && currentEstimatedTokens >= gatewayHygieneTriggerTokens
+      )
       if (!isInternalTurn && currentEstimatedTokens >= gatewayHygieneTriggerTokens) {
         const compactBannerId = `compact-banner-${Date.now()}`
         targetSetChatData((prev) => [
@@ -1335,6 +1607,7 @@ export const useMarkPlan = ({
             messages: effectiveSourceMessages,
             activeConfig: config[0] || {},
             systemPrompt,
+            signal: sessionAbortController.signal,
             onProgress: (prog) => {
               targetSetChatData((prev) =>
                 prev.map((item) =>
@@ -1385,8 +1658,12 @@ export const useMarkPlan = ({
               })
             )
           }
+          if (!compactionResult?.isCompacted) {
+            throw new Error('Kompaksi tidak mengurangi konteks sesi.')
+          }
         } catch (compactErr) {
           console.error('[useMarkPlan] Gagal context compaction:', compactErr)
+          throw new Error(`Kompaksi konteks gagal: ${compactErr.message}`)
         } finally {
           targetSetChatData((prev) => (prev || []).filter((item) => item.id !== compactBannerId))
         }
@@ -1464,6 +1741,7 @@ export const useMarkPlan = ({
       let isDone = false
       let stepCount = 0
       executedToolsList = []
+      pluginImagesForTurn = []
       sessionRecord.executedToolsList = executedToolsList
       let lastToolExecution = null
       accumulatedThoughts = []
@@ -1502,15 +1780,55 @@ export const useMarkPlan = ({
       }
 
       let consecutiveErrors = 0
+      let consecutiveEmptyTurns = 0
+      let consecutiveNoToolTurns = 0
       const maxConsecutiveErrorRetries = 50
       let verificationGateCount = 0
 
+      const panelSessionId = browserSessionId(activeSessionNum)
+      browserCommand(panelSessionId, 'job-start').catch(() => {})
+      let needsFreshBrowserObservation = true
+      let awaitingBrowserUser = false
+      const onBrowserPause = (paused) => {
+        sessionRecord.browserPaused = paused
+        sessionRecord.lastActivityTime = Date.now()
+      }
       while (!isDone && !sessionAbortController.signal.aborted) {
+        if (browserPaused(panelSessionId)) needsFreshBrowserObservation = true
+        await waitForBrowserAgent(panelSessionId, sessionAbortController.signal, onBrowserPause)
+        if (needsFreshBrowserObservation || sessionRecord.needsFreshBrowserObservation) {
+          sessionRecord.needsFreshBrowserObservation = false
+          try {
+            const observation = await browserObservation(panelSessionId, true)
+            if (observation)
+              loopMessages.push({
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text:
+                      '[Observasi browser terbaru setelah pergantian kontrol. Rencanakan ulang; jangan ulangi aksi lama.]\n' +
+                      observation.url +
+                      '\n' +
+                      observation.text
+                  },
+                  { type: 'image_url', image_url: { url: observation.image } }
+                ]
+              })
+          } catch (error) {
+            if (sessionAbortController.signal.aborted) throw new Error('AbortError')
+            loopMessages.push({
+              role: 'user',
+              content: `[Observasi browser terbaru belum tersedia: ${error.message}. Jangan mengasumsikan kondisi halaman; periksa sebelum berinteraksi.]`
+            })
+          }
+          needsFreshBrowserObservation = false
+        }
         // Cek Abort Signal
         if (sessionAbortController.signal.aborted) {
           try {
             const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-            for (const t of runningTasks) {
+            for (const t of runningTasks.filter((task) => task.id === durableTaskForRecovery?.id)) {
               await transitionAgentTask(t.id, 'cancelled', 'user_abort').catch(() => {})
             }
           } catch (_) {}
@@ -1588,9 +1906,13 @@ export const useMarkPlan = ({
         const activeTools =
           opts.disableTools || isDurableTaskCompleted
             ? null
-            : await getActiveToolsSchema(
-                userInput + ' ' + (activeTaskObjectiveRef.current || ''),
-                dynamicallyLoadedToolGroups
+            : await awaitWithTimeout(
+                getActiveToolsSchema(
+                  userInput + ' ' + (activeTaskObjectiveRef.current || ''),
+                  dynamicallyLoadedToolGroups
+                ),
+                15000,
+                'Memuat daftar tool'
               )
 
         // Loading thinking indicator di awal turn (akumulasi semua pemikiran dari langkah sebelumnya)
@@ -1609,6 +1931,7 @@ export const useMarkPlan = ({
           return [
             ...filtered,
             {
+              id: sessionRecord.thinkingId,
               role: 'ai',
               content: loadingText,
               isThinking: true,
@@ -1623,12 +1946,41 @@ export const useMarkPlan = ({
         let currentTurnContent = ''
         let turnStreamMeta = null
         let sentenceBuffer = ''
+        const progressMessageId = `${sessionRecord.thinkingId}-progress-${stepCount}`
+        let hasProgressMessage = false
+        const publishProgressMessage = (message) => {
+          if (!stripMarkTags(message)) return
+          hasProgressMessage = true
+          if (!recordProgressMessage(executedToolsList, message, progressMessageId)) return
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isThinking ? { ...msg, executedTools: [...executedToolsList] } : msg
+            )
+          )
+        }
 
         // In-Flight Pruning: Jika akumulasi pesan tool di tengah loop mencapai batas kapasitas,
         // pangkas observasi tool terlama agar payload ReAct tetap berada di bawah 256K tokens.
-        // Layer 2: In-Loop Agent ContextCompressor (Hermes 50% Threshold + O(n) Pruning)
+        // Layer 2: In-Loop Agent ContextCompressor (90% threshold + O(n) pruning).
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
-        // Jika melebihi 50% kapasitas, lakukan pemangkasan Fase 1 O(n) dan jika perlu Fase 2-4 in-place.
+        // Schema tool dan reminder ikut dihitung pada indikator serta ambang kompaksi.
+        const progressReminder =
+          isSystem || isAutonomous || opts.disableTools
+            ? null
+            : buildProgressReminder(executedToolsList, { initial: stepCount === 1 })
+        const reservedTokens =
+          (activeTools ? countTokens(JSON.stringify(activeTools)) : 0) +
+          (progressReminder
+            ? calculatePayloadTokens([{ role: 'system', content: progressReminder }])
+            : 0)
+        const tokensBeforeCompact = calculatePayloadTokens(loopMessages) + reservedTokens
+        await publishContextUsage(
+          activeSessionNum || 1,
+          tokensBeforeCompact,
+          activeSessionCompact?.lastCompactedAt,
+          tokensBeforeCompact >= MAX_CONTEXT_TOKENS * IN_LOOP_COMPACT_THRESHOLD
+        )
+        let inLoopBannerId = null
         try {
           const inLoopResult = await checkAndCompressInLoop({
             loopMessages,
@@ -1638,118 +1990,191 @@ export const useMarkPlan = ({
             protectLastN: 6,
             protectFirstN: 2,
             activeConfig: config[0] || {},
-            systemPrompt
+            systemPrompt,
+            reservedTokens,
+            signal: sessionAbortController.signal,
+            onProgress: (progress) => {
+              if (!inLoopBannerId) {
+                inLoopBannerId = `compact-loop-${Date.now()}`
+                targetSetChatData((prev) => [
+                  ...prev,
+                  {
+                    id: inLoopBannerId,
+                    role: 'system',
+                    isCompacting: true,
+                    compactProgress: progress.text
+                  }
+                ])
+              } else {
+                targetSetChatData((prev) =>
+                  prev.map((msg) =>
+                    msg.id === inLoopBannerId ? { ...msg, compactProgress: progress.text } : msg
+                  )
+                )
+              }
+            }
           })
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
             loopMessages = inLoopResult.loopMessages
-            if (inLoopResult.totalTokens || inLoopResult.totalChars) {
-              const inLoopTokens = inLoopResult.totalTokens || inLoopResult.totalChars
-              window.dispatchEvent(
-                new CustomEvent('context-tracker-updated', {
-                  detail: {
-                    sessionId: String(activeSessionNum || 1),
-                    currentTokens: inLoopTokens,
-                    maxTokens: MAX_CONTEXT_TOKENS,
-                    percentage: Math.min(100, (inLoopTokens / MAX_CONTEXT_TOKENS) * 100),
-                    currentChars: inLoopTokens,
-                    maxChars: MAX_CONTEXT_TOKENS,
-                    lastCompactedAt: Date.now()
-                  }
-                })
-              )
-            }
           }
-        } catch (inLoopErr) {
-          console.warn('[useMarkPlan] In-loop compaction warning:', inLoopErr)
+        } finally {
+          if (inLoopBannerId) {
+            targetSetChatData((prev) => prev.filter((msg) => msg.id !== inLoopBannerId))
+          }
         }
 
         // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
+        const requestMessages = progressReminder
+          ? [...loopMessages, { role: 'system', content: progressReminder }]
+          : loopMessages
+        const inFlightTokens =
+          calculatePayloadTokens(requestMessages) +
+          (activeTools ? countTokens(JSON.stringify(activeTools)) : 0)
+        if (inFlightTokens >= MAX_CONTEXT_TOKENS) {
+          throw new Error(
+            'Konteks masih melebihi 256K token setelah kompaksi. Permintaan AI dibatalkan.'
+          )
+        }
+        window.dispatchEvent(
+          new CustomEvent('context-tracker-updated', {
+            detail: {
+              sessionId: String(activeSessionNum || 1),
+              currentTokens: inFlightTokens,
+              maxTokens: MAX_CONTEXT_TOKENS,
+              percentage: Math.min(100, (inFlightTokens / MAX_CONTEXT_TOKENS) * 100),
+              lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
+            }
+          })
+        )
 
         // Request streaming ke Backend AI Bridge
-        const streamResult = await fetchAI(loopMessages, true, {
-          sessionId: String(activeSessionNum || 1),
-          tools: isDurableTaskCompleted ? null : activeTools,
-          signal: sessionAbortController.signal,
-          onReasoning: (chunk) => {
-            sessionRecord.lastActivityTime = Date.now()
-            currentTurnReasoning += chunk
-            const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
-              .map((t) => (typeof t === 'string' ? t.trim() : ''))
-              .filter(Boolean)
-            const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+        let streamResult
+        const requestBrowserRevision = browserRevision(panelSessionId)
+        try {
+          streamResult = await withBrowserRequest(
+            panelSessionId,
+            sessionAbortController.signal,
+            (requestSignal) =>
+              fetchAI(requestMessages, true, {
+                sessionId: String(activeSessionNum || 1),
+                tools: isDurableTaskCompleted ? null : activeTools,
+                signal: requestSignal,
+                onReasoning: (chunk) => {
+                  sessionRecord.lastActivityTime = Date.now()
+                  currentTurnReasoning += chunk
+                  const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+                    .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                    .filter(Boolean)
+                  const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
 
-            targetSetChatData((prev) => {
-              const filtered = prev.filter((item) => !item.isThinking)
-              return [
-                ...filtered,
-                {
-                  role: 'ai',
-                  content: currentTurnContent,
-                  isThinking: true,
-                  reasoning: liveReasoning || undefined,
-                  executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                  mood: currentActiveMood
+                  targetSetChatData((prev) => {
+                    const filtered = prev.filter((item) => !item.isThinking)
+                    return [
+                      ...filtered,
+                      {
+                        id: sessionRecord.thinkingId,
+                        role: 'ai',
+                        content: currentTurnContent,
+                        isThinking: true,
+                        reasoning: liveReasoning || undefined,
+                        executedTools:
+                          executedToolsList.length > 0 ? [...executedToolsList] : undefined,
+                        mood: currentActiveMood
+                      }
+                    ]
+                  })
+                },
+                onMood: (moodTag) => {
+                  currentActiveMood = moodTag
+                  targetSetChatData((prev) =>
+                    prev.map((msg) => (msg.isThinking ? { ...msg, mood: moodTag } : msg))
+                  )
+                },
+                onMeta: (meta) => {
+                  sessionRecord.lastActivityTime = Date.now()
+                  if (meta?.streamRecovery) {
+                    currentTurnContent = ''
+                    currentTurnReasoning = ''
+                    sentenceBuffer = ''
+                    finalContentAccumulator = ''
+                    const progressIndex = executedToolsList.findIndex(
+                      (step) => step.id === progressMessageId
+                    )
+                    if (progressIndex >= 0) executedToolsList.splice(progressIndex, 1)
+                    hasProgressMessage = false
+                    targetSetChatData((prev) =>
+                      prev.map((msg) =>
+                        msg.isThinking ? { ...msg, content: '', reasoning: undefined } : msg
+                      )
+                    )
+                  }
+                  turnStreamMeta = meta
+                  publishProgressMessage(meta?.message)
+                  if (meta?.mood) {
+                    currentActiveMood = meta.mood
+                    targetSetChatData((prev) =>
+                      prev.map((msg) => (msg.isThinking ? { ...msg, mood: meta.mood } : msg))
+                    )
+                  }
+                },
+                onToken: (token) => {
+                  sessionRecord.lastActivityTime = Date.now()
+                  currentTurnContent += token
+                  finalContentAccumulator = currentTurnContent
+
+                  // Sentence-Level Streaming TTS: Deteksi kalimat lengkap secara real-time
+                  if (finalIsSpeak) {
+                    sentenceBuffer += token
+                    // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
+                    let sentenceEndMatch
+                    while (
+                      (sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/))
+                    ) {
+                      const completeSentence = sentenceEndMatch[1].trim()
+                      sentenceBuffer = sentenceEndMatch[2] || ''
+                      if (completeSentence) {
+                        speechQueue.enqueue(completeSentence)
+                      }
+                    }
+                  }
+
+                  targetSetChatData((prev) => {
+                    const filtered = prev.filter((item) => !item.isThinking)
+                    const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
+                      .map((t) => (typeof t === 'string' ? t.trim() : ''))
+                      .filter(Boolean)
+                    const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
+
+                    return [
+                      ...filtered,
+                      {
+                        id: sessionRecord.thinkingId,
+                        role: 'ai',
+                        content: currentTurnContent,
+                        isThinking: true,
+                        reasoning: liveReasoning || undefined,
+                        executedTools:
+                          executedToolsList.length > 0 ? [...executedToolsList] : undefined,
+                        mood: currentActiveMood
+                      }
+                    ]
+                  })
                 }
-              ]
-            })
-          },
-          onMood: (moodTag) => {
-            currentActiveMood = moodTag
-            targetSetChatData((prev) =>
-              prev.map((msg) => (msg.isThinking ? { ...msg, mood: moodTag } : msg))
-            )
-          },
-          onMeta: (meta) => {
-            turnStreamMeta = meta
-            if (meta?.mood) {
-              currentActiveMood = meta.mood
-              targetSetChatData((prev) =>
-                prev.map((msg) => (msg.isThinking ? { ...msg, mood: meta.mood } : msg))
-              )
-            }
-          },
-          onToken: (token) => {
-            sessionRecord.lastActivityTime = Date.now()
-            currentTurnContent += token
-            finalContentAccumulator = currentTurnContent
-
-            // Sentence-Level Streaming TTS: Deteksi kalimat lengkap secara real-time
-            if (finalIsSpeak) {
-              sentenceBuffer += token
-              // Deteksi batas akhir kalimat (. ! ? atau newline ganda)
-              let sentenceEndMatch
-              while ((sentenceEndMatch = sentenceBuffer.match(/^(.*?[\.!\?\n]+)([\s\S]*)$/))) {
-                const completeSentence = sentenceEndMatch[1].trim()
-                sentenceBuffer = sentenceEndMatch[2] || ''
-                if (completeSentence) {
-                  speechQueue.enqueue(completeSentence)
-                }
-              }
-            }
-
-            targetSetChatData((prev) => {
-              const filtered = prev.filter((item) => !item.isThinking)
-              const currentCombined = [...accumulatedThoughts, currentTurnReasoning]
-                .map((t) => (typeof t === 'string' ? t.trim() : ''))
-                .filter(Boolean)
-              const liveReasoning = Array.from(new Set(currentCombined)).join('\n\n---\n\n')
-
-              return [
-                ...filtered,
-                {
-                  role: 'ai',
-                  content: currentTurnContent,
-                  isThinking: true,
-                  reasoning: liveReasoning || undefined,
-                  executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                  mood: currentActiveMood
-                }
-              ]
-            })
+              })
+          )
+        } catch (error) {
+          if (error.code === 'BROWSER_REPLAN') {
+            needsFreshBrowserObservation = true
+            continue
           }
-        })
+          throw error
+        }
+
+        publishProgressMessage(
+          streamResult?.meta?.message || parseMarkTag(streamResult?.content).meta.message
+        )
 
         if (
           currentTurnReasoning &&
@@ -1768,27 +2193,6 @@ export const useMarkPlan = ({
 
         if (streamResult?.usage) {
           lastServerUsage = streamResult.usage
-          const liveTokens = Number(
-            streamResult.usage.total_tokens ||
-              (streamResult.usage.prompt_tokens || 0) +
-                (streamResult.usage.completion_tokens || 0) ||
-              0
-          )
-          if (liveTokens > 0) {
-            window.dispatchEvent(
-              new CustomEvent('context-tracker-updated', {
-                detail: {
-                  sessionId: String(activeSessionNum || 1),
-                  currentTokens: liveTokens,
-                  maxTokens: MAX_CONTEXT_TOKENS,
-                  percentage: Math.min(100, (liveTokens / MAX_CONTEXT_TOKENS) * 100),
-                  currentChars: liveTokens,
-                  maxChars: MAX_CONTEXT_TOKENS,
-                  lastCompactedAt: activeSessionCompact?.lastCompactedAt || Date.now()
-                }
-              })
-            )
-          }
         }
 
         if (streamResult?.finishReason === 'error') {
@@ -1836,16 +2240,30 @@ export const useMarkPlan = ({
                 } catch (_) {}
               }
               if (pObj && typeof pObj === 'object') {
+                if (pObj.await_user === true)
+                  turnStreamMeta = { ...turnStreamMeta, await_user: true }
+                publishProgressMessage(pObj.message)
                 if (pObj.mood) {
                   currentActiveMood = String(pObj.mood).toLowerCase().trim()
                 }
                 if (pObj.thought && !currentTurnReasoning) {
                   currentTurnReasoning = String(pObj.thought)
                 }
-                if (pObj.answer !== undefined || pObj.content !== undefined) {
+                const parsedAnswerText =
+                  typeof pObj.answer === 'string' && pObj.answer.trim()
+                    ? pObj.answer.trim()
+                    : typeof pObj.content === 'string' && pObj.content.trim()
+                      ? pObj.content.trim()
+                      : ''
+
+                if (parsedAnswerText) {
+                  currentTurnContent = parsedAnswerText
+                  finalContentAccumulator = parsedAnswerText
+                } else if (pObj.answer !== undefined || pObj.content !== undefined) {
                   currentTurnContent = pObj.answer !== undefined ? pObj.answer : pObj.content
                   finalContentAccumulator = currentTurnContent
                 }
+
                 if (Array.isArray(pObj.tool_calls) && pObj.tool_calls.length > 0) {
                   effectiveToolCalls = pObj.tool_calls.map((tc, idx) => ({
                     id: tc.id || `call_fallback_${Date.now()}_${idx}`,
@@ -1858,7 +2276,9 @@ export const useMarkPlan = ({
                           : String(tc.arguments || '{}')
                     }
                   }))
-                  currentTurnContent = ''
+                  if (!parsedAnswerText) {
+                    currentTurnContent = ''
+                  }
                   finalContentAccumulator = ''
                 } else if (Array.isArray(pObj.action) && pObj.action.length > 0) {
                   // Format BATCH ACTIONS array V4: { "action": [ { "tool": "...", "query": "..." }, ... ] }
@@ -1883,7 +2303,9 @@ export const useMarkPlan = ({
                                 )
                       }
                     }))
-                  currentTurnContent = ''
+                  if (!parsedAnswerText) {
+                    currentTurnContent = ''
+                  }
                   finalContentAccumulator = ''
                 } else if (Array.isArray(pObj) && pObj.length > 0) {
                   // Format array tool calls langsung: [ { "name": "...", "arguments": ... }, ... ]
@@ -1929,7 +2351,9 @@ export const useMarkPlan = ({
                       }
                     }
                   ]
-                  currentTurnContent = ''
+                  if (!parsedAnswerText) {
+                    currentTurnContent = ''
+                  }
                   finalContentAccumulator = ''
                 }
               }
@@ -1938,7 +2362,12 @@ export const useMarkPlan = ({
         }
 
         // Jika alur kerja Durable Task telah tuntas 100%, abaikan seluruh tool calls dan paksa penyelesaian
-        if (isDurableTaskCompleted) {
+        if (
+          isDurableTaskCompleted ||
+          streamResult?.meta?.await_user ||
+          turnStreamMeta?.await_user ||
+          parseMarkTag(currentTurnContent || streamResult?.content).meta.await_user
+        ) {
           effectiveToolCalls = []
         }
 
@@ -1946,8 +2375,42 @@ export const useMarkPlan = ({
         // CABANG 1: MODEL MEMANGGIL NATIVE TOOL CALLS
         // ======================================================================
         if (effectiveToolCalls && effectiveToolCalls.length > 0) {
+          consecutiveEmptyTurns = 0
+          consecutiveNoToolTurns = 0
           sentenceBuffer = ''
           speechQueue.reset()
+
+          // Rekam pesan narasi / observasi yang ditulis model sebelum mengeksekusi tool (seperti pada Codex)
+          let turnNarration = stripMarkTags(currentTurnContent || '')
+          if (!turnNarration && streamResult.content) {
+            const raw = stripMarkTags(String(streamResult.content))
+            if (raw.startsWith('{')) {
+              try {
+                const parsed = JSON.parse(raw)
+                turnNarration = String(parsed.answer || parsed.content || '').trim()
+              } catch (_) {}
+            } else if (!raw.startsWith('[')) {
+              turnNarration = raw
+            }
+          }
+
+          turnNarration = stripMarkTags(turnNarration)
+
+          if (
+            !hasProgressMessage &&
+            turnNarration &&
+            !turnNarration.startsWith('{') &&
+            !turnNarration.startsWith('[') &&
+            !executedToolsList.some((t) => t.type === 'narration' && t.text === turnNarration)
+          ) {
+            executedToolsList.push({
+              type: 'narration',
+              text: turnNarration,
+              timestamp: Date.now()
+            })
+          }
+          currentTurnContent = ''
+
           const assistantMsg = {
             role: 'assistant',
             content: streamResult.content || null,
@@ -2005,6 +2468,7 @@ export const useMarkPlan = ({
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: streamResult.content || `Mengeksekusi [${toolName}]...`,
                   isThinking: true,
@@ -2016,6 +2480,21 @@ export const useMarkPlan = ({
                 }
               ]
             })
+
+            if (
+              browserPaused(panelSessionId) ||
+              browserRevision(panelSessionId) !== requestBrowserRevision
+            ) {
+              needsFreshBrowserObservation = true
+              loopMessages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                name: toolName,
+                content:
+                  'Aksi dibatalkan sebelum dieksekusi karena pengguna mengambil alih browser. Gunakan observasi terbaru setelah kontrol dikembalikan.'
+              })
+              continue
+            }
 
             // Eksekusi tool
             const pluginProcessId = `plugin-${Date.now()}`
@@ -2069,9 +2548,18 @@ export const useMarkPlan = ({
             if (execResult.durableTask) {
               durableTask = execResult.durableTask
               durableTaskForRecovery = execResult.durableTask
+              sessionRecord.taskId = execResult.durableTask.id
             }
             if (toolName === 'create_agent_task' || toolName === 'mark_done_task') {
               durableActiveStep = execResult.durableActiveStep || null
+            }
+
+            if (
+              toolName.startsWith('plugin-') &&
+              typeof execResult.previewUrl === 'string' &&
+              !pluginImagesForTurn.includes(execResult.previewUrl)
+            ) {
+              pluginImagesForTurn.push(execResult.previewUrl)
             }
 
             lastToolExecution = execResult.toolExecution
@@ -2116,6 +2604,25 @@ export const useMarkPlan = ({
             })
             currentInFlightTool = null
 
+            targetSetChatData((prev) => {
+              const filtered = prev.filter((item) => !item.isThinking)
+              return [
+                ...filtered,
+                {
+                  role: 'ai',
+                  content:
+                    streamResult.content ||
+                    `Selesai mengeksekusi [${toolName}]. Menganalisis hasil observasi...`,
+                  isThinking: true,
+                  reasoning: liveReasoning || undefined,
+                  executedTools: [...executedToolsList],
+                  mood: currentActiveMood,
+                  usage: lastServerUsage || undefined,
+                  tokens: lastServerUsage?.completion_tokens || undefined
+                }
+              ]
+            })
+
             if (Array.isArray(execResult.imageUrls) && execResult.imageUrls.length > 0) {
               for (const u of execResult.imageUrls) {
                 if (u && !turnVisualUrls.includes(u)) {
@@ -2125,11 +2632,12 @@ export const useMarkPlan = ({
             }
 
             let obsStr = execResult.resultString
+            const observationLimit = toolName.startsWith('browser-') ? 20000 : 3000
             if (
               typeof execResult.resultString === 'string' &&
-              execResult.resultString.length > 3000
+              execResult.resultString.length > observationLimit
             ) {
-              obsStr = `${execResult.resultString.slice(0, 3000)}\n\n[SISA OUTPUT DIPOTONG (Total: ${execResult.resultString.length} karakter). Gunakan start_line/end_line atau grep-search untuk mencari bagian spesifik.]`
+              obsStr = `${execResult.resultString.slice(0, observationLimit)}\n\n[SISA OUTPUT DIPOTONG (Total: ${execResult.resultString.length} karakter). ${toolName.startsWith('browser-') ? 'Gunakan browser-extract untuk bagian tertentu.' : 'Gunakan start_line/end_line atau grep-search untuk mencari bagian spesifik.'}]`
             }
 
             const toolObservation = {
@@ -2250,7 +2758,15 @@ export const useMarkPlan = ({
 
                 const aiMsg = {
                   role: 'ai',
-                  content: cleanFinalOutput,
+                  content: pluginImagesForTurn.length
+                    ? [
+                        { type: 'text', text: cleanFinalOutput },
+                        ...pluginImagesForTurn.map((url) => ({
+                          type: 'image_url',
+                          image_url: { url }
+                        }))
+                      ]
+                    : cleanFinalOutput,
                   executedTools: executedToolsList.length > 0 ? executedToolsList : null,
                   isTaskDone: true,
                   reasoning: mergedReasoning,
@@ -2353,6 +2869,8 @@ export const useMarkPlan = ({
                   } catch (_) {}
                 }
                 if (parsed && typeof parsed === 'object') {
+                  if (parsed.await_user === true)
+                    turnStreamMeta = { ...turnStreamMeta, await_user: true }
                   if (parsed.mood && parsed.mood !== 'neutral') {
                     currentActiveMood = String(parsed.mood).toLowerCase().trim()
                   }
@@ -2380,6 +2898,11 @@ export const useMarkPlan = ({
 
         // Gabungkan metadata dari streamResult, onMeta stream, atau parsed text
         const turnMeta = {
+          awaitUser: Boolean(
+            streamResult?.meta?.await_user ||
+            turnStreamMeta?.await_user ||
+            parsedTextMeta?.await_user
+          ),
           mood:
             streamResult?.mood ||
             streamResult?.meta?.mood ||
@@ -2402,12 +2925,75 @@ export const useMarkPlan = ({
           )
         }
 
+        awaitingBrowserUser = turnMeta.awaitUser
+        if (awaitingBrowserUser && getBrowserState(panelSessionId)?.open)
+          await browserCommand(panelSessionId, 'wait')
+        if (awaitingBrowserUser && durableTask && !isDurableTaskCompleted) {
+          await transitionAgentTask(
+            durableTask.id,
+            'paused',
+            'Menunggu bantuan pengguna melalui chat.'
+          )
+          targetSetChatData((prev) =>
+            prev.map((msg) =>
+              msg.isPlanSteps && msg.taskId === durableTask.id
+                ? { ...msg, taskStatus: 'paused' }
+                : msg
+            )
+          )
+        }
         if (turnMeta.mood && turnMeta.mood !== 'neutral') {
           currentActiveMood = turnMeta.mood
         }
 
+        // Safeguard untuk respon kosong / terputus:
+        // Jika model tidak memanggil tool dan tidak memberikan teks output (misal hanya berpikir atau turn terputus)
+        if (!turnAnswer.trim() && !opts.disableTools && !isSystem) {
+          if (consecutiveEmptyTurns < 2) {
+            consecutiveEmptyTurns++
+            console.warn(
+              `[useMarkPlan] Model mengembalikan respon kosong tanpa tool call (percobaan ${consecutiveEmptyTurns}/2). Melanjutkan loop...`
+            )
+
+            if (currentTurnReasoning && currentTurnReasoning.trim()) {
+              loopMessages.push({
+                role: 'assistant',
+                content: currentTurnReasoning.trim()
+              })
+            }
+
+            loopMessages.push({
+              role: 'user',
+              content:
+                '[Instruksi Lanjutan]: Berdasarkan analisis pemikiran di atas, segera panggil tool yang relevan atau berikan output/jawaban lengkap kepada pengguna sekarang.'
+            })
+
+            execSteps.push({ task: 'Meminta respon lanjutan model...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning: 'Model belum memberikan output, melanjutkan loop...'
+              }
+            })
+
+            continue
+          }
+        } else if (turnAnswer.trim()) {
+          consecutiveEmptyTurns = 0
+        }
+
         // Jika alur kerja Durable Task sedang aktif tapi belum seluruh tahap selesai
-        if (durableTask && !isDurableTaskCompleted) {
+        let pausedWorkflowMessage = ''
+        if (
+          !awaitingBrowserUser &&
+          durableTask &&
+          !isDurableTaskCompleted &&
+          ++consecutiveNoToolTurns < 3
+        ) {
           const activeStep =
             durableActiveStep ||
             durableTask.steps?.find((s) => s.status === 'running') ||
@@ -2427,6 +3013,32 @@ export const useMarkPlan = ({
             content: `[PENGINGAT TAHAP AKTIF]: Kamu saat ini sedang berada di Tahap ${curIdx}: "${curTitle}".\n- Sasaran: ${curObj}\n- Target Deliverable: ${curDeliv}\n\nTahap ini BELUM selesai karena kamu belum memverifikasi hasil dan belum memanggil tool 'mark_done_task'. Kerjakan sasaran ini dengan tools yang relevan di workspace pengguna, lakukan pengujian/verifikasi hasil, lalu PANGGIL TOOL 'mark_done_task' dengan parameter stepIndex: ${curIdx}, artifactContent, dan verificationProof agar alur kerja dapat beralih ke tahap berikutnya!`
           })
           continue
+        }
+
+        if (!awaitingBrowserUser && durableTask && !isDurableTaskCompleted) {
+          pausedWorkflowMessage = `Alur kerja "${durableTask.title}" dijeda karena model tiga kali merespons tanpa menyelesaikan tahap aktif. Progres yang tersimpan dapat dilanjutkan.${turnAnswer.trim() ? `\n\nRespons terakhir: ${turnAnswer.trim()}` : ''}`
+          try {
+            await awaitWithTimeout(
+              transitionAgentTask(
+                durableTask.id,
+                'paused',
+                'Model berulang kali merespons tanpa menyelesaikan tahap aktif.'
+              ),
+              10000,
+              'Menjeda alur kerja'
+            )
+            targetSetChatData((prev) =>
+              prev.map((msg) =>
+                msg.isPlanSteps && msg.taskId === durableTask.id
+                  ? { ...msg, taskStatus: 'paused' }
+                  : msg
+              )
+            )
+          } catch (err) {
+            console.warn('[useMarkPlan] Gagal menjeda alur kerja tanpa kemajuan:', err)
+            pausedWorkflowMessage = `Alur kerja "${durableTask.title}" berhenti setelah tiga respons tanpa penyelesaian tahap. Status jeda belum dapat disimpan: ${err.message}`
+          }
+          activeTaskObjectiveRef.current = null
         }
 
         // Jika seluruh tahapan Durable Task telah tuntas diselesaikan via mark_done_task
@@ -2497,39 +3109,54 @@ export const useMarkPlan = ({
         // 2. Bukan instruksi sistem internal (isSystem === false)
         // 3. AI secara EKSPLISIT menyatakan done="false" (membutuhkan turn lanjutan untuk eksekusi)
         const shouldContinueStep =
+          !awaitingBrowserUser &&
+          !pausedWorkflowMessage &&
           !opts.disableTools &&
           !isSystem &&
           turnMeta.hasExplicitDone === true &&
           turnMeta.done === false
 
         if (shouldContinueStep) {
-          if (rawTurnAnswer && rawTurnAnswer.trim()) {
-            loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
-          }
-          loopMessages.push({
-            role: 'user',
-            content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
-          })
-
-          execSteps.push({ task: 'Melanjutkan langkah...' })
-          targetPushProcess({
-            id: agenticProcessId,
-            type: 'planning',
-            status: 'active',
-            data: {
-              steps: [...execSteps],
-              currentStep: execSteps.length - 1,
-              reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
+          consecutiveNoToolTurns++
+          if (consecutiveNoToolTurns >= 3) {
+            console.warn(
+              '[useMarkPlan] Tiga respons done=false tanpa tool. Menampilkan respons terakhir.'
+            )
+          } else {
+            if (rawTurnAnswer && rawTurnAnswer.trim()) {
+              loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
             }
-          })
+            loopMessages.push({
+              role: 'user',
+              content: '[Catatan Sistem]: Lanjutkan analisis dan eksekusi tugas berikutnya.'
+            })
 
-          continue
+            execSteps.push({ task: 'Melanjutkan langkah...' })
+            targetPushProcess({
+              id: agenticProcessId,
+              type: 'planning',
+              status: 'active',
+              data: {
+                steps: [...execSteps],
+                currentStep: execSteps.length - 1,
+                reasoning: currentTurnReasoning || 'Melanjutkan langkah berikutnya...'
+              }
+            })
+
+            continue
+          }
         }
 
         // ======================================================================
         // SUPER EFFORT VERIFICATION GATEKEEPER (Autonomous Deep-Persistence)
         // ======================================================================
-        if (isSuperEffort && !opts.disableTools && !isSystem) {
+        if (
+          !awaitingBrowserUser &&
+          !pausedWorkflowMessage &&
+          isSuperEffort &&
+          !opts.disableTools &&
+          !isSystem
+        ) {
           // 1. Cari index tool mutasi terakhir yang dieksekusi
           let lastMutationIndex = -1
           for (let i = executedToolsList.length - 1; i >= 0; i--) {
@@ -2609,6 +3236,7 @@ Lakukan pemeriksaan mandiri sekarang:
               return [
                 ...filtered,
                 {
+                  id: sessionRecord.thinkingId,
                   role: 'ai',
                   content: 'Memvalidasi & Menguji Hasil Pekerjaan...',
                   isThinking: true,
@@ -2626,7 +3254,13 @@ Lakukan pemeriksaan mandiri sekarang:
         }
 
         isDone = true
-        finalContentAccumulator = turnAnswer || 'Selesai.'
+        finalContentAccumulator =
+          pausedWorkflowMessage ||
+          turnAnswer.trim() ||
+          currentTurnReasoning?.trim() ||
+          (executedToolsList.length > 0
+            ? 'Seluruh tindakan tool telah selesai dieksekusi.'
+            : 'Tidak ada respon yang dihasilkan oleh model.')
 
         execSteps.push({ task: 'Selesai' })
         targetPushProcess({
@@ -2690,9 +3324,17 @@ Lakukan pemeriksaan mandiri sekarang:
 
           const aiMsg = {
             role: 'ai',
-            content: finalOutput,
+            content: pluginImagesForTurn.length
+              ? [
+                  { type: 'text', text: finalOutput },
+                  ...pluginImagesForTurn.map((url) => ({
+                    type: 'image_url',
+                    image_url: { url }
+                  }))
+                ]
+              : finalOutput,
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
-            isTaskDone: true,
+            isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             pluginExecution: lastToolExecution,
@@ -2712,6 +3354,7 @@ Lakukan pemeriksaan mandiri sekarang:
 
         // Meta-Learning: Sintesis skill otomatis jika turn berhasil mengeksekusi tool bermakna
         if (
+          !awaitingBrowserUser &&
           !isAutonomous &&
           !isSystem &&
           executedToolsList &&
@@ -2764,7 +3407,7 @@ Lakukan pemeriksaan mandiri sekarang:
             role: 'ai',
             content: 'Tugas telah selesai diproses.',
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
-            isTaskDone: true,
+            isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
             timestamp: getCurrentTimeInfo(),
@@ -2845,6 +3488,7 @@ Lakukan pemeriksaan mandiri sekarang:
       try {
         if (window.api && window.api.executeNativeTool) {
           window.api.executeNativeTool('os-control-close').catch(() => {})
+          window.api.executeNativeTool('computer_use', { action: 'close' }).catch(() => {})
         }
       } catch {
         /* ignore */
@@ -2893,7 +3537,7 @@ Lakukan pemeriksaan mandiri sekarang:
         } catch (_) {}
         try {
           const runningTasks = await db.agentTasks.where('status').equals('running').toArray()
-          for (const t of runningTasks) {
+          for (const t of runningTasks.filter((t) => t.id === durableTaskForRecovery?.id)) {
             await transitionAgentTask(
               t.id,
               'cancelled',
@@ -3005,6 +3649,7 @@ Lakukan pemeriksaan mandiri sekarang:
         return finalUpdated
       })
     } finally {
+      browserCommand(browserSessionId(activeSessionNum), 'job-stop').catch(() => {})
       activeSessionsRef.current.delete(activeSessionNum)
       activeSessionUpdatersRef.current.delete(activeSessionNum)
       if (removeRunningSessionId) removeRunningSessionId(activeSessionNum)

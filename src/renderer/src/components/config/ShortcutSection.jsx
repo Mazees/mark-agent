@@ -1,102 +1,79 @@
+import { ConfigField } from './ConfigFields'
 import { useState } from 'react'
+import { configProps, controlClass } from './configStyles'
+
+const presets = [
+  'CommandOrControl+Alt+M',
+  'CommandOrControl+Shift+Space',
+  'Alt+Space',
+  'CommandOrControl+Space',
+  'F9'
+]
+const displayShortcut = (value) => value.replace(/CommandOrControl|Control/g, 'Ctrl')
 
 export const ShortcutSection = ({ config, setConfig }) => {
-  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false)
-
-  const handleShortcutRecorderKeyDown = (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
-
-    const modifiers = []
-    if (e.ctrlKey || e.metaKey) modifiers.push('CommandOrControl')
-    if (e.altKey) modifiers.push('Alt')
-    if (e.shiftKey) modifiers.push('Shift')
-
-    let keyName = e.key.toUpperCase()
-    if (e.code === 'Space' || keyName === ' ') keyName = 'Space'
-
-    const fullShortcut = [...modifiers, keyName].join('+')
-
-    setConfig((prev) => {
-      const updated = { ...prev, shortcutKey: fullShortcut }
-      window.dispatchEvent(new CustomEvent('config-updated', { detail: updated }))
-      if (window.api && window.api.syncConfig) window.api.syncConfig(updated)
-      return updated
-    })
-    setIsRecordingShortcut(false)
+  const [recording, setRecording] = useState(false)
+  const current = config.shortcutKey || presets[0]
+  const choose = (shortcutKey) => {
+    setConfig((previous) => ({ ...previous, shortcutKey }))
+    setRecording(false)
   }
-
-  const PRESET_SHORTCUTS = [
-    'CommandOrControl+Alt+M',
-    'CommandOrControl+Shift+Space',
-    'Alt+Space',
-    'CommandOrControl+Space',
-    'F9'
-  ]
-
+  const record = (event) => {
+    if (event.key === 'Tab') {
+      setRecording(false)
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.key === 'Escape') {
+      setRecording(false)
+      event.currentTarget.blur()
+      return
+    }
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return
+    const modifiers = []
+    if (event.ctrlKey || event.metaKey) modifiers.push('CommandOrControl')
+    if (event.altKey) modifiers.push('Alt')
+    if (event.shiftKey) modifiers.push('Shift')
+    const key = event.code === 'Space' ? 'Space' : event.key.toUpperCase()
+    choose([...modifiers, key].join('+'))
+    event.currentTarget.blur()
+  }
   return (
-    <section id="tour-shortcut" className="space-y-5 p-2 -mx-2 rounded-lg">
-      <h2 className="text-base font-bold uppercase tracking-wider opacity-70">
-        Global Shortcut Key
-      </h2>
-
-      <div className="space-y-1.5">
-        <div className="flex justify-between items-end">
-          <p className="text-sm font-semibold">Tombol Panggilan Cepat</p>
-          <span className="text-[10px] font-mono opacity-50">Aktif Lintas Aplikasi</span>
-        </div>
-
-        <div className="relative w-full">
-          <input
-            type="text"
-            readOnly
-            onFocus={() => setIsRecordingShortcut(true)}
-            onBlur={() => setIsRecordingShortcut(false)}
-            onKeyDown={handleShortcutRecorderKeyDown}
-            value={
-              isRecordingShortcut
-                ? 'Tekan kombinasi tombol di keyboard...'
-                : (config.shortcutKey || 'CommandOrControl+Alt+M').replace(
-                    /CommandOrControl|Control/g,
-                    'Ctrl'
-                  )
-            }
-            className={`input input-bordered w-full font-mono text-sm cursor-pointer select-none ${
-              isRecordingShortcut
-                ? 'input-primary border-2 animate-pulse bg-primary/10 text-primary font-bold'
-                : 'hover:border-primary/60'
-            }`}
-          />
-        </div>
-
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          <span className="text-xs opacity-60 w-full mb-1">Preset Cepat:</span>
-          {PRESET_SHORTCUTS.map((preset) => (
+    <div id="tour-shortcut" className="space-y-6">
+      <ConfigField
+        id="shortcut-key"
+        label="Kombinasi tombol"
+        hint="Klik kolom, lalu tekan kombinasi yang diinginkan. Tekan Esc untuk membatalkan. Pintasan diterapkan setelah pengaturan disimpan."
+      >
+        <input
+          id="shortcut-key"
+          aria-describedby="shortcut-key-hint"
+          readOnly
+          onFocus={() => setRecording(true)}
+          onBlur={() => setRecording(false)}
+          onKeyDown={record}
+          value={recording ? 'Tekan kombinasi tombol…' : displayShortcut(current)}
+          className={`input cursor-pointer ${controlClass} ${recording ? 'border-primary' : ''}`}
+        />
+      </ConfigField>
+      <div>
+        <h3 className="mb-3 text-xs text-white/50">Pilihan pintasan</h3>
+        <div className="flex flex-wrap gap-2">
+          {presets.map((preset) => (
             <button
               key={preset}
               type="button"
-              onClick={() => {
-                setConfig((prev) => {
-                  const updated = { ...prev, shortcutKey: preset }
-                  window.dispatchEvent(new CustomEvent('config-updated', { detail: updated }))
-                  if (window.api && window.api.syncConfig) window.api.syncConfig(updated)
-                  return updated
-                })
-              }}
-              className={`btn btn-xs ${config.shortcutKey === preset ? 'btn-primary' : 'btn-ghost border-base-content/20'} font-mono`}
+              aria-pressed={current === preset}
+              onClick={() => choose(preset)}
+              className={`rounded-full border px-4 py-2 text-xs transition-colors ${current === preset ? 'border-white/25 bg-white/10 text-white' : 'border-white/10 text-white/60 hover:text-white'}`}
             >
-              {preset.replace('CommandOrControl', 'Ctrl')}
+              {displayShortcut(preset)}
             </button>
           ))}
         </div>
-        <span className="text-[11px] opacity-60 block mt-1">
-          Cukup <b>klik kotak input di atas</b> lalu tekan kombinasi tombol di keyboard kamu
-          (misal: <code>Ctrl+Alt+A</code>, <code>Alt+Space</code>, <code>F9</code>).
-          Shortcut langsung aktif seketika di OS!
-        </span>
       </div>
-    </section>
+    </div>
   )
 }
+ShortcutSection.propTypes = configProps

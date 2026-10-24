@@ -2,20 +2,7 @@ import path from 'path'
 import os from 'os'
 import { exec } from 'child_process'
 import util from 'util'
-import {
-  readDesktop,
-  executeClick,
-  executeDoubleClick,
-  executeType,
-  executeKey,
-  executeScroll,
-  openApp,
-  listWindows,
-  focusWindow,
-  openPCSession,
-  closePCSession,
-  isPCSessionOpen
-} from '../../server/tools/pc-agent.js'
+import { executeComputerUse } from '../../server/tools/pc-agent.js'
 
 const execPromise = util.promisify(exec)
 
@@ -50,7 +37,7 @@ const DANGEROUS_KEYWORDS = [
 ]
 
 export const isDangerousCommand = (cmd) => {
-  const str = typeof cmd === 'object' ? (cmd?.command || '') : String(cmd || '')
+  const str = typeof cmd === 'object' ? cmd?.command || '' : String(cmd || '')
   return DANGEROUS_KEYWORDS.some((k) => str.toLowerCase().includes(k.toLowerCase()))
 }
 
@@ -62,10 +49,13 @@ export const systemTools = {
       return `Mark ingin mengeksekusi perintah PowerShell yang berpotensi BERBAHAYA:\n\n${cmd}`
     },
     handler: async (args, config) => {
-      const command = (typeof args === 'object' && args !== null ? args.command : String(args || '')).trim()
+      const command = (
+        typeof args === 'object' && args !== null ? args.command : String(args || '')
+      ).trim()
       if (!command) return { success: false, message: 'Tidak ada perintah yang diberikan.' }
       try {
-        const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+        const activeRoot =
+          config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
 
         // Gunakan Base64 EncodedCommand (UTF-16LE) agar karakter khusus ($_, quotes, pipe, regex) 100% aman
         const encodedCmd = Buffer.from(command, 'utf16le').toString('base64')
@@ -77,7 +67,11 @@ export const systemTools = {
             timeout: 60000 // 60 detik timeout
           }
         )
-        const outputText = stdout.trim() || (stderr.trim() ? `[STDERR]: ${stderr.trim()}` : 'Perintah berhasil dieksekusi tanpa output teks.')
+        const outputText =
+          stdout.trim() ||
+          (stderr.trim()
+            ? `[STDERR]: ${stderr.trim()}`
+            : 'Perintah berhasil dieksekusi tanpa output teks.')
         return {
           success: true,
           data: outputText,
@@ -98,195 +92,127 @@ export const systemTools = {
     }
   },
 
-  'os-read': {
+  open: {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const mode = typeof args === 'object' && args !== null ? (args.mode || 'all') : String(args || 'all')
-        const result = await readDesktop({}, mode)
-        return { success: true, data: result }
+        const target =
+          typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
+        await execPromise(`start "" "${target}"`)
+        return { success: true, data: `Opened: ${target}` }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
 
-  'os-click': {
-    needsApproval: false,
-    handler: async (args) => {
-      try {
-        const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
-        const result = await executeClick(target)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-type': {
-    needsApproval: false,
-    handler: async (args) => {
-      try {
-        const text = typeof args === 'object' && args !== null ? (args.text ?? '') : String(args ?? '')
-        const result = await executeType(text)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-key': {
+  computer_use: {
     needsApproval: (args) => {
-      const combo = typeof args === 'object' && args !== null ? args.combo : String(args || '')
-      return isDangerousKeyCombo(combo)
+      if (Array.isArray(args?.actions)) {
+        return args.actions.some((a) => {
+          const act = a?.action || ''
+          const combo = a?.key || a?.combo || (Array.isArray(a?.keys) ? a.keys.join('+') : '')
+          if (act === 'key' || act === 'hotkey' || act === 'key_down') {
+            return isDangerousKeyCombo(combo)
+          }
+          return false
+        })
+      }
+      const act = typeof args === 'object' && args !== null ? args.action : ''
+      const combo =
+        typeof args === 'object' && args !== null
+          ? args.key || args.combo || (Array.isArray(args?.keys) ? args.keys.join('+') : '')
+          : ''
+      if (act === 'key' || act === 'hotkey' || act === 'key_down') {
+        return isDangerousKeyCombo(combo)
+      }
+      return false
     },
     approvalMessage: (args) => {
-      const combo = typeof args === 'object' && args !== null ? args.combo : String(args || '')
-      return `Mark ingin menekan shortcut keyboard yang berpotensi BERBAHAYA:\n\n${combo}`
+      let combo = ''
+      if (Array.isArray(args?.actions)) {
+        const found = args.actions.find((a) => {
+          const act = a?.action || ''
+          const c = a?.key || a?.combo || (Array.isArray(a?.keys) ? a.keys.join('+') : '')
+          return (act === 'key' || act === 'hotkey' || act === 'key_down') && isDangerousKeyCombo(c)
+        })
+        combo = found
+          ? found.key || found.combo || (Array.isArray(found.keys) ? found.keys.join('+') : '')
+          : ''
+      } else if (typeof args === 'object' && args !== null) {
+        combo = args.key || args.combo || (Array.isArray(args?.keys) ? args.keys.join('+') : '')
+      }
+      return `Mark ingin menekan shortcut keyboard berpotensi bahaya via Computer Use:\n\n${combo}`
     },
-    handler: async (args) => {
+    handler: async (args, config) => {
       try {
-        const combo = typeof args === 'object' && args !== null ? (args.combo ?? '') : String(args ?? '')
-        const result = await executeKey(combo)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-scroll': {
-    needsApproval: false,
-    handler: async (args) => {
-      try {
-        let direction = 'down'
-        let amount = 3
-        if (typeof args === 'object' && args !== null) {
-          direction = args.direction || 'down'
-          amount = args.amount !== undefined ? Number(args.amount) : 3
-        } else {
-          const parts = String(args || '').split('||')
-          direction = parts[0] || 'down'
-          amount = parts[1] ? Number(parts[1]) : 3
+        const payload = {
+          sessionId: config?.sessionId || args?.sessionId || 'default',
+          agentName: config?.agentName || args?.agentName || 'Mark Utama',
+          ...(typeof args === 'object' && args !== null ? args : {})
         }
-        const result = await executeScroll(direction, amount)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'open': {
-    needsApproval: false,
-    handler: async (args) => {
-      try {
-        const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
-        await execPromise(`start "" "${target}"`)
-        return { success: true, data: `Opened: ${target}` }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-open': {
-    needsApproval: false,
-    handler: async (args) => {
-      try {
-        const target = (typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')).trim()
-        await execPromise(`start "" "${target}"`)
-        return { success: true, data: `Opened: ${target}` }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-search': {
-    needsApproval: false,
-    handler: async (args) => {
-      try {
-        const query = typeof args === 'object' && args !== null ? (args.keyword || '') : String(args || '')
-        await executeKey('win')
-        await new Promise((r) => setTimeout(r, 800))
-        const result = await executeType(query)
-        return {
-          success: true,
-          data: `[PC-Agent] Opened Start Menu and searched for "${query}". ${result}`
+        const result = await executeComputerUse(payload)
+        if (result?.image || result?.dataUrl) {
+          const img = result.dataUrl || result.image
+          return {
+            success: result.success !== false,
+            data:
+              result.message ||
+              (result.action === 'batch'
+                ? `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`
+                : `Aksi ${result.action || 'computer_use'} berhasil dieksekusi (${result.viewport || '1280x720'}).`),
+            message: result.message,
+            dataUrl: img,
+            image: img,
+            cursor: result.cursor,
+            cursor_host: result.cursor_host,
+            viewport: result.viewport,
+            host_resolution: result.host_resolution,
+            action: result.action || 'screenshot',
+            results: result.results || undefined
+          }
         }
+        if (result?.action === 'batch') {
+          return {
+            success: result.success !== false,
+            data: `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`,
+            ...result
+          }
+        }
+        return { success: result.success !== false, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }
     }
   },
 
-  'os-double-click': {
-    needsApproval: false,
-    handler: async (args) => {
-      const target = typeof args === 'object' && args !== null ? (args.target ?? '') : String(args ?? '')
-      return await executeDoubleClick(target)
-    }
+  'computer-use': {
+    needsApproval: (args) => systemTools['computer_use'].needsApproval(args),
+    approvalMessage: (args) => systemTools['computer_use'].approvalMessage(args),
+    handler: async (args) => systemTools['computer_use'].handler(args)
   },
 
-  'os-delay': {
-    needsApproval: false,
-    handler: async (args) => {
-      let ms = typeof args === 'object' && args !== null ? parseInt(args.ms, 10) : parseInt(args, 10)
-      if (isNaN(ms) || ms < 0) ms = 1000
-      if (ms > 10000) ms = 10000
-      await new Promise((r) => setTimeout(r, ms))
-      return { success: true, data: `[PC-Agent] Delayed for ${ms}ms.` }
-    }
-  },
-
-  'os-list-windows': {
-    needsApproval: false,
-    handler: async () => {
-      try {
-        const result = await listWindows()
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-focus-window': {
+  'computer-screenshot': {
     needsApproval: false,
     handler: async (args) => {
       try {
-        const title = typeof args === 'object' && args !== null ? (args.title || '') : String(args || '')
-        const result = await focusWindow(title)
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-control-open': {
-    needsApproval: () => !isPCSessionOpen(),
-    approvalMessage: () =>
-      'Mark ingin mengontrol fisik PC/desktop-mu (mengunci sesi sementara dan memunculkan overlay kontrol PC). Apakah kamu mengizinkan?',
-    handler: async () => {
-      try {
-        const result = await openPCSession()
-        return { success: true, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-
-  'os-control-close': {
-    needsApproval: false,
-    handler: async () => {
-      try {
-        const result = await closePCSession()
-        return { success: true, data: result }
+        const result = await executeComputerUse({ action: 'screenshot', ...(args || {}) })
+        if (result?.image || result?.dataUrl) {
+          const img = result.dataUrl || result.image
+          return {
+            success: result.success !== false,
+            data:
+              result.message ||
+              `Screenshot desktop berhasil diambil (${result.viewport || '1280x720'}).`,
+            message: result.message,
+            dataUrl: img,
+            image: img,
+            viewport: result.viewport,
+            host_resolution: result.host_resolution,
+            action: 'screenshot'
+          }
+        }
+        return { success: result.success !== false, data: result }
       } catch (e) {
         return { success: false, error: e.message }
       }

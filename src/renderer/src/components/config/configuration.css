@@ -1,0 +1,16 @@
+#configuration-content select::picker(select) {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+  border-color: color-mix(in oklab, var(--color-base-content) 15%, transparent);
+}
+
+#configuration-content select option {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+#configuration-content select option:checked,
+#configuration-content select option:hover,
+#configuration-content select option:focus-visible {
+  background-color: color-mix(in oklab, var(--color-base-content) 10%, var(--color-base-200));
+}

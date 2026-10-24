@@ -109,9 +109,10 @@ sequenceDiagram
         Aware->>Plan: handlePlanningCommand(inisiatif, { isAutonomous: true })
         Plan-->>UI: Menampilkan Sapaan Proaktif Tanpa Disuruh
     else Pengguna Kembali Setelah AFK Lama (> 15 Menit)
-        Aware->>Brain: generateDailyJournalEntry()
-        Brain-->>Aware: Ringkasan Catatan Harian Pengguna
-        Aware->>UI: Simpan Log Memori Jangka Panjang
+        Aware->>UI: Bangunkan avatar
+        Aware->>Brain: getAwarenessResponse(windowActivity, userStatus)
+        Brain-->>Aware: Keputusan sapaan atau pengamatan
+        Aware->>UI: Tampilkan hasil jika relevan
     end
 ```
 
@@ -119,5 +120,5 @@ sequenceDiagram
 
 - `CHECKIN_POLL_INTERVAL`: `20.000 ms` (memeriksa telemetri jendela Windows setiap 20 detik).
 - `MIN_CHECKIN_GAP`: `3 menit` (mencegah MARK terlalu sering menyapa dan mengganggu fokus pengguna).
-- `Deteksi AFK`: Mengidentifikasi saat pengguna meninggalkan komputer lebih dari 15 menit, lalu mencatat perubahan aktivitas ke dalam jurnal harian memori saat pengguna kembali.
+- `Deteksi AFK`: Mengidentifikasi saat pengguna meninggalkan komputer lebih dari 15 menit. Saat pengguna kembali, avatar dibangunkan dan kondisi terkini dievaluasi untuk menentukan sapaan yang relevan.
 - `Pencegahan Spam Mirip`: Fungsi `tokenizeForSimilarity` menghitung kesamaan token kata dengan riwayat obrolan sebelumnya; jika tingkat kemiripan `>= 60%`, sapaan otomatis dibatalkan.

@@ -5,7 +5,8 @@
 
 export const GROUP_TOOLS_SCHEMA = {
   advanced_browser: {
-    description: 'Tool untuk navigasi dan kontrol elemen fisik browser web secara detail.',
+    description:
+      'Browser bawaan MARK berbasis Puppeteer yang tampil di panel Browser dalam aplikasi. Pilihan default untuk permintaan "buka di browser", membuka website/localhost, serta interaksi halaman; bukan Chrome desktop atau computer-use.',
     tools: [
       {
         type: 'function',
@@ -28,7 +29,7 @@ export const GROUP_TOOLS_SCHEMA = {
         function: {
           name: 'browser-fetch',
           description:
-            'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka jendela browser fisik.',
+            'Membaca dan mengambil (curl/fetch) isi konten teks/artikel dari suatu URL secara instan tanpa perlu membuka panel browser.',
           parameters: {
             type: 'object',
             properties: {
@@ -45,7 +46,7 @@ export const GROUP_TOOLS_SCHEMA = {
         function: {
           name: 'browser-navigate',
           description:
-            'Buka URL di browser fisik. Mengembalikan daftar elemen interaktif bernomor (ID).',
+            'Buka URL di browser Puppeteer bawaan MARK dan tampilkan panel Browser Chat Studio secara otomatis. Gunakan sebagai default saat pengguna berkata "buka di browser" atau "buka website", tanpa membuka Chrome/Edge desktop atau computer-use. Hasil sudah menyertakan DOM terbaru beserta ID elemen; gunakan hasil itu langsung untuk aksi berikutnya.',
           parameters: {
             type: 'object',
             properties: {
@@ -56,6 +57,7 @@ export const GROUP_TOOLS_SCHEMA = {
           }
         }
       },
+
       {
         type: 'function',
         function: {
@@ -72,7 +74,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-click',
-          description: 'Klik elemen pada halaman browser berdasarkan ID numerik.',
+          description:
+            'Klik elemen berdasarkan ID numerik. Hasil menyertakan DOM terbaru; tidak perlu browser-read terpisah.',
           parameters: {
             type: 'object',
             properties: {
@@ -87,7 +90,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-type',
-          description: 'Ketik teks ke kolom input formulir web berdasarkan ID elemen.',
+          description:
+            'Ketik ke input berdasarkan ID elemen. Hasil menyertakan DOM terbaru setelah ketikan.',
           parameters: {
             type: 'object',
             properties: {
@@ -103,7 +107,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-scroll',
-          description: 'Scroll halaman browser ke atas atau ke bawah.',
+          description:
+            'Scroll halaman ke atas atau bawah dan kembalikan DOM terbaru beserta ID elemen yang terlihat.',
           parameters: {
             type: 'object',
             properties: {
@@ -133,7 +138,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-script',
-          description: 'Eksekusi JavaScript langsung pada halaman browser web.',
+          description:
+            'Jalankan JavaScript pada halaman. Hasil script disertai DOM terbaru setelah eksekusi.',
           parameters: {
             type: 'object',
             properties: {
@@ -171,7 +177,8 @@ export const GROUP_TOOLS_SCHEMA = {
         type: 'function',
         function: {
           name: 'browser-download',
-          description: 'Mengunduh berkas dari web ke komputer.',
+          description:
+            'Mengunduh berkas dari web ke komputer, disertai observasi halaman setelah aksi.',
           parameters: {
             type: 'object',
             properties: {
@@ -186,225 +193,10 @@ export const GROUP_TOOLS_SCHEMA = {
       {
         type: 'function',
         function: {
-          name: 'browser-ask-user',
-          description:
-            'Minta bantuan user untuk menyelesaikan CAPTCHA, 2FA, verifikasi Cloudflare, atau login manual pada halaman browser. Jendela browser akan otomatis ditampilkan dan interaksi user di-unblock sementara hingga user menekan tombol Resume.',
-          parameters: {
-            type: 'object',
-            properties: {
-              prompt: {
-                type: 'string',
-                description:
-                  'Pesan arahan untuk user (misal: "Silakan selesaikan Cloudflare Turnstile / Login Google terlebih dahulu")'
-              }
-            },
-            required: ['prompt'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
           name: 'browser-close',
-          description: 'Menutup sesi browser fisik yang sedang aktif.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      }
-    ]
-  },
-  pc_automation: {
-    description:
-      'Tool untuk interaksi fisik dengan desktop OS Windows, mouse click, keyboard typing, dan window management.',
-    tools: [
-      {
-        type: 'function',
-        function: {
-          name: 'os-control-open',
           description:
-            'WAJIB DIPANGGIL PERTAMA KALI sebelum memulai rangkaian tugas otomatisasi PC. Mengunci sesi dan memunculkan overlay pengunci PC.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-control-close',
-          description: 'WAJIB DIPANGGIL TERAKHIR setelah semua tugas otomatisasi PC selesai.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-read',
-          description: 'Membaca elemen GUI desktop.',
-          parameters: {
-            type: 'object',
-            properties: {
-              mode: {
-                type: 'string',
-                enum: ['all', 'focus'],
-                description:
-                  '"all" untuk scan seluruh layar atau "focus" untuk membaca 1 elemen aktif'
-              }
-            },
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-click',
-          description:
-            'Klik mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
-          parameters: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'ID elemen dari os-read atau koordinat "x||y"'
-              }
-            },
-            required: ['target'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-double-click',
-          description:
-            'Double click mouse pada elemen GUI desktop berdasarkan ID elemen atau koordinat x||y.',
-          parameters: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'ID elemen dari os-read atau koordinat "x||y"'
-              }
-            },
-            required: ['target'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-type',
-          description: 'Ketik teks ke aplikasi Windows yang sedang aktif.',
-          parameters: {
-            type: 'object',
-            properties: {
-              text: { type: 'string', description: 'Teks yang akan diketikkan' }
-            },
-            required: ['text'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-key',
-          description: 'Tekan kombinasi tombol keyboard shortcut (misal: ctrl+c, alt+tab, enter).',
-          parameters: {
-            type: 'object',
-            properties: {
-              combo: { type: 'string', description: 'Kombinasi tombol keyboard' }
-            },
-            required: ['combo'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-scroll',
-          description: 'Scroll mouse wheel di aplikasi aktif.',
-          parameters: {
-            type: 'object',
-            properties: {
-              direction: { type: 'string', enum: ['up', 'down'], description: 'Arah scroll' },
-              amount: { type: 'number', description: 'Jumlah baris scroll' }
-            },
-            required: ['direction'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-delay',
-          description: 'Menunggu beberapa milidetik (jeda) saat menjalankan otomatisasi UI.',
-          parameters: {
-            type: 'object',
-            properties: {
-              ms: { type: 'number', description: 'Durasi jeda dalam milidetik (contoh: 1000)' }
-            },
-            required: ['ms'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-search',
-          description: 'Mencari aplikasi di Start Menu Windows dengan tombol Windows.',
-          parameters: {
-            type: 'object',
-            properties: {
-              keyword: { type: 'string', description: 'Kata kunci nama aplikasi' }
-            },
-            required: ['keyword'],
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-list-windows',
-          description: 'Menampilkan daftar semua window aplikasi yang terbuka beserta judulnya.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'os-focus-window',
-          description:
-            'Fokus sebuah window aplikasi berdasarkan judul yang ada di os-list-windows.',
-          parameters: {
-            type: 'object',
-            properties: {
-              title: { type: 'string', description: 'Judul window aplikasi persis' }
-            },
-            required: ['title'],
-            additionalProperties: false
-          }
+            'Akhiri browser sesi ini jika pengguna meminta. Cookie profil tetap tersimpan. Menutup panel saja tidak menjalankan tool ini.',
+          parameters: { type: 'object', properties: {}, additionalProperties: false }
         }
       }
     ]

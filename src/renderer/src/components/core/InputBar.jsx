@@ -11,12 +11,13 @@ import {
   FaFilePdf,
   FaFileCode,
   FaFileImage,
-  FaLock,
-  FaFolder
+  FaLock
 } from 'react-icons/fa'
-import { Zap, Sparkles, Folder, Wrench, ChevronLeft } from 'lucide-react'
+import { Zap, Sparkles, Folder, Wrench, FileText } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
+import SkillComposer from './SkillComposer'
 import { NATIVE_SKILLS } from './native-skills'
+import { webApi } from '../../api/web-bridge.js'
 import { calculateSessionTokens, MAX_CONTEXT_TOKENS } from '../../api/ai/contextManager'
 import {
   getChatData,
@@ -63,6 +64,8 @@ const getFileIcon = (fileName = '') => {
 
 const InputBar = ({
   sessionId = '1',
+  initialDraft = '',
+  contextManagedExternally = false,
   onSubmit,
   isLoading,
   isRecording,
@@ -75,7 +78,6 @@ const InputBar = ({
   inline = false,
   className = '',
   workspaceRoot = null,
-  onSelectWorkspace = null,
   onManualCompact = null
 }) => {
   void source
@@ -85,7 +87,7 @@ const InputBar = ({
   const gaugeRef = useRef(null)
   const mentionListRef = useRef(null)
   const skillListRef = useRef(null)
-  const [inputText, setInputText] = useState('')
+  const [inputText, setInputText] = useState(initialDraft)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
   const [showContextPopover, setShowContextPopover] = useState(false)
@@ -105,27 +107,50 @@ const InputBar = ({
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionCursorIndex, setMentionCursorIndex] = useState(0)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const mentionRangeEndRef = useRef(0)
+  const skillRangeRef = useRef({ start: 0, end: 0 })
   const [workspaceFiles, setWorkspaceFiles] = useState([])
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
   const [toolGroups, setToolGroups] = useState([])
+  const toolGroupsRequestRef = useRef(0)
 
-  const loadToolGroups = useCallback(async () => {
+  const loadToolGroups = useCallback(async ({ forceRefresh = false } = {}) => {
+    const requestId = ++toolGroupsRequestRef.current
     if (window.api && window.api.getGroupTools) {
       try {
-        const data = await window.api.getGroupTools()
+        const data = await webApi.getGroupTools({ forceRefresh })
+        if (requestId !== toolGroupsRequestRef.current) return []
         const schema = data?.schema || {}
         const names = data?.names || Object.keys(schema)
-        const list = names.map((key) => {
-          const desc = schema[key]?.description || ''
-          const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-          return {
-            name: key,
-            label,
-            description: desc
-          }
-        })
-        setToolGroups(list)
-        return list
+        const list = names
+          .filter((key) => schema[key] && schema[key].kind !== 'plugin')
+          .map((key) => {
+            const desc = schema[key]?.description || ''
+            const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+            return {
+              name: key,
+              label,
+              description: desc,
+              kind: 'group'
+            }
+          })
+        const pluginGroups = (data?.plugins || [])
+          .filter((plugin) => plugin?.isEnabled !== false && plugin?.name)
+          .map((plugin) => ({
+            name: plugin.name,
+            label: plugin.displayName || plugin.name,
+            description: [plugin.description, `${plugin.actionCount || 0} aksi`]
+              .filter(Boolean)
+              .join(' · '),
+            kind: 'plugin'
+          }))
+        const groupNames = new Set(list.map((group) => group.name))
+        const allGroups = [
+          ...list,
+          ...pluginGroups.filter((plugin) => !groupNames.has(plugin.name))
+        ]
+        setToolGroups(allGroups)
+        return allGroups
       } catch (err) {
         console.error('[InputBar] Failed to load tool groups:', err)
       }
@@ -135,6 +160,14 @@ const InputBar = ({
 
   useEffect(() => {
     loadToolGroups()
+    const unsubscribe = webApi.onPluginsUpdated(() => {
+      loadToolGroups()
+      setSelectedMentionIndex(0)
+    })
+    return () => {
+      toolGroupsRequestRef.current += 1
+      unsubscribe()
+    }
   }, [loadToolGroups])
 
   const [contextTracker, setContextTracker] = useState({
@@ -212,6 +245,7 @@ const InputBar = ({
 
   // Muat status konteks awal sesi saat mount atau saat sessionId berganti
   useEffect(() => {
+    if (contextManagedExternally) return
     let isCancelled = false
     const loadInitialContext = async () => {
       try {
@@ -241,7 +275,7 @@ const InputBar = ({
     return () => {
       isCancelled = true
     }
-  }, [sessionId])
+  }, [sessionId, contextManagedExternally])
 
   useEffect(() => {
     const handleTrackerUpdate = (e) => {
@@ -273,21 +307,28 @@ const InputBar = ({
   }, [sessionId])
 
   const reloadSkills = async () => {
+    const nativeSkillList = NATIVE_SKILLS.map(({ name, title, icon, description }) => ({
+      name,
+      title,
+      icon,
+      description
+    }))
+    setSkills(nativeSkillList)
     if (window.api && window.api.getSkills) {
       try {
         const loadedSkills = await window.api.getSkills()
-        const nativeSkillList = NATIVE_SKILLS.map((s) => ({
-          name: s.name,
-          description: s.description
-        }))
-        const merged = [...nativeSkillList, ...(loadedSkills || [])]
+        const nativeNames = new Set(nativeSkillList.map((skill) => skill.name.toLowerCase()))
+        const merged = [
+          ...nativeSkillList,
+          ...(loadedSkills || []).filter((skill) => !nativeNames.has(skill.name.toLowerCase()))
+        ]
         setSkills(merged)
         return merged
       } catch (err) {
         console.error('[InputBar] Failed to reload skills:', err)
       }
     }
-    return []
+    return nativeSkillList
   }
 
   useEffect(() => {
@@ -524,19 +565,20 @@ const InputBar = ({
   }
 
   const handleFormSubmit = async () => {
-    let finalPrompt = inputText
-    let userText = inputText
+    const rawPrompt = inputText
+    let finalPrompt = rawPrompt
+    let userText = rawPrompt
 
     // INTERCEPT SUPER EFFORT SLASH COMMANDS: /super, /effort, /boost
-    const isSlashEffort = Boolean(inputText.match(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/i))
+    const isSlashEffort = Boolean(rawPrompt.match(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/i))
     if (isSlashEffort) {
       userText = userText.replace(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/gi, ' ').trim()
       finalPrompt = userText
     }
 
-    const skillMatches = inputText.match(/(?:\s|^)\/([a-zA-Z0-9_-]+)/g)
+    const skillMatches = rawPrompt.match(/(?:\s|^)\/([a-zA-Z0-9_-]+)/g)
 
-    if (skillMatches && skillMatches.length > 0 && window.api && window.api.readSkill) {
+    if (skillMatches && skillMatches.length > 0) {
       let combinedSkillsContent = ''
       const loadedSkills = []
 
@@ -560,7 +602,7 @@ const InputBar = ({
         }
 
         try {
-          const skillData = await window.api.readSkill(skillName)
+          const skillData = await window.api?.readSkill?.(skillName)
           if (skillData) {
             // Support both old string format and new object format
             const content = typeof skillData === 'string' ? skillData : skillData.content
@@ -601,9 +643,9 @@ const InputBar = ({
 
     if (finalPrompt.trim()) {
       if (!isLoading) {
-        lastPromptRef.current = inputText
+        lastPromptRef.current = rawPrompt
       }
-      const rawUserText = inputText.trim()
+      const rawUserText = rawPrompt
       setInputText('')
       if (typeof onSubmit === 'function') {
         onSubmit(finalPrompt, {
@@ -646,12 +688,13 @@ const InputBar = ({
           title: 'Files',
           subtitle: 'Cari berkas di workspace'
         },
-        {
-          type: 'category',
-          category: 'tools',
-          title: 'Tool Groups',
-          subtitle: 'Kelompok kapabilitas tool agen'
-        }
+        ...toolGroups.map((group) => ({
+          type: 'tool',
+          name: group.name,
+          label: group.label,
+          description: group.description,
+          kind: group.kind
+        }))
       ]
     }
 
@@ -672,7 +715,8 @@ const InputBar = ({
           type: 'tool',
           name: t.name,
           label: t.label,
-          description: t.description
+          description: t.description,
+          kind: t.kind
         }))
       items.push(...matchedTools)
     }
@@ -714,7 +758,7 @@ const InputBar = ({
 
     const val = inputText
     const beforeAt = val.slice(0, mentionCursorIndex)
-    const afterMention = val.slice(mentionCursorIndex + 1 + mentionQuery.length)
+    const afterMention = val.slice(mentionRangeEndRef.current)
 
     if (item.type === 'file') {
       const insertTag = `@${item.relativePath} `
@@ -773,31 +817,41 @@ const InputBar = ({
     const cursor = e.target.selectionStart ?? val.length
     const textBefore = val.slice(0, cursor)
 
-    // 1. Deteksi Slash Command (/):
-    if (val.startsWith('/')) {
+    // Slash commands can be typed at the beginning or after whitespace, wherever the caret is.
+    const slashIndex = textBefore.lastIndexOf('/')
+    const isSlashCommand =
+      slashIndex !== -1 &&
+      (slashIndex === 0 || /\s/.test(textBefore[slashIndex - 1])) &&
+      !/\s/.test(textBefore.slice(slashIndex + 1))
+
+    if (isSlashCommand) {
+      const tokenAfterCaret = val.slice(cursor).match(/^[a-zA-Z0-9_-]*/)?.[0] || ''
+      skillRangeRef.current = { start: slashIndex, end: cursor + tokenAfterCaret.length }
+      const query = textBefore.slice(slashIndex + 1).toLowerCase()
       const currentSkills = skills && skills.length > 0 ? skills : await reloadSkills()
-      const query = val.slice(1).toLowerCase()
+      if (inputRef.current?.value !== val || inputRef.current?.selectionStart !== cursor) return
       const matches = currentSkills.filter((s) => s.name.toLowerCase().includes(query))
       setFilteredSkills(matches)
       setShowSkillList(true)
       setSelectedSkillIndex(0)
       setShowMentionList(false)
       return
-    } else {
-      setShowSkillList(false)
     }
+    setShowSkillList(false)
 
     // 2. Deteksi Mention Tag (@):
     const atIndex = textBefore.lastIndexOf('@')
     if (atIndex !== -1 && (atIndex === 0 || /\s/.test(textBefore[atIndex - 1]))) {
       const afterAt = textBefore.slice(atIndex + 1)
       if (!/\s/.test(afterAt)) {
-        if (toolGroups.length === 0) {
-          loadToolGroups()
+        const tokenAfterCaret = val.slice(cursor).match(/^\S*/)?.[0] || ''
+        if (!showMentionList) {
+          loadToolGroups({ forceRefresh: true })
         }
         setShowMentionList(true)
         setMentionQuery(afterAt)
         setMentionCursorIndex(atIndex)
+        mentionRangeEndRef.current = cursor + tokenAfterCaret.length
         setSelectedMentionIndex(0)
         fetchWorkspaceFiles(afterAt)
         return
@@ -809,9 +863,18 @@ const InputBar = ({
   }
 
   const selectSkill = (skillObj) => {
-    setInputText(`/${skillObj.name} `)
+    const { start, end } = skillRangeRef.current
+    const insertion = `/${skillObj.name} `
+    const nextText = `${inputText.slice(0, start)}${insertion}${inputText.slice(end)}`
+    setInputText(nextText)
     setShowSkillList(false)
-    if (inputRef.current) inputRef.current.focus()
+    setTimeout(() => {
+      if (inputRef.current) {
+        const cursor = start + insertion.length
+        inputRef.current.focus()
+        inputRef.current.setSelectionRange(cursor, cursor)
+      }
+    }, 0)
   }
 
   const handleKeyDown = (e) => {
@@ -929,29 +992,8 @@ const InputBar = ({
         </div>
       )}
 
-      {/* Pills Container (Workspace Root + Super Effort) */}
-      {(workspaceRoot || isSuperEffort) && (
+      {isSuperEffort && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          {workspaceRoot && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-base-200/80 border border-primary/30 rounded-lg text-xs text-white/80 w-fit backdrop-blur-md animate-fade-in shadow-md">
-              <FaFolder className="text-primary text-xs" />
-              <span className="text-[10px] text-primary uppercase font-bold tracking-wider">
-                Workspace:
-              </span>
-              <span className="font-mono text-[11px] truncate max-w-xs">{workspaceRoot}</span>
-              {onSelectWorkspace && (
-                <button
-                  type="button"
-                  onClick={onSelectWorkspace}
-                  className="ml-1 text-[10px] text-white/50 hover:text-primary transition-colors cursor-pointer underline"
-                  title="Ganti folder proyek"
-                >
-                  Ganti
-                </button>
-              )}
-            </div>
-          )}
-
           {isSuperEffort && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/15 border border-primary/40 rounded-lg text-xs text-primary font-medium w-fit backdrop-blur-md animate-fade-in shadow-md select-none">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -980,7 +1022,7 @@ const InputBar = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative flex items-center bg-[var(--glass-bg)] border rounded-lg p-2 pr-3 shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-colors duration-300 focus-within:border-primary/50 focus-within:shadow-[0_0_20px_oklch(var(--p)/0.2)] ${
+        className={`relative flex flex-col items-stretch gap-1 bg-[var(--glass-bg)] border rounded-2xl p-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-colors duration-300 focus-within:border-primary/50 focus-within:shadow-[0_0_20px_oklch(var(--p)/0.2)] ${
           isDragging
             ? 'border-primary bg-primary/10 shadow-[0_0_30px_oklch(var(--p)/0.3)] scale-[1.02]'
             : 'border-[var(--glass-border)]'
@@ -994,205 +1036,10 @@ const InputBar = ({
           </div>
         )}
 
-        {/* Workspace Root Folder Button */}
-        {onSelectWorkspace && (
-          <button
-            type="button"
-            onClick={onSelectWorkspace}
-            className={`p-3 rounded-full transition-all flex-shrink-0 relative ${
-              workspaceRoot
-                ? 'text-primary hover:text-primary hover:bg-primary/10'
-                : 'text-white/40 hover:text-white/80 hover:bg-white/5'
-            }`}
-            title={
-              workspaceRoot
-                ? `Workspace Root: ${workspaceRoot} (Klik untuk ganti)`
-                : 'Atur Folder Proyek (Workspace Root)'
-            }
-          >
-            <FaFolder size={16} />
-            {workspaceRoot && (
-              <span className="absolute bottom-2 right-2 w-1.5 h-1.5 rounded-full bg-primary ring-1 ring-base-300" />
-            )}
-          </button>
-        )}
-
-        {/* Paperclip File Upload Button */}
-        <button
-          type="button"
-          onClick={handlePaperclipClick}
-          className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all flex-shrink-0"
-          title="Lampirkan File (PDF, DOCX, TXT, MD, Gambar, dll)"
-        >
-          <FaPaperclip size={16} />
-        </button>
-
-        {/* Mic / Record Toggle (Hold to talk) */}
-        <button
-          type="button"
-          onClick={isRecording ? onStopRecord : onStartRecord}
-          disabled={isProcessing || isLoading}
-          className={`relative p-3 md:p-4 rounded-full flex-shrink-0 transition-all duration-300 transform outline-none z-10 ${
-            isProcessing
-              ? 'text-primary bg-primary/20 cursor-wait'
-              : isLoading
-                ? 'text-white/20 bg-white/5 cursor-not-allowed'
-                : isRecording
-                  ? 'text-error bg-error/20'
-                  : 'text-white/40 hover:text-white/80 hover:bg-white/5'
-          }`}
-          style={{
-            transform: isRecording && !isProcessing ? `scale(${1 + audioIntensity * 0.3})` : '',
-            boxShadow:
-              isRecording && !isProcessing
-                ? `0 0 ${10 + audioIntensity * 40}px rgba(255,0,0, ${0.3 + audioIntensity * 0.5})`
-                : ''
-          }}
-          title={
-            isProcessing
-              ? 'Sedang memproses suara...'
-              : isLoading
-                ? 'Agen sedang sibuk'
-                : 'Mulai/Berhenti Rekam (Ctrl+Alt+M)'
-          }
-        >
-          {isRecording && !isProcessing && (
-            <div
-              className="absolute inset-0 rounded-full bg-error/30 -z-10"
-              style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
-            />
-          )}
-          {isProcessing ? (
-            <span className="loading loading-spinner w-[18px] h-[18px]"></span>
-          ) : isLoading ? (
-            <FaLock size={18} />
-          ) : (
-            <FaMicrophone size={18} />
-          )}
-        </button>
-
-        {/* Emoji Button */}
-        <div className="relative flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all"
-            title="Insert Emoji"
-          >
-            <FaSmile size={18} />
-          </button>
-
-          {showEmojiPicker && (
-            <div className="absolute bottom-full left-0 mb-4 bg-[var(--glass-bg)] backdrop-blur-3xl border border-[var(--glass-border)] rounded-2xl p-2 shadow-2xl flex flex-wrap w-52 gap-1 z-[100] animate-[holo-project-in_0.2s_ease-out_forwards]">
-              {EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => handleEmojiClick(emoji)}
-                  className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-xl text-2xl transition-all hover:scale-110 active:scale-95"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {/* Skill Autocomplete Dropdown */}
-        {showSkillList && filteredSkills.length > 0 && (
-          <div className="absolute bottom-full left-12 mb-2 w-[400px] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
-            <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5">
-              Available Skills
-            </div>
-            <div ref={skillListRef} className="max-h-64 overflow-y-auto no-scrollbar">
-              {filteredSkills.map((skillObj, idx) => (
-                <div
-                  key={skillObj.name}
-                  onClick={() => selectSkill(skillObj)}
-                  className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
-                    idx === selectedSkillIndex
-                      ? 'bg-primary-500/20 text-primary-400'
-                      : 'hover:bg-white/10 text-gray-300'
-                  }`}
-                >
-                  <div className="font-semibold text-sm">/{skillObj.name}</div>
-                  <div
-                    className={`text-xs ${idx === selectedSkillIndex ? 'text-primary-400/80' : 'text-gray-400'} line-clamp-2`}
-                  >
-                    {skillObj.description}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Mention (@) Autocomplete Dropdown */}
-        {showMentionList && (mentionDisplayItems.length > 0 || isLoadingFiles) && (
-          <div className="absolute bottom-full left-4 mb-2 w-[380px] max-w-[calc(100vw-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in flex flex-col">
-            {/* Items List */}
-            <div ref={mentionListRef} className="max-h-64 overflow-y-auto no-scrollbar">
-              {mentionDisplayItems.length === 0 && !isLoadingFiles ? (
-                <div className="py-3 text-center text-xs text-gray-400">Tidak ada yang cocok.</div>
-              ) : (
-                mentionDisplayItems.map((item, idx) => (
-                  <div
-                    key={
-                      item.type === 'category'
-                        ? item.category
-                        : item.type === 'file'
-                          ? item.absolutePath
-                          : item.name
-                    }
-                    onClick={() => selectMentionItem(item)}
-                    className={`px-3 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center gap-2.5 ${
-                      idx === selectedMentionIndex
-                        ? 'bg-primary/20 text-primary'
-                        : 'hover:bg-white/5 text-gray-300'
-                    }`}
-                  >
-                    {/* Inline Icon */}
-                    <div className="shrink-0 text-sm opacity-80">
-                      {item.type === 'category' ? (
-                        item.category === 'files' ? (
-                          <Folder size={15} />
-                        ) : (
-                          <Wrench size={15} />
-                        )
-                      ) : item.type === 'file' ? (
-                        getFileIcon(item.name)
-                      ) : (
-                        <Wrench size={15} />
-                      )}
-                    </div>
-
-                    {/* Text Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-xs truncate">
-                        {item.type === 'category'
-                          ? item.title
-                          : item.type === 'file'
-                            ? item.relativePath
-                            : `@${item.name}`}
-                      </div>
-                      <div className="text-[11px] text-gray-400 truncate">
-                        {item.type === 'category'
-                          ? item.subtitle
-                          : item.type === 'file'
-                            ? formatFileSize(item.size)
-                            : item.description || item.label}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Input Textarea */}
-        <textarea
+        {/* Input grows above the control row and scrolls after reaching its cap. */}
+        <SkillComposer
           ref={inputRef}
-          rows={1}
+          skills={skills.length ? skills : NATIVE_SKILLS}
           value={inputText}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
@@ -1204,190 +1051,380 @@ const InputBar = ({
                 ? 'Tambah instruksi untuk file terlampir...'
                 : 'Tanya apapun ke Mark...'
           }
-          className="flex-1 resize-none bg-transparent border-none outline-none text-white px-3 py-2.5 text-sm md:text-base leading-normal placeholder:text-white/30 disabled:opacity-50 no-scrollbar"
+          className="w-full min-h-9 max-h-48 overflow-y-auto bg-transparent border-none outline-none text-white px-2 py-1.5 text-sm leading-normal no-scrollbar"
         />
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Super Effort Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setIsSuperEffort((prev) => !prev)}
-            className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
-              isSuperEffort
-                ? 'bg-primary/25 text-primary border border-primary/50 font-semibold shadow-sm shadow-primary/20'
-                : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
-            }`}
-            title={
-              isSuperEffort
-                ? 'Super Effort: AKTIF. ReAct loop pantang menyerah & wajib verifikasi mandiri sebelum selesai.'
-                : 'Super Effort: NONAKTIF. Klik untuk mengaktifkan persistensi otonom & pengujian mandiri.'
-            }
-          >
-            <Sparkles
-              className={`w-3.5 h-3.5 ${isSuperEffort ? 'fill-primary text-primary' : ''}`}
-            />
-          </button>
+        <div className="flex w-full items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
+            {/* Paperclip File Upload Button */}
+            <button
+              type="button"
+              onClick={handlePaperclipClick}
+              className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all flex-shrink-0"
+              title="Lampirkan File (PDF, DOCX, TXT, MD, Gambar, dll)"
+            >
+              <FaPaperclip size={16} />
+            </button>
 
-          {/* Auto Mode Toggle Button */}
-          <button
-            type="button"
-            onClick={handleToggleAutoMode}
-            className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
-              isAutoMode
-                ? 'bg-warning/20 text-warning border border-warning/40 font-semibold'
-                : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
-            }`}
-            title={
-              isAutoMode
-                ? 'Auto Mode: AKTIF. Semua persetujuan tool otomatis diizinkan untuk sesi ini.'
-                : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
-            }
-          >
-            <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-white text-white' : ''}`} />
-          </button>
-
-          {/* Ring Gauge Context Indicator (~30px) */}
-          {(() => {
-            const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
-            const roundedPct =
-              (contextTracker.currentTokens || contextTracker.currentChars || 0) > 0
-                ? Math.max(1, Math.round(pct))
-                : Math.round(pct)
-            const radius = 14
-            const circumference = 2 * Math.PI * radius
-            const strokeDashoffset = circumference - (pct / 100) * circumference
-            const colorClass =
-              pct >= 85 ? 'stroke-rose-500' : pct >= 50 ? 'stroke-amber-400' : 'stroke-emerald-400'
-            const barColorClass =
-              pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'
-
-            return (
-              <div className="relative flex items-center justify-center px-1 select-none">
-                {/* Ring Gauge Trigger Button */}
+            {/* Mic / Record Toggle (Hold to talk) */}
+            <button
+              type="button"
+              onClick={isRecording ? onStopRecord : onStartRecord}
+              disabled={isProcessing || isLoading}
+              className={`relative p-3 md:p-4 rounded-full flex-shrink-0 transition-all duration-300 transform outline-none z-10 ${
+                isProcessing
+                  ? 'text-primary bg-primary/20 cursor-wait'
+                  : isLoading
+                    ? 'text-white/20 bg-white/5 cursor-not-allowed'
+                    : isRecording
+                      ? 'text-error bg-error/20'
+                      : 'text-white/40 hover:text-white/80 hover:bg-white/5'
+              }`}
+              style={{
+                transform: isRecording && !isProcessing ? `scale(${1 + audioIntensity * 0.3})` : '',
+                boxShadow:
+                  isRecording && !isProcessing
+                    ? `0 0 ${10 + audioIntensity * 40}px rgba(255,0,0, ${0.3 + audioIntensity * 0.5})`
+                    : ''
+              }}
+              title={
+                isProcessing
+                  ? 'Sedang memproses suara...'
+                  : isLoading
+                    ? 'Agen sedang sibuk'
+                    : 'Mulai/Berhenti Rekam (Ctrl+Alt+M)'
+              }
+            >
+              {isRecording && !isProcessing && (
                 <div
-                  ref={gaugeRef}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setShowContextPopover((prev) => !prev)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
-                  }}
-                  className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
-                  title="Context Window Info (Dual-Layer Hermes Compressor)"
-                >
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r={radius}
-                      className="stroke-white/10"
-                      strokeWidth="2.5"
-                      fill="none"
-                    />
-                    {pct > 0 && (
+                  className="absolute inset-0 rounded-full bg-error/30 -z-10"
+                  style={{ transform: `scale(${1 + audioIntensity * 0.8})` }}
+                />
+              )}
+              {isProcessing ? (
+                <span className="loading loading-spinner w-[18px] h-[18px]"></span>
+              ) : isLoading ? (
+                <FaLock size={18} />
+              ) : (
+                <FaMicrophone size={18} />
+              )}
+            </button>
+
+            {/* Emoji Button */}
+            <div className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className="p-3 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-full transition-all"
+                title="Insert Emoji"
+              >
+                <FaSmile size={18} />
+              </button>
+
+              {showEmojiPicker && (
+                <div className="absolute bottom-full left-0 mb-4 bg-[var(--glass-bg)] backdrop-blur-3xl border border-[var(--glass-border)] rounded-2xl p-2 shadow-2xl flex flex-wrap w-52 gap-1 z-[100] animate-[holo-project-in_0.2s_ease-out_forwards]">
+                  {EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => handleEmojiClick(emoji)}
+                      className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-xl text-2xl transition-all hover:scale-110 active:scale-95"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Skill Autocomplete Dropdown */}
+          {showSkillList && filteredSkills.length > 0 && (
+            <div className="absolute bottom-full left-4 mb-2 w-[400px] max-w-[calc(100%-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in">
+              <div className="p-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5">
+                Available Skills
+              </div>
+              <div ref={skillListRef} className="max-h-64 overflow-y-auto no-scrollbar">
+                {filteredSkills.map((skillObj, idx) => {
+                  const Icon =
+                    NATIVE_SKILLS.find((item) => item.name === skillObj.name)?.icon || FileText
+                  return (
+                    <div
+                      key={skillObj.name}
+                      onClick={() => selectSkill(skillObj)}
+                      className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
+                        idx === selectedSkillIndex
+                          ? 'bg-primary/10 text-primary'
+                          : 'hover:bg-white/10 text-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 font-semibold text-sm">
+                        <Icon className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{skillObj.title || skillObj.name}</span>
+                      </div>
+                      <div
+                        className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-white/50'}`}
+                      >
+                        /{skillObj.name}
+                      </div>
+                      <div
+                        className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-gray-400'} line-clamp-2`}
+                      >
+                        {skillObj.description}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Mention (@) Autocomplete Dropdown */}
+          {showMentionList && (mentionDisplayItems.length > 0 || isLoadingFiles) && (
+            <div className="absolute bottom-full left-4 mb-2 w-[380px] max-w-[calc(100vw-2rem)] bg-base-300/95 backdrop-blur-xl border border-[var(--glass-border)] rounded-xl p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-50 animate-fade-in flex flex-col">
+              {/* Items List */}
+              <div ref={mentionListRef} className="max-h-64 overflow-y-auto no-scrollbar">
+                {mentionDisplayItems.length === 0 && !isLoadingFiles ? (
+                  <div className="py-3 text-center text-xs text-gray-400">
+                    Tidak ada yang cocok.
+                  </div>
+                ) : (
+                  mentionDisplayItems.map((item, idx) => (
+                    <div
+                      key={
+                        item.type === 'category'
+                          ? item.category
+                          : item.type === 'file'
+                            ? item.absolutePath
+                            : item.name
+                      }
+                      onClick={() => selectMentionItem(item)}
+                      className={`px-3 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center gap-2.5 ${
+                        idx === selectedMentionIndex
+                          ? 'bg-primary/20 text-primary'
+                          : 'hover:bg-white/5 text-gray-300'
+                      }`}
+                    >
+                      {/* Inline Icon */}
+                      <div className="shrink-0 text-sm opacity-80">
+                        {item.type === 'category' ? (
+                          item.category === 'files' ? (
+                            <Folder size={15} />
+                          ) : (
+                            <Wrench size={15} />
+                          )
+                        ) : item.type === 'file' ? (
+                          getFileIcon(item.name)
+                        ) : (
+                          <Wrench size={15} />
+                        )}
+                      </div>
+
+                      {/* Text Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-xs truncate">
+                          {item.type === 'category'
+                            ? item.title
+                            : item.type === 'file'
+                              ? item.relativePath
+                              : `@${item.name}`}
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          {item.type === 'category'
+                            ? item.subtitle
+                            : item.type === 'file'
+                              ? formatFileSize(item.size)
+                              : [item.label !== item.name ? item.label : '', item.description]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Super Effort Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsSuperEffort((prev) => !prev)}
+              className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
+                isSuperEffort
+                  ? 'bg-primary/25 text-primary border border-primary/50 font-semibold shadow-sm shadow-primary/20'
+                  : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
+              }`}
+              title={
+                isSuperEffort
+                  ? 'Super Effort: AKTIF. ReAct loop pantang menyerah & wajib verifikasi mandiri sebelum selesai.'
+                  : 'Super Effort: NONAKTIF. Klik untuk mengaktifkan persistensi otonom & pengujian mandiri.'
+              }
+            >
+              <Sparkles
+                className={`w-3.5 h-3.5 ${isSuperEffort ? 'fill-primary text-primary' : ''}`}
+              />
+            </button>
+
+            {/* Auto Mode Toggle Button */}
+            <button
+              type="button"
+              onClick={handleToggleAutoMode}
+              className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
+                isAutoMode
+                  ? 'bg-warning/20 text-warning border border-warning/40 font-semibold'
+                  : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
+              }`}
+              title={
+                isAutoMode
+                  ? 'Auto Mode: AKTIF. Semua persetujuan tool otomatis diizinkan untuk sesi ini.'
+                  : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
+              }
+            >
+              <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-white text-white' : ''}`} />
+            </button>
+
+            {/* Ring Gauge Context Indicator (~30px) */}
+            {(() => {
+              const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
+              const roundedPct =
+                (contextTracker.currentTokens || contextTracker.currentChars || 0) > 0
+                  ? Math.max(1, Math.round(pct))
+                  : Math.round(pct)
+              const radius = 14
+              const circumference = 2 * Math.PI * radius
+              const strokeDashoffset = circumference - (pct / 100) * circumference
+              const colorClass =
+                pct >= 85
+                  ? 'stroke-rose-500'
+                  : pct >= 50
+                    ? 'stroke-amber-400'
+                    : 'stroke-emerald-400'
+              const barColorClass =
+                pct >= 85 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-400' : 'bg-emerald-400'
+
+              return (
+                <div className="relative flex items-center justify-center px-1 select-none">
+                  {/* Ring Gauge Trigger Button */}
+                  <div
+                    ref={gaugeRef}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setShowContextPopover((prev) => !prev)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
+                    }}
+                    className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
+                    title="Context Window Info (Dual-Layer Hermes Compressor)"
+                  >
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                       <circle
                         cx="18"
                         cy="18"
                         r={radius}
-                        className={`${colorClass} transition-all duration-500 ease-out`}
+                        className="stroke-white/10"
                         strokeWidth="2.5"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeDashoffset}
-                        strokeLinecap="round"
                         fill="none"
                       />
-                    )}
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-white/80 group-hover/gauge:text-white tracking-tight leading-none pointer-events-none">
-                    {roundedPct}%
-                  </span>
-                </div>
-
-                {/* Popover Card Overlay */}
-                {showContextPopover && (
-                  <div
-                    ref={contextPopoverRef}
-                    className="absolute bottom-full right-0 mb-3.5 w-64 p-3.5 bg-base-200 border border-primary/30 rounded-xl shadow-2xl z-50 animate-fade-in text-left cursor-default"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between text-[11px] font-medium text-white/40 mb-0.5">
-                      <span>Session Info</span>
-                      <span className="text-[9px] uppercase tracking-wider text-primary font-bold">
-                        In-Place
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-white mb-2.5">Context Window</div>
-
-                    <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
-                      <span className="text-white">
-                        {(contextTracker.currentTokens || contextTracker.currentChars || 0) >= 1000
-                          ? `${((contextTracker.currentTokens || contextTracker.currentChars || 0) / 1000).toFixed(1)}K`
-                          : contextTracker.currentTokens || contextTracker.currentChars || 0}{' '}
-                        / 256K tokens
-                      </span>
-                      <span className="text-white/60">{roundedPct}%</span>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
-                      <div
-                        className={`h-full ${barColorClass} transition-all duration-300 rounded-full`}
-                        style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
-                      />
-                    </div>
-
-                    <div className="text-[10px] text-white/40 mb-2 font-mono">
-                      {pct >= 85
-                        ? 'Gateway Hygiene Active (>=85%)'
-                        : pct >= 50
-                          ? 'In-Loop Compressor Guard (>=50%)'
-                          : 'Optimal Context Load'}
-                    </div>
-
-                    {/* Compact Conversation Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowContextPopover(false)
-                        if (typeof onManualCompact === 'function') {
-                          onManualCompact()
-                        } else {
-                          window.dispatchEvent(new CustomEvent('request-manual-compaction'))
-                        }
-                      }}
-                      disabled={isLoading}
-                      className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-primary/30 text-xs font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <span>Compact Conversation</span>
-                    </button>
-
-                    {/* Caret pointing to gauge */}
-                    <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-base-200 border-r border-b border-primary/30 rotate-45" />
+                      {pct > 0 && (
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r={radius}
+                          className={`${colorClass} transition-all duration-500 ease-out`}
+                          strokeWidth="2.5"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={strokeDashoffset}
+                          strokeLinecap="round"
+                          fill="none"
+                        />
+                      )}
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-white/80 group-hover/gauge:text-white tracking-tight leading-none pointer-events-none">
+                      {roundedPct}%
+                    </span>
                   </div>
-                )}
-              </div>
-            )
-          })()}
 
-          {isLoading && (
+                  {/* Popover Card Overlay */}
+                  {showContextPopover && (
+                    <div
+                      ref={contextPopoverRef}
+                      className="absolute bottom-full right-0 mb-3.5 w-64 p-3.5 bg-base-200 border border-primary/30 rounded-xl shadow-2xl z-50 animate-fade-in text-left cursor-default"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between text-[11px] font-medium text-white/40 mb-0.5">
+                        <span>Session Info</span>
+                        <span className="text-[9px] uppercase tracking-wider text-primary font-bold">
+                          In-Place
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-white mb-2.5">Context Window</div>
+
+                      <div className="flex items-center justify-between text-xs font-semibold mb-1.5 font-mono">
+                        <span className="text-white">
+                          {(contextTracker.currentTokens || contextTracker.currentChars || 0) >=
+                          1000
+                            ? `${((contextTracker.currentTokens || contextTracker.currentChars || 0) / 1000).toFixed(1)}K`
+                            : contextTracker.currentTokens || contextTracker.currentChars || 0}{' '}
+                          / 256K tokens
+                        </span>
+                        <span className="text-white/60">{roundedPct}%</span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
+                        <div
+                          className={`h-full ${barColorClass} transition-all duration-300 rounded-full`}
+                          style={{ width: `${Math.min(100, Math.max(pct, 2))}%` }}
+                        />
+                      </div>
+
+                      {/* Compact Conversation Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowContextPopover(false)
+                          if (typeof onManualCompact === 'function') {
+                            onManualCompact()
+                          } else {
+                            window.dispatchEvent(new CustomEvent('request-manual-compaction'))
+                          }
+                        }}
+                        disabled={isLoading}
+                        className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-primary/30 text-xs font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span>Compact Conversation</span>
+                      </button>
+
+                      {/* Caret pointing to gauge */}
+                      <div className="absolute -bottom-1.5 right-3.5 w-3 h-3 bg-base-200 border-r border-b border-primary/30 rotate-45" />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {isLoading && (
+              <button
+                type="button"
+                onClick={() => setShowAbortConfirm(true)}
+                className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white transition-all"
+                title="Stop Generation (Hard Abort)"
+              >
+                <FaStop size={16} />
+              </button>
+            )}
             <button
-              type="button"
-              onClick={() => setShowAbortConfirm(true)}
-              className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white transition-all"
-              title="Stop Generation (Hard Abort)"
+              type="submit"
+              disabled={isSendDisabled}
+              className="p-3 rounded-full bg-success text-success-content disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 hover:bg-success/80 hover:scale-105 active:scale-95 transition-all"
+              title="Send Message"
             >
-              <FaStop size={16} />
+              <FaArrowUp size={16} />
             </button>
-          )}
-          <button
-            type="submit"
-            disabled={isSendDisabled}
-            className="p-3 rounded-full bg-success text-success-content disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 hover:bg-success/80 hover:scale-105 active:scale-95 transition-all"
-            title="Send Message"
-          >
-            <FaArrowUp size={16} />
-          </button>
+          </div>
         </div>
       </form>
 

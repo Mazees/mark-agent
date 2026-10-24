@@ -6,7 +6,6 @@ import yts from 'yt-search'
 import { execFile } from 'child_process'
 import ffmpeg from 'ffmpeg-static'
 import https from 'https'
-import { abortAllFetches, activeAbortControllers } from '../../server/services/ai-bridge.js'
 import { dbStore } from '../../server/memory/db-store.js'
 import { wsHub } from '../../server/ws-hub.js'
 
@@ -178,13 +177,34 @@ export const startTelegramBot = async (token) => {
       )
     })
 
-    bot.command('abort', (ctx) => {
-      if (activeAbortControllers.size > 0) {
-        abortAllFetches()
-        ctx.reply('[INFO]: Membatalkan proses AI saat ini...')
-      } else {
-        ctx.reply('[INFO]: Tidak ada proses AI yang sedang berjalan.')
+    bot.command('abort', async (ctx) => {
+      const senderId = String(ctx.from?.id || '')
+      const senderUsername = (ctx.from?.username || '').toLowerCase()
+      const config = getTelegramConfig()
+      const adminList = (config.tgAdminIds || '')
+        .split(',')
+        .map((item) => item.trim().toLowerCase().replace(/^@/, ''))
+        .filter(Boolean)
+      const isAdmin =
+        adminList.includes(senderId.toLowerCase()) ||
+        (senderUsername && adminList.includes(senderUsername))
+
+      if (!isAdmin) {
+        await ctx.reply('Maaf, kamu belum punya akses ke MARK.')
+        return
       }
+
+      const chatId = String(ctx.chat?.id || senderId)
+      const hasPendingRequest = Array.from(pendingRequestsMap.values()).some(
+        (request) => request.chatId === chatId
+      )
+      if (!hasPendingRequest) {
+        await ctx.reply('[INFO]: Tidak ada proses MARK dari chat ini yang sedang berjalan.')
+        return
+      }
+
+      wsHub.broadcast('tg:command-abort', { chatId })
+      await ctx.reply('[INFO]: Meminta MARK menghentikan proses dari chat ini...')
     })
 
     const isApprovalCommand = (cmdText) => {
@@ -350,7 +370,7 @@ export const startTelegramBot = async (token) => {
 
       let loadingMsgId = null
       try {
-        const loadingMsg = await ctx.reply('[LOADING]: Sedang diproses...', {
+        const loadingMsg = await ctx.reply('Tunggu sebentar...', {
           disable_notification: true
         })
         loadingMsgId = loadingMsg.message_id
@@ -749,6 +769,7 @@ export const finishAgentExecution = async ({ chatId, result, msgId }) => {
   if (msgId && pendingRequestsMap.has(msgId)) {
     pendingRequestsMap.delete(msgId)
   }
+  if (reqObj?.progressTimer) clearTimeout(reqObj.progressTimer)
   const replyText = result?.answer || 'Selesai diproses.'
 
   const uiReplyPayload = {
@@ -784,6 +805,53 @@ export const finishAgentExecution = async ({ chatId, result, msgId }) => {
       }
     }
   }
+}
+
+export const updateAgentProgress = ({ msgId, reason }) => {
+  const reqObj = pendingRequestsMap.get(msgId)
+  const reasonText = String(reason || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 900)
+  const progressText = reasonText ? `${reasonText.replace(/[.…]+$/, '')}...` : ''
+  if (!bot || !reqObj?.loadingMsgId || !progressText || reqObj.lastProgressText === progressText) {
+    return false
+  }
+
+  reqObj.pendingProgressText = progressText
+  const scheduleProgress = (delay) => {
+    if (reqObj.progressTimer) clearTimeout(reqObj.progressTimer)
+    reqObj.progressTimer = setTimeout(async () => {
+      reqObj.progressTimer = null
+      if (pendingRequestsMap.get(msgId) !== reqObj || !bot) return
+      if (reqObj.progressUpdating) {
+        scheduleProgress(Math.max(100, 1000 - (Date.now() - (reqObj.lastProgressAt || 0))))
+        return
+      }
+
+      const nextText = reqObj.pendingProgressText
+      reqObj.pendingProgressText = null
+      if (!nextText || nextText === reqObj.lastProgressText) return
+
+      reqObj.progressUpdating = true
+      try {
+        await bot.telegram.editMessageText(reqObj.chatId, reqObj.loadingMsgId, undefined, nextText)
+        reqObj.lastProgressText = nextText
+      } catch (error) {
+        console.warn('[Telegram] Gagal memperbarui progres Mark:', error.message)
+      } finally {
+        reqObj.progressUpdating = false
+        reqObj.lastProgressAt = Date.now()
+        if (reqObj.pendingProgressText && reqObj.pendingProgressText !== reqObj.lastProgressText) {
+          scheduleProgress(1000)
+        }
+      }
+    }, delay)
+  }
+
+  const waitMs = Math.max(0, 1000 - (Date.now() - (reqObj.lastProgressAt || 0)))
+  scheduleProgress(waitMs)
+  return true
 }
 
 export const triggerTelegramMusicDownload = async ({ chatId, query }) => {
