@@ -183,6 +183,12 @@ export async function runSubagentTurn(subagentId, incomingMessage = null, sender
         sessionId: `subagent_${subagentId}`,
         tools: allowedSchemas,
         signal: abortController.signal,
+        onMeta: (meta) => {
+          if (meta?.streamRecovery) {
+            turnReasoning = ''
+            turnContent = ''
+          }
+        },
         onReasoning: (chunk) => {
           turnReasoning += chunk
         },

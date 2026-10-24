@@ -1988,6 +1988,23 @@ export const useMarkPlan = ({
                   )
                 },
                 onMeta: (meta) => {
+                  sessionRecord.lastActivityTime = Date.now()
+                  if (meta?.streamRecovery) {
+                    currentTurnContent = ''
+                    currentTurnReasoning = ''
+                    sentenceBuffer = ''
+                    finalContentAccumulator = ''
+                    const progressIndex = executedToolsList.findIndex(
+                      (step) => step.id === progressMessageId
+                    )
+                    if (progressIndex >= 0) executedToolsList.splice(progressIndex, 1)
+                    hasProgressMessage = false
+                    targetSetChatData((prev) =>
+                      prev.map((msg) =>
+                        msg.isThinking ? { ...msg, content: '', reasoning: undefined } : msg
+                      )
+                    )
+                  }
                   turnStreamMeta = meta
                   publishProgressMessage(meta?.message)
                   if (meta?.mood) {

@@ -2,6 +2,32 @@ import { getAllConfig } from '../db.js'
 import { jsonrepair } from 'jsonrepair'
 import { resolveAbortSignal } from '../web-bridge.js'
 
+async function loadRequestConfig(signal) {
+  if (signal?.aborted) throw signal.reason || new Error('AbortError')
+  let timer
+  let abort
+  try {
+    return await Promise.race([
+      getAllConfig(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(
+            'Membaca konfigurasi AI lokal tidak selesai dalam 10 detik. Request belum dikirim ke provider.'
+          )
+          error.code = 'AI_CONFIG_TIMEOUT'
+          reject(error)
+        }, 10000)
+        abort = () => reject(signal.reason || new Error('AbortError'))
+        signal?.addEventListener('abort', abort, { once: true })
+        if (signal?.aborted) abort()
+      })
+    ])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+  }
+}
+
 /**
  * Frontend AI fetch wrapper.
  * @param {Array} messages - Array of chat messages
@@ -33,9 +59,17 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     sessionId = null
   } = actualOptions
 
-  const currentConfig = await getAllConfig()
-  const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
   const cleanSignal = resolveAbortSignal(signal)
+  const currentConfig = await loadRequestConfig(cleanSignal)
+  const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
+  if (!conf.aiProvider) {
+    const error = new Error(
+      'Konfigurasi provider AI tidak tersedia. Request dibatalkan agar tidak beralih ke provider lain.'
+    )
+    error.code = 'AI_CONFIG_UNAVAILABLE'
+    throw error
+  }
+  if (cleanSignal?.aborted) throw cleanSignal.reason || new Error('AbortError')
 
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     window.__LAST_AI__ = {

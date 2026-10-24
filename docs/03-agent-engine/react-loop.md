@@ -280,6 +280,18 @@ Pada model DeepSeek Web RPC, sesi peramban web memiliki batas kenyamanan obrolan
 
 ## 10. Ringkasan Teknis Penting
 
+Untuk diagnosis request OpenAI-compatible yang tertahan, `GET /api/ai/diagnostics` menyediakan metadata maksimal 32 stream terakhir di memori server. Setiap entri mencatat sesi/request, fase koneksi, waktu data/token terakhir, jumlah byte/event, status HTTP, penanda selesai, penerimaan usage, dan kode kegagalan. Prompt, jawaban, argumen tool, API key, serta pesan error mentah tidak disimpan di diagnostik ini. Riwayat diagnostik hilang saat server direstart.
+
+Fase `connecting` berarti header upstream belum diterima; `waiting-for-token` berarti header sudah diterima tetapi token belum terbaca; `streaming` berarti token pernah diterima. Bandingkan `lastDataAt`, `lastTokenAt`, `finishReason`, dan `usageReceived` untuk membedakan stream yang berhenti, heartbeat tanpa kemajuan, dan kegagalan parsing. Angka usage pada dashboard router saja tidak membuktikan bahwa MARK menerima penanda akhir stream.
+
+Custom API yang tidak mengirim data selama 90 detik, berakhir tanpa penanda selesai, atau kehilangan socket dipulihkan maksimal sekali memakai `stream: false`. Jalur kompatibilitas ini mempertahankan model, seluruh riwayat, dan deskripsi/schema tool, tetapi mengemasnya menjadi dua pesan: instruksi sistem beserta kontrak aksi JSON, lalu arsip percakapan berurutan. Gambar tetap dilampirkan sebagai konten multimodal. Field native `tools`/`tool_choice` dihilangkan dari request pengganti; model mengembalikan `{content, tool_calls: [{name, arguments}]}` sebagai teks JSON. MARK memvalidasi hasil lengkap tersebut dan mengubahnya menjadi tool calls untuk executor yang sama. Ini menghindari pengulangan jalur native function calling yang sebelumnya tertahan.
+
+Respons parsial dibuang dan tidak ditambahkan ke arsip prompt. Pemulihan dibatasi 120 detik dan tetap mengikuti Stop/perubahan kontrol browser. Respons pengganti harus berupa JSON lengkap dengan `finish_reason` valid; nama tool harus tersedia dan argumennya harus berupa objek JSON lengkap. Tool lama yang sudah selesai tetap tersimpan, sedangkan tool dari stream gagal tidak diteruskan. Chat menampilkan pesan pemulihan melalui metadata yang difilter menurut sesi/request; buffer parsial lead agent dan sub-agent dibersihkan sebelum respons pengganti diterima.
+
+Setelah pemulihan berhasil, pasangan endpoint/model/sesi tersebut memakai JSON actions langsung selama 10 menit untuk menghindari pengulangan stream yang tertahan pada langkah berikutnya. Cache ini hanya di memori, dibatasi 64 sesi, dan tidak mengubah konfigurasi permanen atau sesi lain. Kegagalan request kompatibilitas menghapus entri tersebut tanpa retry tambahan.
+
+Diagnostik menampilkan fase `recovering`, `recoveryAttempts`, `streamErrorCode`, dan `recovered` untuk jalur ini; penggunaan ulang ditandai `compatibilityReused` dan fase aktif `compatibility`. Jika request pengganti juga gagal, error ditampilkan tanpa retry tambahan. Provider lokal tetap memakai batas transport 180 detik; batas tanpa kemajuan token sesudah token pertama adalah 300 detik, termasuk ketika heartbeat terus diterima.
+
 | Parameter / Fitur           | Nilai / Kebijakan                                      | Lokasi Kode                                 |
 | :-------------------------- | :----------------------------------------------------- | :------------------------------------------ |
 | **Batas Turn (`maxTurns`)** | Tidak Terbatas (berjalan hingga selesai / dibatalkan)  | `useMarkPlan.js` line 1256                  |

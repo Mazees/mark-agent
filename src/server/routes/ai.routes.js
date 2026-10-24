@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getActiveConfig } from '../config-manager.js'
 import { wsHub } from '../ws-hub.js'
+import { getStreamDiagnostics } from '../services/ai/stream-diagnostics.js'
 import { launchUI } from '../launcher.js'
 import { buildPluginToolGroups } from '../../shared/plugin-schema.js'
 import {
@@ -11,6 +12,11 @@ import {
 } from '../tools/group-tools.js'
 
 export const aiRouter = Router()
+
+aiRouter.get('/ai/diagnostics', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({ data: getStreamDiagnostics() })
+})
 
 // 1. AI Fetch Direct Gateway
 aiRouter.post('/ai/fetch', async (req, res) => {
@@ -107,6 +113,7 @@ aiRouter.post('/ai/stream', async (req, res) => {
       isSmallTask,
       sessionId,
       signal: clientAbortController.signal,
+      requestId,
       onToken: (token) => {
         wsHub.streamToken(token, 'answer', sessionId, requestId)
       },
