@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, ExternalLink } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Puzzle } from 'lucide-react'
 import { FaGoogle, FaTelegram, FaChrome } from 'react-icons/fa'
 import PropTypes from 'prop-types'
 import { getAddonStatuses, addonStatusLabels } from '../api/addonStatus'
 import { webApi } from '../api/web-bridge'
 
-const addonIcons = { google: FaGoogle, telegram: FaTelegram, chrome: FaChrome }
+const addonIcons = { google: FaGoogle, telegram: FaTelegram, chrome: FaChrome, plugin: Puzzle }
 
 export default function AddonDetail({
   addon,
   children,
   status: suppliedStatus,
   actions = [],
-  feedback
+  feedback,
+  backTo = '/addons'
 }) {
   const [liveStatus, setStatus] = useState('checking')
   const navigate = useNavigate()
@@ -51,7 +52,7 @@ export default function AddonDetail({
     <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
       <div className="mx-auto max-w-5xl px-5 py-7 sm:px-8 sm:py-10">
         <Link
-          to="/addons"
+          to={backTo}
           className="mb-10 inline-flex items-center gap-2 text-sm text-white/50 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
         >
           <ArrowLeft size={17} /> Kembali
@@ -64,20 +65,20 @@ export default function AddonDetail({
                 className={
                   addon.icon === 'google'
                     ? 'text-[#4285f4]'
-                    : addon.icon === 'chrome'
+                    : addon.icon === 'chrome' || addon.icon === 'plugin'
                       ? 'text-primary'
                       : 'text-[#2aabee]'
                 }
                 aria-hidden="true"
               />
             </span>
-            <div>
-              <h1 className="text-2xl font-semibold text-white">{addon.name}</h1>
+            <div className="min-w-0">
+              <h1 className="break-words text-2xl font-semibold text-white">{addon.name}</h1>
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-                <span className="text-white/45">Oleh {addon.developer}</span>
+                {addon.developer && <span className="text-white/45">Oleh {addon.developer}</span>}
                 <span
                   className={
-                    status === 'connected'
+                    status === 'connected' || status === 'active'
                       ? 'text-primary'
                       : status === 'error'
                         ? 'text-error'
@@ -165,14 +166,15 @@ AddonDetail.propTypes = {
   addon: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string.isRequired,
-    developer: PropTypes.string.isRequired,
-    icon: PropTypes.oneOf(['google', 'telegram', 'chrome']).isRequired,
+    developer: PropTypes.string,
+    icon: PropTypes.oneOf(['google', 'telegram', 'chrome', 'plugin']).isRequired,
     logRoute: PropTypes.string,
     examples: PropTypes.arrayOf(PropTypes.string)
   }).isRequired,
   children: PropTypes.node.isRequired,
   status: PropTypes.string,
   feedback: PropTypes.node,
+  backTo: PropTypes.string,
   actions: PropTypes.arrayOf(
     PropTypes.shape({
       key: PropTypes.string,

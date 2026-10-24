@@ -45,7 +45,7 @@ The engine sends authenticated `POST /rpc` requests using its Bearer token. The 
 
 Status values are `not-installed`, `waiting-extension`, `select-tab`, `connected`, `paused`, `disconnected`, and `error`. Plugin reload events update tool availability after install/uninstall; add-on status events update the catalog and detail page.
 
-The plugin loader retains the engine for tool execution, but rejects generic save, toggle and delete requests for managed plugins. The Plugins page omits these entries so the Add-ons page remains their management surface.
+The plugin loader retains the engine for tool execution, but rejects generic save, toggle and delete requests for managed plugins. Plugin Hub displays these entries and links to their add-on for management. The bundled `chrome-use` manifest also sets `editable: false`; missing `editable` defaults to `true` for other plugins. This flag blocks definition changes without removing tools or tags.
 
 ## Selected-tab behavior
 

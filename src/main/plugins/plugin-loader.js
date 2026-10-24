@@ -32,6 +32,7 @@ async function assertUnmanagedPlugin(pluginName) {
       status: 409
     })
   }
+  return manifest
 }
 
 export async function loadAllPlugins() {
@@ -57,6 +58,7 @@ export async function loadAllPlugins() {
             try {
               const manifestRaw = await fs.promises.readFile(manifestPath, 'utf-8')
               const manifest = JSON.parse(manifestRaw)
+              manifest.editable = manifest.editable !== false
 
               if (!manifest.name || seenNames.has(manifest.name.toLowerCase())) {
                 continue
@@ -72,12 +74,12 @@ export async function loadAllPlugins() {
 
               const indexContent = await fs.promises.readFile(indexPath, 'utf-8')
 
-              if (manifest.isEnabled !== false && Array.isArray(manifest.actions)) {
+              if (Array.isArray(manifest.actions)) {
                 for (const act of manifest.actions) {
                   const actHandler =
                     handlerInstance[act.name] ||
                     (typeof handlerInstance === 'function' ? handlerInstance : null)
-                  if (typeof actHandler === 'function') {
+                  if (manifest.isEnabled !== false && typeof actHandler === 'function') {
                     newHandlers.set(`${manifest.name}/${act.name}`, {
                       handler: actHandler,
                       pluginName: manifest.name,
@@ -242,16 +244,40 @@ export async function savePluginDefinition(payload) {
     description,
     actions = [],
     dependencies = [],
-    isEdit = false
+    isEdit = false,
+    editable = true
   } = payload
+  if (typeof editable !== 'boolean') {
+    throw Object.assign(new Error('Properti editable harus berupa true atau false.'), {
+      status: 400
+    })
+  }
   const cleanName = (name || '').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()
   if (!cleanName) {
     throw new Error('Nama plugin wajib diisi.')
   }
 
   const dir = getPluginsDirectory()
-  const pluginDir = path.join(dir, cleanName)
-  await assertUnmanagedPlugin(cleanName)
+  let folderName = cleanName
+  for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const candidate = await fs.promises
+      .readFile(path.join(dir, entry.name, 'plugin.json'), 'utf8')
+      .then(JSON.parse)
+      .catch(() => null)
+    if (typeof candidate?.name === 'string' && candidate.name.toLowerCase() === cleanName) {
+      folderName = entry.name
+      break
+    }
+  }
+  const pluginDir = path.join(dir, folderName)
+  const existing = await assertUnmanagedPlugin(folderName)
+  if (existing?.editable === false) {
+    throw Object.assign(
+      new Error('Plugin ini tidak dapat diedit karena editable bernilai false.'),
+      { status: 403 }
+    )
+  }
 
   if (!isEdit && fs.existsSync(pluginDir)) {
     throw new Error(`Plugin dengan nama '${cleanName}' sudah ada.`)
@@ -278,11 +304,13 @@ export async function savePluginDefinition(payload) {
   }))
 
   const manifest = {
+    ...existing,
     name: cleanName,
     displayName: displayName || cleanName,
     description: description || '',
-    version: '1.0.0',
-    isEnabled: true,
+    version: existing?.version || '1.0.0',
+    isEnabled: existing?.isEnabled !== false,
+    editable,
     dependencies: depsList,
     actions: manifestActions
   }

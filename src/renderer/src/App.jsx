@@ -142,6 +142,7 @@ const MainLayout = () => {
               <Route path="/chat" element={<ChatStudio />} />
               <Route path="/config" element={<Configuration />} />
               <Route path="/plugins" element={<Plugins />} />
+              <Route path="/plugins/:pluginName" element={<Plugins />} />
               <Route path="/skills" element={<Skills />} />
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />

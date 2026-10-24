@@ -21,6 +21,8 @@ const readConnectionStatus = async (provider) => {
 }
 
 export const addonStatusLabels = {
+  active: 'Aktif',
+  inactive: 'Nonaktif',
   checking: 'Memeriksa koneksi',
   connected: 'Terhubung',
   connecting: 'Menghubungkan',

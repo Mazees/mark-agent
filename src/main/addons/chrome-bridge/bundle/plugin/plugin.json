@@ -3,6 +3,7 @@
   "displayName": "Chrome Bridge",
   "version": "1.1.0",
   "managedByAddon": "chrome-bridge",
+  "editable": false,
   "isEnabled": true,
   "dependencies": [],
   "description": "Engine Chrome Bridge untuk tab Chrome pilihan pengguna. Gunakan hanya saat pengguna meminta Chrome miliknya; browser bawaan tetap advanced_browser. Pengguna harus memasang addon dan memilih Hubungkan tab ini di ekstensi. Jangan menjalankan VBS, memindai folder, membuka bridge sendiri, memindahkan tab target, atau mengulang aksi mutasi setelah timeout. Jika belum siap, arahkan pengguna ke /addons/chrome-bridge.",

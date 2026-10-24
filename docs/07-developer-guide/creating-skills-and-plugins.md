@@ -97,6 +97,7 @@ Documents/Mark Plugins/local-info/
   "version": "1.0.0",
   "description": "Membaca platform OS komputer lokal.",
   "isEnabled": true,
+  "editable": true,
   "dependencies": [],
   "actions": [
     {
@@ -108,6 +109,21 @@ Documents/Mark Plugins/local-info/
   ]
 }
 ```
+
+### Pengaturan penyuntingan
+
+`editable` mengatur apakah definisi plugin dapat diubah melalui editor dan endpoint `POST /api/plugins/save`:
+
+- Jika tidak dicantumkan, nilainya dianggap `true` agar plugin lama tetap dapat diedit.
+- `editable: false` menghilangkan tombol **Edit plugin** dan menolak penyimpanan melalui API. Server memeriksa nilai di berkas yang tersimpan; mengirim `editable: true` dalam request tidak membuka kuncinya.
+- Plugin tetap terlihat di Plugin Hub. Tool dan tag tetap tersedia selama plugin aktif. Plugin biasa tetap dapat diaktifkan atau dinonaktifkan.
+- Plugin dengan `managedByAddon` dikelola melalui add-on terkait. Plugin Hub tetap menampilkannya dan menyediakan **Kelola add-on**, tanpa kontrol edit atau status yang bertentangan. Engine Chrome Bridge tetap bernama `chrome-use` dan memakai `editable: false`.
+
+Properti ini merupakan aturan pengelolaan aplikasi, bukan pembatas akses filesystem. Pemilik komputer tetap dapat mengubah berkas plugin secara langsung.
+
+Plugin Hub menggunakan daftar ringkas dan halaman detail seperti Add-ons. Editor memisahkan **Informasi plugin** dan **Aksi**; pilih satu aksi untuk menyunting metadata dan kodenya. Draf tiap aksi tetap tersimpan saat berpindah pilihan, dan penghapusan aksi dapat diurungkan sebelum menyimpan. Editor kode disertakan dalam build Mark sehingga tidak memerlukan CDN.
+
+Validasi perubahan dengan `node --test scripts/plugin-editable.test.mjs scripts/plugin-hub-ui.test.mjs`. Pengujian memakai direktori dan metadata simulasi, tanpa mengubah plugin pengguna.
 
 ### Handler index.js
 
