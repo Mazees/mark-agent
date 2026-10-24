@@ -5,11 +5,29 @@ export function sanitizeProcessSteps(steps) {
 
   return steps.flatMap((step) => {
     if (!step) return []
-    if (step.type === 'intervention') return [step]
-    if (step.type === 'narration' || (!step.tool && step.text)) {
-      const text = stripMarkTags(step.text)
+    if (typeof step === 'string') {
+      const text = stripMarkTags(step)
+      return text ? [{ type: 'narration', text }] : []
+    }
+
+    if (typeof step !== 'object' || Array.isArray(step)) return []
+
+    if (step.type === 'intervention') {
+      const text = stripMarkTags(step.text || step.content || step.message || step.task || '')
       return text ? [{ ...step, text }] : []
     }
+
+    const isToolStep = Boolean(
+      step.tool || step.action || step.query || step.fullResult || step.resultSummary
+    )
+    if (
+      step.type === 'narration' ||
+      (!isToolStep && (step.text || step.content || step.message || step.task))
+    ) {
+      const text = stripMarkTags(step.text || step.content || step.message || step.task)
+      return text ? [{ ...step, type: 'narration', text }] : []
+    }
+
     return [step]
   })
 }

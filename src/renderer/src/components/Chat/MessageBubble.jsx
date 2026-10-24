@@ -1,26 +1,14 @@
-import React, { useState } from 'react'
+/* eslint-disable react/prop-types */
+import React from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
 import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { CodeBlock } from './CodeBlock'
-import {
-  Brain,
-  ChevronRight,
-  ExternalLink,
-  Sparkles,
-  Activity,
-  Check,
-  XCircle,
-  Ban,
-  Terminal,
-  Loader2
-} from 'lucide-react'
-import { useApproval } from '../../contexts/ApprovalContext'
-import { ApprovalBubble } from './ApprovalBubble'
+import { Brain, ChevronRight, ExternalLink, Sparkles } from 'lucide-react'
 import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
-import { ToolShellBox } from './ToolShellBox'
-import { sanitizeProcessSteps, splitProcessTimeline } from '../../utils/processSteps'
+import { sanitizeProcessSteps } from '../../utils/processSteps'
+import { ProcessTimeline } from './ProcessTimeline'
 
 export const MessageBubble = React.memo(
   ({
@@ -31,12 +19,8 @@ export const MessageBubble = React.memo(
     executionSteps = null,
     executedTools = [],
     isPlanConclusion = false,
-    isLearned = false,
     isThinking = false
   }) => {
-    const { activeApproval } = useApproval()
-    const [isCopied, setIsCopied] = useState(false)
-    const [openProcessGroups, setOpenProcessGroups] = useState({})
     const toolsToRender = sanitizeProcessSteps(
       executedTools && executedTools.length > 0 ? executedTools : executionSteps
     )
@@ -118,14 +102,6 @@ export const MessageBubble = React.memo(
 
     const { text: stringContent, images: attachedImages } = extractContent(content)
 
-    const handleCopy = () => {
-      const textToCopy = stringContent || ''
-      if (!textToCopy) return
-      navigator.clipboard.writeText(textToCopy)
-      setIsCopied(true)
-      setTimeout(() => setIsCopied(false), 2000)
-    }
-
     return (
       <div className="text-sm leading-relaxed custom-markdown flex flex-col gap-1 relative group">
         {/* Plan Conclusion Header */}
@@ -136,10 +112,9 @@ export const MessageBubble = React.memo(
           </div>
         )}
 
-        {/* Executed Tools & Reasoning Activity Trace (Antigravity Style) */}
+        {/* Reasoning and activity trace */}
         {(toolsToRender.length > 0 || reasoning) && (
           <div className="my-2.5 space-y-1.5 select-none">
-            {/* Thinking / Reasoning Accordion */}
             {reasoning && (
               <details className="group/thought outline-none">
                 <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/60 hover:text-white select-none py-0.5 transition-colors">
@@ -161,234 +136,14 @@ export const MessageBubble = React.memo(
                 </div>
               </details>
             )}
-
-            {/* Executed Tools Folded Process Accordion */}
             {toolsToRender.length > 0 &&
               (isThinking ||
                 toolsToRender.some(
-                  (t) => t.tool === 'computer_use' || t.action === 'computer_use'
+                  (step) => step.tool === 'computer_use' || step.action === 'computer_use'
                 )) && <DesktopPreviewWidget />}
-            {toolsToRender.length > 0 &&
-              splitProcessTimeline(toolsToRender).map((segment, segmentIndex) => {
-                if (segment.type === 'narration') {
-                  return (
-                    <div
-                      key={segment.id || `progress-${segmentIndex}`}
-                      className="py-2 text-sm text-white/85 leading-relaxed select-text"
-                    >
-                      <Markdown
-                        remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
-                        rehypePlugins={mathRehypePlugins}
-                      >
-                        {preprocessLaTeX(segment.text)}
-                      </Markdown>
-                    </div>
-                  )
-                }
-                const toolGroup = segment.steps
-                return (
-                  <div key={`tools-${segmentIndex}`} className="flex flex-col gap-1">
-                    <details
-                      className="group/process outline-none"
-                      open={openProcessGroups[segmentIndex] ?? Boolean(isThinking)}
-                      onToggle={(e) => {
-                        const open = e.currentTarget.open
-                        setOpenProcessGroups((prev) =>
-                          prev[segmentIndex] === open ? prev : { ...prev, [segmentIndex]: open }
-                        )
-                      }}
-                    >
-                      <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/70 hover:text-white select-none py-1 transition-colors">
-                        <Terminal className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                        <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                          Proses
-                        </span>
-                        <span className="text-[10px] text-white/40 font-normal">
-                          ({toolGroup.length} langkah)
-                        </span>
-                        <ChevronRight className="w-3.5 h-3.5 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/process:rotate-90 group-open/process:opacity-100" />
-                      </summary>
-                      <div className="mt-1 pl-2.5 space-y-1 border-l-2 border-white/15 ml-1.5 my-1">
-                        {toolGroup.map((t, idx) => {
-                          if (t.type === 'intervention') {
-                            const interventionText = t.text || t.content || t.task || ''
-                            return (
-                              <div key={idx} className="flex items-start gap-2 py-0.5 text-xs">
-                                <span className="font-bold text-primary font-mono shrink-0 select-none">
-                                  You :
-                                </span>
-                                <span className="text-white/90 font-sans select-text whitespace-pre-wrap leading-relaxed">
-                                  {interventionText}
-                                </span>
-                              </div>
-                            )
-                          }
-
-                          if (t.type === 'narration' || (!t.tool && t.text)) {
-                            return (
-                              <div
-                                key={idx}
-                                className="flex flex-col py-1 pl-1 pr-2 text-xs text-white/85 leading-relaxed font-sans select-text"
-                              >
-                                <Markdown
-                                  remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
-                                  rehypePlugins={[...mathRehypePlugins]}
-                                >
-                                  {preprocessLaTeX(t.text)}
-                                </Markdown>
-                              </div>
-                            )
-                          }
-
-                          const isRunning = t.status === 'running'
-                          const isStopped = t.status === 'stopped' || t.status === 'cancelled'
-                          const isPendingApproval = Boolean(
-                            activeApproval &&
-                            activeApproval.status === 'pending' &&
-                            isRunning &&
-                            (activeApproval.tool === t.tool || !t.tool)
-                          )
-                          const hasQuery =
-                            t.query !== undefined && t.query !== null && t.query !== ''
-                          const queryString =
-                            typeof t.query === 'string' ? t.query : JSON.stringify(t.query, null, 2)
-                          const textResult = String(t.fullResult || t.resultSummary || '')
-                          const hasResult = Boolean(textResult.trim())
-                          const isFailed =
-                            t.status === 'failed' ||
-                            t.status === 'error' ||
-                            textResult.startsWith('[ERROR]') ||
-                            textResult.includes(' crash:') ||
-                            textResult.toLowerCase().includes(' gagal:')
-
-                          const toolLabel = t.tool || t.task || 'tool'
-                          const displayReason = t.reason || null
-                          let shortSummary = ''
-                          if (hasQuery) {
-                            try {
-                              const parsed = JSON.parse(queryString)
-                              shortSummary =
-                                parsed.command ||
-                                parsed.path ||
-                                parsed.query ||
-                                parsed.prompt ||
-                                parsed.skill_name ||
-                                queryString
-                            } catch (_) {
-                              shortSummary = queryString
-                            }
-                          }
-
-                          if (!hasQuery && !hasResult) {
-                            return (
-                              <div key={idx} className="flex flex-col py-0.5">
-                                <div className="group/row flex items-center gap-2 text-xs font-mono text-white/60">
-                                  {isPendingApproval ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
-                                  ) : isRunning ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
-                                  ) : isStopped ? (
-                                    <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
-                                  ) : isFailed ? (
-                                    <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
-                                  ) : (
-                                    <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
-                                  )}
-                                  <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                                    {displayReason || toolLabel}
-                                  </span>
-                                  {isPendingApproval ? (
-                                    <span className="text-[10px] text-warning font-normal animate-pulse">
-                                      (menunggu persetujuan...)
-                                    </span>
-                                  ) : isStopped ? (
-                                    <span className="text-[10px] text-warning/80 font-normal">
-                                      (dihentikan)
-                                    </span>
-                                  ) : null}
-                                </div>
-                                {isPendingApproval && (
-                                  <div className="pl-3 pr-1">
-                                    <ApprovalBubble
-                                      approvalId={activeApproval.id}
-                                      tool={activeApproval.tool}
-                                      query={activeApproval.query}
-                                      message={activeApproval.message}
-                                      status={activeApproval.status}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          }
-
-                          return (
-                            <div key={idx} className="flex flex-col py-0.5">
-                              <details
-                                className="group/toolitem outline-none text-xs font-mono"
-                                open={isRunning}
-                              >
-                                <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-white/60 hover:text-white select-none py-0.5 transition-colors">
-                                  {isPendingApproval ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-warning shrink-0" />
-                                  ) : isRunning ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/80 shrink-0" />
-                                  ) : isStopped ? (
-                                    <Ban className="w-3.5 h-3.5 text-warning shrink-0" />
-                                  ) : isFailed ? (
-                                    <XCircle className="w-3.5 h-3.5 text-error shrink-0" />
-                                  ) : (
-                                    <Check className="w-3.5 h-3.5 text-success/80 shrink-0" />
-                                  )}
-                                  <span className="font-semibold text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                                    {displayReason || toolLabel}
-                                  </span>
-                                  {isPendingApproval ? (
-                                    <span className="text-[10px] text-warning font-normal animate-pulse">
-                                      (menunggu persetujuan...)
-                                    </span>
-                                  ) : isStopped ? (
-                                    <span className="text-[10px] text-warning/80 font-normal">
-                                      (dihentikan)
-                                    </span>
-                                  ) : null}
-                                  {!displayReason && shortSummary && (
-                                    <span className="text-white/40 truncate max-w-md">
-                                      {String(shortSummary).slice(0, 80)}
-                                    </span>
-                                  )}
-                                  <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/toolitem:rotate-90 group-open/toolitem:opacity-100" />
-                                </summary>
-                                <ToolShellBox
-                                  tool={t.tool}
-                                  query={t.query}
-                                  result={t.fullResult || t.resultSummary || textResult}
-                                  preview={t.preview}
-                                  reason={displayReason}
-                                />
-                              </details>
-                              {isPendingApproval && (
-                                <div className="pl-3 pr-1">
-                                  <ApprovalBubble
-                                    approvalId={activeApproval.id}
-                                    tool={activeApproval.tool}
-                                    query={activeApproval.query}
-                                    message={activeApproval.message}
-                                    status={activeApproval.status}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </details>
-                  </div>
-                )
-              })}
+            <ProcessTimeline steps={toolsToRender} isActive={isThinking} />
           </div>
         )}
-
         {/* Attached Images Preview Grid */}
         {attachedImages && attachedImages.length > 0 && (
           <div className="flex flex-wrap gap-2 my-1.5">
@@ -457,3 +212,5 @@ export const MessageBubble = React.memo(
     )
   }
 )
+
+MessageBubble.displayName = 'MessageBubble'
