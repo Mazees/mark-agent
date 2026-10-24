@@ -7,7 +7,7 @@ import Skills from './pages/Skills'
 import SkillEditor from './pages/SkillEditor'
 import Guidebook from './pages/Guidebook'
 import NeuralCore from './pages/NeuralCore'
-import GoogleWorkspace from './pages/GoogleWorkspace'
+import AddonDetailRoute from './pages/AddonDetailRoute'
 import Addons from './pages/Addons'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
@@ -146,7 +146,7 @@ const MainLayout = () => {
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />
               <Route path="/addons" element={<Addons />} />
-              <Route path="/addons/google-workspace" element={<GoogleWorkspace />} />
+              <Route path="/addons/:addonId" element={<AddonDetailRoute />} />
               <Route
                 path="/google-workspace"
                 element={<Navigate to="/addons/google-workspace" replace />}
@@ -286,7 +286,9 @@ function App() {
     return <Configuration isFirstSetup={true} onSetupComplete={() => window.location.reload()} />
   }
 
-  const isStandalone = window.location.hash.includes('telegram-bot')
+  const isStandalone =
+    window.location.hash.includes('telegram-bot') ||
+    window.location.hash.includes('/addons/telegram')
 
   return (
     <HashRouter>

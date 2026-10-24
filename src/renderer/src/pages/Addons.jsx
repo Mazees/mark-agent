@@ -1,13 +1,43 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Search } from 'lucide-react'
-import { FaGoogle } from 'react-icons/fa'
+import { FaGoogle, FaTelegram } from 'react-icons/fa'
+import { ADDONS } from '../api/addonRegistry'
+import { getAddonStatuses } from '../api/addonStatus'
+
+const addonIcons = { google: FaGoogle, telegram: FaTelegram }
+const statusLabels = {
+  checking: 'Memeriksa koneksi',
+  connected: 'Terhubung',
+  connecting: 'Menghubungkan',
+  disconnected: 'Belum terhubung',
+  error: 'Status tidak tersedia'
+}
 
 export default function Addons() {
   const [query, setQuery] = useState('')
-  const matchesGoogle = 'google workspace drive calendar gmail email agenda'.includes(
-    query.trim().toLowerCase()
-  )
+  const [statuses, setStatuses] = useState({})
+
+  useEffect(() => {
+    let active = true
+    getAddonStatuses().then((nextStatuses) => {
+      if (active) setStatuses(nextStatuses)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const visibleAddons = useMemo(() => {
+    const searchTerm = query.trim().toLowerCase()
+    if (!searchTerm) return ADDONS
+    return ADDONS.filter((addon) =>
+      [addon.name, addon.description, ...addon.capabilities]
+        .join(' ')
+        .toLowerCase()
+        .includes(searchTerm)
+    )
+  }, [query])
 
   return (
     <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
@@ -43,22 +73,39 @@ export default function Addons() {
           <h2 id="available-addons" className="text-sm font-medium text-white/75 mb-5">
             Tersedia
           </h2>
-          {matchesGoogle ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12">
-              <Link
-                to="/addons/google-workspace"
-                className="flex items-center gap-4 min-w-0 px-5 py-5 rounded-lg hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
-              >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10">
-                  <FaGoogle size={25} className="text-[#4285f4]" aria-hidden="true" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-white">Google Workspace</span>
-                  <span className="block mt-1.5 text-sm text-white/50">
-                    Drive, Calendar, dan Gmail
-                  </span>
-                </span>
-              </Link>
+          {visibleAddons.length > 0 ? (
+            <div className="grid grid-cols-1 gap-x-12 md:grid-cols-2">
+              {visibleAddons.map((addon) => {
+                const Icon = addonIcons[addon.icon]
+                const status = statuses[addon.id] || 'checking'
+                return (
+                  <Link
+                    key={addon.id}
+                    to={`/addons/${addon.id}`}
+                    className="flex min-w-0 items-center gap-4 rounded-lg px-5 py-5 hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                  >
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10">
+                      <Icon
+                        size={25}
+                        className={addon.icon === 'google' ? 'text-[#4285f4]' : 'text-[#2aabee]'}
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-white">{addon.name}</span>
+                      <span className="mt-1.5 block text-sm text-white/50">
+                        {addon.description}
+                      </span>
+                      <span
+                        className={`mt-2 block text-xs ${status === 'connected' ? 'text-primary' : status === 'error' ? 'text-error' : 'text-white/40'}`}
+                        role="status"
+                      >
+                        {statusLabels[status] || statusLabels.error}
+                      </span>
+                    </span>
+                  </Link>
+                )
+              })}
             </div>
           ) : (
             <p role="status" className="py-8 text-sm text-white/45">

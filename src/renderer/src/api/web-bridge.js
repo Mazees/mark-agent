@@ -794,7 +794,7 @@ export const webApi = {
       const res = await fetch(`${API_BASE}/api/telegram/status`)
       return await res.json()
     } catch (_) {
-      return { status: 'disconnected' }
+      return { success: false, status: 'disconnected' }
     }
   },
   tgGetHistory: async () => {

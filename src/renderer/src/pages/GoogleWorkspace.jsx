@@ -1,6 +1,14 @@
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, Files, Mail, Plus } from 'lucide-react'
-import { FaGoogle } from 'react-icons/fa'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  ArrowRight,
+  CalendarDays,
+  Files,
+  Mail,
+  Plus,
+  Unplug
+} from 'lucide-react'
+import { webApi } from '../api/web-bridge'
 
 const features = [
   {
@@ -23,46 +31,169 @@ const examples = [
 
 export default function GoogleWorkspace() {
   const navigate = useNavigate()
+  const [connectionStatus, setConnectionStatus] = useState('checking')
+  const [connectionError, setConnectionError] = useState('')
+  const [isUninstalling, setIsUninstalling] = useState(false)
+  const [showUninstallConfirm, setShowUninstallConfirm] = useState(false)
+  const uninstallDialogRef = useRef(null)
   const draft = (composerDraft) => navigate('/chat', { state: { composerDraft } })
-  return (
-    <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-3 px-5 py-6 text-sm sm:px-8">
-        <Link
-          to="/addons"
-          aria-label="Kembali ke Add-ons"
-          title="Kembali ke Add-ons"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+
+  const refreshConnectionStatus = useCallback(async () => {
+    setConnectionStatus('checking')
+    setConnectionError('')
+    try {
+      const result = await webApi.googleStatus()
+      if (!result?.success) throw new Error(result?.error || 'Status koneksi Google tidak tersedia.')
+      setConnectionStatus(result.isConnected ? 'connected' : 'disconnected')
+    } catch (error) {
+      setConnectionStatus('error')
+      setConnectionError(error.message || 'Gagal memeriksa koneksi Google.')
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshConnectionStatus()
+    window.addEventListener('focus', refreshConnectionStatus)
+    return () => window.removeEventListener('focus', refreshConnectionStatus)
+  }, [refreshConnectionStatus])
+
+  useEffect(() => {
+    if (!showUninstallConfirm) return
+
+    const dialog = uninstallDialogRef.current
+    if (!dialog) return
+
+    dialog.showModal()
+    return () => {
+      if (dialog.open) dialog.close()
+    }
+  }, [showUninstallConfirm])
+
+  const uninstallGoogleWorkspace = async () => {
+    setIsUninstalling(true)
+    setConnectionError('')
+    try {
+      const result = await webApi.googleDisconnect()
+      if (!result?.success) throw new Error(result?.error || 'Koneksi Google gagal dihapus.')
+      setConnectionStatus('disconnected')
+      window.dispatchEvent(new Event('mark-addon-status-changed'))
+      setShowUninstallConfirm(false)
+    } catch (error) {
+      setConnectionError(error.message || 'Koneksi Google gagal dihapus.')
+    } finally {
+      setIsUninstalling(false)
+    }
+  }
+
+  const renderConnectionAction = () => {
+    if (connectionStatus === 'checking') {
+      return (
+        <button type="button" disabled className="btn self-start rounded-full px-5 sm:self-center">
+          Memeriksa...
+        </button>
+      )
+    }
+
+    if (connectionStatus === 'error') {
+      return (
+        <button
+          type="button"
+          onClick={refreshConnectionStatus}
+          className="btn self-start rounded-full px-5 sm:self-center"
         >
-          <ArrowLeft size={18} />
-        </Link>
-        <Link to="/addons" className="text-white/50 hover:text-white">
-          Add-ons
-        </Link>
-        <ChevronRight size={15} className="text-white/35" />
-        <span className="text-white/85">Google Workspace</span>
-      </nav>
-      <div className="max-w-4xl mx-auto px-5 pt-5 pb-12 sm:px-8 sm:pt-8">
-        <header>
-          <div className="h-16 w-16 rounded-2xl border border-white/10 flex items-center justify-center mb-5">
-            <FaGoogle size={34} className="text-[#4285f4]" aria-hidden="true" />
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-            <div>
-              <h1 className="text-2xl font-semibold text-white">Google Workspace</h1>
-              <p className="text-sm text-white/45 mt-2">Oleh MARK</p>
+          Coba lagi
+        </button>
+      )
+    }
+
+    if (connectionStatus === 'connected') {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            setConnectionError('')
+            setShowUninstallConfirm(true)
+          }}
+          disabled={isUninstalling}
+          className="btn self-start rounded-full border-error/40 bg-transparent px-5 text-error hover:bg-error/10 sm:self-center"
+        >
+          <Unplug size={17} /> {isUninstalling ? 'Menghapus...' : 'Uninstall'}
+        </button>
+      )
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => draft('/setup-google-workspace ')}
+        className="btn self-start rounded-full border-white bg-white px-5 text-neutral-900 hover:bg-white/90 sm:self-center"
+      >
+        <Plus size={17} /> Install
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-8">
+        <div className="flex flex-col items-start justify-end gap-3 sm:flex-row sm:items-center">
+          {connectionError && (
+            <p role="status" className="text-sm text-error">
+              {connectionError}
+            </p>
+          )}
+          {renderConnectionAction()}
+        </div>
+        {showUninstallConfirm && (
+          <dialog
+            ref={uninstallDialogRef}
+            aria-labelledby="uninstall-google-title"
+            aria-describedby="uninstall-google-description"
+            onClose={() => setShowUninstallConfirm(false)}
+            className="modal"
+          >
+            <div className="modal-box border border-white/10 bg-base-200">
+              <h2 id="uninstall-google-title" className="text-lg font-semibold text-white">
+                Hapus koneksi Google Workspace?
+              </h2>
+              <p id="uninstall-google-description" className="mt-3 text-sm leading-relaxed text-white/65">
+                Token login Google yang tersimpan di Mark akan dihapus. Kamu bisa menghubungkan
+                akun lagi kapan saja.
+              </p>
+              {connectionError && (
+                <p role="alert" className="mt-3 text-sm text-error">
+                  {connectionError}
+                </p>
+              )}
+              <div className="modal-action">
+                <button
+                  type="button"
+                  disabled={isUninstalling}
+                  onClick={() => setShowUninstallConfirm(false)}
+                  className="btn rounded-full"
+                  autoFocus
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isUninstalling}
+                  onClick={uninstallGoogleWorkspace}
+                  className="btn rounded-full border-error bg-error text-white hover:bg-error/90"
+                >
+                  {isUninstalling ? 'Menghapus...' : 'Uninstall'}
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => draft('/setup-google-workspace ')}
-              className="btn bg-white text-neutral-900 border-white hover:bg-white/90 rounded-full self-start sm:self-center px-5"
-            >
-              <Plus size={17} /> Install
-            </button>
-          </div>
-        </header>
+            <form method="dialog" className="modal-backdrop">
+              <button aria-label="Tutup konfirmasi" disabled={isUninstalling}>
+                Tutup
+              </button>
+            </form>
+          </dialog>
+        )}
         <section
           aria-label="Contoh penggunaan"
-          className="my-8 rounded-2xl border border-white/5 bg-gradient-to-br from-emerald-950/70 via-base-200 to-teal-950/50 px-4 py-7 sm:px-10 sm:py-9"
+          className="rounded-2xl border border-white/5 bg-gradient-to-br from-emerald-950/70 via-base-200 to-teal-950/50 px-4 py-7 sm:px-10 sm:py-9"
         >
           <div className="max-w-xl mx-auto space-y-3">
             {examples.map((text) => (
@@ -118,7 +249,6 @@ export default function GoogleWorkspace() {
             <dd className="text-white/75">OAuth akun Google</dd>
           </dl>
         </section>
-      </div>
-    </main>
+    </div>
   )
 }

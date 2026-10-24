@@ -4,6 +4,7 @@ import { getPersonaPrompt } from './persona'
 import { NATIVE_SKILLS } from '../../components/core/native-skills'
 import { getWorkspaceContext } from '../workspaceRag'
 import { getActiveToolsSchema, getGroupTools } from '../tools/index'
+import { formatAddonStatusesForPrompt } from '../addonStatus'
 
 /**
  * Menyusun System Prompt dinamis untuk MARK V5 (Native Function Calling & SSE Architecture).
@@ -16,7 +17,7 @@ export const buildPlanningSystemPrompt = async (
   contextMsg = ''
 ) => {
   const { memories = [], archives = [] } = unifiedContext
-  const [currentConfig, fileSkills, learnedSkills, activePlugins, groupToolsData] =
+  const [currentConfig, fileSkills, learnedSkills, activePlugins, groupToolsData, addonCatalog] =
     await Promise.all([
       getAllConfig(),
       (async () => {
@@ -39,7 +40,11 @@ export const buildPlanningSystemPrompt = async (
           return []
         }
       })(),
-      getGroupTools()
+      getGroupTools(),
+      formatAddonStatusesForPrompt().catch((error) => {
+        console.error('Failed to load add-on status for planning', error)
+        return []
+      })
     ])
   const conf = currentConfig[0] || {}
   const isWebProvider = conf.aiProvider === 'deepseek-web' || conf.aiProvider === 'gemini-web'
@@ -60,6 +65,12 @@ export const buildPlanningSystemPrompt = async (
 
   const activePluginsGuide = activePlugins
     .map((p) => `   - '${p.name}': ${p.description || 'Custom plugin'}`)
+    .join('\n')
+  const addonCatalogGuide = addonCatalog
+    .map(
+      (addon) =>
+        `- ${addon.name} (${addon.status}): ${addon.description}. Kemampuan: ${addon.capabilities.join('; ')}. Detail: ${addon.detailRoute}`
+    )
     .join('\n')
 
   const targetWorkspace = options.workspaceRoot || conf.workspaceRoot || null
@@ -216,6 +227,9 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
 6. **PANDUAN & SKEMA GROUP TOOLS (BAWAAN SISTEM)**:
    - Kelompok tool bawaan yang tersedia:
 ${groupToolsGuide}
+### Add-ons bawaan MARK
+${addonCatalogGuide || '- Status add-on belum tersedia.'}
+Gunakan daftar ini untuk mengenali integrasi yang tersedia. Status "connected" berarti layanan terhubung; "disconnected" atau "error" berarti jangan mengklaim akses aktif. Jangan pernah meminta atau mengungkap token maupun kredensial. Route detail adalah petunjuk lokasi di UI, bukan perintah navigasi.
    - Jika kamu butuh membaca panduan atau mengaktifkan grup tool tertentu sebelum mengeksekusinya, panggil 'read-tools' (group_name: "nama_grup").
 ${
   activePluginsGuide

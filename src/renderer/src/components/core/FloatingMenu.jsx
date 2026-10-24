@@ -6,7 +6,6 @@ import {
   FaTimes,
   FaCog,
   FaPuzzlePiece,
-  FaTelegram,
   FaBook,
   FaCubes,
   FaBrain,
@@ -201,21 +200,6 @@ const FloatingMenu = () => {
                   className="text-base-content/30 group-hover:text-white/60 group-hover:translate-x-0.5 transition-all"
                 />
               </button>
-              <button
-                type="button"
-                onClick={() => handleNav('/telegram-bot')}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-white/5 text-base-content/80 hover:text-white text-xs font-medium font-mono transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-3">
-                  <FaTelegram className="text-primary text-sm" />
-                  <span>Telegram Bot</span>
-                </div>
-                <FaChevronRight
-                  size={10}
-                  className="text-base-content/30 group-hover:text-white/60 group-hover:translate-x-0.5 transition-all"
-                />
-              </button>
-
               <button
                 type="button"
                 onClick={() => handleNav('/guidebook')}
