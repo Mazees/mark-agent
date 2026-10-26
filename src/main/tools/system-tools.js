@@ -3,7 +3,7 @@ import os from 'os'
 import { exec } from 'child_process'
 import util from 'util'
 import { executeComputerUse } from '../../server/tools/pc-agent.js'
-import { isComputerUseSessionOpen } from '../../shared/computer-use.js'
+import { isComputerUseSessionOpen, validateComputerUseArgs } from '../../shared/computer-use.js'
 
 const execPromise = util.promisify(exec)
 
@@ -109,6 +109,11 @@ export const systemTools = {
 
   computer_use: {
     needsApproval: (args) => {
+      try {
+        args = validateComputerUseArgs(args)
+      } catch {
+        return false
+      }
       if (isComputerUseSessionOpen('computer_use', args)) return true
       if (Array.isArray(args?.actions)) {
         return args.actions.some((a) => {
@@ -131,6 +136,11 @@ export const systemTools = {
       return false
     },
     approvalMessage: (args) => {
+      try {
+        args = validateComputerUseArgs(args)
+      } catch {
+        return 'Parameter Computer Use tidak valid.'
+      }
       if (isComputerUseSessionOpen('computer_use', args))
         return 'Izinkan Mark membuka sesi Computer Use? Mouse akan dikunci dan cursor Mark ditampilkan selama sesi aktif. Overlay tetap terlihat sampai Mark menutup sesi. Tekan Ctrl+Shift+R kapan saja untuk membatalkan dan melepaskan mouse.'
       let combo = ''
@@ -150,6 +160,7 @@ export const systemTools = {
     },
     handler: async (args, config) => {
       try {
+        args = validateComputerUseArgs(args)
         const payload = {
           sessionId: config?.sessionId || args?.sessionId || 'default',
           agentName: config?.agentName || args?.agentName || 'Mark Utama',

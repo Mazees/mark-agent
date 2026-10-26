@@ -484,7 +484,7 @@ export const core_tools_schema = [
     function: {
       name: 'computer_use',
       description:
-        'Kendali desktop Windows berbasis sesi. WAJIB mulai dengan action:open_session dan tunggu izin pengguna. Setelah diizinkan, mouse dikunci dan overlay tetap tampil sepanjang sesi, termasuk saat kamu memeriksa hasil atau berpikir. open_session mengembalikan screenshot awal. Gunakan observation_id terbaru dan koordinat 1280x720 dari gambar itu. Aksi dengan wait_ms:5000 menjalankan input, menunggu lima detik, lalu mengembalikan screenshot dalam hasil yang sama. Setelah tugas selesai atau kendali tidak diperlukan, WAJIB action:close untuk melepas mouse dan menutup overlay. Ctrl+Shift+R membatalkan sesi; jika cancelledBy:user atau izin ditolak, sampaikan dan tunggu instruksi baru tanpa mencoba jalur pengganti. Batch berhenti pada error. executed berarti input dijalankan, bukan tujuan terverifikasi; periksa gambar hasilnya.',
+        'Kendali desktop Windows berbasis sesi. Argumen wajib objek JSON. WAJIB mulai dengan {"action":"open_session","reason":"Meminta izin kendali desktop"} dan tunggu izin pengguna. Teks "open_session" dan pembungkus query ditolak. Setelah diizinkan, mouse dikunci dan overlay tetap tampil sepanjang sesi, termasuk saat kamu memeriksa hasil atau berpikir. open_session mengembalikan screenshot awal. Gunakan observation_id terbaru dan koordinat 1280x720 dari gambar itu. Aksi dengan wait_ms:5000 menjalankan input, menunggu lima detik, lalu mengembalikan screenshot dalam hasil yang sama. Setelah tugas selesai atau kendali tidak diperlukan, WAJIB action:close untuk melepas mouse dan menutup overlay. Ctrl+Shift+R membatalkan sesi; jika cancelledBy:user atau izin ditolak, sampaikan dan tunggu instruksi baru tanpa mencoba jalur pengganti. Batch berhenti pada error. executed berarti input dijalankan, bukan tujuan terverifikasi; periksa gambar hasilnya.',
       parameters: {
         type: 'object',
         properties: {
@@ -688,7 +688,9 @@ export const core_tools_schema = [
             description:
               'Jeda setelah aksi terakhir sebelum screenshot dikembalikan pada hasil tool yang sama. 5000 berarti lima detik; default 300 ms, 0 tanpa jeda tambahan.'
           }
-        }
+        },
+        oneOf: [{ required: ['action'] }, { required: ['actions'] }],
+        additionalProperties: false
       }
     }
   },

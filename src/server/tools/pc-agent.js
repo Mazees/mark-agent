@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { wsHub } from '../ws-hub.js'
 import { PcCommandChannel } from './pc-command-channel.js'
 import { consumeComputerUsePermission } from './computer-use-permissions.js'
+import { validateComputerUseArgs } from '../../shared/computer-use.js'
 import {
   boundedDelay,
   parseNativeResult,
@@ -427,9 +428,7 @@ const pointerActions = new Set([
   'mouse_up'
 ])
 async function runAction(p, scope) {
-  const action = String(p.action || 'screenshot')
-    .toLowerCase()
-    .trim()
+  const action = String(p.action).toLowerCase().trim()
   if (desktopSession?.closing)
     throw new Error('Sesi Computer Use sedang ditutup. Tunggu sampai penutupan selesai.')
   if (action === 'open_session') {
@@ -613,7 +612,12 @@ function actionLabel(action) {
 }
 
 export async function executeComputerUse(params = {}) {
-  const p = params && typeof params === 'object' ? params : {}
+  let p
+  try {
+    p = validateComputerUseArgs(params)
+  } catch (error) {
+    return { success: false, executionStatus: 'failed', error: error.message }
+  }
   const controller = new AbortController()
   const sessionId = String(p.sessionId || 'default'),
     runId = String(p.runId || sessionId)
