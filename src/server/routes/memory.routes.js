@@ -4,6 +4,7 @@ import { dbStore, normalizeSqliteId } from '../memory/db-store.js'
 import { initOramaIndices } from '../memory/orama-store.js'
 import { wsHub } from '../ws-hub.js'
 import { sessionForClient, isInvalidMainWorkspace } from '../workspace-policy.js'
+import { recoverTaskWorkflows } from '../services/task-workflow.js'
 
 export const memoryRouter = Router()
 
@@ -228,6 +229,7 @@ memoryRouter.post('/db/restore', async (req, res) => {
   try {
     await subagentRuntime.stop()
     const result = dbStore.restoreFullDatabase(dumpData, { overwrite })
+    recoverTaskWorkflows(dbStore)
     subagentRuntime.start()
     initOramaIndices().catch(() => {})
     wsHub.broadcast('db:restored', { timestamp: Date.now(), imported: result.imported })

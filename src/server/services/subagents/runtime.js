@@ -210,6 +210,16 @@ export class SubagentRuntime {
         throw new Error('requestId sudah digunakan untuk penugasan lain.')
       return existing
     }
+    if (input.taskId) {
+      const task = this.db.prepare('SELECT * FROM agent_tasks WHERE id=?').get(input.taskId)
+      if (
+        !task ||
+        task.status !== 'running' ||
+        task.active_step_id !== input.stepId ||
+        task.session_id !== String(input.parentSessionId)
+      )
+        throw new Error('Workflow atau langkah penugasan sudah tidak aktif.')
+    }
     const sessionId = String(input.parentSessionId || '1')
     let session = this.db.prepare('SELECT * FROM sessions WHERE id=?').get(sessionId)
     if (!session) {
@@ -469,6 +479,8 @@ export class SubagentRuntime {
           status: 'pending',
           followupStatus: status === 'cancelled' ? 'ignored' : 'pending',
           createdAt: Date.now(),
+          taskId: finished.taskId,
+          stepId: finished.stepId,
           parentSessionId: finished.parentSessionId,
           parentSessionTitle: finished.parentSessionTitle,
           summary: result || error || 'Pekerjaan dihentikan.',
@@ -539,6 +551,8 @@ export class SubagentRuntime {
         runId,
         status: 'pending',
         createdAt: Date.now(),
+        taskId: job.taskId,
+        stepId: job.stepId,
         parentSessionId: job.parentSessionId,
         parentSessionTitle: job.parentSessionTitle,
         outcome: 'waiting_user',
@@ -856,6 +870,11 @@ export class SubagentRuntime {
   ) {
     if (this.stopped) throw new Error('Runtime Minibot sedang berhenti.')
     const job = this.job(jobId)
+    if (job.taskId) {
+      const task = this.db.prepare('SELECT status FROM agent_tasks WHERE id=?').get(job.taskId)
+      if (!task || ['cancelled', 'completed'].includes(task.status))
+        throw new Error('Workflow terkait sudah berakhir.')
+    }
     if (requestId && job.lastResumeRequestId === requestId) return job
     if (expectedApprovalId && job.approval?.id !== expectedApprovalId)
       throw new Error('Permintaan persetujuan sudah berubah. Muat ulang daftar keputusan.')
@@ -962,6 +981,17 @@ export class SubagentRuntime {
       const report = this.store.get('subagent_reports', id)
       if (!report || report.parentSessionId !== String(sessionId))
         throw new Error('Laporan tidak ditemukan dalam sesi ini.')
+      if (report.taskId) {
+        const task = this.db.prepare('SELECT * FROM agent_tasks WHERE id=?').get(report.taskId)
+        if (
+          !task ||
+          ['cancelled', 'completed'].includes(task.status) ||
+          task.active_step_id !== report.stepId
+        ) {
+          this.store.put('subagent_reports', { ...report, followupStatus: 'ignored' })
+          return null
+        }
+      }
       if (report.status !== 'delivered' || report.followupStatus !== 'pending') return null
       if (this.reports(sessionId).some((r) => r.followupStatus === 'claimed')) return null
       return this.store.put('subagent_reports', {

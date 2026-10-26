@@ -1,246 +1,350 @@
 /* eslint-disable react/prop-types */
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
-import { Check, FolderOpen, FileText, ChevronRight, Brain, Loader2 } from 'lucide-react'
+import {
+  Check,
+  FolderOpen,
+  FileText,
+  ChevronRight,
+  Circle,
+  Loader2,
+  AlertCircle
+} from 'lucide-react'
 import { FileDiffModal } from './FileDiffModal'
-import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 import { ProcessTimeline } from './ProcessTimeline'
+import { getAgentTaskWithSteps, workflowMutation } from '../../api/taskStore'
+import { addWebListener, removeWebListener } from '../../api/web-bridge'
 
+const labels = {
+  running: 'Berjalan',
+  pending: 'Belum dimulai',
+  completed: 'Selesai',
+  paused: 'Dijeda',
+  waiting_user: 'Menunggu bantuan',
+  waiting_minibots: 'Menunggu Minibot',
+  failed: 'Gagal',
+  cancelled: 'Dihentikan',
+  stopped: 'Dihentikan',
+  needs_revision: 'Perlu diperbaiki',
+  skipped: 'Dilewati'
+}
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 export const DurableTaskBubble = ({
   plan = [],
-  resolvedCurrentStep = 0,
-  reasoning = null,
-  taskTitle = null,
-  taskStatus = null,
-  artifactRoot = null,
+  taskId,
+  taskTitle,
+  taskStatus,
+  artifactRoot,
+  reasoning,
   executedTools = [],
-  activeLiveTools = null,
-  activeThinkingContent = null
+  activeLiveTools,
+  activeThinkingContent
 }) => {
-  const [selectedArtifactPath, setSelectedArtifactPath] = useState(null)
-
-  const totalSteps = plan.length
-  const completedCount = plan.filter(
-    (s, idx) =>
-      s.status === 'completed' || plan.slice(idx + 1).some((later) => later.status === 'completed')
-  ).length
-
-  const isStopped = taskStatus === 'stopped' || taskStatus === 'cancelled'
-  const isFailed = taskStatus === 'failed'
-  const isAllDone =
-    taskStatus === 'completed' ||
-    (!isStopped && !isFailed && totalSteps > 0 && completedCount >= totalSteps)
-  const isRunning = !isAllDone && !isFailed && !isStopped
-
-  const toolsToDisplay =
-    activeLiveTools && activeLiveTools.length > 0 ? activeLiveTools : executedTools || []
-  const displayReasoning = reasoning || activeThinkingContent
-
-  const handleOpenFolder = (folderPath) => {
-    if (!folderPath) return
-    fetch('/api/tasks/ensure-dir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dirPath: folderPath })
-    })
-      .then((r) => r.json())
-      .then((res) => {
-        const target = res?.data || folderPath
-        if (window.api?.executeNativeTool) {
-          window.api.executeNativeTool('open-folder', { path: target }).catch(() => {
-            window.api.executeNativeTool('open', target).catch(() => {})
-          })
-        } else if (window.api?.openPath) {
-          window.api.openPath(target)
-        }
-      })
-      .catch(() => {
-        if (window.api?.executeNativeTool) {
-          window.api.executeNativeTool('open-folder', { path: folderPath }).catch(() => {
-            window.api.executeNativeTool('open', folderPath).catch(() => {})
-          })
-        } else if (window.api?.openPath) {
-          window.api.openPath(folderPath)
-        }
-      })
+  const [snapshot, setSnapshot] = useState(null)
+  const [open, setOpen] = useState(taskStatus !== 'completed')
+  const [selected, setSelected] = useState(null)
+  const [artifact, setArtifact] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const status = snapshot?.status || taskStatus || 'pending'
+  const previousStatus = useRef(status)
+  const groupId = useId()
+  useEffect(() => {
+    let disposed = false
+    const receive = (task) => {
+      if (!disposed && task?.id === taskId) setSnapshot(task)
+    }
+    const sync = () => {
+      if (taskId)
+        getAgentTaskWithSteps(taskId)
+          .then(receive)
+          .catch(() => {})
+    }
+    sync()
+    const timer = ['completed', 'cancelled', 'stopped'].includes(status)
+      ? null
+      : setInterval(sync, 5000)
+    addWebListener('task:updated', receive)
+    addWebListener('core:ready', sync)
+    return () => {
+      disposed = true
+      clearInterval(timer)
+      removeWebListener('task:updated', receive)
+      removeWebListener('core:ready', sync)
+    }
+  }, [taskId, status])
+  useEffect(() => {
+    if (status === 'completed' && previousStatus.current !== 'completed') setOpen(false)
+    previousStatus.current = status
+  }, [status])
+  const steps = snapshot?.steps || plan
+  const done = steps.filter((s) => s.status === 'completed').length
+  const tools = activeLiveTools?.length ? activeLiveTools : executedTools
+  const thought = reasoning || activeThinkingContent
+  const hasFiles = steps.some((s) => s.artifactPath)
+  const folder = snapshot?.artifactRoot || artifactRoot
+  const control = async (action) => {
+    setBusy(true)
+    setError('')
+    try {
+      const task = await getAgentTaskWithSteps(taskId)
+      const updated = await workflowMutation(task, 'control', { action })
+      setSnapshot(updated)
+      window.dispatchEvent(
+        new CustomEvent('task-control', { detail: { taskId, sessionId: task.sessionId, action } })
+      )
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
   }
-
   return (
-    <div className="flex flex-col gap-2 w-full text-xs text-white/90 my-1 py-1">
-      {/* ── 1. HEADER ALUR KERJA MINIMALIS ── */}
-      <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/10 text-xs select-none">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-primary">Workflow :</span>
-          <span className="text-white/90 font-medium truncate">{taskTitle || 'Task Workflow'}</span>
-          <span className="text-white/40 text-[11px] font-mono shrink-0">
-            ({completedCount}/{totalSteps})
+    <section
+      aria-label={'Rencana tugas: ' + (snapshot?.title || taskTitle || 'Tugas')}
+      className="my-2 w-full min-w-0 rounded-xl border border-white/10 bg-base-200/40 p-4 text-sm sm:p-5"
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={groupId}
+        className={'flex w-full items-start gap-3 rounded text-left ' + focus}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          size={17}
+          className={'mt-1 shrink-0 motion-safe:transition-transform ' + (open ? 'rotate-90' : '')}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block break-words font-medium leading-relaxed text-white/90">
+            {snapshot?.title || taskTitle || 'Rencana tugas'}
           </span>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
           <span
-            className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-              isAllDone
-                ? 'text-primary bg-primary/10'
-                : isStopped
-                  ? 'text-amber-400 bg-amber-400/10'
-                  : isFailed
-                    ? 'text-rose-400 bg-rose-400/10'
-                    : 'text-primary bg-primary/10'
-            }`}
+            className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/50"
+            aria-live="polite"
           >
-            {isAllDone ? 'Selesai' : isStopped ? 'Dihentikan' : isFailed ? 'Gagal' : 'Berjalan'}
+            <span className={status === 'running' ? 'text-primary' : ''}>
+              {labels[status] || status}
+            </span>
+            <span>
+              {done} dari {steps.length} selesai
+            </span>
           </span>
-        </div>
-      </div>
-
-      {/* ── 2. DAFTAR CHECKBOX STEPS BIASA (FLAT MINIMALIS) ── */}
-      <div className="flex flex-col gap-1 py-0.5">
-        {plan.map((step, idx) => {
-          const hasLaterDone = plan.slice(idx + 1).some((later) => later.status === 'completed')
-          const isStepDone = step.status === 'completed' || hasLaterDone
-          const isStepRunning =
-            !isStepDone && isRunning && (step.status === 'running' || idx === resolvedCurrentStep)
-
-          let title = typeof step === 'string' ? step : step.title || step.task || ''
-          if (!title || /^((langkah|tahap|step)\s*\d+[:.-]?\s*)$/i.test(title.trim())) {
-            title = step.objective || step.deliverable || `Tahap ${idx + 1}`
-          }
-
-          const artifactPath = typeof step === 'object' ? step.artifactPath : null
-
-          return (
-            <div
-              key={step.id || `step-${idx}`}
-              className="flex items-center justify-between gap-2.5 py-1 select-none"
-            >
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                {/* Checkbox Icon / Loading Spinner */}
-                {isStepDone ? (
-                  <div className="w-3.5 h-3.5 rounded bg-primary/20 border border-primary flex items-center justify-center text-primary shrink-0">
-                    <Check className="w-2.5 h-2.5 stroke-[3]" />
-                  </div>
-                ) : isStepRunning ? (
-                  <div className="w-3.5 h-3.5 rounded flex items-center justify-center text-primary shrink-0">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  </div>
-                ) : (
-                  <div className="w-3.5 h-3.5 rounded border border-white/25 shrink-0" />
-                )}
-
-                {/* Step Title & Deliverable Info */}
-                <div className="flex items-baseline gap-1.5 min-w-0 truncate">
-                  <span
-                    className={`text-xs truncate ${
-                      isStepDone
-                        ? 'text-white/90'
-                        : isStepRunning
-                          ? 'text-primary font-medium'
-                          : 'text-white/70'
-                    }`}
-                  >
-                    {idx + 1}. {title}
-                  </span>
-                  {isStepRunning && (
-                    <span className="text-[10px] font-mono text-primary/80 animate-pulse shrink-0">
-                      (sedang berjalan...)
-                    </span>
-                  )}
-                  {step.deliverable && !isStepRunning && (
-                    <span className="text-[10px] font-mono text-white/30 truncate hidden sm:inline">
-                      ({step.deliverable})
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Button: Lihat Hasil */}
-              {isStepDone && artifactPath && (
+        </span>
+      </button>
+      <div id={groupId} hidden={!open} className="mt-4 min-w-0">
+        <ol className="space-y-1">
+          {steps.map((step, index) => {
+            const complete = step.status === 'completed'
+            const active = step.id === snapshot?.activeStepId || step.status === 'running'
+            const expanded = selected === step.id || selected === index
+            const key = step.id || index
+            const title =
+              typeof step === 'string' ? step : step.title || step.task || step.objective
+            const Icon = complete
+              ? Check
+              : active && status === 'running'
+                ? Loader2
+                : step.status === 'failed'
+                  ? AlertCircle
+                  : Circle
+            return (
+              <li key={key} className="min-w-0">
                 <button
                   type="button"
-                  onClick={() => setSelectedArtifactPath(artifactPath)}
-                  className="btn btn-ghost btn-xs text-primary hover:underline gap-1 font-mono text-[10.5px] h-5 min-h-0 px-1.5 shrink-0"
-                  title="Buka pratinjau artefak dokumen"
+                  aria-expanded={expanded}
+                  aria-controls={groupId + '-' + index}
+                  onClick={() => setSelected(expanded ? null : key)}
+                  className={
+                    'flex w-full items-start gap-3 rounded-lg px-2 py-3 text-left ' +
+                    focus +
+                    ' ' +
+                    (active
+                      ? 'bg-primary/5 text-white/95'
+                      : complete
+                        ? 'text-white/50'
+                        : 'text-white/75')
+                  }
                 >
-                  <FileText className="w-3 h-3 text-primary" />
-                  <span>Lihat Hasil</span>
+                  <Icon
+                    aria-hidden="true"
+                    size={17}
+                    className={
+                      'mt-0.5 shrink-0 ' +
+                      (complete || active ? 'text-primary ' : '') +
+                      (active && status === 'running' ? 'motion-safe:animate-spin' : '')
+                    }
+                  />
+                  <span className="min-w-0 flex-1 break-words leading-relaxed">
+                    <span className={active ? 'font-medium' : ''}>
+                      {index + 1}. {title}
+                    </span>
+                    <span className="sr-only"> — {labels[step.status] || step.status}</span>
+                    {active && !complete && (
+                      <span className="mt-0.5 block text-xs text-white/45">
+                        {status === 'running' ? 'Sedang dikerjakan' : labels[status]}
+                      </span>
+                    )}
+                  </span>
+                  <ChevronRight
+                    size={14}
+                    aria-hidden="true"
+                    className={'mt-1 shrink-0 text-white/35 ' + (expanded ? 'rotate-90' : '')}
+                  />
                 </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {((toolsToDisplay && toolsToDisplay.length > 0) || displayReasoning) && (
-        <div className="my-2 space-y-1.5 select-none pt-1.5 border-t border-white/10">
-          {displayReasoning && (
-            <details className="group/thought outline-none" open={isRunning}>
-              <summary className="group/row list-none flex items-center gap-2 cursor-pointer text-xs font-mono text-white/60 hover:text-white select-none py-0.5 transition-colors">
-                <Brain className="w-3.5 h-3.5 text-primary/80 shrink-0" />
-                <span className="font-medium text-white/80 transition-colors group-hover/row:text-white group-focus-visible/row:text-white">
-                  Proses Pemikiran AI
-                </span>
-                <ChevronRight className="w-3 h-3 ml-auto shrink-0 text-white/40 opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-open/thought:rotate-90 group-open/thought:opacity-100" />
-              </summary>
-              <div className="mt-1 pl-3 my-2 text-[11px] font-mono border-l-2 border-primary/30 text-white/80 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar bg-base-300/30 p-2.5 rounded-lg select-text [&_p]:my-1 [&_p]:leading-relaxed [&_h1]:text-xs [&_h1]:font-bold [&_h1]:my-1.5 [&_h2]:text-[11px] [&_h2]:font-bold [&_h2]:my-1 [&_h3]:text-[11px] [&_h3]:font-bold [&_h3]:my-1 [&_ul]:my-1 [&_ul]:ml-3.5 [&_ol]:my-1 [&_ol]:ml-3.5 [&_li]:my-0.5 [&_code]:text-[10px] [&_pre]:my-1.5 [&_hr]:my-2 [&_hr]:border-white/10">
-                <Markdown
-                  remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
-                  rehypePlugins={[...mathRehypePlugins]}
+                <div
+                  id={groupId + '-' + index}
+                  hidden={!expanded}
+                  className="mb-3 ml-5 space-y-3 border-l border-white/10 py-2 pl-5 text-sm leading-relaxed text-white/65 [overflow-wrap:anywhere]"
                 >
-                  {preprocessLaTeX(
-                    typeof displayReasoning === 'string'
-                      ? displayReasoning
-                      : JSON.stringify(displayReasoning, null, 2)
+                  {step.objective && (
+                    <p>
+                      <span className="block text-xs text-white/40">Sasaran</span>
+                      {step.objective}
+                    </p>
                   )}
-                </Markdown>
-              </div>
-            </details>
+                  {step.deliverable && (
+                    <p>
+                      <span className="block text-xs text-white/40">Hasil yang diharapkan</span>
+                      {step.deliverable}
+                    </p>
+                  )}
+                  {step.outputSummary && (
+                    <div>
+                      <span className="block text-xs text-white/40">Hasil</span>
+                      <Markdown remarkPlugins={[remarkGfm]}>{step.outputSummary}</Markdown>
+                    </div>
+                  )}
+                  {step.verificationProof && (
+                    <p className="whitespace-pre-wrap">
+                      <span className="block text-xs text-white/40">Bukti pemeriksaan</span>
+                      {step.verificationProof}
+                    </p>
+                  )}
+                  {step.error && <p className="text-error">{step.error}</p>}
+                  {step.artifactPath && (
+                    <button
+                      type="button"
+                      onClick={() => setArtifact(step.artifactPath)}
+                      className={
+                        'inline-flex max-w-full items-start gap-2 rounded text-primary hover:underline ' +
+                        focus
+                      }
+                    >
+                      <FileText size={16} className="mt-0.5 shrink-0" />
+                      {step.artifactPath.split(/[\\/]/).pop()}
+                    </button>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+        {(tools?.length > 0 || thought) && (
+          <details className="mt-4 border-t border-white/10 pt-3">
+            <summary className={'cursor-pointer rounded py-1 text-xs text-white/50 ' + focus}>
+              Detail proses
+            </summary>
+            <div className="mt-3 space-y-3 text-sm text-white/60 [overflow-wrap:anywhere]">
+              {thought && (
+                <div className="max-h-64 overflow-y-auto leading-relaxed">
+                  <Markdown remarkPlugins={[remarkGfm]}>
+                    {typeof thought === 'string' ? thought : JSON.stringify(thought)}
+                  </Markdown>
+                </div>
+              )}
+              <ProcessTimeline steps={tools || []} isActive={status === 'running'} />
+            </div>
+          </details>
+        )}
+        {snapshot?.planRevisions?.length > 0 && (
+          <details className="mt-3 text-xs text-white/45">
+            <summary className={'cursor-pointer rounded ' + focus}>Perubahan rencana</summary>
+            <ul className="mt-2 space-y-2">
+              {snapshot.planRevisions.map((r) => (
+                <li key={r.version}>{r.explanation}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {(snapshot?.error || error) && (
+          <p role={error ? 'alert' : undefined} className="mt-3 break-words text-xs text-error">
+            {error || snapshot.error}
+          </p>
+        )}
+      </div>
+      {((snapshot?.planVersion && !['completed', 'cancelled', 'stopped'].includes(status)) ||
+        hasFiles) && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/10 pt-3 text-xs">
+          {snapshot?.planVersion &&
+            ['running', 'waiting_minibots', 'waiting_user'].includes(status) && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => control('cancel')}
+                className={
+                  'rounded px-2 py-1.5 text-white/50 hover:text-white disabled:opacity-40 ' + focus
+                }
+              >
+                Hentikan
+              </button>
+            )}
+          {snapshot?.planVersion && ['paused', 'waiting_user'].includes(status) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => control('resume')}
+              className={'rounded px-2 py-1.5 text-primary disabled:opacity-40 ' + focus}
+            >
+              Lanjutkan
+            </button>
           )}
-          {isRunning && <DesktopPreviewWidget />}
-          <ProcessTimeline steps={toolsToDisplay} isActive={isRunning} />
+          {snapshot?.planVersion && status === 'failed' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => control('retry')}
+              className={'rounded px-2 py-1.5 text-primary disabled:opacity-40 ' + focus}
+            >
+              Coba lagi
+            </button>
+          )}
+          {hasFiles && folder && (
+            <button
+              type="button"
+              onClick={() =>
+                window.api
+                  ?.executeNativeTool('open-folder', { path: folder })
+                  .catch((e) => setError(e.message))
+              }
+              className={
+                'ml-auto inline-flex items-center gap-2 rounded px-2 py-1.5 text-white/50 hover:text-white ' +
+                focus
+              }
+            >
+              <FolderOpen size={14} />
+              Buka folder hasil
+            </button>
+          )}
         </div>
       )}
-      {/* Indikator Menunggu ketika masih berjalan tanpa tool/reasoning */}
-      {isRunning && (!toolsToDisplay || toolsToDisplay.length === 0) && !displayReasoning && (
-        <div className="flex items-center gap-2 text-xs text-primary font-medium py-1">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span className="text-white/80 animate-pulse">
-            Mark sedang menganalisis & mengeksekusi...
-          </span>
-        </div>
+      {!open && error && (
+        <p role="alert" className="mt-3 text-xs text-error">
+          {error}
+        </p>
       )}
-
-      {/* ── 4. FOOTER FOLDER ARTEFAK ── */}
-      {artifactRoot && (
-        <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[10px] font-mono text-white/40 select-none">
-          <span className="truncate max-w-[200px]">
-            Folder: {artifactRoot.split(/[\\/]/).pop()}
-          </span>
-          <button
-            type="button"
-            onClick={() => handleOpenFolder(artifactRoot)}
-            className="text-[10px] text-primary hover:underline flex items-center gap-1"
-          >
-            <FolderOpen className="w-3 h-3" />
-            <span>Buka Folder</span>
-          </button>
-        </div>
-      )}
-
-      {/* ── 5. MODAL PRATINJAU ARTEFAK DOKUMEN VIA FILEDIFFMODAL ── */}
-      {selectedArtifactPath && (
+      {artifact && (
         <FileDiffModal
-          isOpen={Boolean(selectedArtifactPath)}
-          onClose={() => setSelectedArtifactPath(null)}
+          isOpen
+          onClose={() => setArtifact(null)}
           tool="read-file"
-          query={{ path: selectedArtifactPath }}
+          query={{ path: artifact }}
         />
       )}
-    </div>
+    </section>
   )
 }
-
 export const PlanningBubble = DurableTaskBubble
 export default DurableTaskBubble

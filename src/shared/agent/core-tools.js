@@ -793,7 +793,12 @@ export const core_tools_schema = [
                 },
                 deliverable: {
                   type: 'string',
-                  description: 'Keluaran konkret atau berkas bukti hasil pengerjaan tahap'
+                  description: 'Hasil yang diharapkan; berkas hanya jika pekerjaan memerlukannya'
+                },
+                requiredArtifact: {
+                  type: 'boolean',
+                  description:
+                    'Benar jika tugas ini memang mewajibkan berkas hasil pada langkah ini.'
                 },
                 acceptanceCriteria: {
                   type: 'array',
@@ -815,57 +820,41 @@ export const core_tools_schema = [
     function: {
       name: 'mark_done_task',
       description:
-        'Menandai tahap aktif tugas alur kerja (Task Workflow) telah 100% selesai dan teruji secara final, menulis berkas deliverable artefak markdown (.md), dan memajukan alur kerja ke tahap berikutnya. DILARANG memanggil tool ini untuk menyimpan draf atau progress cicilan; panggil hanya TEPAT 1 KALI di akhir tahap.',
+        'Selesaikan hanya langkah aktif setelah hasil diperiksa. Ringkasan hasil dan bukti wajib. Berkas opsional; kegagalan berkas wajib menghalangi penyelesaian. Tidak menyelesaikan langkah lain.',
       parameters: {
         type: 'object',
         properties: {
           taskId: {
-            type: 'string',
-            description:
-              'ID unik alur kerja yang sedang berjalan (opsional jika alur kerja sedang aktif)'
+            type: 'string'
           },
           stepIndex: {
             type: 'integer',
-            description:
-              'Nomor indeks tahap yang diselesaikan (1-based, misal: 1 untuk tahap 1, 2 untuk tahap 2). Wajib diisi sesuai tahap yang dituntaskan.'
+            description: 'Nomor langkah aktif, mulai dari 1.'
           },
-          artifactContent: {
+          planVersion: {
+            type: 'integer',
+            description: 'Versi rencana dari snapshot terakhir.'
+          },
+          summary: {
             type: 'string',
-            description: 'Isi konten dokumen markdown (.md) deliverable hasil pengerjaan tahap ini'
+            description: 'Hasil langkah ini, bukan jawaban penutup seluruh tugas.'
           },
           verificationProof: {
             type: 'string',
             description:
-              'Bukti verifikasi dan hasil pengujian konkret bahwa deliverable tahap ini berfungsi dan memenuhi kriteria (misal: log hasil test terminal, verifikasi isi file, atau pemeriksaan sintaks). Wajib disertakan sebelum tahap ditandai selesai.'
+              'Bukti konkret sesuai pekerjaan: sumber/baris yang dibaca untuk audit, pemeriksaan relevan untuk coding, atau rujukan hasil langkah sebelumnya untuk kesimpulan. Nyatakan batas pemeriksaan.'
           },
-          summary: {
+          artifactContent: {
+            type: 'string',
+            description: 'Dokumen Markdown hanya jika diperlukan tugas.'
+          },
+          artifactPath: {
             type: 'string',
             description:
-              'Ringkasan apa yang telah diselesaikan pada tahap ini. Pada tahap terakhir alur kerja, parameter ini WAJIB memuat rangkuman menyeluruh dari awal hingga akhir proyek sebagai laporan penutup final untuk pengguna.'
+              'Path berkas hasil nyata yang sudah dibuat; server memeriksa keberadaannya.'
           }
         },
-        required: ['stepIndex', 'artifactContent', 'verificationProof'],
-        additionalProperties: false
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_task',
-      description:
-        'Membaca status alur kerja tugas (Task Workflow) dan isi artefak markdown dari tahap-tahap yang telah diselesaikan.',
-      parameters: {
-        type: 'object',
-        properties: {
-          taskId: { type: 'string', description: 'ID unik alur kerja yang ingin dibaca' },
-          stepIndex: {
-            type: 'integer',
-            description:
-              'Nomor indeks tahap yang ingin dibaca artefaknya (1-based, opsional. Jika kosong akan membaca seluruh ringkasan alur kerja)'
-          }
-        },
-        required: ['taskId'],
+        required: ['stepIndex', 'summary', 'verificationProof'],
         additionalProperties: false
       }
     }
@@ -924,6 +913,64 @@ core_tools_schema.push(
     }
   }
 )
+
+core_tools_schema.push({
+  type: 'function',
+  function: {
+    name: 'read_task',
+    description:
+      'Membaca status checklist, sasaran, hasil, bukti pemeriksaan, dan lokasi berkas. Gunakan read-file jika membutuhkan isi berkas hasil.',
+    parameters: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'ID workflow yang ingin dibaca.' },
+        stepIndex: {
+          type: 'integer',
+          description: 'Nomor langkah mulai 1. Jika kosong membaca seluruh ringkasan workflow.'
+        }
+      },
+      required: ['taskId'],
+      additionalProperties: false
+    }
+  }
+})
+
+core_tools_schema.push({
+  type: 'function',
+  function: {
+    name: 'update_task_plan',
+    description:
+      'Revisi langkah mendatang yang belum dimulai. Langkah aktif dan selesai dipertahankan; sampaikan alasan singkat kepada pengguna.',
+    parameters: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        planVersion: { type: 'integer' },
+        explanation: { type: 'string' },
+        steps: {
+          type: 'array',
+          description:
+            'Seluruh daftar langkah mendatang pengganti; jangan sertakan langkah aktif/selesai. ID lama hanya untuk langkah pending yang dipertahankan.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              objective: { type: 'string' },
+              deliverable: { type: 'string' },
+              requiredArtifact: { type: 'boolean' },
+              acceptanceCriteria: { type: 'array', items: { type: 'string' } }
+            },
+            required: ['title', 'objective'],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ['taskId', 'planVersion', 'explanation', 'steps'],
+      additionalProperties: false
+    }
+  }
+})
 
 for (const t of core_tools_schema) {
   if (t.function?.parameters?.properties) {

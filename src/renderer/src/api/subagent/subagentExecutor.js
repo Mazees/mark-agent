@@ -13,6 +13,10 @@ export async function runSubagentTurn(id, message, senderType = 'mark', options 
       throw new Error('Pilih penugasan penerima terlebih dahulu.')
     const job = options.jobId ? active.find((j) => j.id === options.jobId) : active[0]
     if (!job) throw new Error('Penugasan aktif yang dipilih tidak ditemukan.')
+    if (options.taskId && (job.taskId !== options.taskId || job.stepId !== options.stepId))
+      throw new Error(
+        'Penugasan aktif Minibot terkait pekerjaan lain. Pilih Minibot yang tersedia.'
+      )
     if (['interrupted', 'waiting_user'].includes(job.status)) {
       const data = await subagentRequest('/jobs/' + job.id + '/resume', {
         instruction: message,

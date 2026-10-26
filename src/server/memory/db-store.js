@@ -262,6 +262,14 @@ ensureTableColumns('subagent_messages', {
 })
 
 ensureTableColumns('agent_tasks', {
+  session_id: 'TEXT',
+  plan_version: 'INTEGER',
+  create_request_id: 'TEXT',
+  request_log: 'TEXT',
+  plan_revisions: 'TEXT',
+  final_answer: 'TEXT',
+  final_message_id: 'TEXT',
+  finalization_status: 'TEXT',
   current_step_index: 'INTEGER DEFAULT 0',
   active_step_id: 'TEXT',
   constraints: 'TEXT',
@@ -274,6 +282,8 @@ ensureTableColumns('agent_tasks', {
 })
 
 ensureTableColumns('agent_task_steps', {
+  verification_proof: 'TEXT',
+  required_artifact: 'INTEGER DEFAULT 0',
   objective: 'TEXT',
   deliverable: 'TEXT',
   acceptance_criteria: 'TEXT',
@@ -363,7 +373,14 @@ class SqliteTable {
       delete res.workspace_root
     }
 
+    const structuredFields =
+      this.tableName === 'agent_tasks'
+        ? ['constraints', 'request_log', 'requestLog', 'plan_revisions', 'planRevisions']
+        : this.tableName === 'agent_task_steps'
+          ? ['acceptance_criteria', 'acceptanceCriteria', 'validation']
+          : null
     for (const key of Object.keys(res)) {
+      if (structuredFields && !structuredFields.includes(key)) continue
       if (typeof res[key] === 'string') {
         const str = res[key].trim()
         if (
@@ -449,6 +466,52 @@ class SqliteTable {
       raw.workspaceRoot = raw.workspaceRoot || null
       delete raw.workspace
       delete raw.workspace_root
+    }
+
+    if (this.tableName === 'sessions' && raw.data != null) {
+      let messages = typeof raw.data === 'string' ? JSON.parse(raw.data) : raw.data
+      if (Array.isArray(messages)) {
+        for (const task of dbStore.agentTasks
+          .getAll()
+          .filter((t) => t.planVersion && String(t.sessionId) === cleanId)) {
+          const steps = dbStore.agentTaskSteps
+            .getAll()
+            .filter((step) => step.taskId === task.id)
+            .sort((a, b) => a.stepIndex - b.stepIndex)
+          messages = messages.map((m) =>
+            m.isPlanSteps && m.taskId === task.id
+              ? {
+                  ...m,
+                  taskStatus: task.status,
+                  plan: steps,
+                  currentStep: task.currentStepIndex,
+                  planVersion: task.planVersion,
+                  artifactRoot: task.artifactRoot
+                }
+              : m
+          )
+          if (
+            task.finalAnswer &&
+            task.finalMessageId &&
+            messages.some((m) => m.taskId === task.id)
+          ) {
+            messages = messages.filter(
+              (m, i, list) =>
+                m.id !== task.finalMessageId || list.findIndex((other) => other.id === m.id) === i
+            )
+            if (!messages.some((m) => m.id === task.finalMessageId))
+              messages.push({
+                id: task.finalMessageId,
+                taskId: task.id,
+                role: 'ai',
+                content: task.finalAnswer,
+                isTaskDone: true,
+                created_at: task.completedAt
+              })
+          }
+        }
+        raw.data = messages
+      }
     }
 
     const record = {

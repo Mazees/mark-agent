@@ -73,3 +73,13 @@ Panduan Minibots kini mengikuti runtime server: profil terpisah dari penugasan, 
 Keputusan teknis Minibot kini ditinjau Mark di server. Permintaan yang masih membutuhkan pengguna dikumpulkan pada Koordinasi Minibots di chat asal dan halaman utama. Persetujuan tindakan tetap terikat pada tool call; panduan menjelaskan batas peninjauan file workspace dan izin sensitif.
 
 Alur laporan asinkron dipulihkan: setelah delegasi Mark dapat melanjutkan percakapan. Laporan akhir memicu tanggapan Mark di sesi asal saat Mark siap; laporan yang datang ketika sibuk tetap mengantre. Dokumentasi membedakan runtime worker di server dan pemicu giliran Lead Agent melalui WebUI.
+
+## Checklist /task (26 Oktober 2026)
+
+/task membuat checklist yang mengendalikan eksekusi. Hanya langkah aktif dapat diselesaikan; ringkasan dan bukti pemeriksaan disimpan melalui transaksi SQLite. Audit tidak diwajibkan membuat dokumen atau menjalankan build. Berkas opsional, kecuali rencana mewajibkannya; server memeriksa berkas hasil sebelum checkpoint selesai.
+
+Revisi melalui update_task_plan mengganti daftar langkah mendatang, mempertahankan langkah aktif dan selesai, serta mencatat alasan dan versi. Semua mutasi memakai requestId dan sesi asal. Minibot terkait taskId/stepId; laporan tidak membangkitkan workflow yang dibatalkan. Restart menjeda pekerjaan, dan kontrol kartu melanjutkan checkpoint yang dipilih.
+
+Kartu menampilkan progres dari status tersimpan, detail langkah, Detail proses tertutup, dan tautan keluaran nyata. Setelah selesai kartu ringkas; pembukaan manual dipertahankan. Jawaban penutup dibuat terpisah dengan payload hasil dan bukti, tanpa riwayat browser yang tidak terkait. Jawaban dan ID pesan disimpan untuk mencegah duplikasi. Jika model gagal menyusun penutup, ringkasan faktual menggunakan hasil tersimpan tanpa mengulang tool.
+
+Source utama: src/server/services/task-workflow.js, tasks.routes.js, taskStore.js, executeWorkflowTool.js, taskFinalization.js, useMarkPlan.js, DurableTaskBubble.jsx.

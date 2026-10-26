@@ -109,6 +109,8 @@ export async function executeSubagentTool(tool, rawArgs, context) {
     if (target.parentSessionId && target.parentSessionId !== context.sessionId)
       throw new Error('Agent sedang berada dalam sesi koordinasi lain.')
     const result = await runSubagentTurn(target.id, args.message, 'mark', {
+      taskId: context.taskId,
+      stepId: context.stepId,
       parentSessionId: context.sessionId,
       parentSessionTitle: context.sessionTitle,
       workspaceRoot: context.workspaceRoot

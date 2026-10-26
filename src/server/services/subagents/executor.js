@@ -8,7 +8,8 @@ export const forbiddenTools = new Set([
   'wait_subagents',
   'send_message',
   'create_agent_task',
-  'mark_done_task'
+  'mark_done_task',
+  'update_task_plan'
 ])
 
 export function normalizeCompletion(result) {

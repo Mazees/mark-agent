@@ -1,10 +1,11 @@
-import { db } from './db'
+import { API_BASE } from './web-bridge'
 
 export const TASK_STATUSES = [
   'pending',
   'running',
   'paused',
   'waiting_user',
+  'waiting_minibots',
   'failed',
   'completed',
   'cancelled'
@@ -17,299 +18,113 @@ export const STEP_STATUSES = [
   'failed',
   'skipped'
 ]
-const now = () => Date.now()
-
-// Hash ringan dipakai untuk mendeteksi output identik tanpa menyimpan isi besar di Dexie.
+export const taskRequestId = () => globalThis.crypto.randomUUID()
+export async function taskRequest(route, body) {
+  const response = await fetch(
+    API_BASE + '/api/tasks' + route,
+    body === undefined
+      ? {}
+      : {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }
+  )
+  const result = await response.json()
+  if (!response.ok || !result.success)
+    throw new Error(result.error || 'Workflow tidak dapat diperbarui.')
+  return result.data
+}
+export const getAgentTaskWithSteps = (id) => taskRequest('/' + encodeURIComponent(id) + '/workflow')
+export const getAgentTask = getAgentTaskWithSteps
+export const createAgentTask = (input) =>
+  taskRequest('/workflow', { ...input, requestId: input.requestId || taskRequestId() })
+export const workflowMutation = (task, operation, input = {}) =>
+  taskRequest('/' + encodeURIComponent(task.id) + '/' + operation, {
+    sessionId: task.sessionId,
+    planVersion: task.planVersion,
+    ...input,
+    requestId: input.requestId || taskRequestId()
+  })
+export const reviseAgentTask = (task, input) => workflowMutation(task, 'plan', input)
+export const finalizeAgentTask = (task, answer) => workflowMutation(task, 'finalize', { answer })
+export async function listAgentTasks({ status, limit = 50 } = {}) {
+  const tasks = await taskRequest('')
+  return tasks
+    .filter((t) => !status || t.status === status)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, limit)
+}
+export async function transitionAgentTask(taskId, status, error = null) {
+  const task = await getAgentTask(taskId)
+  const action = {
+    cancelled: 'cancel',
+    paused: 'pause',
+    running: 'resume',
+    failed: 'fail',
+    waiting_user: 'help',
+    waiting_minibots: 'wait'
+  }[status]
+  if (!action) throw new Error('Status hanya dapat diubah melalui transisi workflow.')
+  return workflowMutation(task, 'control', { action, error })
+}
+export const resumeAgentTask = (id) => transitionAgentTask(id, 'running')
+export const retryAgentTaskStep = async (id, stepId) => {
+  const task = await getAgentTask(id)
+  if (task.activeStepId !== stepId) throw new Error('Hanya langkah aktif dapat dicoba kembali.')
+  return workflowMutation(task, 'control', { action: 'retry' })
+}
+export const cancelAgentTask = (id) => transitionAgentTask(id, 'cancelled', 'Dihentikan pengguna.')
+export const startAgentTask = resumeAgentTask
+export async function startAgentTaskStep(id, stepId) {
+  const task = await getAgentTask(id)
+  if (task.activeStepId !== stepId || task.status !== 'running')
+    throw new Error('Langkah ini tidak aktif.')
+  return task.steps.find((s) => s.id === stepId)
+}
+export async function checkpointAgentTaskStep(id, stepId, checkpoint = {}) {
+  const task = await getAgentTask(id)
+  const step = task.steps.find((s) => s.id === stepId)
+  return workflowMutation(task, 'complete', {
+    ...checkpoint,
+    stepIndex: step?.stepIndex + 1,
+    summary: checkpoint.outputSummary,
+    verificationProof: checkpoint.verificationProof
+  })
+}
+export async function updateAgentTask(id, changes = {}) {
+  if (changes.status) return transitionAgentTask(id, changes.status, changes.error)
+  throw new Error('Gunakan operasi workflow untuk mengubah tugas.')
+}
+export async function updateAgentTaskStep() {
+  throw new Error('Gunakan operasi penyelesaian atau revisi rencana.')
+}
+export async function pauseStaleAgentTasks() {
+  return 0
+} // Restart recovery belongs to the server.
+export async function deleteAgentTask(id) {
+  const response = await fetch(API_BASE + '/api/tasks/' + encodeURIComponent(id), {
+    method: 'DELETE'
+  })
+  if (!response.ok) throw new Error('Workflow tidak dapat dihapus.')
+}
 export function getAgentTaskContentHash(value = '') {
-  const text = String(value)
   let hash = 2166136261
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index)
+  for (const c of String(value)) {
+    hash ^= c.charCodeAt(0)
     hash = Math.imul(hash, 16777619)
   }
-  return (hash >>> 0).toString(16).padStart(8, '0')
+  return (hash >>> 0).toString(16)
 }
-
-function makeId(prefix) {
-  const uuid = globalThis.crypto?.randomUUID?.()
-  return prefix + '-' + (uuid || now() + '-' + Math.random().toString(36).slice(2, 10))
-}
-
-function assertTaskStatus(status) {
-  if (!TASK_STATUSES.includes(status)) throw new Error('Invalid task status: ' + status)
-}
-
-function assertStepStatus(status) {
-  if (!STEP_STATUSES.includes(status)) throw new Error('Invalid step status: ' + status)
-}
-
-// Validasi lokal menjaga checkpoint tetap deterministik tanpa menambah panggilan AI.
-export function validateAgentTaskStepOutput(step = {}, output = '') {
-  const text = typeof output === 'string' ? output.trim() : ''
-  const hasContent = text.length >= (step.acceptanceCriteria?.length ? 80 : 20)
+export function validateAgentTaskStepOutput(_step = {}, output = {}) {
+  void _step
+  const isComplete = !!(
+    typeof output === 'object' &&
+    output.summary?.trim() &&
+    output.verificationProof?.trim()
+  )
   return {
-    isComplete: hasContent,
-    score: hasContent ? 1 : 0,
-    missingRequirements: hasContent ? [] : ['Output step terlalu pendek atau kosong.'],
-    notes: hasContent
-      ? 'Validasi dasar konten berhasil.'
-      : 'Step perlu diulang karena deliverable belum memiliki isi yang cukup.'
+    isComplete,
+    missingRequirements: isComplete ? [] : ['Ringkasan hasil dan bukti pemeriksaan wajib diisi.']
   }
-}
-
-export async function createAgentTask(input = {}) {
-  // Create task dan semua step dalam satu transaksi supaya outline tidak setengah jadi.
-  const timestamp = now()
-  const taskId = input.id || makeId('task')
-  const steps = (input.steps || []).map((step, index) => ({
-    id:
-      step.id && step.id.startsWith(taskId + '-')
-        ? step.id
-        : taskId + '-' + (step.id || 'step-' + (index + 1)),
-    taskId,
-    stepIndex: index,
-    index,
-    title: step.title || 'Step ' + (index + 1),
-    objective: step.objective || '',
-    deliverable: step.deliverable || '',
-    acceptanceCriteria: step.acceptanceCriteria || [],
-    status: step.status || (index === 0 ? 'running' : 'pending'),
-    inputSummary: step.inputSummary || '',
-    outputSummary: step.outputSummary || '',
-    artifactPath: step.artifactPath || null,
-    validation: step.validation || null,
-    contentHash: step.contentHash || null,
-    attempts: 0,
-    startedAt: null,
-    completedAt: null,
-    updatedAt: timestamp,
-    error: null
-  }))
-  const task = {
-    id: taskId,
-    title: input.title || 'MARK Task',
-    objective: input.objective || '',
-    mode: input.mode || 'durable',
-    status: input.status || (steps.length ? 'running' : 'failed'),
-    currentStepIndex: input.currentStepIndex ?? 0,
-    activeStepId: input.activeStepId || steps[0]?.id || null,
-    constraints: input.constraints || {},
-    contextSummary: input.contextSummary || '',
-    artifactRoot: input.artifactRoot || null,
-    retryCount: input.retryCount || 0,
-    maxRetries: input.maxRetries ?? 2,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    completedAt: null,
-    error: steps.length ? null : 'Task harus memiliki minimal satu step'
-  }
-  await db.transaction('rw', db.agentTasks, db.agentTaskSteps, async () => {
-    await db.agentTasks.add(task)
-    if (steps.length) await db.agentTaskSteps.bulkAdd(steps)
-  })
-  return task
-}
-
-export async function getAgentTask(taskId) {
-  return db.agentTasks.get(taskId)
-}
-
-export async function getAgentTaskWithSteps(taskId) {
-  const task = await db.agentTasks.get(taskId)
-  if (!task) return null
-
-  let steps = []
-  try {
-    steps = await db.agentTaskSteps.where('taskId').equals(taskId).toArray()
-  } catch (err) {
-    void err
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/steps`).then((r) => r.json())
-      if (res?.data) steps = res.data
-    } catch (e) {
-      console.warn('[taskStore] Failed to fetch task steps:', e)
-    }
-  }
-
-  steps.sort((a, b) => {
-    const idxA = a.stepIndex ?? a.step_index ?? a.index ?? 0
-    const idxB = b.stepIndex ?? b.step_index ?? b.index ?? 0
-    return idxA - idxB
-  })
-
-  return { ...task, steps }
-}
-
-export async function listAgentTasks({ status, limit = 50 } = {}) {
-  const collection = status
-    ? db.agentTasks.where('status').equals(status).reverse()
-    : db.agentTasks.orderBy('updatedAt').reverse()
-  return collection.limit(limit).toArray()
-}
-
-export async function updateAgentTask(taskId, changes = {}) {
-  if (changes.status) assertTaskStatus(changes.status)
-  await db.agentTasks.update(taskId, { ...changes, updatedAt: now() })
-  return getAgentTask(taskId)
-}
-
-export async function updateAgentTaskStep(stepId, changes = {}) {
-  if (changes.status) assertStepStatus(changes.status)
-  await db.agentTaskSteps.update(stepId, { ...changes, updatedAt: now() })
-  return db.agentTaskSteps.get(stepId)
-}
-
-export async function startAgentTask(taskId) {
-  return updateAgentTask(taskId, { status: 'running', error: null })
-}
-
-// Resume hanya membuka kembali task paused dan mengaktifkan step pointer terakhir.
-export async function resumeAgentTask(taskId) {
-  const task = await getAgentTaskWithSteps(taskId)
-  if (!task) throw new Error('Task tidak ditemukan')
-  if (!['paused', 'pending'].includes(task.status)) {
-    throw new Error('Task tidak bisa di-resume dari status ' + task.status)
-  }
-  if (!task.activeStepId) return updateAgentTask(taskId, { status: 'completed', error: null })
-  return startAgentTaskStep(taskId, task.activeStepId)
-}
-
-// Retry manual mengulang step failed/needs_revision dengan batas yang sama seperti executor.
-export async function retryAgentTaskStep(taskId, stepId) {
-  const task = await getAgentTaskWithSteps(taskId)
-  const step = task?.steps?.find((item) => item.id === stepId)
-  if (!task || !step) throw new Error('Task step tidak ditemukan')
-  if (!['failed', 'needs_revision'].includes(step.status)) {
-    throw new Error('Step belum berada pada status retryable')
-  }
-  if ((step.attempts || 0) >= (task.maxRetries || 2) + 1) {
-    throw new Error('Batas retry step sudah tercapai')
-  }
-  return startAgentTaskStep(taskId, stepId)
-}
-
-export async function startAgentTaskStep(taskId, stepId) {
-  // Step aktif ditandai running saat executor mulai memproses step itu.
-  const timestamp = now()
-  return db.transaction('rw', db.agentTasks, db.agentTaskSteps, async () => {
-    const step = await db.agentTaskSteps.get(stepId)
-    const currentTaskId = step?.taskId || step?.task_id
-    if (!step || (currentTaskId && currentTaskId !== taskId))
-      throw new Error('Task step tidak ditemukan')
-    await db.agentTaskSteps.update(stepId, {
-      status: 'running',
-      attempts: (step.attempts || 0) + 1,
-      startedAt: step.startedAt || timestamp,
-      error: null,
-      updatedAt: timestamp
-    })
-    await db.agentTasks.update(taskId, {
-      status: 'running',
-      activeStepId: stepId,
-      currentStepIndex: step.stepIndex ?? step.step_index ?? step.index ?? 0,
-      updatedAt: timestamp
-    })
-    return db.agentTaskSteps.get(stepId)
-  })
-}
-
-export async function checkpointAgentTaskStep(taskId, stepId, checkpoint = {}) {
-  // Checkpoint ini menyimpan hasil step dan memajukan pointer ke step pending berikutnya.
-  const timestamp = now()
-  return db.transaction('rw', db.agentTasks, db.agentTaskSteps, async () => {
-    const step = await db.agentTaskSteps.get(stepId)
-    const task = await db.agentTasks.get(taskId)
-    const currentTaskId = step?.taskId || step?.task_id
-    if (!step || (currentTaskId && currentTaskId !== taskId) || !task)
-      throw new Error('Task checkpoint tidak ditemukan')
-    if (checkpoint.status) assertStepStatus(checkpoint.status)
-    await db.agentTaskSteps.update(stepId, {
-      ...checkpoint,
-      updatedAt: timestamp,
-      ...(checkpoint.status === 'completed'
-        ? { completedAt: checkpoint.completedAt || timestamp }
-        : {})
-    })
-    const taskChanges = { updatedAt: timestamp }
-    if (checkpoint.status === 'completed') {
-      let allSteps = []
-      try {
-        allSteps = await db.agentTaskSteps.where('taskId').equals(taskId).toArray()
-      } catch (err) {
-        void err
-      }
-      if (!allSteps || allSteps.length === 0) {
-        try {
-          const res = await fetch(`/api/tasks/${taskId}/steps`).then((r) => r.json())
-          if (res?.data) allSteps = res.data
-        } catch (e) {
-          void e
-        }
-      }
-      const next = (allSteps || [])
-        .filter((item) => item.id !== stepId && ['pending', 'needs_revision'].includes(item.status))
-        .sort(
-          (a, b) =>
-            (a.stepIndex ?? a.step_index ?? a.index ?? 0) -
-            (b.stepIndex ?? b.step_index ?? b.index ?? 0)
-        )[0]
-      taskChanges.activeStepId = next?.id || null
-      taskChanges.active_step_id = next?.id || null
-      taskChanges.currentStepIndex =
-        next?.stepIndex ??
-        next?.step_index ??
-        next?.index ??
-        step.stepIndex ??
-        step.step_index ??
-        step.index ??
-        0
-      if (!next) {
-        taskChanges.status = 'completed'
-        taskChanges.completedAt = timestamp
-        taskChanges.activeStepId = null
-        taskChanges.active_step_id = null
-      }
-    }
-    await db.agentTasks.update(taskId, taskChanges)
-    return getAgentTaskWithSteps(taskId)
-  })
-}
-
-export async function transitionAgentTask(taskId, status, error = null) {
-  assertTaskStatus(status)
-  return updateAgentTask(taskId, {
-    status,
-    error,
-    ...(status === 'completed' ? { completedAt: now() } : {})
-  })
-}
-
-export async function pauseStaleAgentTasks(reason = 'app_restart') {
-  // Saat app hidup lagi, task yang masih running diparkir dulu agar tidak dianggap selesai.
-  const active = await db.agentTasks.where('status').anyOf(['running', 'waiting_user']).toArray()
-  if (!active.length) return 0
-  const timestamp = now()
-  await db.transaction('rw', db.agentTasks, async () => {
-    await Promise.all(
-      active.map((task) =>
-        db.agentTasks.update(task.id, {
-          status: 'paused',
-          error: reason,
-          updatedAt: timestamp
-        })
-      )
-    )
-  })
-  return active.length
-}
-
-export async function cancelAgentTask(taskId) {
-  return transitionAgentTask(taskId, 'cancelled', 'cancelled_by_user')
-}
-
-export async function deleteAgentTask(taskId) {
-  await db.transaction('rw', db.agentTasks, db.agentTaskSteps, async () => {
-    await db.agentTaskSteps.where('taskId').equals(taskId).delete()
-    await db.agentTasks.delete(taskId)
-  })
 }

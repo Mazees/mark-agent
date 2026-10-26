@@ -364,12 +364,12 @@ export const guideArticles = [
     title: 'Task Workflow dan hasil bertahap',
     summary: 'Susun pekerjaan panjang menjadi tahapan dengan hasil dan bukti pemeriksaan.',
     keywords:
-      'agent workflows durable tasks task create_agent_task mark_done_task read_task checkpoint artifact /task',
+      'agent workflows durable tasks task create_agent_task mark_done_task read_task update_task_plan checkpoint artifact /task',
     sections: [
       {
         title: 'Tahapan yang bisa diperiksa',
         paragraphs: [
-          'Task Workflow menyimpan sasaran, tahapan, status, dan artifact pekerjaan. Mark menggunakan create_agent_task untuk membuat alur, mark_done_task untuk mencatat penyelesaian tahap, dan read_task saat perlu membaca hasil sebelumnya. Pekerjaan sederhana tidak harus memakai workflow.'
+          'Aktifkan dengan /task atau permintaan jelas membuat rencana kerja. Mark juga menggunakannya untuk tugas besar. Checklist dibuat terlebih dahulu, lalu Mark langsung mengerjakan poin aktif: kerjakan, periksa hasil, tandai selesai, lanjutkan. Server hanya menerima penyelesaian langkah aktif; langkah gagal atau menunggu tidak dihitung selesai. Pekerjaan sederhana dapat diselesaikan langsung.'
         ],
         example:
           '/task Susun laporan audit aplikasi ini: inventaris fitur, temukan masalah, lakukan perbaikan, lalu buat laporan pengujian.'
@@ -377,13 +377,13 @@ export const guideArticles = [
       {
         title: 'Memantau hasil di chat',
         paragraphs: [
-          'Kartu Workflow memperlihatkan tahap aktif dan tahap yang selesai. Tahap dengan hasil tersimpan menyediakan akses untuk meninjau berkas; folder hasil dapat dibuka dari kartu. Status selesai membutuhkan hasil serta bukti pemeriksaan yang diterima executor.'
+          'Kartu menampilkan judul, status, dan jumlah langkah yang benar-benar selesai. Klik langkah untuk membuka sasaran, hasil, bukti pemeriksaan, dan berkas jika tersedia. Aktivitas tool dan pemikiran berada di Detail proses yang tertutup secara default. Kartu terbuka selama berjalan dan otomatis ringkas setelah selesai; Anda dapat membukanya kembali. Audit baca-saja tidak wajib menghasilkan dokumen atau menjalankan build. Berkas dan folder hanya ditampilkan jika ada keluaran nyata.'
         ]
       },
       {
         title: 'Penyimpanan dan kelanjutan eksekusi',
         paragraphs: [
-          'Data tahapan dan checkpoint disimpan agar pekerjaan dapat dirujuk kembali. Menutup Mark, menghentikan proses, atau kehilangan layanan AI dapat memutus eksekusi. Buka sesi yang sama dan minta Mark memeriksa status serta hasil sebelum melanjutkan; jangan menganggap semua pekerjaan otomatis berjalan kembali setelah restart.'
+          'Checkpoint dan sesi asal disimpan. Setelah restart, pekerjaan yang terputus dijeda: pilih Lanjutkan pada kartu untuk memeriksa kondisi terakhir sebelum meneruskan. Coba lagi tersedia untuk kegagalan; Hentikan membatalkan workflow yang dipilih beserta penugasan Minibot terkait, tanpa mengganggu tugas lain. Mark dapat merevisi langkah yang belum dimulai dengan alasan singkat; langkah aktif dan selesai tetap dipertahankan. Minibot dapat bekerja di latar belakang sementara chat tetap digunakan; laporan melanjutkan workflow yang sesuai. Setelah semua poin selesai, satu jawaban penutup disusun dari hasil tersimpan, terpisah dari ringkasan checkpoint.'
         ]
       }
     ],

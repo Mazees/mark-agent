@@ -77,7 +77,7 @@ export const faqs = [
   },
   {
     q: 'Apakah workflow langsung berjalan kembali setelah Mark dimulai ulang?',
-    a: 'Tahapan dan hasil dapat tersimpan, tetapi eksekusi tetap memerlukan proses dan layanan yang aktif. Buka sesi asal, minta pemeriksaan status serta artifact, lalu lanjutkan berdasarkan hasil yang benar-benar tersedia.'
+    a: 'Workflow yang terputus dijeda dan checkpoint tetap tersimpan. Buka sesi asal dan pilih Lanjutkan pada kartunya. Mark memeriksa hasil aksi terakhir yang belum diketahui sebelum meneruskan. Laporan Minibot melanjutkan workflow terkait saat Mark siap; workflow yang sudah dihentikan tidak diaktifkan lagi oleh laporan terlambat.'
   },
   {
     q: 'Mengapa Google Workspace gagal meski statusnya terhubung?',
