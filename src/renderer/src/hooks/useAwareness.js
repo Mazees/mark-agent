@@ -130,7 +130,7 @@ export const useAwareness = ({
           )
         }
 
-        // Aksi mandiri melalui sub-agent.
+        // Aksi mandiri melalui Minibot.
         if (result.autonomous_prompt) {
           try {
             const isAfk = Boolean(telemetry?.isUserAFK)
@@ -142,7 +142,11 @@ export const useAwareness = ({
               parentSessionTitle: 'Awareness Engine'
             })
             if (subAgent?.id) {
-              runSubagentTurn(subAgent.id, result.autonomous_prompt, 'mark').catch((subErr) => {
+              runSubagentTurn(subAgent.id, result.autonomous_prompt, 'mark', {
+                newJob: true,
+                parentSessionId: 'awareness',
+                parentSessionTitle: 'Awareness Engine'
+              }).catch((subErr) => {
                 console.warn('[useAwareness] Subagent run error:', subErr)
               })
             }

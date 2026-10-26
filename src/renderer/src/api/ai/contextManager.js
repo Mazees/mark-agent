@@ -987,7 +987,7 @@ export function pruneInFlightMessages(messages = [], maxTokens = MAX_CONTEXT_TOK
 }
 
 /**
- * In-Loop Context Guard untuk ReAct loop (Lead Agent & Sub-Agent).
+ * In-Loop Context Guard untuk ReAct loop (Lead Agent & Minibot).
  * Dipanggil di setiap iterasi ReAct loop sebelum mengirim prompt ke LLM.
  *
  * Mengimplementasikan 4 Fase Hermes secara in-place:

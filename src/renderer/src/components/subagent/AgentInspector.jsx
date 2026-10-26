@@ -12,7 +12,7 @@ export default function AgentInspector({ subagent, onDeleteAgent }) {
   const failed = subagent.status === 'failed'
   return (
     <section
-      aria-label="Detail agen"
+      aria-label="Detail Minibot"
       className="min-h-0 flex-1 space-y-8 overflow-y-auto py-7 pb-10 custom-scrollbar"
     >
       <section aria-labelledby="agent-goal-title">
@@ -53,7 +53,7 @@ export default function AgentInspector({ subagent, onDeleteAgent }) {
           id="agent-information-title"
           className="border-b border-white/10 pb-3 text-sm font-medium text-white/90"
         >
-          Informasi agen
+          Informasi Minibot
         </h2>
         <dl className="grid grid-cols-1 gap-x-8 gap-y-2 py-5 text-sm sm:grid-cols-[auto_1fr] sm:gap-y-4">
           <dt className="text-white/40">Peran</dt>
@@ -76,7 +76,7 @@ export default function AgentInspector({ subagent, onDeleteAgent }) {
         </h2>
         {tools.includes('*') ? (
           <p className="text-sm leading-relaxed text-white/65">
-            Menggunakan tool yang tersedia untuk sub-agent di Mark, sesuai batasan eksekusinya.
+            Menggunakan tool yang tersedia untuk Minibot di Mark, sesuai batasan eksekusinya.
           </p>
         ) : tools.length ? (
           <ul className="flex flex-wrap gap-2">
@@ -90,10 +90,10 @@ export default function AgentInspector({ subagent, onDeleteAgent }) {
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-white/65">Mengikuti pengaturan tool bawaan sub-agent.</p>
+          <p className="text-sm text-white/65">Mengikuti pengaturan tool bawaan Minibot.</p>
         )}
         <p className="mt-3 text-xs leading-relaxed text-white/40">
-          Browser bawaan memakai sesi terpisah untuk setiap agen. Tool filesystem, aplikasi, dan
+          Browser bawaan memakai sesi terpisah untuk setiap Minibot. Tool filesystem, aplikasi, dan
           integrasi tetap berjalan melalui layanan Mark.
         </p>
       </section>
@@ -105,7 +105,7 @@ export default function AgentInspector({ subagent, onDeleteAgent }) {
       </details>
       <div className="flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center">
         <p className="text-xs leading-relaxed text-white/40">
-          Menghapus agen juga menghapus riwayatnya.
+          Menghapus Minibot juga menghapus riwayatnya.
           {subagent.status === 'running' ? ' Tugas yang sedang berjalan akan dihentikan.' : ''}
         </p>
         <button
@@ -114,14 +114,14 @@ export default function AgentInspector({ subagent, onDeleteAgent }) {
           className="btn btn-ghost shrink-0 rounded-full text-error"
         >
           <Trash2 size={15} />
-          Hapus agen
+          Hapus Minibot
         </button>
       </div>
       {deleting && (
         <AgentConfirmDialog
-          title="Hapus agen?"
-          description={`Agen “${subagent.name}” dan seluruh riwayatnya akan dihapus.${subagent.status === 'running' ? ' Tugas yang sedang berjalan akan dihentikan.' : ''}`}
-          action="Hapus agen"
+          title="Hapus Minibot?"
+          description={`Minibot “${subagent.name}” dan seluruh riwayatnya akan dihapus.${subagent.status === 'running' ? ' Tugas yang sedang berjalan akan dihentikan.' : ''}`}
+          action="Hapus Minibot"
           onConfirm={onDeleteAgent}
           onClose={() => setDeleting(false)}
         />

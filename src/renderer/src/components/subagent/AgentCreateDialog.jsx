@@ -27,7 +27,7 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
     event.preventDefault()
     if (busy || existing) return
     if (!name.trim() || !goal.trim()) {
-      setError('Isi nama dan tugas agen terlebih dahulu.')
+      setError('Isi nama dan tugas Minibot terlebih dahulu.')
       return
     }
     setError('')
@@ -39,7 +39,7 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
         goal: goal.trim()
       })
     } catch (failure) {
-      setError(failure.message || 'Agen belum dapat dibuat. Coba lagi.')
+      setError(failure.message || 'Minibot belum dapat dibuat. Coba lagi.')
     } finally {
       setBusy(false)
     }
@@ -62,10 +62,10 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
         <header className="flex items-start justify-between gap-4 px-6 pt-6">
           <div>
             <h2 id="create-agent-title" className="text-lg font-semibold text-white">
-              Buat sub-agent
+              Buat Minibot
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-white/50">
-              Berikan tugas khusus yang dapat dikerjakan agen secara mandiri.
+              Berikan tugas khusus yang dapat dikerjakan Minibot secara mandiri.
             </p>
           </div>
           <button
@@ -80,7 +80,7 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
         </header>
         <fieldset disabled={busy} className="space-y-5 px-6 py-6">
           <label className="block text-sm text-white/75">
-            Nama agen
+            Nama Minibot
             <input
               name="agent-name"
               autoFocus
@@ -99,7 +99,7 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
                 className="text-primary underline-offset-4 hover:underline"
                 onClick={() => onOpenAgent(existing.id)}
               >
-                Buka agen tersebut
+                Buka Minibot tersebut
               </button>{' '}
               untuk melihat aktivitas atau memberi tugas baru.
             </p>
@@ -127,7 +127,7 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
             />
           </label>
           <p className="text-xs leading-relaxed text-white/40">
-            Agen langsung mulai bekerja setelah dibuat. Progres dan hasilnya dapat dilihat pada tab
+            Minibot langsung mulai bekerja setelah dibuat. Progres dan hasilnya dapat dilihat pada tab
             Aktivitas.
           </p>
           {error && (
@@ -150,7 +150,7 @@ export default function AgentCreateDialog({ subagents, onCreate, onClose, onOpen
             disabled={busy || !!existing || !name.trim() || !goal.trim()}
             className="btn rounded-full border-white bg-white px-5 text-neutral-900 hover:bg-white/90"
           >
-            {busy ? 'Membuat agen...' : 'Buat dan mulai'}
+            {busy ? 'Membuat Minibot...' : 'Buat dan mulai'}
           </button>
         </footer>
       </form>

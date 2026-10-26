@@ -39,7 +39,7 @@ graph LR
 ### Keunggulan Desain Ini:
 
 1. **Pemisahan Tanggung Jawab Total**: Kode antarmuka di `src/renderer/` tidak memiliki dependensi langsung pada modul native Node.js (`fs`, `path`, `child_process`). Hal ini mencegah _memory leak_ renderer dan memudahkan portabilitas antarmuka ke browser standar.
-2. **Kinerja & Stabilitas Terisolasi**: Jika terjadi kegagalan atau crash pada tampilan antarmuka, proses backend server (termasuk SQLite, task daemon, dan sub-agents yang sedang berjalan) tetap beroperasi tanpa henti.
+2. **Kinerja & Stabilitas Terisolasi**: Jika terjadi kegagalan atau crash pada tampilan antarmuka, proses backend server (termasuk SQLite, task daemon, dan Minibots yang sedang berjalan) tetap beroperasi tanpa henti.
 3. **Efisiensi Memori**: Menghindari beban ganda runtime Chromium dan Node.js yang biasanya terjadi pada framework desktop terpadu.
 
 ---
@@ -74,7 +74,7 @@ src/server/routes/
 ├── config.routes.js             # Konfigurasi aplikasi (/api/config)
 ├── chat.routes.js               # Pengiriman pesan & unggah berkas temp (/api/chat/*)
 ├── memory.routes.js             # CRUD SQLite 12 tabel (/api/sessions, /api/memories, dll.)
-├── subagents.routes.js          # Manajemen sub-agent (/api/subagents/*)
+├── subagents.routes.js          # Manajemen Minibot (/api/subagents/*)
 ├── skills.routes.js             # Pemasangan & registrasi skill (/api/skills/*)
 ├── plugins.routes.js            # Eksekusi & pemuatan plugin (/api/plugins/*)
 ├── awareness.routes.js          # Buffer aktivitas jendela OS (/api/awareness/*)
@@ -109,9 +109,9 @@ Setiap paket pesan yang dikirimkan melalui WebSocket memiliki struktur format JS
 | Nama Event         | Arah             | Fungsi & Muatan Data                                                                          |
 | :----------------- | :--------------- | :-------------------------------------------------------------------------------------------- |
 | `ai:status`        | Server -> Client | Notifikasi pemikiran / progress AI saat ReAct loop berjalan (`data: "Menganalisis file..."`). |
-| `ai:abort`         | Client -> Server | Mengirim sinyal pembatalan seketika ke seluruh fetch AI dan sub-agents.                       |
+| `ai:abort`         | Client -> Server | Mengirim sinyal pembatalan seketika ke seluruh fetch AI dan Minibots.                       |
 | `browser:preview`  | Server -> Client | Siaran streaming gambar frame/layar Chromium Puppeteer format Base64 JPEG per sesi.           |
-| `subagent:report`  | Server -> Client | Pengiriman laporan hasil kerja sub-agent yang selesai di latar belakang ke sesi aktif.        |
+| `subagent:report`  | Server -> Client | Pengiriman laporan hasil kerja Minibot yang selesai di latar belakang ke sesi aktif.        |
 | `db:restored`      | Server -> Client | Memberitahukan bahwa database baru saja dipulihkan dari cadangan.                             |
 | `task:step:update` | Server -> Client | Pembaruan status langkah tugas pada Durable Agent Workflows.                                  |
 
@@ -159,4 +159,4 @@ export const WS_BASE = `${loc.protocol === 'https:' ? 'wss:' : 'ws:'}//${SERVER_
 
 - [Arsitektur Basis Data SQLite & Tabel Relasional](./state-and-database.md)
 - [Mesin Pencarian Vektor & Context Management](./search-and-memory.md)
-- [Pusat Orkestrasi ReAct Loop & Sub-Agents](../03-agent-engine/react-loop.md)
+- [Pusat Orkestrasi ReAct Loop & Minibots](../03-agent-engine/react-loop.md)

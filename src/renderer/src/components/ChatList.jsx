@@ -184,10 +184,10 @@ const ChatList = ({
 
     return (
       <div className="w-full my-4 group animate-[response-fade-in_0.2s_ease-out_forwards]">
-        {/* Header (Nama Sub-Agent & Badge) */}
+        {/* Header (Nama Minibot & Badge) */}
         <div className="flex items-center gap-2 mb-2 px-1 text-[11px] font-semibold opacity-75">
           <Bot className="w-4 h-4 text-white/70" />
-          <span className="text-white font-medium">{sender || 'Sub-Agent'}</span>
+          <span className="text-white font-medium">{sender || 'Minibot'}</span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
         </div>
 
@@ -197,7 +197,7 @@ const ChatList = ({
             <summary className="list-none flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none">
               <div className="flex items-center gap-2 min-w-0 pr-2">
                 <span className="text-xs font-semibold text-white/90 truncate">
-                  Lihat Rangkuman Laporan Dari Sub Agents
+                  Lihat Rangkuman Laporan Dari Minibots
                 </span>
               </div>
               <ChevronRight className="w-4 h-4 text-white/50 transition-transform duration-200 group-open/subreport:rotate-90 shrink-0" />

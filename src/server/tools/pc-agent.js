@@ -667,7 +667,7 @@ export async function executeComputerUse(params = {}) {
   const sessionId = p.sessionId || 'default'
   const agentName =
     p.agentName ||
-    (sessionId.startsWith('subagent_') ? `Sub-Agent ${sessionId.substring(9, 13)}` : 'Mark Utama')
+    (sessionId.startsWith('subagent_') ? `Minibot ${sessionId.substring(9, 13)}` : 'Mark Utama')
 
   // Pastikan daemon dan sesi overlay aktif
   startOverlay(agentName)

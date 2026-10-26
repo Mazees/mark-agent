@@ -1,4 +1,4 @@
-# Sub-Agents / Mission Control
+# Minibots
 
 Halaman `/subagents` menampilkan daftar agen, pencarian nama/peran/tugas, dan filter status. Tampilan Topologi memperlihatkan hubungan Mark dengan seluruh agen, termasuk agen gagal atau dihentikan. Pilih agen untuk membuka `/subagents/:agentId`.
 

@@ -2,6 +2,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import Database from 'better-sqlite3'
+import { createSubagentSchema } from '../services/subagents/storage.js'
 import { getCurrentVersion } from '../services/updater.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
@@ -9,7 +10,7 @@ if (!fs.existsSync(CONFIG_DIR)) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true })
 }
 
-const DB_PATH = path.join(CONFIG_DIR, 'mark.db')
+const DB_PATH = process.env.MARK_DB_PATH || path.join(CONFIG_DIR, 'mark.db')
 
 // Inisialisasi Database SQLite
 export const sqlite = new Database(DB_PATH)
@@ -100,7 +101,7 @@ sqlite.exec(`
     last_chat_index INTEGER DEFAULT 0
   );
 
-  -- 8. Sub-Agents
+  -- 8. Minibots
   CREATE TABLE IF NOT EXISTS subagents (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -116,7 +117,7 @@ sqlite.exec(`
     updated_at INTEGER
   );
 
-  -- 9. Sub-Agent Messages
+  -- 9. Minibot Messages
   CREATE TABLE IF NOT EXISTS subagent_messages (
     id TEXT PRIMARY KEY,
     subagent_id TEXT NOT NULL,
@@ -198,6 +199,8 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_subagent_messages_subagent ON subagent_messages(subagent_id);
   CREATE INDEX IF NOT EXISTS idx_agent_task_steps_task ON agent_task_steps(task_id);
 `)
+
+createSubagentSchema(sqlite)
 
 // Helper migrasi kolom otomatis jika tabel SQLite sudah ada dari versi sebelumnya
 function ensureTableColumns(tableName, requiredColumns) {
@@ -599,6 +602,10 @@ export function exportFullDatabase() {
     documents: dbStore.documents.getAll(),
     relationships: dbStore.relationships.getAll(),
     subagents: dbStore.subagents.getAll(),
+    subagentJobs: dbStore.subagentJobs.getAll(),
+    subagentRuns: dbStore.subagentRuns.getAll(),
+    subagentInbox: dbStore.subagentInbox.getAll(),
+    subagentReports: dbStore.subagentReports.getAll(),
     subagentMessages: dbStore.subagentMessages.getAll(),
     learnedSkills: dbStore.learnedSkills.getAll(),
     agentTasks: dbStore.agentTasks.getAll(),
@@ -637,6 +644,14 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
     chat_archives: dbStore.chatArchives,
     documents: dbStore.documents,
     relationships: dbStore.relationships,
+    subagentJobs: dbStore.subagentJobs,
+    subagent_jobs: dbStore.subagentJobs,
+    subagentRuns: dbStore.subagentRuns,
+    subagent_runs: dbStore.subagentRuns,
+    subagentInbox: dbStore.subagentInbox,
+    subagent_inbox: dbStore.subagentInbox,
+    subagentReports: dbStore.subagentReports,
+    subagent_reports: dbStore.subagentReports,
     subagents: dbStore.subagents,
     subagent_messages: dbStore.subagentMessages,
     subagentMessages: dbStore.subagentMessages,
@@ -651,6 +666,10 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
   }
 
   const restoreTransaction = sqlite.transaction(() => {
+    if (overwrite) {
+      for (const name of ['subagentJobs', 'subagentRuns', 'subagentInbox', 'subagentReports'])
+        dbStore[name].clear()
+    }
     for (const [key, items] of Object.entries(rawTables)) {
       const targetStore = tableMapping[key]
       if (targetStore && Array.isArray(items)) {
@@ -698,6 +717,10 @@ export function resetAllExceptConfig() {
     dbStore.chatTurns.clear()
     dbStore.chatArchives.clear()
     dbStore.documents.clear()
+    dbStore.subagentJobs.clear()
+    dbStore.subagentRuns.clear()
+    dbStore.subagentInbox.clear()
+    dbStore.subagentReports.clear()
     dbStore.subagents.clear()
     dbStore.subagentMessages.clear()
     dbStore.learnedSkills.clear()
@@ -748,6 +771,10 @@ export const dbStore = {
   chatArchives: new SqliteTable('chat_archives'),
   documents: new SqliteTable('documents'),
   relationships: new SqliteTable('relationships', 'user_id'),
+  subagentJobs: new SqliteTable('subagent_jobs'),
+  subagentRuns: new SqliteTable('subagent_runs'),
+  subagentInbox: new SqliteTable('subagent_inbox'),
+  subagentReports: new SqliteTable('subagent_reports'),
   subagents: new SqliteTable('subagents'),
   subagentMessages: new SqliteTable('subagent_messages'),
   learnedSkills: new SqliteTable('learned_skills'),

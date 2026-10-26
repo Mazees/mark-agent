@@ -22,7 +22,7 @@ export default function AgentSidebar({
       matches &&
       (filter === 'all' ||
         (filter === 'stopped'
-          ? ['failed', 'killed'].includes(agent.status)
+          ? ['failed', 'killed', 'cancelled', 'interrupted'].includes(agent.status)
           : agent.status === filter))
     )
   })
@@ -30,7 +30,7 @@ export default function AgentSidebar({
     <section aria-labelledby="subagent-list-title" className="mt-9">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
         <h2 id="subagent-list-title" className="text-sm font-medium text-white/75">
-          Agen terdaftar <span className="ml-1 text-white/40">{!loading && subagents.length}</span>
+          Minibots terdaftar <span className="ml-1 text-white/40">{!loading && subagents.length}</span>
         </h2>
         <label className="relative w-full sm:w-72">
           <Search
@@ -38,7 +38,7 @@ export default function AgentSidebar({
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
           />
           <input
-            aria-label="Cari agen"
+            aria-label="Cari Minibot"
             placeholder="Cari nama, peran, atau tugas..."
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
@@ -46,10 +46,14 @@ export default function AgentSidebar({
           />
         </label>
       </div>
-      <div aria-label="Filter status agen" className="mt-5 flex flex-wrap gap-2">
+      <div aria-label="Filter status Minibot" className="mt-5 flex flex-wrap gap-2">
         {Object.entries({
           all: 'Semua',
           running: 'Berjalan',
+          queued: 'Antrean',
+          waiting_peer: 'Menunggu kolega',
+          waiting_user: 'Perlu keputusan',
+          waiting_review: 'Ditinjau Mark',
           idle: 'Siap',
           completed: 'Selesai',
           stopped: 'Gagal / dihentikan'
@@ -74,7 +78,7 @@ export default function AgentSidebar({
         </div>
       ) : loading ? (
         <p role="status" className="py-12 text-sm text-white/45">
-          Memuat agen...
+          Memuat Minibot...
         </p>
       ) : visible.length ? (
         <div className="mt-5 grid grid-cols-1 gap-x-12 md:grid-cols-2">
@@ -118,8 +122,8 @@ export default function AgentSidebar({
       ) : (
         <div role="status" className="py-12 text-sm leading-relaxed text-white/50">
           {subagents.length
-            ? 'Tidak ada agen yang sesuai dengan pencarian atau filter ini.'
-            : 'Belum ada sub-agent. Pilih Buat agen untuk memberikan tugas pertama.'}
+            ? 'Tidak ada Minibot yang sesuai dengan pencarian atau filter ini.'
+            : 'Belum ada Minibot. Pilih Buat Minibot untuk memberikan tugas pertama.'}
         </div>
       )}
     </section>

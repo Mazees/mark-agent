@@ -95,4 +95,4 @@ Saat pertama kali membuka MARK, masuk ke menu **Configuration Studio** (ikon gir
 
 - [Desain Arsitektur Sistem & Jaringan](../02-architecture/system-design.md)
 - [Basis Data SQLite & Penyimpanan Terpusat](../02-architecture/state-and-database.md)
-- [Mesin ReAct Planning & Sub-Agents](../03-agent-engine/react-loop.md)
+- [Mesin ReAct Planning & Minibots](../03-agent-engine/react-loop.md)

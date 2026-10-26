@@ -27,7 +27,7 @@ export const guideArticles = [
           'Menjawab pertanyaan, membantu menulis, membaca dokumen, dan menelusuri web.',
           'Membaca serta mengubah berkas, menjalankan perintah, membantu coding, dan memeriksa Git.',
           'Mengoperasikan browser bawaan, tab Chrome pilihan, atau aplikasi Windows.',
-          'Membagi pekerjaan ke Sub-Agents dan menyusun pekerjaan bertahap dengan Task Workflow.',
+          'Membagi pekerjaan ke Minibots dan menyusun pekerjaan bertahap dengan Task Workflow.',
           'Mengelola memori dan skill, memakai suara atau kamera, memutar musik, serta terhubung ke Google Workspace dan Telegram.'
         ]
       },
@@ -227,7 +227,7 @@ export const guideArticles = [
       {
         title: 'Login dan sesi',
         paragraphs: [
-          'Browser bawaan memakai sesi browser yang terkait percakapan; sesi sub-agent dipisahkan dari agen lain. Login atau cookie di Chrome pribadi tidak otomatis tersedia di browser bawaan. Untuk memakai tab Chrome yang sudah login, gunakan Chrome Bridge.'
+          'Browser bawaan memakai sesi browser yang terkait percakapan; sesi Minibot dipisahkan dari agen lain. Login atau cookie di Chrome pribadi tidak otomatis tersedia di browser bawaan. Untuk memakai tab Chrome yang sudah login, gunakan Chrome Bridge.'
         ]
       },
       {
@@ -304,7 +304,7 @@ export const guideArticles = [
       {
         title: 'Pekerjaan terminal yang lama',
         paragraphs: [
-          'run-task menjalankan proses di latar belakang, misalnya server pengembangan atau build panjang. Mark dapat membaca output, melihat daftar proses, dan menghentikannya melalui grup task_terminal. Proses latar belakang berbeda dari Sub-Agents maupun daftar tahapan Task Workflow.'
+          'run-task menjalankan proses di latar belakang, misalnya server pengembangan atau build panjang. Mark dapat membaca output, melihat daftar proses, dan menghentikannya melalui grup task_terminal. Proses latar belakang berbeda dari Minibots maupun daftar tahapan Task Workflow.'
         ]
       }
     ],
@@ -313,38 +313,46 @@ export const guideArticles = [
   {
     id: 'subagents',
     category: 'work',
-    title: 'Sub-Agents dan Mission Control',
+    title: 'Minibots',
     summary: 'Bagi pekerjaan ke agen terpisah dan pantau aktivitasnya.',
     keywords:
-      'sub agent paralel multi agent spawn_subagent message_agent send_message list_subagents report_to_lead kill_subagent topologi',
+      'Minibots Minibot sub agent sub-agent subagent paralel multi agent spawn_subagent message_agent send_message list_subagents report_to_lead kill_subagent topologi',
     sections: [
       {
-        title: 'Kapan memakai sub-agent?',
+        title: 'Kapan memakai Minibot?',
         paragraphs: [
-          'Gunakan untuk pekerjaan yang dapat dibagi menjadi tugas mandiri, misalnya riset beberapa topik atau pemeriksaan modul berbeda. Mark dapat membuat sub-agent dan menggabungkan hasilnya. Setiap sub-agent memiliki tugas, riwayat, akses tool, dan sesi browser tersendiri.'
+          'Gunakan untuk pekerjaan yang dapat dibagi menjadi tugas mandiri, misalnya riset beberapa topik atau pemeriksaan modul berbeda. Mark dapat membuat Minibot dan menggabungkan hasilnya. Profil agent menyimpan identitas dan akses tool. Setiap penugasan memiliki konteks, riwayat, hasil, dan percobaan eksekusi sendiri. Pekerjaan dijalankan oleh server dengan sesi browser terpisah.'
         ],
         example:
-          'Bagi riset ini ke dua sub-agent: satu memeriksa dokumentasi API, satu memeriksa contoh implementasi. Gabungkan temuan beserta sumbernya.'
+          'Bagi riset ini ke dua Minibot: satu memeriksa dokumentasi API, satu memeriksa contoh implementasi. Gabungkan temuan beserta sumbernya.'
       },
       {
-        title: 'Menggunakan Mission Control',
+        title: 'Menggunakan Minibots',
         steps: [
-          'Buka Sub-Agents untuk mencari agen menurut nama, peran, atau tugas dan memfilter statusnya.',
+          'Buka Minibots untuk mencari agen menurut nama, peran, atau tugas dan memfilter statusnya.',
           'Gunakan Buat agen untuk menentukan nama, peran opsional, dan tugas. Pekerjaan dimulai setelah agen dibuat.',
           'Pilih agen untuk membaca Aktivitas atau Detail agen. Tampilan Topologi memperlihatkan hubungan agen dengan Mark.'
         ],
-        links: [{ label: 'Buka Sub-Agents', to: '/subagents' }]
+        links: [{ label: 'Buka Minibots', to: '/subagents' }]
       },
       {
         title: 'Instruksi lanjutan dan penghentian',
         paragraphs: [
-          'Instruksi baru dapat diberikan setelah eksekusi sebelumnya selesai. Hentikan membatalkan pekerjaan aktif; meninggalkan halaman tidak menghentikan agen. Membersihkan riwayat dan menghapus agen memerlukan konfirmasi. Agen yang dihapus juga dihentikan.'
+          'Pesan dapat dikirim ketika agent masih bekerja dan dibaca pada batas langkah yang aman. Pilih Jadikan penugasan baru untuk memasukkan pekerjaan dengan konteks terpisah ke antrean. Semua agent dapat bekerja bersamaan tanpa batas jumlah dari scheduler. Satu agent tetap mengerjakan satu pekerjaan pada satu waktu. Pilih penugasan untuk meninjau aktivitas dan hasilnya. Hentikan membatalkan pekerjaan yang dipilih. Riwayat dipertahankan sebagai checkpoint; menghapus agent melalui konfirmasi juga menghapus penugasannya.'
+        ]
+      },
+      {
+        title: 'Menunggu, melanjutkan, dan pelaporan',
+        paragraphs: [
+          'Mark meninjau kendala teknis Minibot dan memberikan arahan secara otomatis. Pilihan pribadi, informasi Anda, atau persetujuan khusus dikumpulkan di bagian Koordinasi Minibots pada chat asal. Anda dapat menyetujui, menolak, atau mengirim arahan tanpa membuka agent satu per satu. Penulisan berkas biasa di workspace dapat ditinjau Mark; izin sensitif tetap mengikuti persetujuan Anda atau izin tersimpan.',
+          'Agent dapat menunggu kolega, persetujuan tindakan, atau informasi pengguna. Mark menetapkan penugasan; agent bertukar informasi melalui kotak masuk tanpa menjalankan executor kolega. Pertanyaan yang tidak terjawab dalam 120 detik meminta peninjauan. Status Terputus memerlukan pemeriksaan langkah terakhir sebelum Lanjutkan pekerjaan. Status Gagal atau Dibatalkan menyediakan Coba lagi; aksi yang hasilnya tidak diketahui tidak otomatis diulang.',
+          'Menutup atau memuat ulang UI tidak menghentikan pekerjaan selama server Mark hidup. Jika server berhenti, pekerjaan belum selesai menunggu peninjauan saat startup berikutnya. Laporan tersimpan di sesi asal sebelum notifikasi dikirim, termasuk ketika chat sedang sibuk atau UI tertutup. Laporan akhir baru otomatis ditinjau dan ditanggapi Mark saat Mark tidak sibuk, tanpa meminta pengguna mengetik perintah lanjutan. Jika UI tertutup, laporan menunggu sampai UI tersambung kembali. wait_subagents hanya opsional jika Anda khusus meminta menunggu.'
         ]
       },
       {
         title: 'Batas pemisahan agen',
         paragraphs: [
-          'Sesi browser agen dipisahkan, tetapi berkas workspace dapat tetap dipakai bersama. Berikan bagian pekerjaan atau berkas yang berbeda agar perubahan tidak saling menimpa. Sub-agent tidak diberi orkestrasi rekursif untuk membuat sub-agent baru.'
+          'Sesi browser agen dipisahkan, tetapi berkas workspace dapat tetap dipakai bersama. Berikan bagian pekerjaan atau berkas yang berbeda agar perubahan tidak saling menimpa. Minibot tidak diberi orkestrasi rekursif untuk membuat Minibot baru.'
         ]
       }
     ],
@@ -438,7 +446,7 @@ export const guideArticles = [
       {
         title: 'Apa yang diperhatikan Awareness?',
         paragraphs: [
-          'Awareness memeriksa aktivitas aplikasi atau judul jendela dan telemetri seperti keadaan idle, baterai, serta beban perangkat yang tersedia. Hasilnya dapat berupa pengamatan singkat, sapaan, atau inisiatif melalui sub-agent. Setelah kembali dari kondisi AFK, Mark dapat mengevaluasi apakah sapaan diperlukan. Awareness berbeda dari permintaan screenshot atau penggunaan webcam.'
+          'Awareness memeriksa aktivitas aplikasi atau judul jendela dan telemetri seperti keadaan idle, baterai, serta beban perangkat yang tersedia. Hasilnya dapat berupa pengamatan singkat, sapaan, atau inisiatif melalui Minibot. Setelah kembali dari kondisi AFK, Mark dapat mengevaluasi apakah sapaan diperlukan. Awareness berbeda dari permintaan screenshot atau penggunaan webcam.'
         ]
       },
       {

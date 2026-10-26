@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { subagentRuntime } from '../src/server/services/subagents/service.js'
 
 /**
  * MARK Launcher Entrypoint
@@ -40,7 +41,7 @@ process.on('SIGINT', async () => {
   console.log('\n\x1b[33m● Mematikan MARK Core Engine...\x1b[0m')
   closeUI()
   stopDaemon()
-  await chromeBridge.stop()
+  await Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop()])
   if (server) {
     server.close(() => {
       process.exit(0)

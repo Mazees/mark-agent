@@ -1,13 +1,13 @@
+import { onSubagentChange } from '../../api/subagent/client.js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PropTypes from 'prop-types'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ArrowDown, Bot, ChevronRight, Loader2, Send, Terminal, Trash2 } from 'lucide-react'
+import { ArrowDown, Bot, ChevronRight, Loader2, Send, Terminal } from 'lucide-react'
 import { subagentStore } from '../../api/subagent/subagentStore'
 import { runSubagentTurn } from '../../api/subagent/subagentExecutor'
 import { agentDate } from './agentPresentation'
 import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
-import AgentConfirmDialog from './AgentConfirmDialog'
 
 function textContent(raw) {
   if (raw == null) return ''
@@ -29,7 +29,7 @@ function textContent(raw) {
     return raw
       .map((item) =>
         item.type === 'image_url'
-          ? `![Gambar dari agen](${item.image_url?.url || ''})`
+          ? `![Gambar dari Minibot](${item.image_url?.url || ''})`
           : textContent(item.text || item.content)
       )
       .join('\n\n')
@@ -67,6 +67,18 @@ function ToolActivity({ call, result, running }) {
     (resultValue?.success === false ||
       resultValue?.error ||
       (typeof result === 'string' && /^\[?error/i.test(result)))
+  const resultText = typeof resultValue === 'string' ? resultValue : ''
+  const outcome = /^\[DILEWATI\]|^Dilewati/i.test(resultText)
+    ? 'Dilewati'
+    : /^\[DITOLAK\]/i.test(resultText)
+      ? 'Ditolak'
+      : /^\[TERPUTUS\]/i.test(resultText)
+        ? 'Terputus'
+        : /^\[DITUNDA\]/i.test(resultText)
+          ? 'Ditunda'
+          : failed
+            ? 'Gagal'
+            : 'Selesai'
   return (
     <details className="group py-1">
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-xs text-white/55 hover:text-white/80 focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
@@ -74,7 +86,7 @@ function ToolActivity({ call, result, running }) {
         <Terminal size={14} className="shrink-0" />
         <span className="min-w-0 break-all">{name}</span>
         <span className={`ml-auto shrink-0 ${failed ? 'text-error' : ''}`}>
-          {received ? (failed ? 'Gagal' : 'Selesai') : running ? 'Berjalan' : 'Tanpa hasil'}
+          {received ? outcome : running ? 'Berjalan' : 'Tanpa hasil'}
         </span>
         {!received && running && (
           <Loader2 size={13} className="shrink-0 motion-safe:animate-spin text-primary" />
@@ -143,7 +155,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-  const [confirmClear, setConfirmClear] = useState(false)
+  const [newJob, setNewJob] = useState(false)
   const [away, setAway] = useState(false)
   const scroll = useRef(null)
   const bottom = useRef(null)
@@ -155,7 +167,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
   const load = useCallback(async () => {
     const current = ++revision.current
     try {
-      const result = await subagentStore.getMessages(subagent.id)
+      const result = await subagentStore.getMessages(subagent.id, subagent.jobId)
       if (!mounted.current || current !== revision.current) return
       const next = Array.isArray(result) ? result : []
       const serialized = JSON.stringify(next)
@@ -170,17 +182,19 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
     } finally {
       if (mounted.current && current === revision.current) setLoading(false)
     }
-  }, [subagent.id])
+  }, [subagent.id, subagent.jobId])
   useEffect(() => {
     mounted.current = true
     let timer
     let cancelled = false
     const poll = async () => {
       await load()
-      if (!cancelled) timer = setTimeout(poll, 1200)
+      if (!cancelled) timer = setTimeout(poll, 10000)
     }
     poll()
+    const unsubscribe = onSubagentChange(load)
     return () => {
+      unsubscribe()
       mounted.current = false
       cancelled = true
       clearTimeout(timer)
@@ -191,14 +205,19 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
   }, [messages, running])
   const send = async (event) => {
     event.preventDefault()
-    if (!draft.trim() || sending || running) return
+    if (!draft.trim() || sending) return
     const value = draft.trim()
     setSending(true)
     setError('')
     setDraft('')
     follow.current = true
     try {
-      const result = await runSubagentTurn(subagent.id, value, 'user')
+      const result = await runSubagentTurn(subagent.id, value, 'user', {
+        newJob: newJob || ['completed', 'failed', 'cancelled'].includes(subagent.status),
+        jobId: subagent.jobId,
+        parentSessionId: subagent.parentSessionId,
+        parentSessionTitle: subagent.parentSessionTitle
+      })
       if (result?.success === false)
         throw new Error(result.error || 'Instruksi belum dapat diselesaikan.')
     } catch (failure) {
@@ -214,13 +233,6 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
       }
     }
   }
-  const clear = async () => {
-    await subagentStore.clearMessages(subagent.id)
-    previous.current = ''
-    setMessages([])
-    setConfirmClear(false)
-    await load()
-  }
   const items = activityItems(messages)
   const latestMessage = items.findLastIndex((item) => item.type === 'message')
   const activeTool = running
@@ -229,7 +241,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
       )
     : -1
   return (
-    <section aria-label="Aktivitas agen" className="relative flex min-h-0 flex-1 flex-col">
+    <section aria-label="Aktivitas Minibot" className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroll}
         onScroll={() => {
@@ -239,17 +251,6 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
         }}
         className="min-h-0 flex-1 overflow-y-auto py-6 custom-scrollbar"
       >
-        {messages.length > 0 && !running && (
-          <div className="mb-5 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setConfirmClear(true)}
-              className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs text-white/40 hover:text-white/75 focus-visible:outline-2 focus-visible:outline-primary"
-            >
-              <Trash2 size={14} /> Bersihkan riwayat
-            </button>
-          </div>
-        )}
         {loading ? (
           <p role="status" className="py-10 text-sm text-white/45">
             Memuat aktivitas...
@@ -258,7 +259,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
           <div className="py-12 text-center">
             <Bot size={28} className="mx-auto mb-4 text-white/25" />
             <p className="text-sm text-white/65">
-              {running ? 'Agen sedang menyiapkan tugas...' : 'Belum ada aktivitas.'}
+              {running ? 'Minibot sedang menyiapkan tugas...' : 'Belum ada aktivitas.'}
             </p>
             <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-white/40">
               {running
@@ -285,7 +286,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
               if (!thought && typeof message.content === 'object')
                 thought = message.content?.thought
               const content = textContent(message.content).replace(
-                /^\[DARI (?:LEAD AGENT \(MARK\)|CREATOR \/ USER|SESAMA SUB-AGENT)\]:\s*/,
+                /^\[DARI (?:LEAD AGENT \(MARK\)|CREATOR \/ USER|SESAMA (?:SUB-AGENT|MINIBOT))\]:\s*/,
                 ''
               )
               if (!content && !thought) return null
@@ -314,7 +315,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
                         ? message.sender === 'mark'
                           ? 'Mark'
                           : message.sender === 'peer'
-                            ? 'Agen lain'
+                            ? 'Minibot lain'
                             : 'Anda'
                         : subagent.name}
                     </span>
@@ -340,7 +341,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
         {running && items.length > 0 && (
           <p role="status" className="mt-6 flex items-center gap-2 text-xs text-white/50">
             <Loader2 size={14} className="text-primary motion-safe:animate-spin" />
-            Agen sedang bekerja...
+            Minibot sedang bekerja...
           </p>
         )}
         {error && (
@@ -368,6 +369,10 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
         </button>
       )}
       <form onSubmit={send} className="shrink-0 border-t border-white/10 pb-5 pt-4">
+        <label className="mb-3 flex items-center gap-2 text-xs text-white/50">
+          <input type="checkbox" checked={newJob} onChange={(e) => setNewJob(e.target.checked)} />{' '}
+          Jadikan penugasan baru dengan konteks terpisah
+        </label>
         <label htmlFor="agent-instruction" className="sr-only">
           Instruksi untuk {subagent.name}
         </label>
@@ -393,7 +398,7 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
           <button
             type="submit"
             aria-label="Kirim instruksi"
-            disabled={!draft.trim() || sending || running}
+            disabled={!draft.trim() || sending}
             className="btn btn-circle btn-sm border-white bg-white text-neutral-900 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/25"
           >
             {sending ? (
@@ -404,20 +409,11 @@ export default function AgentChatFeed({ subagent, onRefresh }) {
           </button>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-white/35">
-          {running || sending
-            ? 'Instruksi berikutnya dapat dikirim setelah agen selesai bekerja.'
+          {running
+            ? 'Pesan dibaca pada batas langkah yang aman. Tugas baru masuk antrean.'
             : 'Enter untuk mengirim · Shift+Enter untuk baris baru'}
         </p>
       </form>
-      {confirmClear && (
-        <AgentConfirmDialog
-          title="Bersihkan riwayat?"
-          description="Seluruh pesan dan langkah kerja pada agen ini akan dihapus. Tugas dan hasil akhirnya tetap tersimpan."
-          action="Bersihkan riwayat"
-          onConfirm={clear}
-          onClose={() => setConfirmClear(false)}
-        />
-      )}
     </section>
   )
 }

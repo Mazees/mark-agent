@@ -1,3 +1,4 @@
+import SubagentDecisionInbox from '../components/subagent/SubagentDecisionInbox.jsx'
 import { useEffect, useLayoutEffect, useState, useRef, memo } from 'react'
 import { useChat } from '../contexts/ChatContext'
 import Avatar from '../components/core/Avatar'
@@ -397,6 +398,7 @@ const MarkHome = ({ isHome = true }) => {
                 <p>Belum ada respons aktif.</p>
               </div>
             )}
+            <SubagentDecisionInbox sessionId="1" />
           </div>
 
           {/* Now Playing Widget */}

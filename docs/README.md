@@ -11,9 +11,9 @@ Selamat datang di repositori dokumentasi arsitektur dan teknis sistem **MARK**. 
 MARK adalah sistem operasi kecerdasan buatan otonom (_Autonomous AI OS Companion_) yang berfokus pada privasi (_privacy-first_), bekerja secara lokal di lingkungan desktop pengguna (Windows 10/11), dan dirancang dengan arsitektur terdesentralisasi:
 
 - **Decoupled Architecture**: Memisahkan backend server berbasis Node.js ESM murni dengan antarmuka pengguna WebUI modern (React 19 / Vite 7 / Tailwind CSS 4) yang berjalan di Microsoft Edge App Mode.
-- **Centralized Local Storage**: Riwayat percakapan, memori relasional, task, dan sub-agent disimpan secara terpusat di engine SQLite lokal (`~/.config/mark-agent/mark.db`) dengan mode WAL (_Write-Ahead Logging_). Data dokumen Knowledge lama tetap disimpan untuk kompatibilitas backup, tetapi tidak lagi digunakan sebagai konteks AI.
+- **Centralized Local Storage**: Riwayat percakapan, memori relasional, task, dan Minibot disimpan secara terpusat di engine SQLite lokal (`~/.config/mark-agent/mark.db`) dengan mode WAL (_Write-Ahead Logging_). Data dokumen Knowledge lama tetap disimpan untuk kompatibilitas backup, tetapi tidak lagi digunakan sebagai konteks AI.
 - **Hybrid AI Engine**: Mendukung inferensi lokal tanpa batas via LM Studio / Ollama, cloud API berkecepatan tinggi (Groq, Cerebras, Custom OpenAI-compatible), dan Google Gemini Web RPC engine bawaan.
-- **Autonomous Multi-Agent System**: Memiliki mesin Sub-Agent independen (_Mission Control_) dengan isolasi sesi browser Puppeteer konkuren, tanpa batasan giliran (_no maxTurns limit_).
+- **Autonomous Multi-Agent System**: Memiliki mesin Minibot independen (_Mission Control_) dengan isolasi sesi browser Puppeteer konkuren, tanpa batasan giliran (_no maxTurns limit_).
 - **Deep Desktop & Web Automation**: Otomasi Win32 via daemon C# persisten untuk kontrol mouse/keyboard tingkat rendah, serta otomasi browser dengan parsing DOM interaktif (maksimal 80 elemen).
 - **Zero Cloud Leak Audio Pipeline**: Transkripsi suara latensi rendah berbasis Web Speech API lokal, Background Wake Word watchdog ("Hey Mark" / "Mark"), dan sintesis suara Edge-TTS streaming.
 
@@ -34,7 +34,7 @@ graph TD
 
     Server --> PCDaemon["Win32 C# Daemon (pc-daemon.ps1)"]
     Server --> Puppeteer["Puppeteer Multi-Session Browser Agent"]
-    Server --> SubAgents["Autonomous Sub-Agent Engine"]
+    Server --> SubAgents["Autonomous Minibot Engine"]
     Server --> Telegram["Telegram Bot (Telegraf)"]
 ```
 
@@ -65,7 +65,7 @@ Bedah arsitektur internal backend, komunikasi IPC, dan penyimpanan basis data.
 Jantung pemikiran AI, ReAct loop, dan orkestrasi multi-agent.
 
 - [ReAct Loop & Intent Routing](./03-agent-engine/react-loop.md): Siklus Thought-Action-Observation, SSE streaming, dan pemilihan tool dinamis.
-- [Autonomous Multi-Agent Sub-Agents](./03-agent-engine/multi-agent-subagents.md): Mission Control, spawn/wait subagents, dan isolasi sesi browser.
+- [Autonomous Multi-Agent Minibots](./03-agent-engine/multi-agent-subagents.md): Minibots, spawn/wait subagents, dan isolasi sesi browser.
 - [Durable Agent Tasks](./03-agent-engine/durable-tasks.md): Alur kerja multi-langkah persisten dengan verifikasi artifact dan auto-retry.
 - [Persona, Relational Growth, & Awareness](./03-agent-engine/persona-and-relationships.md): Evaluasi 4D trait (warmth, trust, sarcasm, energy) dan awareness engine.
 

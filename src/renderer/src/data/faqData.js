@@ -17,7 +17,7 @@ export const faqs = [
   },
   {
     q: 'Bagaimana menghentikan pekerjaan Mark?',
-    a: 'Gunakan tombol penghentian pada area pesan atau Hentikan pada detail sub-agent. Untuk otomasi desktop, tersedia penghentian darurat Ctrl+Shift+S. Aksi yang sudah dilakukan tidak otomatis diurungkan.'
+    a: 'Gunakan tombol penghentian pada area pesan atau Hentikan pada detail Minibot. Untuk otomasi desktop, tersedia penghentian darurat Ctrl+Shift+S. Aksi yang sudah dilakukan tidak otomatis diurungkan.'
   },
   {
     q: 'Mengapa mikrofon atau kata panggilan tidak bekerja?',
@@ -72,8 +72,8 @@ export const faqs = [
     a: 'Plugin menambah tool eksekusi. User Skills berisi instruksi Markdown yang dipilih melalui slash command. Skill dipelajari adalah prosedur yang disimpan Mark dan ditinjau melalui Neural Core.'
   },
   {
-    q: 'Mengapa sub-agent gagal atau berhenti?',
-    a: 'Buka Detail agen untuk melihat status, akses tool, dan pesan kendalanya. Periksa provider dan instruksi tugas. Setelah eksekusi sebelumnya berakhir, Anda dapat mengirim instruksi baru. Status Gagal berbeda dari Dihentikan.'
+    q: 'Mengapa Minibot gagal atau berhenti?',
+    a: 'Mark meninjau kendala teknis secara otomatis. Permintaan yang memerlukan Anda muncul di Koordinasi Minibots pada chat asal, sehingga tidak perlu membuka agent satu per satu. Detail agen tetap menyediakan status, akses tool, dan riwayat kendala. Periksa provider dan instruksi tugas. Pilih penugasan untuk memeriksa kendalanya. Lanjutkan pekerjaan setelah meninjau checkpoint; gunakan Coba lagi untuk pekerjaan gagal atau dibatalkan. Anda dapat mengirim pesan saat agent aktif atau membuat penugasan baru yang masuk antrean. Menutup UI tidak menghentikan server; mematikan server membuat pekerjaan menunggu peninjauan.'
   },
   {
     q: 'Apakah workflow langsung berjalan kembali setelah Mark dimulai ulang?',

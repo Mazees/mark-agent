@@ -9,7 +9,7 @@ export default function SubagentTopologyMap({ subagents, onOpenAgent, loading, e
         Topologi tim
       </h2>
       <p className="mt-2 text-xs leading-relaxed text-white/45">
-        Mark mendelegasikan tugas kepada agen berikut. Pilih agen untuk melihat aktivitas dan
+        Mark mendelegasikan tugas kepada Minibot berikut. Pilih Minibot untuk melihat aktivitas dan
         memberikan instruksi.
       </p>
       {error ? (
@@ -31,7 +31,7 @@ export default function SubagentTopologyMap({ subagents, onOpenAgent, loading, e
             </span>
             <div>
               <h3 className="text-sm font-semibold text-white">Mark</h3>
-              <p className="mt-1 text-xs text-white/40">Agen utama</p>
+              <p className="mt-1 text-xs text-white/40">Koordinator</p>
             </div>
           </div>
           {subagents.length ? (
@@ -66,7 +66,7 @@ export default function SubagentTopologyMap({ subagents, onOpenAgent, loading, e
             </ul>
           ) : (
             <p role="status" className="mt-8 text-sm text-white/45">
-              Belum ada sub-agent dalam tim. Buat agen untuk memulai.
+              Belum ada Minibot dalam tim. Buat Minibot untuk memulai.
             </p>
           )}
         </div>

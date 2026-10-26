@@ -140,7 +140,7 @@ const FloatingMenu = () => {
               >
                 <div className="flex items-center gap-3">
                   <FaRobot className="text-primary text-sm" />
-                  <span>Sub-Agents</span>
+                  <span>Minibots</span>
                 </div>
                 <FaChevronRight
                   size={10}

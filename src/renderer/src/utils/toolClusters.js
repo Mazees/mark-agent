@@ -144,7 +144,7 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
   })
 
   const additionalCoreGroups = [
-    { key: 'subagents', name: 'Sub-Agents', tools: subagentTools, size: 8 },
+    { key: 'subagents', name: 'Minibots', tools: subagentTools, size: 8 },
     { key: 'file_system', name: 'File System', tools: fileTools, size: 7 },
     { key: 'memory_rag', name: 'Memory RAG', tools: memoryTools, size: 6.5 },
     { key: 'core_system', name: 'Core System', tools: coreControlTools, size: 6.5 }

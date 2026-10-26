@@ -14,6 +14,7 @@ import { startTelegramBot } from '../main/telegram/telegram-service.js'
 import { getActiveConfig } from './config-manager.js'
 import { registerRoutes } from './routes/index.js'
 import { setServerPort } from './tools/overlay-manager.js'
+import { subagentRuntime } from './services/subagents/service.js'
 import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -76,6 +77,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 // Inisialisasi WebSocket Hub, Orama, Plugins & Awareness Tracking
 wsHub.init(server)
+subagentRuntime.start()
 initOramaIndices().catch(() => {})
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
 chromeBridge.events.on('status', (status) =>
@@ -83,12 +85,13 @@ chromeBridge.events.on('status', (status) =>
 )
 chromeBridge.start().catch((error) => console.warn('[Chrome Bridge]', error.message))
 server.on('close', () => {
+  subagentRuntime.stop().catch(() => {})
   chromeBridge.stop().catch(() => {})
 })
 const shutdownServices = () => {
   const timeout = setTimeout(() => process.exit(0), 1500)
   timeout.unref()
-  chromeBridge.stop().finally(() => {
+  Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop()]).finally(() => {
     for (const client of wsHub.clients) client.terminate()
     server.close(() => {
       clearTimeout(timeout)
@@ -105,10 +108,10 @@ startOsActivityTracking(10000)
 
 // Daftarkan listener event abort dari WebSocket
 wsHub.on('ai:abort', async () => {
-  chromeBridge.cancelRequests()
+  // Minibot requests have independent cancellation scopes.
   try {
-    const { abortAllFetches } = await import('./services/ai-bridge.js')
-    abortAllFetches()
+    const { abortLeadFetches } = await import('./services/ai/ai-utils.js')
+    abortLeadFetches()
   } catch (_) {}
   return { success: true }
 })
@@ -116,7 +119,7 @@ wsHub.on('ai:abort', async () => {
 // Relaying WebSocket events dari client (misal: subagent:report) ke semua client
 wsHub.on('ws:broadcast', async (payload) => {
   const { event, data } = payload || {}
-  if (event && !event.startsWith('browser-panel:')) {
+  if (event && !event.startsWith('browser-panel:') && !event.startsWith('subagent:')) {
     wsHub.broadcast(event, data)
   }
   return { success: true }

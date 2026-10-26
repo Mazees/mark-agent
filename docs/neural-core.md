@@ -1,6 +1,6 @@
 # Neural Core
 
-Halaman `/neural-core` menggunakan lebar konten, tipografi, pencarian, dan tombol yang konsisten dengan Plugin Hub serta Sub-Agents.
+Halaman `/neural-core` menggunakan lebar konten, tipografi, pencarian, dan tombol yang konsisten dengan Plugin Hub serta Minibots.
 
 - **Ringkasan** menjadi pintu masuk ke karakter, memori, dan skill yang dipelajari. Jumlah data berasal dari penyimpanan Mark.
 - **Karakter** menampilkan lima sifat, tingkatnya, jumlah evaluasi, serta alasan perubahan terakhir. Nilai nol tetap ditampilkan sebagai 0%, bukan diganti nilai netral.

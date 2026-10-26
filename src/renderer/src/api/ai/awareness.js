@@ -96,7 +96,7 @@ export const getAwarenessResponse = async (
 
   const toolsetSection =
     dynamicToolsetLines.length > 0
-      ? `\n# DAFTAR TOOLSET OTONOM YANG TERSEDIA (UNTUK AUTONOMOUS_PROMPT):\nKamu dapat merumuskan instruksi tindakan mandiri pada "autonomous_prompt" yang akan dieksekusi oleh Sub-Agent otonom menggunakan toolset berikut:\n${dynamicToolsetLines.join('\n')}\n`
+      ? `\n# DAFTAR TOOLSET OTONOM YANG TERSEDIA (UNTUK AUTONOMOUS_PROMPT):\nKamu dapat merumuskan instruksi tindakan mandiri pada "autonomous_prompt" yang akan dieksekusi oleh Minibot otonom menggunakan toolset berikut:\n${dynamicToolsetLines.join('\n')}\n`
       : ''
 
   let telemetrySection = ''
@@ -140,7 +140,7 @@ ${toolsetSection}
 # PILIHAN RESPON (action_type):
 - 'ambient': Menggumam dalam batin (muncul di Thought Ticker) dan mengatur mood orb, TANPA menyela obrolan user. Cocok saat user sedang fokus tinggi atau kamu hanya ingin menyimak.
 - 'vocal': Mengirim pesan chat santai/sapaan. Cocok saat user santai, baru kembali dari AFK, atau ada hal penting (misal baterai kritis <20%).
-- 'autonomous_task': Menjalankan inisiatif tindakan mandiri via Sub-Agent latar belakang (misal: mengirim kabar Telegram via tg-send, memeriksa error compiler via analyze-screen, membaca docs via browser-fetch, atau menyetel musik).
+- 'autonomous_task': Menjalankan inisiatif tindakan mandiri via Minibot latar belakang (misal: mengirim kabar Telegram via tg-send, memeriksa error compiler via analyze-screen, membaca docs via browser-fetch, atau menyetel musik).
 
 # PRINSIP KESOPANAN & KEAMANAN:
 - Jika user sedang fokus (ngoding serius, meeting), jangan menyela dengan suara atau balon chat berlebih; gunakan action_type 'ambient'.

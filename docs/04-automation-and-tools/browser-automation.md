@@ -4,11 +4,11 @@ Browser memakai Puppeteer headless dan tampil di panel kanan Chat Studio. Penggu
 
 Tautan yang meminta tab baru (`target="_blank"` atau nama jendela lain), form dengan target baru, dan `window.open(url)` diarahkan ke halaman Browser yang sama. Tautan dan form tetap memakai navigasi bawaan situs agar handler klik serta metode POST tetap berjalan. Popup yang lolos pengalihan ditutup dan URL HTTP/HTTPS-nya dibuka pada halaman sesi asal melalui antrean browser. Alur yang membutuhkan objek jendela terpisah, misalnya `window.open('')` lalu mengubah isi popup atau komunikasi antarpopup, belum didukung.
 
-Permintaan umum seperti "buka di browser", "buka website", atau "buka localhost" memakai `advanced_browser` → `browser-navigate`. Tool membuka panel otomatis; Mark tidak perlu meluncurkan Chrome/Edge desktop atau memakai computer-use untuk menampilkannya. Browser desktop, tab Chrome pengguna, atau plugin seperti chrome-use dipilih jika diminta secara eksplisit. Jika browser bawaan gagal, Mark melaporkan kendala tanpa otomatis beralih ke browser desktop. Sub-agent memakai browser Puppeteer sesinya sendiri, bukan browser percakapan utama.
+Permintaan umum seperti "buka di browser", "buka website", atau "buka localhost" memakai `advanced_browser` → `browser-navigate`. Tool membuka panel otomatis; Mark tidak perlu meluncurkan Chrome/Edge desktop atau memakai computer-use untuk menampilkannya. Browser desktop, tab Chrome pengguna, atau plugin seperti chrome-use dipilih jika diminta secara eksplisit. Jika browser bawaan gagal, Mark melaporkan kendala tanpa otomatis beralih ke browser desktop. Minibot memakai browser Puppeteer sesinya sendiri, bukan browser percakapan utama.
 
 ## Sesi dan profil
 
-- Main Thread memakai profil browser main; percakapan lain memakai workspace-<id>. Browser sub-agent tetap terisolasi.
+- Main Thread memakai profil browser main; percakapan lain memakai workspace-<id>. Browser Minibot tetap terisolasi.
 - Profil Chromium berada di `~/.config/mark-agent/browser-sessions/<sessionId>`.
 - Cookie login dipertahankan ketika browser ditutup dan dibuka kembali. Startup serta penanganan halaman blokir tidak menghapus cookie profil.
 - Permintaan launch bersamaan pada profil yang sama menunggu satu promise. Kegagalan launch dikembalikan sebagai error; percobaan berikutnya dapat mencoba lagi.

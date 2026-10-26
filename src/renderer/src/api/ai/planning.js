@@ -285,16 +285,17 @@ Kamu memiliki sistem manajemen workflow tugas multi-langkah persisten bernama 'T
    - Panggil 'read_task' HANYA JIKA kamu benar-benar membutuhkan data spesifik dari deliverable tahap sebelumnya. Jangan memanggil 'read_task' secara otomatis di setiap langkah jika datanya sudah kamu ketahui.
 5. KELUASAN TUGAS SEDERHANA: Jika permintaan user sederhana (tanya jawab, perbaikan sebaris kode, navigasi web singkat, atau satu aksi langsung), JANGAN gunakan 'create_agent_task'. Selesaikan langsung secara instan.
 
-# KAPABILITAS MULTI-AGENT (DELEGASI KE SUB-AGENT OTONOM):
-Kamu bertindak sebagai LEAD AGENT / ORCHESTRATOR yang memimpin tim Sub-Agent spesialis:
-- PRINSIP UTAMA (PROAKTIF & ASINKRON): SEBISA MUNGKIN GUNAKAN SUB-AGENT untuk mempermudah dan mempercepat penyelesaian tugas! Jika tugas melibatkan riset web multi-sumber, perbandingan beberapa topik/produk, analisis mendalam, atau tugas terisolasi, delegasikan ke Sub-Agent spesialis via 'spawn_subagent'.
-- Sub-agent bekerja otonom di background secara non-blocking dan otomatis melapor kembali saat selesai via push notification ('report_to_lead'). Kamu tidak perlu menunggu diam atau mem-blocking respons user.
+# MINIBOTS (DELEGASI TUGAS):
+Gunakan sebutan Minibots untuk fitur/tim dan Minibot untuk satu pekerja saat menjelaskan kepada pengguna. Identifier internal dan nama tool tetap mengikuti schema: spawn_subagent, message_agent, send_message, list_subagents, wait_subagents, dan kill_subagent. Jangan membuat nama tool baru berdasarkan nama Minibots.
+Kamu bertindak sebagai LEAD AGENT / ORCHESTRATOR yang memimpin tim Minibot spesialis:
+- PRINSIP UTAMA (PROAKTIF & ASINKRON): SEBISA MUNGKIN GUNAKAN MINIBOT untuk mempermudah dan mempercepat penyelesaian tugas! Jika tugas melibatkan riset web multi-sumber, perbandingan beberapa topik/produk, analisis mendalam, atau tugas terisolasi, delegasikan ke Minibot spesialis via 'spawn_subagent'.
+- Minibot bekerja otonom di background secara non-blocking dan otomatis melapor kembali saat selesai via push notification ('report_to_lead'). Kamu tidak perlu menunggu diam atau mem-blocking respons user.
 - Gunakan 'message_agent' / 'send_message' untuk komunikasi langsung dan 'list_subagents' untuk memantau status.
 
-# ATURAN INTERAKTIVITAS & EVALUASI KRITIS SUB-AGENT:
-1. PROTOKOL KRITIK & CROSS-EXAMINATION: Saat sub-agent selesai memberikan laporan pertama kali, evaluasi secara mendalam. Kirim feedback kritis jika masih kurang data konkret.
+# ATURAN INTERAKTIVITAS & EVALUASI KRITIS MINIBOT:
+1. PROTOKOL KRITIK & CROSS-EXAMINATION: Saat Minibot selesai memberikan laporan pertama kali, evaluasi secara mendalam. Kirim feedback kritis jika masih kurang data konkret.
 2. RELAY HASIL & PIPELINE ANTAR-AGEN: Salurkan temuan dari satu agen ke agen lain yang membutuhkan.
-3. ANTI-DUPLIKASI: Jika sub-agent gagal, bimbing agen lama daripada membuat agen baru.
+3. ANTI-DUPLIKASI: Jika Minibot gagal, bimbing agen lama daripada membuat agen baru.
 
 # ATURAN BERKAS / GAMBAR TERLAMPIR & PENGIRIMAN KE TELEGRAM:
 1. PENGIRIMAN KE TELEGRAM:
@@ -398,7 +399,7 @@ ${workspaceRagSection}
 ${getCurrentTimeInfo()}
 ${contextMsg ? `${contextMsg}\n` : ''}
 ${options.activeTaskObjective ? `\n[PENGINGAT TUGAS AKTIF]: Kamu saat ini sedang di tengah eksekusi tugas: "${options.activeTaskObjective}".\nSIKLUS PENGERJAAN WAJIB:\n1. Buat kode/deliverable tahap ini di direktori workspace.\n2. LAKUKAN PENGUJIAN & VERIFIKASI (tes sintaks, run script, atau cek isi file).\n3. DILARANG memanggil 'mark_done_task' sebelum pengujian berhasil!\n4. Panggil 'mark_done_task' TEPAT 1 KALI dengan parameter 'stepIndex', 'artifactContent', dan 'verificationProof'.\n5. DILARANG memanggil 'mark_done_task' berulang kali untuk tahap yang sama ('mark_done_task' bukan alat cicilan draf).\n6. Setelah tahap selesai, DILARANG memanggil 'read_task' untuk membaca artefak sendiri; langsung kerjakan tahap berikutnya!` : ''}
-${options.existingSubagents ? `\n# DAFTAR SUB-AGENT AKTIF DI DATABASE\n${options.existingSubagents}\n` : ''}
+${options.existingSubagents ? `\n# DAFTAR MINIBOT AKTIF DI DATABASE\n${options.existingSubagents}\n` : ''}
 
 ${memories.length > 0 ? `\n# MEMORY USER (Daftar Ingatan Saat Ini)\n${memories.map((m) => `- [${m.type.toUpperCase()}] (ID:${m.id}) ${m.memory}`).join('\n')}\n` : ''}
 ${archives.length > 0 ? `\n# ARSIP OBROLAN LAMA (Ingatan Jangka Panjang)\n${archives.map((a) => `[${getCurrentTimeInfo(new Date(a.timestamp))}] ${a.summary}`).join('\n')}\n` : ''}

@@ -67,7 +67,7 @@ C:\Users\<Username>\.config\mark-agent\
 ├── ui-profile\                 # Profil Edge App Mode (riwayat, cookie, dan izin mikrofon)
 ├── ui-profile-dev\             # Profil Edge khusus saat mode pengujian (--dev)
 ├── temp-uploads\               # Penyimpanan sementara berkas lampiran chat/gambar
-└── browser-sessions\           # Profil sesi browser Puppeteer terisolasi per sub-agent
+└── browser-sessions\           # Profil sesi browser Puppeteer terisolasi per Minibot
 ```
 
 ---

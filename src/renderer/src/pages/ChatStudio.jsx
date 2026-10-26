@@ -1,3 +1,4 @@
+import SubagentDecisionInbox from '../components/subagent/SubagentDecisionInbox.jsx'
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
@@ -937,6 +938,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                   )
                 })()
               )}
+              <SubagentDecisionInbox sessionId={String(activeSessionId)} />
               {/* Spacer besar dan anti-shrink agar pesan paling bawah (termasuk tombol ApprovalBubble) tidak pernah terpotong saat scroll mentok */}
               <div
                 ref={messagesEndRef}

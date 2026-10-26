@@ -49,7 +49,9 @@ export const getActiveToolsSchema = async (intentQuery = '', loadedGroups = []) 
       .filter(Boolean)
   )
 
-  const activeSchemas = [...core_tools_schema]
+  const activeSchemas = core_tools_schema.filter(
+    (tool) => tool.function.name !== 'request_lead_input'
+  )
   const seenToolNames = new Set(core_tools_schema.map((t) => t.function?.name))
   const loadedSet = loadedGroups instanceof Set ? loadedGroups : new Set(loadedGroups || [])
 

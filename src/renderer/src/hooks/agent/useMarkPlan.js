@@ -814,7 +814,7 @@ export const useMarkPlan = ({
           resultString = `Gagal memproses kamera: ${e.message}`
         }
       }
-      // 11. Built-in Native Tools & Sub-Agent Orchestration
+      // 11. Built-in Native Tools & Minibot Orchestration
       else if (checkTools(tool)) {
         const approvalCheck = await window.api.checkToolApproval(tool, rawArgs)
 
@@ -1521,7 +1521,7 @@ export const useMarkPlan = ({
         contextMsgStr += `[AKTIVITAS PC USER (terakhir)]\n${activitySummary}\n`
       }
 
-      // Ambil daftar sub-agent yang tersedia
+      // Ambil daftar Minibot yang tersedia
       let existingSubagents = ''
       if (allSubs && allSubs.length > 0) {
         existingSubagents = allSubs

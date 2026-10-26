@@ -11,8 +11,8 @@ Guidebook diperbarui berdasarkan source UI, route server, registry tool, add-on,
 - Chrome Bridge, ekstensi Mark Agent Bridge, engine `chrome-use`, tab terkunci, pemasangan Load unpacked, dan pengelolaan plugin add-on dijelaskan terpisah.
 - Penjelasan pemuatan tool mengikuti `read-tools` dan grup aktif. Badges “Bebas”/“Perlu Izin” berdasarkan daftar nama statis dihapus karena mode otomatis serta izin tersimpan memengaruhi dialog.
 - Workspace dijelaskan sebagai konteks folder sesi, bukan sandbox. Main Thread, pengelompokan, pengeditan sesi, dan penghapusan sesi dijelaskan sesuai implementasi.
-- Sub-Agents, Task Workflow, proses terminal, artifact, pengelolaan memori, cadangan, pemulihan, reset, plugin, dan skill dilengkapi. Tidak menjanjikan workflow otomatis berjalan kembali setelah restart.
-- Tool lama seperti `wait_subagents`, slash command `/plan`, jalur WhatsApp, serta fitur journaling yang sudah dihapus tidak dipromosikan sebagai fitur aktif.
+- Minibots, Task Workflow, proses terminal, artifact, pengelolaan memori, cadangan, pemulihan, reset, plugin, dan skill dilengkapi. Tidak menjanjikan workflow otomatis berjalan kembali setelah restart.
+- Slash command `/plan`, jalur WhatsApp, serta fitur journaling yang sudah dihapus tidak dipromosikan sebagai fitur aktif.
 - Kemampuan PDF/DOCX, dukungan vision per provider, kebutuhan jaringan, login, dan CAPTCHA disampaikan dengan batasnya. Tidak menganggap semua format Office atau integrasi selalu berhasil.
 - Tidak ada petunjuk tombol uji plugin atau ekspor skill yang tidak tersedia pada UI sekarang.
 
@@ -29,7 +29,7 @@ Guidebook diperbarui berdasarkan source UI, route server, registry tool, add-on,
 | Kendali desktop          | Kendali komputer Windows            | `pc-agent.js`, `overlay-manager.js`, `overlay-hud.html`, schema `computer_use`                               |
 | Berkas dan coding        | Berkas, dokumen, coding, dan Git    | `file-tools.js`, `git-tools.js`, `system-tools.js`, `FileDiffModal.jsx`                                      |
 | Proses latar belakang    | Berkas dan terminal                 | `task-tools.js`, `task-daemon.js`, `tasks.routes.js`                                                         |
-| Multi-agent              | Sub-Agents dan Mission Control      | `Subagents.jsx`, komponen `subagent/`, `subagentStore.js`, `subagentExecutor.js`                             |
+| Multi-agent              | Minibots      | `Subagents.jsx`, komponen `subagent/`, `subagentStore.js`, `subagentExecutor.js`                             |
 | Workflow dan checkpoint  | Task Workflow dan hasil bertahap    | `taskStore.js`, `taskExecutor.js`, `executeAgentTool.js`, `DurableTaskBubble.jsx`, skill `/task`             |
 | Memori dan karakter      | Memori dan Neural Core              | `NeuralCore.jsx`, komponen `neural-core/`, `db.js`, `db-store.js`, `orama-store.js`                          |
 | Awareness dan avatar     | Avatar, karakter, dan Awareness     | `useAwareness.js`, `awareness.js`, `useRelationalGrowth.js`, `MarkHome.jsx`                                  |
@@ -65,3 +65,11 @@ npm run lint
 ```
 
 Pengujian memakai browser terisolasi dan API daftar tool simulasi. Tidak membaca konfigurasi atau kredensial pengguna, tidak menjalankan model AI, dan tidak mencoba tindakan Google, Telegram, desktop, atau plugin. Set `GUIDEBOOK_SCREENSHOT_DIR` untuk menyimpan screenshot. Pemeriksaan fitur pada audit ini adalah pemeriksaan source; pengujian semua integrasi langsung dengan akun pengguna berada di luar perubahan dokumentasi ini.
+
+## Pembaruan flow Minibots (25 Oktober 2026)
+
+Panduan Minibots kini mengikuti runtime server: profil terpisah dari penugasan, antrean FIFO, kotak masuk peer, status menunggu, pemulihan manual, dan laporan persisten. `wait_subagents` kembali tersedia sebagai pemeriksaan status terbatas; `request_lead_input` khusus worker meminta keputusan. Lihat [subagents.md](subagents.md) untuk arsitektur, API, migrasi, dan pengujian. Jumlah tool tetap dihitung dari registry; angka audit lama di atas bukan konstanta produk.
+
+Keputusan teknis Minibot kini ditinjau Mark di server. Permintaan yang masih membutuhkan pengguna dikumpulkan pada Koordinasi Minibots di chat asal dan halaman utama. Persetujuan tindakan tetap terikat pada tool call; panduan menjelaskan batas peninjauan file workspace dan izin sensitif.
+
+Alur laporan asinkron dipulihkan: setelah delegasi Mark dapat melanjutkan percakapan. Laporan akhir memicu tanggapan Mark di sesi asal saat Mark siap; laporan yang datang ketika sibuk tetap mengantre. Dokumentasi membedakan runtime worker di server dan pemicu giliran Lead Agent melalui WebUI.

@@ -68,7 +68,7 @@ export const ResetAiModal = ({ onClose, onConfirm, isResetting = false }) => {
           <ul className="list-disc space-y-2 pl-5">
             <li>Memori dan riwayat percakapan.</li>
             <li>Dokumen tersimpan dan skill yang dipelajari.</li>
-            <li>Perkembangan karakter serta riwayat tugas dan sub-agent.</li>
+            <li>Perkembangan karakter serta riwayat tugas dan Minibot.</li>
           </ul>
           <p>
             Konfigurasi sistem, termasuk provider AI dan API key, tetap disimpan. Unduh cadangan

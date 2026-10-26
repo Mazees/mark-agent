@@ -41,7 +41,8 @@ aiRouter.post('/ai/fetch', async (req, res) => {
             : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
-      type: 'fetch', sessionId,
+      type: 'fetch',
+      sessionId,
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
@@ -92,7 +93,8 @@ aiRouter.post('/ai/stream', async (req, res) => {
             : finalConfig.model || 'local-model'
 
     wsHub.broadcast('ai:fetch', {
-      type: 'stream', sessionId,
+      type: 'stream',
+      sessionId,
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
@@ -142,8 +144,8 @@ aiRouter.post('/ai/stream', async (req, res) => {
 
 aiRouter.post('/ai/abort', async (req, res) => {
   try {
-    const { abortAllFetches } = await import('../services/ai-bridge.js')
-    abortAllFetches()
+    const { abortLeadFetches } = await import('../services/ai/ai-utils.js')
+    abortLeadFetches()
     res.json({ success: true })
   } catch (err) {
     res.json({ success: false, error: err.message })

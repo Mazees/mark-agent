@@ -1,3 +1,4 @@
+import { subagentRuntime } from '../services/subagents/service.js'
 import { Router } from 'express'
 import { dbStore, normalizeSqliteId } from '../memory/db-store.js'
 import { initOramaIndices } from '../memory/orama-store.js'
@@ -74,7 +75,8 @@ memoryRouter.get('/sessions/:id', (req, res) => {
 })
 
 memoryRouter.post('/sessions', (req, res) => {
-  const item = req.body
+  const item = { ...req.body }
+  if (item.data != null) item.data = subagentRuntime.mergeReports(String(item.id || '1'), item.data)
   if (isInvalidMainWorkspace(item))
     return res
       .status(400)
@@ -89,7 +91,16 @@ memoryRouter.post('/sessions/batch', (req, res) => {
     return res
       .status(400)
       .json({ success: false, error: 'Workspace Main Thread tidak dapat diubah.' })
-  const records = dbStore.sessions.insertBatch(items.map(sessionForClient))
+  const records = dbStore.sessions.insertBatch(
+    items.map((item) =>
+      sessionForClient({
+        ...item,
+        ...(item.data == null
+          ? {}
+          : { data: subagentRuntime.mergeReports(String(item.id || '1'), item.data) })
+      })
+    )
+  )
   res.json({ success: true, count: records.length, data: records })
 })
 
@@ -215,18 +226,23 @@ memoryRouter.post('/db/restore', async (req, res) => {
     return res.status(400).json({ success: false, error: 'dumpData tidak boleh kosong' })
   }
   try {
+    await subagentRuntime.stop()
     const result = dbStore.restoreFullDatabase(dumpData, { overwrite })
+    subagentRuntime.start()
     initOramaIndices().catch(() => {})
     wsHub.broadcast('db:restored', { timestamp: Date.now(), imported: result.imported })
     res.json({ success: true, data: result })
   } catch (err) {
+    subagentRuntime.start()
     res.status(500).json({ success: false, error: err.message })
   }
 })
 
 memoryRouter.post('/db/reset-ai', async (_req, res) => {
   try {
+    await subagentRuntime.stop()
     const result = dbStore.resetAllExceptConfig()
+    subagentRuntime.start()
     initOramaIndices().catch(() => {})
     wsHub.broadcast('db:restored', { timestamp: Date.now(), reset: true })
     res.json({ success: true, data: result })

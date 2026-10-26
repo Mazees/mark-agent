@@ -38,7 +38,7 @@ mark/
 │           ├── contexts/            # ApprovalContext, YoutubeMusicContext, TaskWorkflowContext
 │           ├── hooks/               # useMarkAgent, useVAD, useAwareness, hooks/agent/ (useMarkPlan)
 │           ├── components/          # ChatList, ThoughtTicker, BrowserPreviewWidget, subagent/
-│           └── pages/               # MarkHome, ChatStudio, Subagents (Mission Control), Settings
+│           └── pages/               # MarkHome, ChatStudio, Subagents (Minibots), Settings
 └── docs/                            # Dokumentasi teknis komprehensif sistem MARK
 ```
 

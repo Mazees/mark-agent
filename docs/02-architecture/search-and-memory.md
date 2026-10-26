@@ -133,7 +133,7 @@ Mengadopsi pola arsitektur dari **Hermes Agent (Nous Research)**, MARK menerapka
 1. **Layer 1: Gateway Session Hygiene (Pra-Turn - 85% Ambang Batas / ~217.6K Tokens)**:
    Berjalan di `useMarkPlan.js` sebelum pesan diproses oleh agen. Ini adalah jaring pengaman untuk mencegah kegagalan API ketika sesi menjadi terlalu besar di antara giliran (misalnya akumulasi percakapan ribuan pesan).
 2. **Layer 2: In-Loop Agent Context Engine (Setiap Iterasi - 50% Ambang Batas / ~128K Tokens)**:
-   Berjalan di dalam perulangan ReAct `while (!isDone)` pada Lead Agent (`useMarkPlan.js`) dan `while (!abortController.signal.aborted)` pada Sub-Agent (`subagentExecutor.js`). Memastikan agen dapat menjalankan 50–500 iterasi tool tanpa mengalami pembengkakan konteks (_context ballooning_).
+   Berjalan di dalam perulangan ReAct `while (!isDone)` pada Lead Agent (`useMarkPlan.js`) dan `while (!abortController.signal.aborted)` pada Minibot (`subagentExecutor.js`). Memastikan agen dapat menjalankan 50–500 iterasi tool tanpa mengalami pembengkakan konteks (_context ballooning_).
 
 ```mermaid
 flowchart TD
@@ -157,7 +157,7 @@ flowchart TD
     AISummary --> SaveCompact["Simpan ke tabel session_compact di SQLite"]
     SaveCompact --> Assemble["Bentuk Prompt: [ COMPACTED MESSAGE SUMMARY ] + Sisa Pesan Baru"]
     subgraph Layer2["Layer 2: In-Loop ReAct Engine (Per-Iterasi, 50%)"]
-        D --> E["Mulai Iterasi Tool (Lead Agent / Sub-Agent)"]
+        D --> E["Mulai Iterasi Tool (Lead Agent / Minibot)"]
         E --> F{"Ukuran loopMessages >= 50%?"}
         F -- "Ya: Fase 1" --> G["Pangkas Tool Output Lama di Luar Tail (O(n), Tanpa LLM)"]
         G --> H{"Masih >= 50%?"}
@@ -223,4 +223,4 @@ Persentase kapasitas konteks aktif dipantau secara visual di samping tombol inpu
 
 - [Arsitektur Basis Data SQLite Terpusat](./state-and-database.md)
 - [Pusat Orkestrasi ReAct Loop & Intent Routing](../03-agent-engine/react-loop.md)
-- [Sistem Sub-Agent Mandiri Mission Control](../03-agent-engine/multi-agent-subagents.md)
+- [Sistem Minibot Mandiri Minibots](../03-agent-engine/multi-agent-subagents.md)

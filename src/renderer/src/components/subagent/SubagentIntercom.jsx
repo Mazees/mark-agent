@@ -36,7 +36,7 @@ const markdownComponents = {
   }
 }
 
-// Komponen Single Unified Bubble untuk Sub-Agent
+// Komponen Single Unified Bubble untuk Minibot
 function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
   const [isThoughtOpen, setIsThoughtOpen] = useState(false)
   const [isStepsOpen, setIsStepsOpen] = useState(false)
@@ -67,7 +67,7 @@ function SubagentUnifiedBubble({ turn, subagentName, isRunning }) {
             >
               <div className="flex items-center gap-2 font-semibold text-accent text-[11px]">
                 <Brain className="w-3.5 h-3.5 shrink-0" />
-                <span>Pemikiran Sub-Agent</span>
+                <span>Pemikiran Minibot</span>
               </div>
               <div className="flex items-center gap-1 text-[10px] text-base-content/50">
                 <span>{isThoughtOpen ? 'Tutup' : 'Lihat'}</span>
@@ -362,8 +362,8 @@ export default function SubagentIntercom({ subagentId, onClose }) {
 
   const handleKill = async () => {
     const result = await confirm({
-      title: 'Hentikan Eksekusi Sub-Agent',
-      message: 'Apakah kamu yakin ingin menghentikan eksekusi sub-agent ini secara paksa?',
+      title: 'Hentikan Eksekusi Minibot',
+      message: 'Apakah kamu yakin ingin menghentikan eksekusi Minibot ini secara paksa?',
       isError: true,
       confirmText: 'Hentikan',
       cancelText: 'Batal'
@@ -483,7 +483,7 @@ export default function SubagentIntercom({ subagentId, onClose }) {
               </div>
               <div className="chat-header text-[11px] opacity-50 mb-1 flex items-center gap-1.5">
                 <span className={isUser ? 'text-accent font-semibold' : ''}>
-                  {isUser ? 'Creator (Mada)' : 'Lead Agent (Mark)'}
+                  {isUser ? 'Creator (Mada)' : 'Lead Minibot (Mark)'}
                 </span>
                 <span className="text-[10px]">
                   {new Date(item.timestamp).toLocaleTimeString([], {
@@ -509,7 +509,7 @@ export default function SubagentIntercom({ subagentId, onClose }) {
           )
         })}
 
-        {/* Initial Loading State hanya jika belum ada bubble giliran sub-agent yang aktif */}
+        {/* Initial Loading State hanya jika belum ada bubble giliran Minibot yang aktif */}
         {isRunning &&
           (groupedTurns.length === 0 ||
             groupedTurns[groupedTurns.length - 1]?.type !== 'subagent_turn') && (

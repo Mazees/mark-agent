@@ -138,6 +138,7 @@ export async function executeOpenAIProvider({
     }
 
     const abortController = new AbortController()
+    abortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
     activeAbortControllers.add(abortController)
 
     const abortStream = () => abortController.abort(signal.reason || new Error('User Aborted'))
@@ -653,6 +654,7 @@ export async function executeOpenAIProvider({
   }
 
   const parentAbortController = new AbortController()
+  parentAbortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
   activeAbortControllers.add(parentAbortController)
 
   if (signal) {
@@ -670,6 +672,7 @@ export async function executeOpenAIProvider({
 
     const timeoutMs = 300000
     const abortController = new AbortController()
+    abortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
     activeAbortControllers.add(abortController)
     const timeoutId = setTimeout(
       () => abortController.abort(new Error('Request Timeout (Tidak ada respon dari server)')),
