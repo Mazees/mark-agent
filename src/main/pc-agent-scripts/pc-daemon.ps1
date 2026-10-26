@@ -1,5 +1,5 @@
 # pc-daemon.ps1
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Add-Type -AssemblyName UIAutomationClient
@@ -38,7 +38,20 @@ public struct KEYBDINPUT {
 [StructLayout(LayoutKind.Sequential)]
 public struct INPUT {
     public int type;
-    public KEYBDINPUT ki;
+    public INPUTUNION data;
+}
+
+[StructLayout(LayoutKind.Explicit)]
+public struct INPUTUNION {
+    [FieldOffset(0)] public KEYBDINPUT ki;
+    [FieldOffset(0)] public MOUSEINPUT mi;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct MOUSEINPUT {
+    public int dx, dy;
+    public uint mouseData, flags, time;
+    public IntPtr extra;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -59,6 +72,30 @@ public struct ICONINFO {
 }
 
 public class MarkWin32 {
+    public const int InputTag = 0x4D41524B;
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+    public static void InitDpi() { try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return; } catch {} SetProcessDPIAware(); }
+    public static IntPtr ExpectedWindow = IntPtr.Zero;
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint source, uint target, bool attach);
+
+    public static void MoveCursor(int x, int y, int duration = 120) {
+        POINT initial; GetCursorPos(out initial);
+        int steps = duration <= 0 ? 1 : Math.Max(1, duration / 15);
+        int left = GetSystemMetrics(76), top = GetSystemMetrics(77);
+        int width = GetSystemMetrics(78), height = GetSystemMetrics(79);
+        for (int i = 1; i <= steps; i++) {
+            double t = (double)i / steps;
+            double eased = t * t * (3 - 2 * t);
+            int nextX = (int)Math.Round(initial.X + (x - initial.X) * eased);
+            int nextY = (int)Math.Round(initial.Y + (y - initial.Y) * eased);
+            uint nx = (uint)Math.Max(0, Math.Min(65535, Math.Round((nextX - left) * 65535.0 / Math.Max(1, width - 1))));
+            uint ny = (uint)Math.Max(0, Math.Min(65535, Math.Round((nextY - top) * 65535.0 / Math.Max(1, height - 1))));
+            mouse_event(0x0001 | 0x8000 | 0x4000, nx, ny, 0, InputTag);
+            if (steps > 1) System.Threading.Thread.Sleep(Math.Max(1, duration / steps));
+        }
+    }
     [DllImport("user32.dll")]
     public static extern bool SetProcessDPIAware();
 
@@ -135,6 +172,7 @@ public class MarkWin32 {
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+    [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
     public const uint GA_ROOT = 2;
 
     [DllImport("user32.dll")]
@@ -190,7 +228,7 @@ public class MarkWin32 {
         string lower = t.ToLower();
         if (lower == "mark" || lower.StartsWith("mark -") || lower.StartsWith("mark_pc_stop") ||
             lower.StartsWith("mark_pc_abort") || lower.StartsWith("mark_unblock") ||
-            lower.Contains("mark agent") || lower.Contains("mark pc automation") || lower.Contains("mark-overlay")) {
+            lower.Contains("mark agent") || lower.Contains("mark pc automation") || lower.Contains("mark-overlay") || lower.Contains("mark computer use overlay")) {
             return true;
         }
         return false;
@@ -206,7 +244,8 @@ public class MarkWin32 {
             if (!IsIgnoredWindow(title)) {
                 if (!first) json.Append(",");
                 first = false;
-                json.Append("{\"hwnd\":").Append(hWnd.ToInt64()).Append(",\"title\":\"").Append(title.Replace("\\", "\\\\").Replace("\"", "\\\"")).Append("\"}");
+                uint pid; GetWindowThreadProcessId(hWnd, out pid);
+                json.Append("{\"window_id\":\"").Append(hWnd.ToInt64()).Append("\",\"hwnd\":").Append(hWnd.ToInt64()).Append(",\"process_id\":").Append(pid).Append(",\"title\":\"").Append(title.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ")).Append("\"}");
             }
             return true;
         }, IntPtr.Zero);
@@ -241,12 +280,34 @@ public class MarkWin32 {
         return "{\"status\":\"error\",\"message\":\"Window not found: " + target.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}";
     }
 
+    public static void FocusWindowById(long id, bool maximize) {
+        IntPtr window = new IntPtr(id);
+        if (!IsWindow(window) || !IsWindowVisible(window)) throw new InvalidOperationException("Jendela target sudah ditutup.");
+        if (maximize || IsIconic(window)) ShowWindow(window, maximize ? 3 : 9);
+        IntPtr previous = GetForegroundWindow();
+        uint ignored;
+        uint foregroundThread = GetWindowThreadProcessId(previous, out ignored);
+        uint currentThread = GetCurrentThreadId();
+        bool attached = currentThread != foregroundThread && AttachThreadInput(currentThread, foregroundThread, true);
+        try { BringWindowToTop(window); SetForegroundWindow(window); }
+        finally { if (attached) AttachThreadInput(currentThread, foregroundThread, false); }
+        System.Threading.Thread.Sleep(80);
+        if (GetForegroundWindow() != window) throw new InvalidOperationException("Windows menolak aktivasi target. Pilih jendelanya lalu ambil screenshot baru.");
+        LastFocusedHwnd = window;
+    }
+
     public static void FocusWindowAtPoint(int x, int y) {
         POINT pt = new POINT { X = x, Y = y };
         IntPtr w = WindowFromPoint(pt);
         if (w != IntPtr.Zero) {
             IntPtr root = GetAncestor(w, GA_ROOT);
             if (root == IntPtr.Zero) root = w;
+            if (ExpectedWindow != IntPtr.Zero && root != ExpectedWindow) {
+                uint ownerPid, targetPid;
+                GetWindowThreadProcessId(root, out ownerPid);
+                GetWindowThreadProcessId(ExpectedWindow, out targetPid);
+                if (ownerPid != targetPid) throw new InvalidOperationException("Koordinat berada pada aplikasi lain. Ambil screenshot baru.");
+            }
             string title = GetWindowTitle(root);
             if (!IsIgnoredWindow(title)) {
                 LastFocusedHwnd = root;
@@ -271,10 +332,6 @@ public class MarkWin32 {
     }
 
     public static IntPtr GetTargetWindow() {
-        if (LastFocusedHwnd != IntPtr.Zero && IsWindow(LastFocusedHwnd) && IsWindowVisible(LastFocusedHwnd)) {
-            return LastFocusedHwnd;
-        }
-
         IntPtr fg = GetForegroundWindow();
         string fgTitle = GetWindowTitle(fg);
         if (!IsIgnoredWindow(fgTitle)) {
@@ -282,21 +339,6 @@ public class MarkWin32 {
             return fg;
         }
 
-        IntPtr target = IntPtr.Zero;
-        EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
-            if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
-            string title = GetWindowTitle(hWnd);
-            if (!IsIgnoredWindow(title)) {
-                target = hWnd;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-
-        if (target != IntPtr.Zero) {
-            LastFocusedHwnd = target;
-            return target;
-        }
         return fg;
     }
 
@@ -306,30 +348,34 @@ public class MarkWin32 {
             if (c == '\n') {
                 INPUT[] inputs = new INPUT[2];
                 inputs[0].type = INPUT_KEYBOARD;
-                inputs[0].ki.wVk = VK_RETURN;
-                inputs[0].ki.wScan = 0;
-                inputs[0].ki.dwFlags = 0;
+                inputs[0].data.ki.wVk = VK_RETURN;
+                inputs[0].data.ki.wScan = 0;
+                inputs[0].data.ki.dwFlags = 0;
+                inputs[0].data.ki.dwExtraInfo = new IntPtr(InputTag);
 
                 inputs[1].type = INPUT_KEYBOARD;
-                inputs[1].ki.wVk = VK_RETURN;
-                inputs[1].ki.wScan = 0;
-                inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+                inputs[1].data.ki.wVk = VK_RETURN;
+                inputs[1].data.ki.wScan = 0;
+                inputs[1].data.ki.dwFlags = KEYEVENTF_KEYUP;
+                inputs[1].data.ki.dwExtraInfo = new IntPtr(InputTag);
 
-                SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+                if (SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) != 2) throw new InvalidOperationException("Windows menolak input keyboard.");
                 System.Threading.Thread.Sleep(15);
             } else {
                 INPUT[] inputs = new INPUT[2];
                 inputs[0].type = INPUT_KEYBOARD;
-                inputs[0].ki.wVk = 0;
-                inputs[0].ki.wScan = (ushort)c;
-                inputs[0].ki.dwFlags = KEYEVENTF_UNICODE;
+                inputs[0].data.ki.wVk = 0;
+                inputs[0].data.ki.wScan = (ushort)c;
+                inputs[0].data.ki.dwFlags = KEYEVENTF_UNICODE;
+                inputs[0].data.ki.dwExtraInfo = new IntPtr(InputTag);
 
                 inputs[1].type = INPUT_KEYBOARD;
-                inputs[1].ki.wVk = 0;
-                inputs[1].ki.wScan = (ushort)c;
-                inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                inputs[1].data.ki.wVk = 0;
+                inputs[1].data.ki.wScan = (ushort)c;
+                inputs[1].data.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                inputs[1].data.ki.dwExtraInfo = new IntPtr(InputTag);
 
-                SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+                if (SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) != 2) throw new InvalidOperationException("Windows menolak input keyboard.");
                 System.Threading.Thread.Sleep(8);
             }
         }
@@ -396,7 +442,7 @@ public class MarkWin32 {
 }
 "@
 Add-Type -TypeDefinition $code -Language CSharp
-try { [MarkWin32]::SetProcessDPIAware() | Out-Null } catch {}
+try { [MarkWin32]::InitDpi() } catch {}
 
 function Escape-SendKeys {
     param([string]$str)
@@ -439,6 +485,32 @@ function Get-VirtualKeyCode {
     return [byte]0
 }
 
+function Get-DesktopGeometry {
+    $hwnd = [MarkWin32]::GetForegroundWindow()
+    if ($hwnd -eq [IntPtr]::Zero) { throw 'Tidak ada jendela aktif untuk diamati.' }
+    $screen = [System.Windows.Forms.Screen]::FromHandle($hwnd)
+    $rect = New-Object RECT
+    [MarkWin32]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+    [uint32]$targetProcessId = 0
+    [MarkWin32]::GetWindowThreadProcessId($hwnd, [ref]$targetProcessId) | Out-Null
+    $processStarted = ''
+    try { $processStarted = (Get-Process -Id $targetProcessId).StartTime.ToUniversalTime().ToString('o') } catch {}
+    $owners = @()
+    $owner = [MarkWin32]::GetWindow($hwnd, 4)
+    while ($owner -ne [IntPtr]::Zero -and $owners.Count -lt 10) {
+        $owners += $owner.ToInt64().ToString()
+        $owner = [MarkWin32]::GetWindow($owner, 4)
+    }
+    return @{
+        status = 'success'; window_id = $hwnd.ToInt64().ToString(); foreground_window_id = $hwnd.ToInt64().ToString()
+        window_title = [MarkWin32]::GetWindowTitle($hwnd); process_id = $targetProcessId; process_started_at = $processStarted
+        owner_window_ids = @($owners)
+        window_rect = @($rect.Left, $rect.Top, ($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top))
+        screen_x = $screen.Bounds.X; screen_y = $screen.Bounds.Y; host_width = $screen.Bounds.Width; host_height = $screen.Bounds.Height
+        canonical_width = 1280; canonical_height = 720
+    }
+}
+
 function Capture-ScreenJpeg {
     param(
         [int]$targetWidth = 1280,
@@ -453,18 +525,8 @@ function Capture-ScreenJpeg {
     $ms = $null
 
     try {
-        $targetScreen = [System.Windows.Forms.Screen]::PrimaryScreen
-        try {
-            $fg = [MarkWin32]::GetTargetWindow()
-            if ($fg -ne [IntPtr]::Zero) {
-                $screenFromHwnd = [System.Windows.Forms.Screen]::FromHandle($fg)
-                if ($screenFromHwnd -and $screenFromHwnd.Bounds.Width -gt 0) {
-                    $targetScreen = $screenFromHwnd
-                }
-            }
-        } catch {}
-
-        $bounds = $targetScreen.Bounds
+        $geometry = Get-DesktopGeometry
+        $bounds = New-Object System.Drawing.Rectangle($geometry.screen_x, $geometry.screen_y, $geometry.host_width, $geometry.host_height)
         $bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
         $graphics = [System.Drawing.Graphics]::FromImage($bmp)
 
@@ -478,7 +540,6 @@ function Capture-ScreenJpeg {
             try {
                 $hdcDest = $graphics.GetHdc()
                 [MarkWin32]::BitBlt($hdcDest, 0, 0, $bounds.Width, $bounds.Height, $hdcSrc, $bounds.X, $bounds.Y, [MarkWin32]::SRCCOPY) | Out-Null
-                [MarkWin32]::DrawCursor($hdcDest, $bounds.X, $bounds.Y, [ref]$cursorHostX, [ref]$cursorHostY, [ref]$cursorDrawn) | Out-Null
             } finally {
                 if ($hdcDest -ne [IntPtr]::Zero) {
                     try { $graphics.ReleaseHdc($hdcDest) } catch {}
@@ -490,7 +551,6 @@ function Capture-ScreenJpeg {
             $hdc = [IntPtr]::Zero
             try {
                 $hdc = $graphics.GetHdc()
-                [MarkWin32]::DrawCursor($hdc, $bounds.X, $bounds.Y, [ref]$cursorHostX, [ref]$cursorHostY, [ref]$cursorDrawn) | Out-Null
             } catch {} finally {
                 if ($hdc -ne [IntPtr]::Zero) {
                     try { $graphics.ReleaseHdc($hdc) } catch {}
@@ -498,27 +558,10 @@ function Capture-ScreenJpeg {
             }
         }
 
-        $relX = $cursorHostX - $bounds.X
-        $relY = $cursorHostY - $bounds.Y
-
-        # High-contrast precision halo around the exact hotspot to guarantee visual visibility
-        if ($relX -ge -10 -and $relX -le ($bounds.Width + 10) -and $relY -ge -10 -and $relY -le ($bounds.Height + 10)) {
-            try {
-                $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-                $whitePen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(230, 255, 255, 255), 2)
-                $redPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(240, 239, 68, 68), 2)
-                $redBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 239, 68, 68))
-
-                $radius = 7
-                $graphics.DrawEllipse($whitePen, $relX - $radius - 1, $relY - $radius - 1, ($radius + 1) * 2, ($radius + 1) * 2)
-                $graphics.DrawEllipse($redPen, $relX - $radius, $relY - $radius, $radius * 2, $radius * 2)
-                $graphics.FillEllipse($redBrush, $relX - 2, $relY - 2, 4, 4)
-
-                $whitePen.Dispose()
-                $redPen.Dispose()
-                $redBrush.Dispose()
-            } catch {}
-        }
+        $cursorPosition = New-Object POINT
+        [MarkWin32]::GetCursorPos([ref]$cursorPosition) | Out-Null
+        $cursorHostX = $cursorPosition.X
+        $cursorHostY = $cursorPosition.Y
 
         $canonicalX = [Math]::Round(($cursorHostX - $bounds.X) * $targetWidth / [Math]::Max(1, $bounds.Width))
         $canonicalY = [Math]::Round(($cursorHostY - $bounds.Y) * $targetHeight / [Math]::Max(1, $bounds.Height))
@@ -527,6 +570,23 @@ function Capture-ScreenJpeg {
         $gScaled = [System.Drawing.Graphics]::FromImage($scaled)
         $gScaled.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $gScaled.DrawImage($bmp, 0, 0, $targetWidth, $targetHeight)
+        if ($canonicalX -ge 0 -and $canonicalX -lt $targetWidth -and $canonicalY -ge 0 -and $canonicalY -lt $targetHeight) {
+            $cursorPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+            $points = [System.Drawing.PointF[]]@(
+                (New-Object System.Drawing.PointF($canonicalX, $canonicalY)),
+                (New-Object System.Drawing.PointF(($canonicalX + 18), ($canonicalY + 11))),
+                (New-Object System.Drawing.PointF(($canonicalX + 10), ($canonicalY + 13))),
+                (New-Object System.Drawing.PointF(($canonicalX + 6), ($canonicalY + 21)))
+            )
+            $cursorPath.AddPolygon($points)
+            $cursorPen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 1.7)
+            $cursorGlow = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(65, 34, 197, 94), 6)
+            $gScaled.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $gScaled.DrawPath($cursorGlow, $cursorPath)
+            $gScaled.FillPath([System.Drawing.Brushes]::Black, $cursorPath)
+            $gScaled.DrawPath($cursorPen, $cursorPath)
+            $cursorGlow.Dispose(); $cursorPen.Dispose(); $cursorPath.Dispose()
+        }
 
         # Render precision coordinate rulers and guide grid along edges for AI grounding
         if ($showRuler) {
@@ -588,18 +648,14 @@ function Capture-ScreenJpeg {
         $bytes = $ms.ToArray()
         $base64 = [Convert]::ToBase64String($bytes)
 
-        return @{
-            status = "success"
+        $after = Get-DesktopGeometry
+        if (($geometry | ConvertTo-Json -Compress) -ne ($after | ConvertTo-Json -Compress)) { throw 'Jendela berubah selama capture. Ambil observasi baru.' }
+        $geometry += @{
             image = "data:image/jpeg;base64,$base64"
-            screen_x = $bounds.X
-            screen_y = $bounds.Y
-            host_width = $bounds.Width
-            host_height = $bounds.Height
-            canonical_width = $targetWidth
-            canonical_height = $targetHeight
             cursor = @($canonicalX, $canonicalY)
             cursor_host = @($cursorHostX, $cursorHostY)
         }
+        return $geometry
     } catch {
         return @{
             status = "error"
@@ -631,6 +687,17 @@ while ($true) {
         $cmd = $cmdObj.cmd
 
         if ($cmd -eq "exit") { break }
+
+        [MarkWin32]::ExpectedWindow = [IntPtr]::Zero
+        if ($cmdObj.expectedWindowId -and $cmd -notin @('capture-screen', 'get-screen-info', 'list-windows', 'focus-window', 'open', 'get-active-window', 'get-idle', 'read-ui')) {
+            $expected = [IntPtr][long]$cmdObj.expectedWindowId
+            [uint32]$actualProcess = 0
+            [MarkWin32]::GetWindowThreadProcessId($expected, [ref]$actualProcess) | Out-Null
+            if (-not [MarkWin32]::IsWindow($expected) -or [MarkWin32]::GetForegroundWindow() -ne $expected -or $actualProcess -ne [uint32]$cmdObj.expectedProcessId) {
+                throw 'Target berubah sebelum aksi dijalankan. Ambil screenshot baru.'
+            }
+            [MarkWin32]::ExpectedWindow = $expected
+        }
 
         switch ($cmd) {
             "get-idle" {
@@ -904,11 +971,11 @@ while ($true) {
                                 $x = [int]($rect.X + ($rect.Width / 2))
                                 $y = [int]($rect.Y + ($rect.Height / 2))
                                 [MarkWin32]::EnsureTargetWindowFocused()
-                                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                                 Start-Sleep -Milliseconds 20
-                                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [MarkWin32]::InputTag)
                                 Start-Sleep -Milliseconds 20
-                                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [MarkWin32]::InputTag)
                                 Write-Output (@{ status="success"; action="native-invoke-fallback-click"; id=$id; x=$x; y=$y } | ConvertTo-Json -Compress)
                             } else {
                                 Write-Output (@{ status="error"; message="Elemen tidak memiliki InvokePattern dan tidak terlihat di layar (BoundingRect kosong)" } | ConvertTo-Json -Compress)
@@ -925,11 +992,11 @@ while ($true) {
                 $x = [int]$cmdObj.x
                 $y = [int]$cmdObj.y
                 [MarkWin32]::FocusWindowAtPoint($x, $y)
-                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                 Start-Sleep -Milliseconds 40
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 60
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [MarkWin32]::InputTag)
                 
                 Write-Output (@{ status="success"; action="click"; x=$x; y=$y } | ConvertTo-Json -Compress)
             }
@@ -937,15 +1004,15 @@ while ($true) {
                 $x = [int]$cmdObj.x
                 $y = [int]$cmdObj.y
                 [MarkWin32]::FocusWindowAtPoint($x, $y)
-                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                 Start-Sleep -Milliseconds 40
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 60
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 60
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 60
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [MarkWin32]::InputTag)
                 
                 Write-Output (@{ status="success"; action="double-click"; x=$x; y=$y } | ConvertTo-Json -Compress)
             }
@@ -953,13 +1020,7 @@ while ($true) {
                 [MarkWin32]::EnsureTargetWindowFocused()
                 $text = $cmdObj.text
                 if (-not [string]::IsNullOrEmpty($text)) {
-                    $escaped = Escape-SendKeys -str $text
-                    try {
-                        [System.Windows.Forms.SendKeys]::SendWait($escaped)
-                        Write-Output (@{ status="success"; action="type"; text=$text } | ConvertTo-Json -Compress)
-                    } catch {
-                        Write-Output (@{ status="error"; message="SendKeys failed for type" } | ConvertTo-Json -Compress)
-                    }
+                    Write-Output ([MarkWin32]::TypeTextUnicode($text))
                 } else {
                     Write-Output (@{ status="error"; message="Empty text" } | ConvertTo-Json -Compress)
                 }
@@ -967,59 +1028,19 @@ while ($true) {
             "key" {
                 [MarkWin32]::EnsureTargetWindowFocused()
                 $combo = $cmdObj.combo
-                if (-not [string]::IsNullOrEmpty($combo)) {
-                    $keys = $combo.ToLower().Trim()
-                    $modifiers = ""
-                    
-                    if ($keys -match "ctrl\+") { $modifiers += "^"; $keys = $keys -replace "ctrl\+", "" }
-                    if ($keys -match "alt\+") { $modifiers += "%"; $keys = $keys -replace "alt\+", "" }
-                    if ($keys -match "shift\+") { $modifiers += "+"; $keys = $keys -replace "shift\+", "" }
-                    if ($keys -match "win\+") { $keys = $keys -replace "win\+", "" } # SendKeys doesn't support Win key combo directly, but we strip it
-                    
-                    $specialMap = @{
-                        "enter" = "{ENTER}"
-                        "tab" = "{TAB}"
-                        "esc" = "{ESC}"
-                        "escape" = "{ESC}"
-                        "backspace" = "{BACKSPACE}"
-                        "del" = "{DELETE}"
-                        "delete" = "{DELETE}"
-                        "up" = "{UP}"
-                        "down" = "{DOWN}"
-                        "left" = "{LEFT}"
-                        "right" = "{RIGHT}"
-                        "home" = "{HOME}"
-                        "end" = "{END}"
-                        "space" = " "
+                $keys = @($combo -split '\+' | ForEach-Object { Get-VirtualKeyCode -keyName $_ })
+                if ($keys.Count -eq 0 -or $keys -contains 0) { throw 'Kombinasi tombol tidak didukung.' }
+                $pressed = @()
+                try {
+                    foreach ($key in $keys) {
+                        [MarkWin32]::keybd_event($key, 0, 0, [MarkWin32]::InputTag)
+                        $pressed += $key
                     }
-
-                    if ($keys -eq "win") {
-                        [MarkWin32]::keybd_event([MarkWin32]::VK_LWIN, 0, 0, 0)
-                        Start-Sleep -Milliseconds 20
-                        [MarkWin32]::keybd_event([MarkWin32]::VK_LWIN, 0, [MarkWin32]::KEYEVENTF_KEYUP, 0)
-                        Write-Output (@{ status="success"; action="key"; combo=$combo } | ConvertTo-Json -Compress)
-                        continue
-                    }
-
-                    if ($specialMap.ContainsKey($keys)) {
-                        $sendStr = $modifiers + $specialMap[$keys]
-                    } else {
-                        if ($keys.Length -eq 1) {
-                            $sendStr = $modifiers + $keys
-                        } else {
-                            $sendStr = $modifiers + "{" + $keys + "}"
-                        }
-                    }
-
-                    try {
-                        [System.Windows.Forms.SendKeys]::SendWait($sendStr)
-                        Write-Output (@{ status="success"; action="key"; combo=$combo } | ConvertTo-Json -Compress)
-                    } catch {
-                        Write-Output (@{ status="error"; message="Invalid key combo: $combo" } | ConvertTo-Json -Compress)
-                    }
-                } else {
-                    Write-Output (@{ status="error"; message="Empty combo" } | ConvertTo-Json -Compress)
+                } finally {
+                    [array]::Reverse($pressed)
+                    foreach ($key in $pressed) { [MarkWin32]::keybd_event($key, 0, 2, [MarkWin32]::InputTag) }
                 }
+                Write-Output (@{ status='success'; action='key'; combo=$combo } | ConvertTo-Json -Compress)
             }
             "scroll" {
                 [MarkWin32]::EnsureTargetWindowFocused()
@@ -1030,7 +1051,7 @@ while ($true) {
                 if ($direction -eq "down") {
                     $delta = -$delta
                 }
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_WHEEL, 0, 0, $delta, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_WHEEL, 0, 0, $delta, [MarkWin32]::InputTag)
                 Write-Output (@{ status="success"; action="scroll"; direction=$direction; amount=$amount } | ConvertTo-Json -Compress)
             }
             "open" {
@@ -1053,12 +1074,14 @@ while ($true) {
             "focus-window" {
                 $title = $cmdObj.title
                 $maximize = if ($null -ne $cmdObj.maximize) { [bool]$cmdObj.maximize } else { $true }
-                if (-not [string]::IsNullOrEmpty($title)) {
-                    $res = [MarkWin32]::FocusWindowByTitle($title, $maximize)
-                    Write-Output $res
-                } else {
-                    Write-Output (@{ status="error"; message="Empty title" } | ConvertTo-Json -Compress)
+                $windowId = $cmdObj.windowId
+                if (-not $windowId) {
+                    $matches = @(([MarkWin32]::ListWindowsJson() | ConvertFrom-Json) | Where-Object { $_.title.IndexOf($title, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+                    if ([string]::IsNullOrWhiteSpace($title) -or $matches.Count -ne 1) { throw 'Target tidak unik. Gunakan window_id dari list_windows.' }
+                    $windowId = $matches[0].window_id
                 }
+                [MarkWin32]::FocusWindowById([long]$windowId, $maximize)
+                Write-Output (@{ status='success'; action='focus-window'; window_id=$windowId } | ConvertTo-Json -Compress)
             }
             "maximize-window" {
                 $title = $cmdObj.title
@@ -1086,63 +1109,52 @@ while ($true) {
                 Write-Output ($captureResult | ConvertTo-Json -Compress)
             }
             "get-screen-info" {
-                $targetScreen = [System.Windows.Forms.Screen]::PrimaryScreen
-                try {
-                    $fg = [MarkWin32]::GetTargetWindow()
-                    if ($fg -ne [IntPtr]::Zero) {
-                        $screenFromHwnd = [System.Windows.Forms.Screen]::FromHandle($fg)
-                        if ($screenFromHwnd -and $screenFromHwnd.Bounds.Width -gt 0) {
-                            $targetScreen = $screenFromHwnd
-                        }
-                    }
-                } catch {}
-                $bounds = $targetScreen.Bounds
-                Write-Output (@{ status="success"; screen_x=$bounds.X; screen_y=$bounds.Y; host_width=$bounds.Width; host_height=$bounds.Height; canonical_width=1280; canonical_height=720 } | ConvertTo-Json -Compress)
+                Write-Output ((Get-DesktopGeometry) | ConvertTo-Json -Compress)
             }
             "move" {
                 $x = [int]$cmdObj.x
                 $y = [int]$cmdObj.y
-                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                 Write-Output (@{ status="success"; action="move"; x=$x; y=$y } | ConvertTo-Json -Compress)
             }
             "mouse-down" {
                 $btn = if ($cmdObj.button) { $cmdObj.button.ToLower() } else { "left" }
                 if ($cmdObj.x -ne $null -and $cmdObj.y -ne $null) {
-                    [MarkWin32]::SetCursorPos([int]$cmdObj.x, [int]$cmdObj.y) | Out-Null
+                    [MarkWin32]::MoveCursor([int]$cmdObj.x, [int]$cmdObj.y) | Out-Null
                 }
                 $flag = if ($btn -eq "right") { [MarkWin32]::MOUSEEVENTF_RIGHTDOWN } elseif ($btn -eq "middle") { [MarkWin32]::MOUSEEVENTF_MIDDLEDOWN } else { [MarkWin32]::MOUSEEVENTF_LEFTDOWN }
-                [MarkWin32]::mouse_event($flag, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event($flag, 0, 0, 0, [MarkWin32]::InputTag)
                 Write-Output (@{ status="success"; action="mouse-down"; button=$btn } | ConvertTo-Json -Compress)
             }
             "mouse-up" {
                 $btn = if ($cmdObj.button) { $cmdObj.button.ToLower() } else { "left" }
                 if ($cmdObj.x -ne $null -and $cmdObj.y -ne $null) {
-                    [MarkWin32]::SetCursorPos([int]$cmdObj.x, [int]$cmdObj.y) | Out-Null
+                    [MarkWin32]::MoveCursor([int]$cmdObj.x, [int]$cmdObj.y) | Out-Null
                 }
                 $flag = if ($btn -eq "right") { [MarkWin32]::MOUSEEVENTF_RIGHTUP } elseif ($btn -eq "middle") { [MarkWin32]::MOUSEEVENTF_MIDDLEUP } else { [MarkWin32]::MOUSEEVENTF_LEFTUP }
-                [MarkWin32]::mouse_event($flag, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event($flag, 0, 0, 0, [MarkWin32]::InputTag)
                 Write-Output (@{ status="success"; action="mouse-up"; button=$btn } | ConvertTo-Json -Compress)
             }
             "right-click" {
                 $x = [int]$cmdObj.x
                 $y = [int]$cmdObj.y
                 [MarkWin32]::FocusWindowAtPoint($x, $y)
-                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                 Start-Sleep -Milliseconds 40
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 60
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, [MarkWin32]::InputTag)
                 Write-Output (@{ status="success"; action="right-click"; x=$x; y=$y } | ConvertTo-Json -Compress)
             }
             "middle-click" {
                 $x = [int]$cmdObj.x
                 $y = [int]$cmdObj.y
                 [MarkWin32]::FocusWindowAtPoint($x, $y)
-                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                 Start-Sleep -Milliseconds 40
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 60
-                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event([MarkWin32]::MOUSEEVENTF_MIDDLEUP, 0, 0, 0, [MarkWin32]::InputTag)
                 Write-Output (@{ status="success"; action="middle-click"; x=$x; y=$y } | ConvertTo-Json -Compress)
             }
             "burst-click" {
@@ -1155,15 +1167,15 @@ while ($true) {
                 if ($count -gt 100) { $count = 100 }
                 if ($interval -lt 2) { $interval = 2 }
 
-                [MarkWin32]::SetCursorPos($x, $y) | Out-Null
+                [MarkWin32]::MoveCursor($x, $y) | Out-Null
                 Start-Sleep -Milliseconds 40
 
                 $downFlag = if ($btn -eq "right") { [MarkWin32]::MOUSEEVENTF_RIGHTDOWN } elseif ($btn -eq "middle") { [MarkWin32]::MOUSEEVENTF_MIDDLEDOWN } else { [MarkWin32]::MOUSEEVENTF_LEFTDOWN }
                 $upFlag = if ($btn -eq "right") { [MarkWin32]::MOUSEEVENTF_RIGHTUP } elseif ($btn -eq "middle") { [MarkWin32]::MOUSEEVENTF_MIDDLEUP } else { [MarkWin32]::MOUSEEVENTF_LEFTUP }
 
                 for ($i = 0; $i -lt $count; $i++) {
-                    [MarkWin32]::mouse_event($downFlag, 0, 0, 0, 0)
-                    [MarkWin32]::mouse_event($upFlag, 0, 0, 0, 0)
+                    [MarkWin32]::mouse_event($downFlag, 0, 0, 0, [MarkWin32]::InputTag)
+                    [MarkWin32]::mouse_event($upFlag, 0, 0, 0, [MarkWin32]::InputTag)
                     if ($interval -gt 0) { Start-Sleep -Milliseconds $interval }
                 }
 
@@ -1181,9 +1193,9 @@ while ($true) {
                 $downFlag = if ($btn -eq "right") { [MarkWin32]::MOUSEEVENTF_RIGHTDOWN } elseif ($btn -eq "middle") { [MarkWin32]::MOUSEEVENTF_MIDDLEDOWN } else { [MarkWin32]::MOUSEEVENTF_LEFTDOWN }
                 $upFlag = if ($btn -eq "right") { [MarkWin32]::MOUSEEVENTF_RIGHTUP } elseif ($btn -eq "middle") { [MarkWin32]::MOUSEEVENTF_MIDDLEUP } else { [MarkWin32]::MOUSEEVENTF_LEFTUP }
 
-                [MarkWin32]::SetCursorPos($x1, $y1) | Out-Null
+                [MarkWin32]::MoveCursor($x1, $y1) | Out-Null
                 Start-Sleep -Milliseconds 40
-                [MarkWin32]::mouse_event($downFlag, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event($downFlag, 0, 0, 0, [MarkWin32]::InputTag)
                 Start-Sleep -Milliseconds 30
 
                 $steps = [Math]::Max(10, [int]($dur / 15))
@@ -1191,11 +1203,11 @@ while ($true) {
                 for ($s = 1; $s -le $steps; $s++) {
                     $curX = [int]($x1 + (($x2 - $x1) * ($s / $steps)))
                     $curY = [int]($y1 + (($y2 - $y1) * ($s / $steps)))
-                    [MarkWin32]::SetCursorPos($curX, $curY) | Out-Null
+                    [MarkWin32]::MoveCursor($curX, $curY, 0) | Out-Null
                     Start-Sleep -Milliseconds $sleepPerStep
                 }
                 Start-Sleep -Milliseconds 30
-                [MarkWin32]::mouse_event($upFlag, 0, 0, 0, 0)
+                [MarkWin32]::mouse_event($upFlag, 0, 0, 0, [MarkWin32]::InputTag)
 
                 Write-Output (@{ status="success"; action="drag"; start_x=$x1; start_y=$y1; end_x=$x2; end_y=$y2 } | ConvertTo-Json -Compress)
             }
@@ -1204,10 +1216,10 @@ while ($true) {
                 $dur = if ($cmdObj.duration_ms) { [int]$cmdObj.duration_ms } else { 0 }
                 $vk = Get-VirtualKeyCode -keyName $keyName
                 if ($vk -gt 0) {
-                    [MarkWin32]::keybd_event($vk, 0, 0, 0)
+                    [MarkWin32]::keybd_event($vk, 0, 0, [MarkWin32]::InputTag)
                     if ($dur -gt 0) {
                         Start-Sleep -Milliseconds $dur
-                        [MarkWin32]::keybd_event($vk, 0, [MarkWin32]::KEYEVENTF_KEYUP, 0)
+                        [MarkWin32]::keybd_event($vk, 0, [MarkWin32]::KEYEVENTF_KEYUP, [MarkWin32]::InputTag)
                     }
                     Write-Output (@{ status="success"; action="key-down"; key=$keyName; vk=$vk; duration_ms=$dur } | ConvertTo-Json -Compress)
                 } else {
@@ -1218,7 +1230,7 @@ while ($true) {
                 $keyName = $cmdObj.key
                 $vk = Get-VirtualKeyCode -keyName $keyName
                 if ($vk -gt 0) {
-                    [MarkWin32]::keybd_event($vk, 0, [MarkWin32]::KEYEVENTF_KEYUP, 0)
+                    [MarkWin32]::keybd_event($vk, 0, [MarkWin32]::KEYEVENTF_KEYUP, [MarkWin32]::InputTag)
                     Write-Output (@{ status="success"; action="key-up"; key=$keyName; vk=$vk } | ConvertTo-Json -Compress)
                 } else {
                     Write-Output (@{ status="error"; message="Unsupported key: $keyName" } | ConvertTo-Json -Compress)
@@ -1236,6 +1248,6 @@ while ($true) {
         Write-Output ($err | ConvertTo-Json -Compress)
     }
 
-    Write-Output "---MARK_DONE---"
+    Write-Output "---MARK_DONE:$($cmdObj.requestId)---"
     [Console]::Out.Flush()
 }

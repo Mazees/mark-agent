@@ -18,6 +18,9 @@ import { createJobExecutor } from './executor.js'
 import { DEFAULT_WORKSPACE_ROOT } from '../../workspace-policy.js'
 import { hasStoredToolPermission } from './permissions.js'
 import { canMarkReviewAction, createMarkReviewer } from './reviewer.js'
+import { isComputerUseSessionOpen } from '../../../shared/computer-use.js'
+import { grantComputerUsePermission } from '../../tools/computer-use-permissions.js'
+import { closeComputerUseSession } from '../../tools/pc-agent.js'
 
 async function toolGroups() {
   let plugins = getLoadedPlugins()
@@ -106,7 +109,8 @@ async function dispatch(name, args, ctx, call) {
   const approved =
     job.approvedToolId === call.id &&
     (job.markApprovedToolId !== call.id || canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT))
-  if (needsApproval && !approved && !storedPermission)
+  const opensComputerUse = isComputerUseSessionOpen(name, args)
+  if (needsApproval && !approved && (opensComputerUse || !storedPermission))
     return {
       wait: {
         status: 'waiting_user',
@@ -122,6 +126,11 @@ async function dispatch(name, args, ctx, call) {
     agentName: ctx.agent.name,
     signal: ctx.signal
   }
+  if (opensComputerUse && approved && job.markApprovedToolId !== call.id)
+    config.computerUseApprovalToken = grantComputerUsePermission({
+      sessionId: ctx.runId,
+      runId: ctx.runId
+    })
   const run = async () => {
     ctx.check()
     ctx.pending(call)
@@ -176,7 +185,15 @@ const execute = createJobExecutor({
 
 export const subagentRuntime = new SubagentRuntime({
   db: dbStore.sqlite,
-  execute,
+  execute: async (ctx) => {
+    try {
+      return await execute(ctx)
+    } finally {
+      await closeComputerUseSession('Pekerjaan Minibot berakhir.', {
+        runKey: ctx.runId + ':' + ctx.runId
+      })
+    }
+  },
   review: createMarkReviewer({ fetch: fetchAI, config: getActiveConfig }),
   canReviewAction: (job, call) => canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT),
   emit: (event, payload) => wsHub.broadcast(event, payload),

@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useCallback, useRef, useEff
 import { useLocation } from 'react-router-dom'
 import { ShieldAlert, Terminal, FileCode } from 'lucide-react'
 import { getAlwaysAllowedPaths, addAlwaysAllowedPath, getSessionAutoMode } from '../api/db'
+import { isComputerUseSessionOpen } from '../../../shared/computer-use.js'
 
 const ApprovalContext = createContext()
 
@@ -106,6 +107,11 @@ export const ApprovalProvider = ({ children }) => {
       const current = approvalRef.current
       if (!current) return
       if (approvalId && current.id !== approvalId) return
+      if (
+        (current.meta?.forcePrompt || isComputerUseSessionOpen(current.tool, current.query)) &&
+        decisionType !== 'reject'
+      )
+        decisionType = 'approve_once'
 
       approvalRef.current = null
       setApprovalData(null)
@@ -159,6 +165,11 @@ export const ApprovalProvider = ({ children }) => {
     (decisionType, chatId) => {
       const current = approvalRef.current
       if (current) {
+        if (
+          (current.meta?.forcePrompt || isComputerUseSessionOpen(current.tool, current.query)) &&
+          decisionType !== 'reject'
+        )
+          decisionType = 'approve_once'
         resolveApproval(current.id, decisionType)
 
         if (chatId && window.api?.tgSendMessage) {
@@ -223,7 +234,12 @@ export const ApprovalProvider = ({ children }) => {
       if (e.detail?.isAutoMode) {
         autoModeSessionsRef.current.add(sid)
         const current = approvalRef.current
-        if (current && String(current.meta?.sessionId || '1') === sid) {
+        if (
+          current &&
+          !current.meta?.forcePrompt &&
+          !isComputerUseSessionOpen(current.tool, current.query) &&
+          String(current.meta?.sessionId || '1') === sid
+        ) {
           resolveApproval(current.id, 'approve_session')
         }
       } else {
@@ -281,30 +297,31 @@ export const ApprovalProvider = ({ children }) => {
   const requestApproval = useCallback(
     async (message, tool, query, meta = {}) => {
       const sid = meta.sessionId ? String(meta.sessionId) : '1'
+      const forcePrompt = meta.forcePrompt || isComputerUseSessionOpen(tool, query)
 
       // 1. Bypass otomatis jika is_auto_mode aktif pada sesi ini (in-memory ref ATAU database)
-      if (autoModeSessionsRef.current.has(sid)) {
+      if (!forcePrompt && autoModeSessionsRef.current.has(sid)) {
         return true
       }
-      const isAuto = await getSessionAutoMode(sid)
+      const isAuto = !forcePrompt && (await getSessionAutoMode(sid))
       if (isAuto) {
         autoModeSessionsRef.current.add(sid)
         return true
       }
 
       // 2. Bypass jika sudah diizinkan selamanya (whitelist permanen)
-      if (checkIsAlwaysAllowed(tool, query)) {
+      if (!forcePrompt && checkIsAlwaysAllowed(tool, query)) {
         return true
       }
 
       // 3. Bypass jika sudah diizinkan untuk sesi ini (in-memory)
-      if (checkIsSessionAllowed(sid, tool, query)) {
+      if (!forcePrompt && checkIsSessionAllowed(sid, tool, query)) {
         return true
       }
 
       if (window.api?.tgBroadcastToAdmins) {
         window.api.tgBroadcastToAdmins(
-          `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\nKetik /accept untuk sekali, /session untuk sesi ini, /always untuk selamanya, atau /reject untuk menolak.`
+          `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\n${forcePrompt ? 'Ketik /accept untuk mengizinkan sesi Computer Use ini, atau /reject untuk menolak.' : 'Ketik /accept untuk sekali, /session untuk sesi ini, /always untuk selamanya, atau /reject untuk menolak.'}`
         )
       }
 
@@ -327,9 +344,10 @@ export const ApprovalProvider = ({ children }) => {
     [checkIsAlwaysAllowed, checkIsSessionAllowed]
   )
 
-  const activeTargetInfo = approvalData
-    ? extractToolTarget(approvalData.tool, approvalData.query)
-    : null
+  const activeTargetInfo =
+    approvalData && !isComputerUseSessionOpen(approvalData.tool, approvalData.query)
+      ? extractToolTarget(approvalData.tool, approvalData.query)
+      : null
 
   return (
     <ApprovalContext.Provider
@@ -399,20 +417,26 @@ export const ApprovalProvider = ({ children }) => {
                   className="btn btn-outline btn-sm cursor-pointer"
                   onClick={() => resolveApproval(approvalData.id, 'approve_once')}
                 >
-                  Izinkan Sekali
+                  {isComputerUseSessionOpen(approvalData.tool, approvalData.query)
+                    ? 'Izinkan Computer Use'
+                    : 'Izinkan Sekali'}
                 </button>
-                <button
-                  className="btn btn-outline btn-warning btn-sm cursor-pointer"
-                  onClick={() => resolveApproval(approvalData.id, 'approve_session')}
-                >
-                  Izinkan Sesi Ini
-                </button>
-                <button
-                  className="btn btn-error btn-sm shadow-md cursor-pointer font-semibold"
-                  onClick={() => resolveApproval(approvalData.id, 'approve_always')}
-                >
-                  Izinkan Selamanya
-                </button>
+                {!isComputerUseSessionOpen(approvalData.tool, approvalData.query) && (
+                  <>
+                    <button
+                      className="btn btn-outline btn-warning btn-sm cursor-pointer"
+                      onClick={() => resolveApproval(approvalData.id, 'approve_session')}
+                    >
+                      Izinkan Sesi Ini
+                    </button>
+                    <button
+                      className="btn btn-error btn-sm shadow-md cursor-pointer font-semibold"
+                      onClick={() => resolveApproval(approvalData.id, 'approve_always')}
+                    >
+                      Izinkan Selamanya
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

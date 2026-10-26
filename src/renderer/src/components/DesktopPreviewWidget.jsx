@@ -270,24 +270,6 @@ export const DesktopPreviewWidget = ({ forceShow = false }) => {
           )
         })}
 
-        {/* Live Host Cursor Position */}
-        {Array.isArray(cursorPos) &&
-          cursorPos.length >= 2 &&
-          typeof cursorPos[0] === 'number' &&
-          typeof cursorPos[1] === 'number' && (
-            <div
-              className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-75 z-10"
-              style={{
-                left: `${Math.max(0, Math.min(100, (cursorPos[0] / 1280) * 100))}%`,
-                top: `${Math.max(0, Math.min(100, (cursorPos[1] / 720) * 100))}%`
-              }}
-            >
-              <div className="w-5 h-5 rounded-full border-2 border-red-500 bg-red-500/20 shadow-lg flex items-center justify-center animate-pulse">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              </div>
-            </div>
-          )}
-
         {/* Watermark Overlay Status */}
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[10px] font-mono text-white/90 border border-white/10 flex items-center gap-1.5 shadow-md">
           <MousePointer className="w-3 h-3 text-primary animate-pulse" />
@@ -310,10 +292,10 @@ export const DesktopPreviewWidget = ({ forceShow = false }) => {
         <div className="flex items-center gap-1.5">
           <ShieldAlert className="w-3 h-3 text-warning" />
           <span>
-            Kill-Switch: <kbd className="kbd kbd-xs font-mono">Ctrl+Shift+S</kbd>
+            Batalkan: <kbd className="kbd kbd-xs font-mono">Ctrl+Shift+R</kbd>
           </span>
         </div>
-        <span className="font-mono text-emerald-400 text-[10px]">Live OS Stream</span>
+        <span className="font-mono text-emerald-400 text-[10px]">Observasi terakhir</span>
       </div>
     </div>
   )

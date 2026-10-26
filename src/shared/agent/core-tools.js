@@ -484,14 +484,16 @@ export const core_tools_schema = [
     function: {
       name: 'computer_use',
       description:
-        'Kendali visual tingkat OS untuk otomasi desktop Windows melalui screenshot kanonikal 1280x720 dan injeksi mouse/keyboard presisi tinggi. SANGAT DIANJURKAN menggunakan array "actions" (Batch Execution) untuk merangkai beberapa aksi sekuensial sekaligus dalam satu panggilan (misal: klik input -> ketik teks -> tekan Return) demi efisiensi round-trip dan token. Setiap pemanggilan otomatis mengembalikan screenshot pasca-aksi setelah jeda wait_ms.',
+        'Kendali desktop Windows berbasis sesi. WAJIB mulai dengan action:open_session dan tunggu izin pengguna. Setelah diizinkan, mouse dikunci dan overlay tetap tampil sepanjang sesi, termasuk saat kamu memeriksa hasil atau berpikir. open_session mengembalikan screenshot awal. Gunakan observation_id terbaru dan koordinat 1280x720 dari gambar itu. Aksi dengan wait_ms:5000 menjalankan input, menunggu lima detik, lalu mengembalikan screenshot dalam hasil yang sama. Setelah tugas selesai atau kendali tidak diperlukan, WAJIB action:close untuk melepas mouse dan menutup overlay. Ctrl+Shift+R membatalkan sesi; jika cancelledBy:user atau izin ditolak, sampaikan dan tunggu instruksi baru tanpa mencoba jalur pengganti. Batch berhenti pada error. executed berarti input dijalankan, bukan tujuan terverifikasi; periksa gambar hasilnya.',
       parameters: {
         type: 'object',
         properties: {
           actions: {
             type: 'array',
             description:
-              'Daftar satu atau lebih aksi yang akan dieksekusi berurutan (Batch Execution). Sangat disarankan menggabungkan aksi sekuensial ke sini (misal: [{ action: "click", coordinate: [500, 300] }, { action: "type", text: "query" }, { action: "key", key: "Return", wait_ms: 500 }]).',
+              '1 hingga 30 aksi berurutan. Hanya gabungkan aksi yang targetnya sudah diketahui. delay_after_ms mengatur jeda antaraksi; wait_ms di root mengatur jeda sebelum screenshot akhir. Jangan lanjutkan aksi yang membutuhkan hasil visual yang belum diperiksa.',
+            minItems: 1,
+            maxItems: 30,
             items: {
               type: 'object',
               properties: {
@@ -517,7 +519,9 @@ export const core_tools_schema = [
                     'list_windows',
                     'focus_window',
                     'maximize_window',
-                    'open_app'
+                    'open_app',
+                    'wait',
+                    'close'
                   ],
                   description: 'Jenis aksi yang akan dieksekusi'
                 },
@@ -554,14 +558,17 @@ export const core_tools_schema = [
                   type: 'string',
                   description: 'Judul window untuk focus_window atau maximize_window'
                 },
+                window_id: {
+                  type: 'string',
+                  description: 'ID jendela dari list_windows untuk memilih target secara unik.'
+                },
                 target: {
                   type: 'string',
                   description: 'Judul window (focus_window) atau path/nama program (open_app)'
                 },
                 maximize: {
                   type: 'boolean',
-                  description:
-                    'Apakah window otomatis dimaksimalkan ke fullscreen saat difokuskan (default: true)'
+                  description: 'Maksimalkan jendela saat dipilih (default: false).'
                 },
                 count: {
                   type: 'integer',
@@ -578,12 +585,12 @@ export const core_tools_schema = [
                 wait_ms: {
                   type: 'integer',
                   description:
-                    'Jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya atau sebelum auto-screenshot diambil (ms, default: 300, isi 0 jika tanpa jeda)'
+                    'Kompatibilitas: hanya wait_ms pada aksi terakhir dipakai jika wait_ms di root tidak diberikan. Gunakan delay_after_ms untuk jeda antaraksi.'
                 },
                 delay_after_ms: {
                   type: 'integer',
                   description:
-                    'Alias jeda waktu setelah aksi ini selesai sebelum lanjut ke aksi berikutnya (ms)'
+                    'Jeda sebelum aksi berikutnya, 0 hingga 10000 ms. Tidak menambah jeda screenshot akhir.'
                 }
               },
               required: ['action']
@@ -611,7 +618,10 @@ export const core_tools_schema = [
               'list_windows',
               'focus_window',
               'maximize_window',
-              'open_app'
+              'open_app',
+              'wait',
+              'open_session',
+              'close'
             ],
             description:
               '(Alternatif single action) Jenis aksi tunggal jika tidak menggunakan array actions'
@@ -620,6 +630,35 @@ export const core_tools_schema = [
             type: 'array',
             items: { type: 'integer' },
             description: '(Alternatif single action) [x, y] kanvas kanonikal 1280x720'
+          },
+          observation_id: {
+            type: 'string',
+            description:
+              'observation.id dari hasil screenshot terbaru pada sesi ini. Observasi lama ditolak.'
+          },
+          window_id: {
+            type: 'string',
+            description: 'ID jendela dari list_windows untuk focus_window/maximize_window.'
+          },
+          start_coordinate: {
+            type: 'array',
+            items: { type: 'integer' },
+            minItems: 2,
+            maxItems: 2,
+            description: 'Koordinat awal drag pada screenshot 1280x720.'
+          },
+          end_coordinate: {
+            type: 'array',
+            items: { type: 'integer' },
+            minItems: 2,
+            maxItems: 2,
+            description: 'Koordinat akhir drag pada screenshot 1280x720.'
+          },
+          duration_ms: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 10000,
+            description: 'Durasi wait, drag, atau key_down.'
           },
           text: {
             type: 'string',
@@ -639,12 +678,15 @@ export const core_tools_schema = [
           },
           maximize: {
             type: 'boolean',
-            description: '(Alternatif single action) Apakah otomatis dimaksimalkan (default: true)'
+            description:
+              '(Alternatif single action) Maksimalkan jendela saat dipilih (default: false).'
           },
           wait_ms: {
             type: 'integer',
+            minimum: 0,
+            maximum: 10000,
             description:
-              '(Alternatif single action) Jeda waktu sebelum auto-screenshot diambil (ms, default: 300, isi 0 jika tanpa jeda)'
+              'Jeda setelah aksi terakhir sebelum screenshot dikembalikan pada hasil tool yang sama. 5000 berarti lima detik; default 300 ms, 0 tanpa jeda tambahan.'
           }
         }
       }

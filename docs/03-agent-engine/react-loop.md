@@ -258,7 +258,7 @@ stateDiagram-v2
     Observasi --> Inferensi: Rekam Hasil ke loopMessages & Ulangi
     IntervensiUser --> Inferensi: Suntikkan Instruksi Baru ke Loop
 
-    Inferensi --> Batal: Sinyal Abort (Stop / Ctrl+Shift+S)
+    Inferensi --> Batal: Stop proses atau pembatalan Computer Use dengan Ctrl+Shift+R
     EksekusiTool --> Batal: Sinyal Abort
 
     Batal --> Idle: Bersihkan State & Lepas Kunci Sesi

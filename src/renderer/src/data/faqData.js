@@ -17,7 +17,7 @@ export const faqs = [
   },
   {
     q: 'Bagaimana menghentikan pekerjaan Mark?',
-    a: 'Gunakan tombol penghentian pada area pesan atau Hentikan pada detail Minibot. Untuk otomasi desktop, tersedia penghentian darurat Ctrl+Shift+S. Aksi yang sudah dilakukan tidak otomatis diurungkan.'
+    a: 'Gunakan tombol penghentian pada area pesan atau Hentikan pada detail Minibot. Untuk Computer Use, tekan Ctrl+Shift+R. Mouse dilepas, pointer dipulihkan, overlay ditutup, dan Mark menerima pemberitahuan pembatalan. Aksi yang sudah terjadi tidak otomatis diurungkan.'
   },
   {
     q: 'Mengapa mikrofon atau kata panggilan tidak bekerja?',

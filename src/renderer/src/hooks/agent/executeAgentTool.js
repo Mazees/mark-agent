@@ -13,6 +13,7 @@ import { webApi } from '../../api/web-bridge.js'
 export async function executeAgentTool({
   tool,
   rawArgs: incomingArgs,
+  computerUseApprovalToken,
   config,
   context,
   activeSessionNum,
@@ -236,13 +237,16 @@ export async function executeAgentTool({
   } else {
     const activeConfig = {
       ...(Array.isArray(config) ? config[0] : config),
-      workspaceRoot: context?.workspaceRoot
+      workspaceRoot: context?.workspaceRoot,
+      sessionId: String(context?.sessionId || activeSessionNum || 1),
+      computerUseRunId: agenticProcessId,
+      computerUseApprovalToken
     }
     if (tool.startsWith('browser-')) {
       const sessionId = String(context?.sessionId || activeSessionNum || 1)
       activeConfig.sessionId = sessionId === '1' ? 'main' : `workspace-${sessionId}`
     }
-    const nativePromise = window.api.executeNativeTool(tool, rawArgs, activeConfig)
+    const nativePromise = window.api.executeNativeTool(tool, rawArgs, activeConfig, currentSignal)
     const abortPromise = new Promise((_, reject) => {
       const onAbort = () => reject(new Error('AbortError'))
       if (currentSignal?.aborted) return onAbort()

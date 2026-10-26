@@ -417,12 +417,13 @@ export const webApi = {
   },
 
   // 6. Tools Execution
-  executeNativeTool: async (tool, query, config) => {
+  executeNativeTool: async (tool, query, config, signal = null) => {
     try {
       const res = await fetch(`${API_BASE}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, query, config })
+        body: JSON.stringify({ tool, query, config }),
+        signal: resolveAbortSignal(signal)
       })
       const json = await res.json()
       return json
@@ -496,12 +497,12 @@ export const webApi = {
     }
   },
 
-  checkToolApproval: async (tool, query) => {
+  checkToolApproval: async (tool, query, config = {}) => {
     try {
       const res = await fetch(`${API_BASE}/api/tools/needs-approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, query })
+        body: JSON.stringify({ tool, query, config })
       })
       return await res.json()
     } catch (_) {
@@ -511,6 +512,22 @@ export const webApi = {
 
   needsApproval: async (tool, query) => {
     return webApi.checkToolApproval(tool, query)
+  },
+  decideComputerUsePermission: async (requestId, owner, approved) => {
+    const response = await fetch(`${API_BASE}/api/computer-use/permission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId,
+        sessionId: owner.sessionId,
+        runId: owner.computerUseRunId,
+        approved
+      })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Izin sesi Computer Use tidak dapat diproses.')
+    return result.token
   },
 
   selectDirectory: async (description = 'Pilih Folder Workspace Proyek') => {
@@ -553,6 +570,10 @@ export const webApi = {
   onComputerClick: (cb) => {
     addWebListener('computer:click', cb)
     return () => removeWebListener('computer:click', cb)
+  },
+  onComputerInterrupted: (cb) => {
+    addWebListener('computer:interrupted', cb)
+    return () => removeWebListener('computer:interrupted', cb)
   },
   osRead: async () => webApi.executeNativeTool('os-read', ''),
   osClick: async (query) => webApi.executeNativeTool('os-click', query),

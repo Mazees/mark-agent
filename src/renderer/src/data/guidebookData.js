@@ -245,7 +245,7 @@ export const guideArticles = [
     title: 'Kendali komputer Windows',
     summary: 'Operasikan aplikasi desktop melalui screenshot, mouse, keyboard, dan jendela.',
     keywords:
-      'computer_use desktop Win32 daemon screenshot click drag hotkey batch windows Ctrl Shift S emergency overlay',
+      'computer_use desktop Win32 daemon screenshot click drag hotkey batch windows Ctrl Shift R emergency overlay mouse terkunci',
     sections: [
       {
         title: 'Aksi yang didukung',
@@ -259,7 +259,8 @@ export const guideArticles = [
       {
         title: 'Desktop yang digunakan',
         paragraphs: [
-          'Computer Use bekerja pada desktop Windows Anda yang sebenarnya. Mouse, fokus, dan keyboard dapat berpindah ketika tool bekerja. Pratinjau desktop dan indikator aktivitas membantu mengikuti aksinya. Gunakan browser bawaan untuk tugas web yang tidak perlu mengendalikan desktop.'
+          'Mark meminta izin sebelum membuka sesi Computer Use. Setelah diizinkan, mouse dikunci dan pointer Windows digantikan secara visual oleh cursor Mark. Overlay terus muncul selama sesi aktif, termasuk saat Mark berpikir. Ketika Mark menutup sesi, mouse kembali tersedia dan overlay ditutup. Izin baru diperlukan untuk sesi berikutnya.',
+          'Mark dapat mengklik lalu menunggu beberapa detik sebelum melihat hasil. Screenshot dikembalikan bersama hasil aksi, sehingga Mark tidak perlu mengambil gambar lagi hanya untuk memeriksa aksi tersebut. Gunakan browser bawaan untuk tugas web yang tidak perlu mengendalikan desktop.'
         ],
         example:
           'Buka Notepad, ketik daftar tugas berikut, lalu perlihatkan hasilnya tanpa menyimpan file.'
@@ -267,7 +268,7 @@ export const guideArticles = [
       {
         title: 'Menghentikan kendali',
         paragraphs: [
-          'Hentikan proses dari Mark jika target aplikasi atau tindakannya keliru. Jalur otomasi desktop juga menyediakan penghentian darurat Ctrl+Shift+S. Setelah berhenti, periksa keadaan aplikasi karena aksi yang sudah berjalan tidak otomatis diurungkan.'
+          'Tekan Ctrl+Shift+R untuk membatalkan Computer Use. Pintasan ini bekerja tanpa memfokuskan overlay: kendali mouse dilepas, pointer dipulihkan, overlay ditutup, dan Mark menerima alasan pembatalan. Mark tidak boleh melanjutkan kendali desktop dalam giliran yang dibatalkan. Berikan instruksi baru jika ingin melanjutkan. Aksi yang sudah terjadi tidak otomatis diurungkan.'
         ]
       }
     ],

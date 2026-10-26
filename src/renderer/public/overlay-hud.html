@@ -1,192 +1,221 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MARK Computer Use HUD</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-    }
-    html, body {
-      background: #0f1715 !important;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      width: 100vw;
-    }
-    .hud-capsule {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 6px 14px;
-      background: rgba(24, 24, 27, 0.95);
-      border: 1px solid rgba(31, 184, 84, 0.4);
-      border-radius: 9999px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      backdrop-filter: blur(8px);
-      color: #e4e4e7;
-      transition: all 0.2s ease;
-      cursor: default;
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10b981;
-      animation: pulse 2s infinite ease-in-out;
-    }
-    .status-dot.thinking {
-      background: #f59e0b;
-    }
-    .brand-title {
-      font-weight: 700;
-      font-size: 11px;
-      letter-spacing: 0.05em;
-      color: #10b981;
-    }
-    .divider {
-      width: 1px;
-      height: 14px;
-      background: rgba(63, 63, 70, 0.7);
-    }
-    .action-text {
-      font-size: 12px;
-      font-weight: 500;
-      color: #f4f4f5;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      max-width: 240px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .subagent-badge {
-      font-size: 10px;
-      font-weight: 500;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: #27272a;
-      color: #d4d4d8;
-      display: none;
-    }
-    .queue-badge {
-      font-size: 10px;
-      font-weight: 500;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(245, 158, 11, 0.15);
-      color: #fbbf24;
-      display: none;
-    }
-    .abort-hint {
-      font-size: 10px;
-      color: #71717a;
-      font-family: monospace;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.45; }
-    }
-  </style>
-</head>
-<body>
-  <div class="hud-capsule" id="hudCapsule">
-    <div class="status-dot" id="statusDot"></div>
-    <span class="brand-title">MARK</span>
-
-    <div class="divider"></div>
-
-    <div class="subagent-badge" id="sessionBadge">Minibot</div>
-    <div class="queue-badge" id="queueBadge">+1 antre</div>
-
-    <div class="action-text">
-      <span id="actionLabel">Computer Use Aktif</span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"
+    />
+    <title>Mark Computer Use Overlay</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: 'Segoe UI', sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        pointer-events: none;
+        user-select: none;
+      }
+      .banner {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        max-width: calc(100vw - 32px);
+        padding: 11px 17px;
+        border: 1px solid rgba(100, 235, 149, 0.5);
+        border-radius: 12px;
+        background: rgba(9, 32, 20, 0.96);
+        color: #eefbf2;
+        box-shadow:
+          0 5px 22px rgba(0, 0, 0, 0.25),
+          0 0 18px rgba(34, 197, 94, 0.18);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .activity {
+        width: 7px;
+        height: 7px;
+        flex: none;
+        border-radius: 50%;
+        background: #6cf09a;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      .copy {
+        min-width: 0;
+      }
+      .title {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .detail {
+        max-width: 380px;
+        color: #bdd4c5;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .shortcut {
+        flex: none;
+        padding-left: 12px;
+        border-left: 1px solid #41624b;
+        color: #c9ded1;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .shortcut kbd {
+        font: inherit;
+        color: #f2fff6;
+        font-weight: 600;
+      }
+      .cursor {
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0;
+        will-change: transform;
+      }
+      .pointer-layer {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .cursor svg {
+        display: block;
+        filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.6));
+      }
+      .ripple {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 28px;
+        height: 28px;
+        border: 2px solid #22c55e;
+        border-radius: 50%;
+        opacity: 0;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.45;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .activity {
+          animation: none;
+        }
+      }
+      @media (max-width: 520px) {
+        .banner {
+          gap: 9px;
+          padding: 10px 12px;
+        }
+        .title {
+          font-size: 12px;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+        }
+        .detail {
+          max-width: 180px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner" id="banner" role="status" aria-live="polite">
+      <span class="activity" aria-hidden="true"></span>
+      <div class="copy">
+        <div class="title" id="title">Mark menggunakan komputer</div>
+        <div class="detail" id="detail">Menyiapkan kendali</div>
+      </div>
+      <span class="shortcut"
+        ><span id="lockState">Mouse tersedia</span><br /><kbd>Ctrl+Shift+R</kbd> untuk
+        membatalkan</span
+      >
     </div>
-
-    <div class="divider"></div>
-    <span class="abort-hint">Ctrl+Shift+S</span>
-  </div>
-
-  <script>
-    const statusDot = document.getElementById('statusDot')
-    const hudCapsule = document.getElementById('hudCapsule')
-    const sessionBadge = document.getElementById('sessionBadge')
-    const queueBadge = document.getElementById('queueBadge')
-    const actionLabel = document.getElementById('actionLabel')
-
-    function updateHUD(data) {
-      if (!data) return
-      if (data.sessionName && data.sessionName !== 'Mark Utama') {
-        sessionBadge.textContent = data.sessionName
-        sessionBadge.style.display = 'inline-block'
-      } else {
-        sessionBadge.style.display = 'none'
-      }
-
-      if (data.detail) {
-        actionLabel.textContent = data.detail
-      }
-
-      if (data.status === 'thinking' || data.action === 'thinking' || data.action === 'screenshot') {
-        statusDot.classList.add('thinking')
-      } else {
-        statusDot.classList.remove('thinking')
-      }
-
-      if (data.queueCount && data.queueCount > 0) {
-        queueBadge.textContent = `+${data.queueCount} antre`
-        queueBadge.style.display = 'inline-block'
-      } else {
-        queueBadge.style.display = 'none'
-      }
-    }
-
-    let ws = null
-    function connectWs() {
-      const urlParams = new URLSearchParams(location.search)
-      const port = urlParams.get('port') || location.port || '3000'
-      const host = (location.hostname && location.hostname !== '') ? location.hostname : 'localhost'
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${proto}//${host}:${port}/stream`
-
-      try {
-        ws = new WebSocket(wsUrl)
-        ws.onopen = () => {
-          // Connected cleanly
-        }
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data)
-            if (msg.event === 'computer:hud_update' && msg.data) {
-              updateHUD(msg.data)
+    <div class="pointer-layer" aria-hidden="true">
+      <div class="cursor" id="cursor" aria-hidden="true">
+        <svg width="24" height="28" viewBox="0 0 24 28">
+          <path
+            d="M2 2L20 13L12 15L8 23Z"
+            fill="#111"
+            stroke="#fff"
+            stroke-width="1.7"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+      <div class="ripple" id="ripple" aria-hidden="true"></div>
+    </div>
+    <script>
+      ;(() => {
+        const banner = document.getElementById('banner')
+        const title = document.getElementById('title')
+        const detail = document.getElementById('detail')
+        const cursor = document.getElementById('cursor')
+        const ripple = document.getElementById('ripple')
+        const lockState = document.getElementById('lockState')
+        const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+        let active = false
+        let position = { x: 0, y: 0 }
+        const host = window.chrome && window.chrome.webview
+        window.markOverlay = {
+          control(enabled) {
+            active = enabled
+            lockState.textContent = enabled ? 'Mouse dikunci' : 'Mouse tersedia'
+            if (!enabled) cursor.style.opacity = '0'
+            if (enabled) requestAnimationFrame(() => host && host.postMessage('cursor-ready'))
+          },
+          position(value) {
+            const scaleX = innerWidth / value.width
+            const scaleY = innerHeight / value.height
+            position = { x: value.x * scaleX, y: value.y * scaleY }
+            cursor.style.transform =
+              'translate(' + (position.x - 2) + 'px,' + (position.y - 2) + 'px)'
+            cursor.style.opacity = active && value.cursorVisible ? '1' : '0'
+            banner.style.left = (value.monitorLeft + value.monitorWidth / 2) * scaleX + 'px'
+            banner.style.top = value.monitorTop * scaleY + 16 + 'px'
+          },
+          update(value) {
+            const name =
+              value.sessionName && value.sessionName !== 'Mark Utama' ? value.sessionName : 'Mark'
+            title.textContent = name + ' menggunakan komputer'
+            if (value.detail) detail.textContent = value.detail
+            if (value.cursorAction === 'click' && active && !reducedMotion.matches) {
+              ripple.style.left = position.x + 'px'
+              ripple.style.top = position.y + 'px'
+              ripple.getAnimations().forEach((animation) => animation.cancel())
+              ripple.animate(
+                [
+                  { opacity: 0.7, transform: 'translate(-50%,-50%) scale(.4)' },
+                  { opacity: 0, transform: 'translate(-50%,-50%) scale(1.6)' }
+                ],
+                { duration: 250 }
+              )
             }
-          } catch (_) {}
+          }
         }
-        ws.onclose = () => setTimeout(connectWs, 2000)
-        ws.onerror = () => ws.close()
-      } catch (_) {
-        setTimeout(connectWs, 2000)
-      }
-    }
-
-    window.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ event: 'ai:abort', data: { source: 'hud-overlay', reason: 'User pressed Ctrl+Shift+S' } }))
-        }
-      }
-    })
-
-    connectWs()
-  </script>
-</body>
+        if (host) host.postMessage('ready')
+      })()
+    </script>
+  </body>
 </html>
-

@@ -4,6 +4,13 @@ import { wsHub } from '../ws-hub.js'
 import { getStreamDiagnostics } from '../services/ai/stream-diagnostics.js'
 import { launchUI } from '../launcher.js'
 import { buildPluginToolGroups } from '../../shared/plugin-schema.js'
+import { isComputerUseSessionOpen } from '../../shared/computer-use.js'
+import { computerUseSessionStatus } from '../tools/pc-agent.js'
+import {
+  requestComputerUsePermission,
+  decideComputerUsePermission,
+  isLocalComputerUseOrigin
+} from '../tools/computer-use-permissions.js'
 import {
   GROUP_TOOLS_SCHEMA,
   GROUP_TOOL_GROUP_NAMES,
@@ -220,6 +227,10 @@ aiRouter.get('/tools/groups', async (_req, res) => {
 // 4. Native Tools Execution API
 aiRouter.post('/tools/execute', async (req, res) => {
   const { tool, query, config } = req.body || {}
+  const controller = new AbortController()
+  res.once('close', () => {
+    if (!res.writableEnded) controller.abort()
+  })
   try {
     if (typeof tool === 'string' && tool.startsWith('plugin-')) {
       const { executePluginAction } = await import('../../main/plugins/plugin-loader.js')
@@ -232,7 +243,7 @@ aiRouter.post('/tools/execute', async (req, res) => {
       const { executePluginAction } = await import('../../main/plugins/plugin-loader.js')
       return res.json(await executePluginAction(tool, query))
     }
-    const finalConfig = config || getActiveConfig()
+    const finalConfig = { ...(config || getActiveConfig()), signal: controller.signal }
     const result = await nativeTool.handler(query, finalConfig)
     if (result && typeof result === 'object' && 'success' in result) {
       return res.json(result)
@@ -244,11 +255,30 @@ aiRouter.post('/tools/execute', async (req, res) => {
 })
 
 aiRouter.post('/tools/needs-approval', async (req, res) => {
-  const { tool, query } = req.body || {}
+  const { tool, query, config = {} } = req.body || {}
   try {
     const { NATIVE_TOOLS } = await import('../../main/node-tools.js')
     const nativeTool = NATIVE_TOOLS[tool]
     if (!nativeTool) return res.json({ needsApproval: false })
+    if (isComputerUseSessionOpen(tool, query)) {
+      const owner = {
+        sessionId: String(config.sessionId || 'default'),
+        runId: config.computerUseRunId || config.sessionId
+      }
+      const current = computerUseSessionStatus()
+      if (
+        current.status === 'active' &&
+        current.sessionId === owner.sessionId &&
+        current.runId === String(owner.runId || owner.sessionId)
+      )
+        return res.json({ needsApproval: false })
+      return res.json({
+        needsApproval: true,
+        requiresFreshApproval: true,
+        permissionRequestId: requestComputerUsePermission(owner),
+        message: nativeTool.approvalMessage(query)
+      })
+    }
     const needs =
       typeof nativeTool.needsApproval === 'function'
         ? nativeTool.needsApproval(query)
@@ -259,6 +289,33 @@ aiRouter.post('/tools/needs-approval', async (req, res) => {
     })
   } catch {
     res.json({ needsApproval: false })
+  }
+})
+
+aiRouter.post('/computer-use/permission', (req, res) => {
+  try {
+    if (
+      !isLocalComputerUseOrigin(
+        req.get('origin'),
+        req.socket.localPort,
+        process.argv.includes('--dev')
+      )
+    )
+      return res
+        .status(403)
+        .json({
+          success: false,
+          error: 'Persetujuan sesi harus diberikan melalui antarmuka Mark lokal.'
+        })
+    const { requestId, sessionId, runId, approved } = req.body || {}
+    const token = decideComputerUsePermission(
+      requestId,
+      { sessionId: String(sessionId || 'default'), runId },
+      approved
+    )
+    res.json({ success: true, token })
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message })
   }
 })
 

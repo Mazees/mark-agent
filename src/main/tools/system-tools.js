@@ -3,6 +3,7 @@ import os from 'os'
 import { exec } from 'child_process'
 import util from 'util'
 import { executeComputerUse } from '../../server/tools/pc-agent.js'
+import { isComputerUseSessionOpen } from '../../shared/computer-use.js'
 
 const execPromise = util.promisify(exec)
 
@@ -108,6 +109,7 @@ export const systemTools = {
 
   computer_use: {
     needsApproval: (args) => {
+      if (isComputerUseSessionOpen('computer_use', args)) return true
       if (Array.isArray(args?.actions)) {
         return args.actions.some((a) => {
           const act = a?.action || ''
@@ -129,6 +131,8 @@ export const systemTools = {
       return false
     },
     approvalMessage: (args) => {
+      if (isComputerUseSessionOpen('computer_use', args))
+        return 'Izinkan Mark membuka sesi Computer Use? Mouse akan dikunci dan cursor Mark ditampilkan selama sesi aktif. Overlay tetap terlihat sampai Mark menutup sesi. Tekan Ctrl+Shift+R kapan saja untuk membatalkan dan melepaskan mouse.'
       let combo = ''
       if (Array.isArray(args?.actions)) {
         const found = args.actions.find((a) => {
@@ -151,17 +155,23 @@ export const systemTools = {
           agentName: config?.agentName || args?.agentName || 'Mark Utama',
           ...(typeof args === 'object' && args !== null ? args : {})
         }
-        const result = await executeComputerUse(payload)
+        const result = await executeComputerUse({
+          ...payload,
+          sessionId: config?.sessionId || 'default',
+          runId: config?.computerUseRunId || config?.sessionId,
+          signal: config?.signal,
+          approvalToken: config?.computerUseApprovalToken
+        })
         if (result?.image || result?.dataUrl) {
           const img = result.dataUrl || result.image
+          const details = { observation: result.observation, ...result }
+          delete details.image
+          delete details.dataUrl
           return {
+            ...result,
             success: result.success !== false,
-            data:
-              result.message ||
-              (result.action === 'batch'
-                ? `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`
-                : `Aksi ${result.action || 'computer_use'} berhasil dieksekusi (${result.viewport || '1280x720'}).`),
-            message: result.message,
+            data: details,
+            message: result.success === false ? result.error || result.message : result.message,
             dataUrl: img,
             image: img,
             cursor: result.cursor,
@@ -175,11 +185,17 @@ export const systemTools = {
         if (result?.action === 'batch') {
           return {
             success: result.success !== false,
-            data: `Rangkaian ${result.count || (result.results && result.results.length) || 0} aksi Computer Use berhasil dieksekusi.`,
-            ...result
+            ...result,
+            data: result,
+            message: result.error || result.message
           }
         }
-        return { success: result.success !== false, data: result }
+        return {
+          ...result,
+          success: result.success !== false,
+          data: result,
+          message: result.error || result.message
+        }
       } catch (e) {
         return { success: false, error: e.message }
       }
@@ -189,33 +205,12 @@ export const systemTools = {
   'computer-use': {
     needsApproval: (args) => systemTools['computer_use'].needsApproval(args),
     approvalMessage: (args) => systemTools['computer_use'].approvalMessage(args),
-    handler: async (args) => systemTools['computer_use'].handler(args)
+    handler: async (args, config) => systemTools['computer_use'].handler(args, config)
   },
 
   'computer-screenshot': {
     needsApproval: false,
-    handler: async (args) => {
-      try {
-        const result = await executeComputerUse({ action: 'screenshot', ...(args || {}) })
-        if (result?.image || result?.dataUrl) {
-          const img = result.dataUrl || result.image
-          return {
-            success: result.success !== false,
-            data:
-              result.message ||
-              `Screenshot desktop berhasil diambil (${result.viewport || '1280x720'}).`,
-            message: result.message,
-            dataUrl: img,
-            image: img,
-            viewport: result.viewport,
-            host_resolution: result.host_resolution,
-            action: 'screenshot'
-          }
-        }
-        return { success: result.success !== false, data: result }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
+    handler: (args, config) =>
+      systemTools.computer_use.handler({ ...(args || {}), action: 'screenshot' }, config)
   }
 }

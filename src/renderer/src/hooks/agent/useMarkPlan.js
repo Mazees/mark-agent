@@ -344,9 +344,22 @@ export const useMarkPlan = ({
         handleStop()
       })
     }
+    const unsubComputer = webApi.onComputerInterrupted((event) => {
+      if (event?.cancelledBy !== 'user') return
+      const record = [...activeSessionsRef.current.entries()].find(
+        ([id, session]) =>
+          String(id) === String(event.sessionId) &&
+          (!event.runId || session.computerUseRunId === event.runId)
+      )?.[1]
+      if (!record) return
+      record.interventions.push(
+        'Computer Use dibatalkan pengguna melalui Ctrl+Shift+R. Mouse sudah dilepas dan overlay ditutup. Jangan melanjutkan kendali desktop atau mencoba jalur lain; tunggu instruksi pengguna baru.'
+      )
+    })
     return () => {
       if (typeof unsubStatus === 'function') unsubStatus()
       if (typeof unsubAbort === 'function') unsubAbort()
+      unsubComputer()
     }
   }, [setChatData])
 
@@ -827,15 +840,29 @@ export const useMarkPlan = ({
       }
       // 11. Built-in Native Tools & Minibot Orchestration
       else if (checkTools(tool)) {
-        const approvalCheck = await window.api.checkToolApproval(tool, rawArgs)
+        const approvalOwner = {
+          sessionId: String(context?.sessionId || activeSessionNum || 1),
+          computerUseRunId: agenticProcessId
+        }
+        const approvalCheck = await window.api.checkToolApproval(tool, rawArgs, approvalOwner)
+        let computerUseApprovalToken
 
         if (approvalCheck.needsApproval && requestApproval) {
           const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs, {
             sessionId: activeSessionNum,
-            targetSetChatData
+            targetSetChatData,
+            forcePrompt: approvalCheck.requiresFreshApproval === true
           })
+          if (approvalCheck.permissionRequestId)
+            computerUseApprovalToken = await webApi.decideComputerUsePermission(
+              approvalCheck.permissionRequestId,
+              approvalOwner,
+              userApproved
+            )
           if (!userApproved) {
-            resultString = `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
+            resultString = approvalCheck.requiresFreshApproval
+              ? '[DITOLAK] Pengguna menolak membuka sesi Computer Use. Jangan mengendalikan desktop atau mencari jalur pengganti; tunggu instruksi baru.'
+              : `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
             return {
               resultString,
               rejected: true,
@@ -847,6 +874,7 @@ export const useMarkPlan = ({
         const executionResult = await executeAgentTool({
           tool,
           rawArgs,
+          computerUseApprovalToken,
           config,
           context,
           activeSessionNum,
@@ -1432,6 +1460,7 @@ export const useMarkPlan = ({
     }
 
     const agenticProcessId = `agentic-${Date.now()}`
+    sessionRecord.computerUseRunId = agenticProcessId
     let durableTaskForRecovery = null
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
     let accumulatedThoughts = []
@@ -3460,15 +3489,6 @@ Lakukan pemeriksaan mandiri sekarang:
       } catch {
         /* ignore */
       }
-
-      try {
-        if (window.api && window.api.executeNativeTool) {
-          window.api.executeNativeTool('os-control-close').catch(() => {})
-          window.api.executeNativeTool('computer_use', { action: 'close' }).catch(() => {})
-        }
-      } catch {
-        /* ignore */
-      }
     } catch (error) {
       const isAbort =
         Boolean(sessionAbortController?.signal?.aborted) ||
@@ -3629,6 +3649,14 @@ Lakukan pemeriksaan mandiri sekarang:
         return finalUpdated
       })
     } finally {
+      await webApi
+        .executeNativeTool(
+          'computer_use',
+          { action: 'close' },
+          { sessionId: String(activeSessionNum), computerUseRunId: agenticProcessId },
+          AbortSignal.timeout(3000)
+        )
+        .catch(() => {})
       browserCommand(browserSessionId(activeSessionNum), 'job-stop').catch(() => {})
       activeSessionsRef.current.delete(activeSessionNum)
       activeSessionUpdatersRef.current.delete(activeSessionNum)

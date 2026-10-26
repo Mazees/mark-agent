@@ -28,7 +28,8 @@
     "dev:server": "node src/server/index.js --dev",
     "dev:ui": "vite",
     "build": "vite build",
-    "build:ui": "vite build",
+    "build:ui": "node scripts/build-computer-overlay.mjs && vite build",
+    "build:computer-overlay": "node scripts/build-computer-overlay.mjs",
     "prepublishOnly": "npm run build:ui",
     "cli": "node bin/mark.js"
   },
@@ -42,6 +43,9 @@
     "LICENSE",
     "README.md",
     "docs/chrome-bridge.md",
+    "scripts/build-computer-overlay.mjs",
+    "src/main/pc-agent-scripts/overlay-runtime/MarkOverlay.exe",
+    "src/main/pc-agent-scripts/overlay-runtime/build-id",
     "package.json"
   ],
   "dependencies": {
