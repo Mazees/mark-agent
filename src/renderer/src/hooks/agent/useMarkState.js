@@ -40,6 +40,8 @@ export const useMarkState = () => {
   const [isChatLoaded, setIsChatLoaded] = useState(false)
   const [isBooting, setIsBooting] = useState(true)
   const sessionId = useRef('mark-main-thread')
+  const chatSaveQueueRef = useRef(Promise.resolve())
+  const savedGreetingIdsRef = useRef(new Set())
 
   const abortControllerRef = useRef(null)
 
@@ -82,6 +84,9 @@ export const useMarkState = () => {
       const data = await getMainThread()
       if (isCancelled()) return
       if (data && data.length > 0) {
+        savedGreetingIdsRef.current = new Set(
+          data.filter((message) => message.source === 'startup').map((message) => message.id)
+        )
         setChatData(data)
       }
     } finally {
@@ -90,11 +95,25 @@ export const useMarkState = () => {
   }
 
   useEffect(() => {
-    // Debounce simpan ke DB agar tidak membanjiri SQLite REST endpoint saat streaming token
     if (chatData !== undefined && isChatLoaded) {
-      const timer = setTimeout(() => {
-        saveMainThread(chatData)
-      }, 800)
+      const greetings = chatData.filter((message) => message.source === 'startup' && message.id)
+      const hasNewGreeting = greetings.some(
+        (message) => !savedGreetingIdsRef.current.has(message.id)
+      )
+      const save = () => {
+        chatSaveQueueRef.current = chatSaveQueueRef.current
+          .then(async () => {
+            const saved = await saveMainThread(chatData)
+            if (!saved) throw new Error('Riwayat Main Thread belum tersimpan.')
+            for (const greeting of greetings) savedGreetingIdsRef.current.add(greeting.id)
+          })
+          .catch((error) => console.warn('[useMarkState] Gagal menyimpan riwayat chat:', error))
+      }
+      if (hasNewGreeting) {
+        save()
+        return
+      }
+      const timer = setTimeout(save, 800)
       return () => clearTimeout(timer)
     }
   }, [chatData, isChatLoaded])
@@ -139,6 +158,7 @@ export const useMarkState = () => {
   return {
     chatData,
     setChatData,
+    clearChat,
     sessionId: sessionId.current,
     config,
     setConfig,
