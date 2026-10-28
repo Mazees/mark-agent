@@ -148,7 +148,7 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
    - Jika terjadi error pada eksekusi tool atau tes, jangan hanya memperbaiki gejala di permukaan. Telusuri hingga ke berkas konfigurasi, dependensi, dan aliran data yang mendasarinya.
 
 4. PROOF-OF-WORK REQUIREMENT:
-   - Jawaban akhirmu kepada pengguna WAJIB memuat ringkasan bukti pengujian nyata (kutipan log output build/test yang sukses atau hasil verifikasi berkas).`
+  - Jawaban akhirmu kepada pengguna WAJIB 5432!QzCVBNbukti pengujian nyata (kutipan log output build/test yang sukses atau hasil verifikasi berkas).`
     : ''
 }
 

@@ -1,3 +1,9 @@
+import {
+  parseSkillRequest,
+  skillSummary,
+  restoreSkillContext,
+  recoverTaskSkills
+} from '@shared/skill-context.js'
 import { useEffect, useRef } from 'react'
 import { buildPlanningSystemPrompt } from '../../api/ai/planning'
 import { getYoutubeSummary } from '../../api/ai/tools'
@@ -401,6 +407,7 @@ export const useMarkPlan = ({
       session.lastActivityTime = Date.now()
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
+      session.pendingSkillRefs = [...(session.pendingSkillRefs || []), ...(opts.skillRefs || [])]
       if (session.executedToolsList) {
         session.executedToolsList.push(interventionItem)
       }
@@ -1205,7 +1212,10 @@ export const useMarkPlan = ({
         activeSessionsRef.current.delete(activeSessionNum)
         activeSessionUpdatersRef.current.delete(activeSessionNum)
       } else {
-        handleIntervention(userInput, activeSessionNum, { displayPrompt: opts.displayPrompt })
+        handleIntervention(userInput, activeSessionNum, {
+          displayPrompt: opts.displayPrompt,
+          skillRefs: opts.skillRefs
+        })
         return
       }
     }
@@ -1269,19 +1279,6 @@ export const useMarkPlan = ({
       if (!finalContent) {
         finalContent = 'Lakukan analisis dan selesaikan tugas ini dengan mode Super Effort.'
       }
-    } else if (userInput.startsWith('/')) {
-      const skillName = userInput.slice(1).split(' ')[0].trim()
-      try {
-        const skillData = await window.api.readSkill(skillName)
-        const skillContent = typeof skillData === 'string' ? skillData : skillData?.content
-        if (skillContent) {
-          finalContent = `[SYSTEM INSTRUCTION - SKILL ACTIVATED]: Kamu sekarang harus bertindak dan mengikuti seluruh instruksi dalam dokumen skill berikut ini secara ketat:\n\n=== SKILL: ${skillName} ===\n${skillContent}\n====================\n\nInstruksi dari user: ${userInput.replace('/' + skillName, '').trim() || 'Jalankan skill ini sekarang!'}`
-        } else {
-          finalContent = `Skill "${skillName}" tidak ditemukan di direktori Mark Skills.`
-        }
-      } catch (err) {
-        console.error('Error loading skill:', err)
-      }
     } else if (isSystem) {
       finalContent = `[SYSTEM INSTRUCTION]: ${userInput}`
     }
@@ -1289,6 +1286,14 @@ export const useMarkPlan = ({
     if (isAutonomous) {
       finalContent = `[SISTEM INTERNAL - INISIATIF OTONOM]: Otak bawah sadarmu berinisiatif untuk melakukan tindakan berikut: "${userInput}". LAKUKAN TUGAS INI! Bicaralah seolah-olah kamu yang memiliki inisiatif itu sendiri tanpa disuruh. PENTING: DILARANG KERAS menggunakan tool 'computer_use' untuk interaksi PC secara otonom! Respons "answer"-mu HARUS SANGAT SINGKAT (1-2 kalimat pendek).`
     }
+
+    const skillRequest =
+      !isSystem && !isAutonomous
+        ? parseSkillRequest(finalContent)
+        : { names: [], text: finalContent }
+    if (skillRequest.names.length)
+      finalContent = skillRequest.text || 'Gunakan skill yang dipilih untuk tugas ini.'
+    sessionRecord.skills = new Map()
 
     let imageVisionPayloads = []
 
@@ -1494,6 +1499,43 @@ export const useMarkPlan = ({
       durableTaskForRecovery = durableTask
       sessionRecord.taskId = durableTask?.id
       const activeTaskObjectiveRef = { current: durableActiveStep?.objective || null }
+      const activationRefs = [...(opts.skillRefs || [])]
+      const chosenAliases = new Set(activationRefs.map((ref) => ref.alias))
+      const requested = [
+        ...activationRefs.map((ref) => ref.id),
+        ...skillRequest.names.filter((name) => !chosenAliases.has(name))
+      ]
+      if (!requested.length && opts.taskId)
+        requested.push(...recoverTaskSkills(sourceChatData, opts.taskId).map((ref) => ref.id))
+      const recordSkill = (skill) => {
+        if (skill.isResource) {
+          const active = sessionRecord.skills.get(skill.id)
+          if (active)
+            active.resources = [...new Set([...(active.resources || []), skill.resourcePath])]
+        } else sessionRecord.skills.set(skill.id, skill)
+        const summaries = [...sessionRecord.skills.values()].map(skillSummary)
+        userMessage.skills = summaries
+        targetSetChatData((messages) =>
+          messages.map((message) =>
+            (message.created_at === userMessage.created_at && message.role === 'user') ||
+            message.isThinking ||
+            (message.taskId === sessionRecord.taskId && !!sessionRecord.taskId)
+              ? { ...message, skills: summaries }
+              : message
+          )
+        )
+      }
+      sessionRecord.recordSkill = recordSkill
+      for (const reference of new Set(requested)) recordSkill(await webApi.readSkill(reference))
+      const loadInterventionSkills = async (text) => {
+        const refs = sessionRecord.pendingSkillRefs?.splice(0) || []
+        const aliases = new Set(refs.map((ref) => ref.alias))
+        for (const reference of new Set([
+          ...refs.map((ref) => ref.id),
+          ...parseSkillRequest(text).names.filter((name) => !aliases.has(name))
+        ]))
+          recordSkill(await webApi.readSkill(reference))
+      }
 
       let searchQuery = userInput
       if (validHistory.length > 0) {
@@ -1811,7 +1853,11 @@ export const useMarkPlan = ({
           task,
           (messages, stream, settings) =>
             awaitWithTimeout(
-              fetchAI(messages, stream, settings),
+              fetchAI(
+                restoreSkillContext(messages, sessionRecord.skills.values()),
+                stream,
+                settings
+              ),
               45000,
               'Menyusun jawaban penutup',
               sessionAbortController.signal
@@ -1821,6 +1867,7 @@ export const useMarkPlan = ({
         const saved = await finalizeAgentTask(task, answer)
         const aiMsg = {
           id: saved.finalMessageId,
+          skills: [...sessionRecord.skills.values()].map(skillSummary),
           taskId: task.id,
           role: 'ai',
           content: saved.finalAnswer,
@@ -1956,6 +2003,7 @@ export const useMarkPlan = ({
         // Cek Intervensi User di tengah jalan
         if (sessionRecord.interventions?.length > 0) {
           const interventions = sessionRecord.interventions.splice(0).join('\n')
+          await loadInterventionSkills(interventions)
           loopMessages.push({ role: 'user', content: `[USER INTERVENTION]: ${interventions}` })
 
           const alreadyInList = executedToolsList.some(
@@ -2132,6 +2180,7 @@ export const useMarkPlan = ({
 
         // Safety Net Pruning
         loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
+        loopMessages = restoreSkillContext(loopMessages, sessionRecord.skills.values())
         const requestMessages = progressReminder
           ? [...loopMessages, { role: 'system', content: progressReminder }]
           : loopMessages
@@ -2645,6 +2694,8 @@ export const useMarkPlan = ({
             const execResult = await executeSingleTool(toolName, parsedArgs, {
               tgContext,
               toolCallId: `${agenticProcessId}:${stepCount}:${tc.id}`,
+              onSkillLoaded: recordSkill,
+              skillRefs: [...sessionRecord.skills.values()].map(skillSummary),
               isAutonomous,
               loopMessages,
               pluginProcessId,
@@ -2665,6 +2716,13 @@ export const useMarkPlan = ({
               durableTask = execResult.durableTask
               durableTaskForRecovery = execResult.durableTask
               sessionRecord.taskId = execResult.durableTask.id
+              targetSetChatData((messages) =>
+                messages.map((message) =>
+                  message.taskId === sessionRecord.taskId
+                    ? { ...message, skills: [...sessionRecord.skills.values()].map(skillSummary) }
+                    : message
+                )
+              )
             }
             if (['create_agent_task', 'mark_done_task', 'update_task_plan'].includes(toolName)) {
               durableActiveStep = execResult.durableActiveStep || null
@@ -3068,6 +3126,7 @@ export const useMarkPlan = ({
         // Cek apakah ada intervensi user yang masuk saat streaming giliran ini
         if (sessionRecord.interventions?.length > 0) {
           const interventions = sessionRecord.interventions.splice(0).join('\n')
+          await loadInterventionSkills(interventions)
           if (rawTurnAnswer && rawTurnAnswer.trim()) {
             loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
           }
@@ -3338,6 +3397,7 @@ Lakukan pemeriksaan mandiri sekarang:
                   }))
                 ]
               : finalOutput,
+            skills: [...sessionRecord.skills.values()].map(skillSummary),
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
@@ -3411,6 +3471,7 @@ Lakukan pemeriksaan mandiri sekarang:
           {
             role: 'ai',
             content: 'Tugas telah selesai diproses.',
+            skills: [...sessionRecord.skills.values()].map(skillSummary),
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,

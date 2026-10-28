@@ -402,16 +402,25 @@ export const core_tools_schema = [
     function: {
       name: 'read-skill',
       description:
-        'Membaca file pedoman skill untuk memuat instruksi dan workflow khusus sebelum eksekusi aksi.',
+        'Memuat skill beserta lokasi file, direktori referensi, versi konten, dan instruksinya. Gunakan relative_path hanya untuk membaca file pendukung saat diperlukan.',
       parameters: {
         type: 'object',
         properties: {
+          skill_id: {
+            type: 'string',
+            description: 'ID stabil dari katalog atau search-skills; gunakan jika nama ambigu.'
+          },
           skill_name: {
             type: 'string',
             description: 'Nama skill yang ingin dibaca (misal: "speedrunner", "git-commit")'
+          },
+          relative_path: {
+            type: 'string',
+            description:
+              'Opsional: file pendukung relatif terhadap direktori skill, misalnya references/panduan.md. Tanpa parameter ini membaca SKILL.md.'
           }
         },
-        required: ['skill_name'],
+        anyOf: [{ required: ['skill_id'] }, { required: ['skill_name'] }],
         additionalProperties: false
       }
     }
@@ -1016,6 +1025,23 @@ core_tools_schema.push({
   }
 })
 
+core_tools_schema.push({
+  type: 'function',
+  function: {
+    name: 'search-skills',
+    description:
+      'Mencari metadata seluruh katalog skill tanpa memuat instruksi lengkap. Gunakan ketika skill belum ada di katalog ringkas.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 }
+      },
+      required: ['query'],
+      additionalProperties: false
+    }
+  }
+})
 for (const t of core_tools_schema) {
   if (t.function?.parameters?.properties) {
     if (!t.function.parameters.properties.reason) {

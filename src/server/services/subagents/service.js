@@ -1,3 +1,5 @@
+import { skillService } from '../../../main/skills/skill-service.js'
+import { skillSummary } from '../../../shared/skill-context.js'
 import path from 'node:path'
 import fs from 'node:fs'
 import { dbStore } from '../../memory/db-store.js'
@@ -58,11 +60,17 @@ async function dispatch(name, args, ctx, call) {
     return { success: true, data: { memories, chatTurns } }
   }
   if (name === 'read-skill') {
-    const key = String(args.skill_name || '').toLowerCase()
-    const skill = dbStore.learnedSkills
-      .getAll()
-      .find((s) => s.id?.toLowerCase() === key || s.name?.toLowerCase() === key)
-    if (skill?.content) return { success: true, data: skill.content }
+    const skill = await skillService.read(args.skill_id || args.skill_name, args.relative_path)
+    const refs = ctx.runtime.job(ctx.job.id).skillRefs || []
+    if (!skill.allowImplicitInvocation && !refs.some((ref) => ref.id === skill.id))
+      return {
+        success: false,
+        error:
+          'Skill ini hanya dapat diaktifkan melalui pemilihan eksplisit pengguna atau penugasan yang menyertakannya.'
+      }
+    if (!skill.isResource)
+      ctx.update({ skillRefs: [...refs.filter((ref) => ref.id !== skill.id), skillSummary(skill)] })
+    return { success: true, data: skill, skill }
   }
   if (name === 'read_task') {
     const job = ctx.runtime.job(ctx.job.id)
@@ -174,6 +182,7 @@ const execute = createJobExecutor({
   fetch: fetchAI,
   dispatch,
   config: getActiveConfig,
+  skills: skillService,
   schemas: async () => {
     const schemas = [
       ...core_tools_schema,

@@ -1,3 +1,9 @@
+import {
+  buildSkillCatalog,
+  parseSkillRequest,
+  restoreSkillContext,
+  skillSummary
+} from '../../../shared/skill-context.js'
 import { countTokens } from 'gpt-tokenizer'
 import { jsonrepair } from 'jsonrepair'
 import { buildSubagentSystemPrompt } from '../../../shared/agent/subagent-prompt.js'
@@ -85,7 +91,7 @@ export async function compactMessages(messages, fetch, options) {
   return payload
 }
 
-export function createJobExecutor({ fetch, schemas, dispatch, config }) {
+export function createJobExecutor({ fetch, schemas, dispatch, config, skills = null }) {
   return async function executeJob(ctx) {
     const available = await schemas()
     const agentTools = ctx.agent.allowedTools || ['*']
@@ -99,8 +105,19 @@ export function createJobExecutor({ fetch, schemas, dispatch, config }) {
     )
     const allowed = new Set(tools.map((t) => t.function.name))
     const options = { config: config(), signal: ctx.signal, sessionId: `subagent_${ctx.runId}` }
+    const catalog = skills ? await skills.catalog() : []
+    const initialRefs = [...(ctx.job.skillRefs || [])]
+    if (skills) {
+      for (const name of parseSkillRequest(ctx.job.goal).names) {
+        const skill = await skills.read(name)
+        if (!initialRefs.some((ref) => ref.id === skill.id)) initialRefs.push(skillSummary(skill))
+      }
+      if (initialRefs.length) ctx.update({ skillRefs: initialRefs })
+    }
     const system =
       buildSubagentSystemPrompt({ role: ctx.agent.role, goal: ctx.job.goal }) +
+      '\n' +
+      buildSkillCatalog(catalog) +
       `\nID agent: ${ctx.agent.id}; job_id: ${ctx.job.id}. Workspace: ${ctx.job.workspaceRoot || 'default'}.\n` +
       `Checkpoint masukan: ${ctx.job.contextSummary || '(tidak ada)'}`
 
@@ -232,7 +249,11 @@ export function createJobExecutor({ fetch, schemas, dispatch, config }) {
             (image.startsWith('data:image/') || image.startsWith('http'))
               ? image
               : null
-          const text = JSON.stringify(result, (key, value) =>
+          const persistedResult =
+            result?.skill && !result.skill.isResource
+              ? { success: result.success, data: { ...skillSummary(result.skill), loaded: true } }
+              : result
+          const text = JSON.stringify(persistedResult, (key, value) =>
             typeof value === 'string' && value.startsWith('data:image/')
               ? '[Gambar diteruskan ke observasi visual]'
               : value
@@ -274,11 +295,19 @@ export function createJobExecutor({ fetch, schemas, dispatch, config }) {
       history = ctx.messages()
       ctx.phase('thinking')
       ctx.update({ turnCount: (current.turnCount || 0) + 1 })
-      const messages = await compactMessages(
+      let messages = await compactMessages(
         [{ role: 'system', content: system }, ...history],
         fetch,
         options
       )
+      if (skills) {
+        const active = await Promise.all(
+          (ctx.runtime.job(ctx.job.id).skillRefs || []).map((ref) => skills.read(ref.id))
+        )
+        messages = restoreSkillContext(messages, active)
+        if (countTokens(JSON.stringify(messages)) >= 256000)
+          throw new Error('Instruksi skill aktif melebihi kapasitas konteks.')
+      }
       const result = await fetch(messages, true, { ...options, tools })
       ctx.check()
       const { content, calls } = normalizeCompletion(result)

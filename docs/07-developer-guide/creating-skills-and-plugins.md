@@ -58,7 +58,7 @@ Pengguna dapat memicu skill dengan mengetikkan garis miring (_slash command_) di
 /verifikasi-kode-react tolong periksa komponen ChatList.jsx
 ```
 
-MARK akan membaca isi berkas skill tersebut via `window.api.readSkill()` dan menyuntikkannya sebagai instruksi sistem prioritas tinggi.
+MARK menyelesaikan referensi skill melalui layanan server yang sama dengan tool read-skill. Kontraknya memuat id, sumber, contentHash, isi instruksi, skillFile, dan basePath. Skill file memakai direktori ~/.agents/skills; skill bawaan dan learned memakai sumber masing-masing tanpa lokasi file palsu. Instruksi pengguna dan aturan aplikasi tetap berlaku. Katalog awal hanya memuat metadata dengan batas token; instruksi lengkap dan file pendukung dimuat saat diperlukan. Lihat [runtime skill](../skills-runtime.md).
 
 ---
 

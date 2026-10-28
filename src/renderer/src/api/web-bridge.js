@@ -585,6 +585,22 @@ export const webApi = {
   osFocusWindow: async (title) => webApi.executeNativeTool('os-focus-window', title),
 
   // 7. Pure Node.js Skills Engine
+  getSkillMigrationStatus: async () => {
+    const response = await fetch(`${API_BASE}/api/skills/migration`)
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Status migrasi skill belum dapat dimuat.')
+    return result.data
+  },
+
+  migrateSkills: async () => {
+    const response = await fetch(`${API_BASE}/api/skills/migrate`, { method: 'POST' })
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Migrasi skill belum berhasil.')
+    return result
+  },
+
   getSkills: async () => {
     try {
       const res = await fetch(`${API_BASE}/api/skills`)
@@ -617,20 +633,24 @@ export const webApi = {
     }
   },
 
-  readSkill: async (name) => {
-    const fileRes = await webApi.readSkillFile(name, 'SKILL.md')
-    if (fileRes) return fileRes
-    try {
-      const serverRes = await webApi.executeNativeTool('read-skill', { skill_name: name })
-      if (serverRes && serverRes.success && (serverRes.content || serverRes.data)) {
-        return serverRes.content || serverRes.data
-      }
-    } catch {
-      // ignore fallback error
-    }
-    return ''
+  getSkillCatalog: async () => {
+    const response = await fetch(`${API_BASE}/api/skills/catalog`)
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Katalog skill belum dapat dimuat.')
+    return result.data
   },
-
+  readSkill: async (reference, relativePath = null) => {
+    const response = await fetch(`${API_BASE}/api/skills/read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill_id: reference, relative_path: relativePath })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Skill belum dapat dibaca.')
+    return result.data
+  },
   saveSkillFile: async (name, filePath, content) => {
     const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/file`, {
       method: 'POST',

@@ -1,3 +1,4 @@
+import { parseSkillRequest } from '@shared/skill-context.js'
 /* eslint-disable react/prop-types */
 import { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react'
 import {
@@ -98,6 +99,10 @@ const InputBar = ({
 
   const [skills, setSkills] = useState([])
   const [filteredSkills, setFilteredSkills] = useState([])
+  const selectedSkillRefs = useRef([])
+  useEffect(() => {
+    selectedSkillRefs.current = []
+  }, [sessionId])
   const [showSkillList, setShowSkillList] = useState(false)
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0)
 
@@ -307,30 +312,23 @@ const InputBar = ({
   }, [sessionId])
 
   const reloadSkills = async () => {
-    const nativeSkillList = NATIVE_SKILLS.map(({ name, title, icon, description }) => ({
-      name,
-      title,
-      icon,
-      description
-    }))
-    setSkills(nativeSkillList)
-    if (window.api && window.api.getSkills) {
-      try {
-        const loadedSkills = await window.api.getSkills()
-        const nativeNames = new Set(nativeSkillList.map((skill) => skill.name.toLowerCase()))
-        const merged = [
-          ...nativeSkillList,
-          ...(loadedSkills || []).filter((skill) => !nativeNames.has(skill.name.toLowerCase()))
-        ]
-        setSkills(merged)
-        return merged
-      } catch (err) {
-        console.error('[InputBar] Failed to reload skills:', err)
-      }
+    try {
+      const list = await webApi.getSkillCatalog()
+      const merged = list.map((skill) => ({
+        ...skill,
+        icon:
+          skill.source === 'builtin'
+            ? NATIVE_SKILLS.find((item) => item.name === skill.name)?.icon
+            : undefined
+      }))
+      setSkills(merged)
+      return merged
+    } catch (error) {
+      console.error('[InputBar] Katalog skill belum dapat dimuat:', error.message)
+      setSkills([])
+      return []
     }
-    return nativeSkillList
   }
-
   useEffect(() => {
     reloadSkills()
     if (window.api && window.api.onSkillsUpdated) {
@@ -576,59 +574,8 @@ const InputBar = ({
       finalPrompt = userText
     }
 
-    const skillMatches = rawPrompt.match(/(?:\s|^)\/([a-zA-Z0-9_-]+)/g)
-
-    if (skillMatches && skillMatches.length > 0) {
-      let combinedSkillsContent = ''
-      const loadedSkills = []
-
-      for (const match of skillMatches) {
-        const skillName = match.trim().substring(1) // Hilangkan spasi dan '/'
-
-        // Skip jika nama skill adalah keyword slash super effort
-        if (['super', 'effort', 'boost'].includes(skillName.toLowerCase())) {
-          continue
-        }
-
-        // INTERCEPT BUILT-IN SKILLS
-        const nativeSkill = NATIVE_SKILLS.find(
-          (s) => s.name.toLowerCase() === skillName.toLowerCase()
-        )
-        if (nativeSkill) {
-          combinedSkillsContent += `\n\n--- SKILL BAWAAN: ${skillName.toUpperCase()} ---\n${nativeSkill.content}`
-          loadedSkills.push(skillName)
-          userText = userText.replace(match, '')
-          continue
-        }
-
-        try {
-          const skillData = await window.api?.readSkill?.(skillName)
-          if (skillData) {
-            // Support both old string format and new object format
-            const content = typeof skillData === 'string' ? skillData : skillData.content
-            const basePath =
-              typeof skillData === 'object' && skillData.basePath ? skillData.basePath : ''
-
-            combinedSkillsContent += `\n\n--- SKILL EXTERNAL: ${skillName.toUpperCase()} ---\n`
-            if (basePath) {
-              combinedSkillsContent += `[LOKASI ABSOLUT SKILL INI (Base Path): ${basePath}]\n\n`
-            }
-            combinedSkillsContent += `${content}`
-
-            loadedSkills.push(skillName)
-            userText = userText.replace(match, '') // Hapus slash command dari teks yang dilihat AI
-          }
-        } catch (e) {
-          console.error('[InputBar] Failed to read skill:', skillName, e)
-        }
-      }
-
-      userText = userText.trim()
-
-      if (loadedSkills.length > 0) {
-        finalPrompt = `${userText}\n\n=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===\nBerikut adalah instruksi skill khusus yang WAJIB kamu kombinasikan dan ikuti secara ketat untuk mengeksekusi permintaan di atas. Jika skill memiliki referensi sub-file, kamu BISA membacanya menggunakan tool "read-file" dengan menggabungkan "LOKASI ABSOLUT" di bawah ini beserta path relatifnya:\n${combinedSkillsContent}\n=========================================`
-      }
-    }
+    const skillNames = parseSkillRequest(finalPrompt).names
+    const skillRefs = selectedSkillRefs.current.filter((skill) => skillNames.includes(skill.alias))
 
     const currentAttachments = [...attachedFiles]
     if (attachedFiles.length > 0) {
@@ -646,10 +593,12 @@ const InputBar = ({
         lastPromptRef.current = rawPrompt
       }
       const rawUserText = rawPrompt
+      selectedSkillRefs.current = []
       setInputText('')
       if (typeof onSubmit === 'function') {
         onSubmit(finalPrompt, {
           displayPrompt: rawUserText,
+          skillRefs,
           attachedFiles: currentAttachments,
           isSuperEffort: isSuperEffort || isSlashEffort
         })
@@ -828,9 +777,11 @@ const InputBar = ({
       const tokenAfterCaret = val.slice(cursor).match(/^[a-zA-Z0-9_-]*/)?.[0] || ''
       skillRangeRef.current = { start: slashIndex, end: cursor + tokenAfterCaret.length }
       const query = textBefore.slice(slashIndex + 1).toLowerCase()
-      const currentSkills = skills && skills.length > 0 ? skills : await reloadSkills()
+      const currentSkills = !query || !skills.length ? await reloadSkills() : skills
       if (inputRef.current?.value !== val || inputRef.current?.selectionStart !== cursor) return
-      const matches = currentSkills.filter((s) => s.name.toLowerCase().includes(query))
+      const matches = currentSkills.filter((s) =>
+        [s.name, s.folderName, s.title].join(' ').toLowerCase().includes(query)
+      )
       setFilteredSkills(matches)
       setShowSkillList(true)
       setSelectedSkillIndex(0)
@@ -864,7 +815,12 @@ const InputBar = ({
 
   const selectSkill = (skillObj) => {
     const { start, end } = skillRangeRef.current
-    const insertion = `/${skillObj.name} `
+    const alias = skillObj.folderName || skillObj.name.replace(/\s+/g, '-')
+    selectedSkillRefs.current = [
+      ...selectedSkillRefs.current.filter((skill) => skill.id !== skillObj.id),
+      { id: skillObj.id, alias }
+    ]
+    const insertion = `/${alias} `
     const nextText = `${inputText.slice(0, start)}${insertion}${inputText.slice(end)}`
     setInputText(nextText)
     setShowSkillList(false)
@@ -1150,7 +1106,7 @@ const InputBar = ({
                     NATIVE_SKILLS.find((item) => item.name === skillObj.name)?.icon || FileText
                   return (
                     <div
-                      key={skillObj.name}
+                      key={skillObj.id || skillObj.name}
                       onClick={() => selectSkill(skillObj)}
                       className={`px-4 py-3 cursor-pointer transition-colors flex flex-col gap-1 border-b border-white/5 last:border-0 ${
                         idx === selectedSkillIndex
@@ -1165,7 +1121,12 @@ const InputBar = ({
                       <div
                         className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-white/50'}`}
                       >
-                        /{skillObj.name}
+                        /{skillObj.folderName || skillObj.name.replace(/\s+/g, '-')} ·{' '}
+                        {skillObj.source === 'builtin'
+                          ? 'Bawaan'
+                          : skillObj.source === 'learned'
+                            ? 'Dipelajari'
+                            : 'File lokal'}
                       </div>
                       <div
                         className={`text-xs ${idx === selectedSkillIndex ? 'text-primary/80' : 'text-gray-400'} line-clamp-2`}
