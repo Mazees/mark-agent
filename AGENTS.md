@@ -156,7 +156,7 @@ Jangan menganggap `npm test` tersedia sebelum test runner benar-benar ditambahka
 - `src/renderer/src/api/web-bridge.js` adalah batas HTTP/WebSocket client. File ini juga mengekspos bridge melalui `window.api`; itu adalah compatibility surface, bukan jaminan bahwa Electron preload tersedia di semua mode.
 - `src/server/memory/db-store.js` memiliki schema SQLite, migration, dan normalisasi snake_case ke camelCase. Database berada di `%USERPROFILE%\\.config\\mark-agent\\mark.db`.
 - Edge profile berada di `%USERPROFILE%\\.config\\mark-agent\\ui-profile` dan profile development terkait.
-- Plugin pengguna berada di `%USERPROFILE%\\Documents\\Mark Plugins`; skill pengguna berada di `%USERPROFILE%\\Documents\\Mark Skills`.
+- Plugin pengguna berada di `%USERPROFILE%\\Documents\\Mark Plugins`; skill pengguna berada di `%USERPROFILE%\\.agents\\skills` (skill lama di `Documents/Mark Skills` dipindahkan melalui tombol migrasi pada halaman Skills).
 - Workspace default berada di `%USERPROFILE%\\Documents\\Mark Workspace`.
 - Artifact durable task ditulis di Documents pengguna, biasanya di bawah `Mark Tasks/<task-id>` atau path artifact yang dipilih executor.
 - `out/renderer` dan `dist-release/MARK` adalah output generated/package. Source repository tetap menjadi source of truth; jangan memperbaiki masalah utama hanya di `dist-release`.

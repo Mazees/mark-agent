@@ -52,11 +52,20 @@ const setOffsets = (root, start, end = start) => {
 }
 
 const findSkills = (text, skills) => {
-  const byName = new Map(skills.map((skill) => [skill.name.toLowerCase(), skill]))
+  const byName = new Map()
+  for (const skill of skills) {
+    for (const alias of [
+      skill.name.replace(/\s+/g, '-'),
+      skill.folderName,
+      ...(skill.aliases || [])
+    ]) {
+      if (alias) byName.set(alias.toLowerCase(), skill)
+    }
+  }
   return Array.from(text.matchAll(/(^|\s)\/([a-zA-Z0-9_-]+)(?=\s|$)/g)).flatMap((match) => {
     const skill = byName.get(match[2].toLowerCase())
     const start = match.index + match[1].length
-    return skill ? [{ skill, start, end: start + match[2].length + 1 }] : []
+    return skill ? [{ skill, alias: match[2], start, end: start + match[2].length + 1 }] : []
   })
 }
 
@@ -111,16 +120,16 @@ const SkillComposer = forwardRef(function SkillComposer(
     }
     const fragment = document.createDocumentFragment()
     let cursor = 0
-    for (const { skill, start, end } of findSkills(value, skills)) {
+    for (const { skill, alias, start, end } of findSkills(value, skills)) {
       fragment.append(document.createTextNode(value.slice(cursor, start)))
       const token = document.createElement('span')
       token.contentEditable = 'false'
-      token.setAttribute('data-skill-name', skill.name)
+      token.setAttribute('data-skill-name', alias)
       token.setAttribute('aria-label', `Skill: ${skill.title || skill.name}`)
-      token.title = `/${skill.name}`
+      token.title = `/${alias}`
       token.className = 'inline text-primary font-medium select-none'
       const icon = Array.from(iconsRef.current.children).find(
-        (item) => item.getAttribute('data-icon-name') === skill.name
+        (item) => item.getAttribute('data-icon-name') === (skill.id || skill.name)
       )?.firstChild
       if (icon) {
         const inlineIcon = icon.cloneNode(true)
@@ -177,7 +186,7 @@ const SkillComposer = forwardRef(function SkillComposer(
         {skills.map((skill) => {
           const Icon = skill.icon && typeof skill.icon !== 'string' ? skill.icon : FileText
           return (
-            <span key={skill.name} data-icon-name={skill.name}>
+            <span key={skill.id || skill.name} data-icon-name={skill.id || skill.name}>
               <Icon className="size-4 shrink-0" aria-hidden="true" />
             </span>
           )

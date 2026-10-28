@@ -1,6 +1,7 @@
 import { executeSubagentTool, SUBAGENT_TOOLS } from './executeSubagentTool.js'
 import { executeWorkflowTool } from './executeWorkflowTool.js'
 import { webApi } from '../../api/web-bridge.js'
+import { skillSummary } from '@shared/skill-context.js'
 
 /**
  * executeAgentTool
@@ -64,7 +65,8 @@ export async function executeAgentTool({
       signal: currentSignal,
       processId: agenticProcessId,
       taskId: durableTask?.id,
-      stepId: durableActiveStep?.id
+      stepId: durableActiveStep?.id,
+      skillRefs: context?.skillRefs || []
     })
     return { res, durableTask, durableActiveStep, reason: execReason }
   }
@@ -148,81 +150,29 @@ export async function executeAgentTool({
         }
       }
     }
-  } else if (tool === 'read-skill') {
-    const a = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
-    const skillName = (a.skill_name || (typeof rawArgs === 'string' ? rawArgs : '') || '').trim()
-    if (!skillName) {
-      res = { success: false, message: 'Harap sebutkan skill_name yang ingin dibaca.' }
-    } else {
-      const { getLearnedSkill, getAllLearnedSkills } = await import('../../api/db.js')
-      let learned = await getLearnedSkill(skillName)
-      if (!learned || !learned.content) {
-        try {
-          const allLearned = await getAllLearnedSkills()
-          learned = (allLearned || []).find(
-            (s) =>
-              s.name?.toLowerCase() === skillName.toLowerCase() ||
-              s.id?.toLowerCase() === skillName.toLowerCase()
+  } else if (tool === 'read-skill' || tool === 'search-skills') {
+    try {
+      const args = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {}
+      if (tool === 'read-skill') {
+        const skill = await webApi.readSkill(args.skill_id || args.skill_name, args.relative_path)
+        if (
+          !skill.allowImplicitInvocation &&
+          !context?.skillRefs?.some((ref) => ref.id === skill.id)
+        )
+          throw new Error(
+            'Skill ini membutuhkan pemilihan eksplisit pengguna; jangan aktifkan otomatis.'
           )
-        } catch {
-          // ignore
-        }
-      }
-
-      if (learned && learned.content) {
+        context?.onSkillLoaded?.(skill)
         res = {
           success: true,
-          data: `[PEDOMAN PROSEDUR KEAHLIAN (LEARNED): ${skillName.toUpperCase()}]\n${learned.content}`
+          data: skill.isResource ? skill : { ...skillSummary(skill), loaded: true },
+          skill
         }
       } else {
-        const { NATIVE_SKILLS } = await import('../../components/core/native-skills.js')
-        const nativeSkill = (NATIVE_SKILLS || []).find(
-          (s) => s.name.toLowerCase() === skillName.toLowerCase()
-        )
-        if (nativeSkill && nativeSkill.content) {
-          res = {
-            success: true,
-            data: `[PEDOMAN SKILL BAWAAN: ${skillName.toUpperCase()}]\n${nativeSkill.content}`
-          }
-        } else {
-          let skillData = null
-          if (window.api && window.api.readSkill) {
-            try {
-              skillData = await window.api.readSkill(skillName)
-            } catch {
-              // ignore
-            }
-          }
-          if (!skillData) {
-            try {
-              const { webApi } = await import('../../api/web-bridge.js')
-              const serverSkill = await webApi.executeNativeTool('read-skill', {
-                skill_name: skillName
-              })
-              if (serverSkill && serverSkill.success && (serverSkill.content || serverSkill.data)) {
-                skillData = serverSkill.content || serverSkill.data
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          if (skillData) {
-            const content = typeof skillData === 'string' ? skillData : skillData.content
-            const basePath =
-              typeof skillData === 'object' && skillData.basePath ? skillData.basePath : ''
-            res = {
-              success: true,
-              data: `[PEDOMAN SKILL (FILE): ${skillName.toUpperCase()}]\n${basePath ? `[BASE PATH: ${basePath}]\n` : ''}${content}`
-            }
-          } else {
-            res = {
-              success: false,
-              message: `Skill "${skillName}" tidak ditemukan di direktori Mark Skills maupun basis data. PENTING: DILARANG mencoba memanggil tool 'read-skill' lagi untuk skill ini. Segera lanjutkan menyelesaikan instruksi user secara mandiri menggunakan tool umum yang relevan atau langsung berikan respon.`
-            }
-          }
-        }
+        res = await webApi.executeNativeTool('search-skills', args)
       }
+    } catch (error) {
+      res = { success: false, error: error.message }
     }
   } else if (typeof tool === 'string' && tool.startsWith('plugin-')) {
     const pluginPromise = window.api?.executePlugin
@@ -255,6 +205,14 @@ export async function executeAgentTool({
     res = await Promise.race([nativePromise, abortPromise])
   }
 
+  if (tool === 'read-file' && res?.success !== false && typeof rawArgs?.path === 'string') {
+    const target = rawArgs.path.replaceAll('\\', '/').toLowerCase()
+    for (const skill of context?.skillRefs || []) {
+      const root = skill.basePath?.replaceAll('\\', '/').toLowerCase()
+      if (root && target.startsWith(root + '/'))
+        context?.onSkillLoaded?.({ id: skill.id, isResource: true, resourcePath: rawArgs.path })
+    }
+  }
   return {
     res,
     durableTask: updatedDurableTask,

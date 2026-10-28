@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Plus, FileText, Upload, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, Plus, FileText, Upload, RefreshCw, Search, FolderInput } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { webApi } from '../api/web-bridge'
 
@@ -13,6 +13,8 @@ export default function Skills() {
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [migration, setMigration] = useState(null)
+  const [migrationReport, setMigrationReport] = useState(null)
   const fileInputRef = useRef(null)
   const nameInputRef = useRef(null)
   const createButtonRef = useRef(null)
@@ -26,9 +28,15 @@ export default function Skills() {
     const request = ++requestRef.current
     setRefreshing(true)
     try {
-      const list = await webApi.getSkills()
+      const [list, status] = await Promise.all([
+        webApi.getSkills(),
+        webApi.getSkillMigrationStatus()
+      ])
       if (!Array.isArray(list)) throw new Error('Daftar skill belum dapat dimuat.')
-      if (request === requestRef.current) setSkills(list)
+      if (request === requestRef.current) {
+        setSkills(list)
+        setMigration(status)
+      }
     } catch (failure) {
       if (request === requestRef.current)
         setError(failure.message || 'Daftar skill belum dapat dimuat.')
@@ -136,6 +144,24 @@ Tulis instruksi yang perlu diikuti Mark di sini.
     }
   }
 
+  const handleMigration = async () => {
+    if (busy || !migration?.pending) return
+    setBusy('migrate')
+    setError('')
+    setNotice('')
+    setMigrationReport(null)
+    try {
+      const report = await webApi.migrateSkills()
+      setMigrationReport(report)
+      await loadSkills()
+      setNotice(`${report.migrated.length} skill dipindahkan ke folder bersama.`)
+    } catch (failure) {
+      setError(failure.message || 'Migrasi skill belum berhasil.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
       <div className="mx-auto max-w-5xl px-5 py-7 pb-28 sm:px-8 sm:py-10 sm:pb-28">
@@ -222,6 +248,57 @@ Tulis instruksi yang perlu diikuti Mark di sini.
             Muat ulang
           </button>
         </div>
+
+        <section aria-labelledby="skill-location" className="mt-8 border-y border-white/10 py-5">
+          <h2 id="skill-location" className="text-sm font-medium text-white/75">
+            Lokasi skill
+          </h2>
+          <p className="mt-2 break-all text-sm text-white/55">
+            {migration?.directory || '~/.agents/skills'}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-white/45">
+            Skill baru disimpan di folder bersama ini. Perubahan melalui Mark juga berlaku untuk
+            agent lain yang membaca folder yang sama.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="btn btn-ghost rounded-full px-4"
+              onClick={handleMigration}
+              disabled={!!busy || !migration?.pending}
+            >
+              <FolderInput size={16} aria-hidden="true" />
+              {busy === 'migrate' ? 'Memindahkan...' : 'Migrasi skill lama'}
+            </button>
+            {migration && (
+              <span className="text-xs text-white/45">
+                {migration.pending
+                  ? `${migration.pending} skill di folder lama`
+                  : 'Tidak ada skill yang perlu dimigrasikan.'}
+              </span>
+            )}
+          </div>
+          {!!migration?.pending && (
+            <p className="mt-2 break-words text-xs leading-relaxed text-white/40">
+              Dari {migration.source}. Nama yang bentrok dilewati dan tetap tersimpan di folder
+              lama.
+            </p>
+          )}
+          {!!migrationReport?.conflicts.length && (
+            <p role="status" className="mt-3 break-words text-sm text-white/60">
+              Belum dipindahkan karena nama sudah digunakan: {migrationReport.conflicts.join(', ')}.
+            </p>
+          )}
+          {!!migrationReport?.failed.length && (
+            <ul role="alert" className="mt-3 space-y-1 text-sm text-error">
+              {migrationReport.failed.map((item) => (
+                <li key={item.name} className="break-words">
+                  {item.name}: {item.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {creating && (
           <form
@@ -311,6 +388,19 @@ Tulis instruksi yang perlu diikuti Mark di sini.
                     <span className="mt-1.5 line-clamp-2 break-words text-sm leading-relaxed text-white/50">
                       {skill.description || 'Belum ada deskripsi.'}
                     </span>
+                    <span className="mt-2 block break-all text-xs text-white/35">
+                      {skill.skillFile || skill.path}
+                    </span>
+                    {skill.allowImplicitInvocation === false && (
+                      <span className="mt-1 block text-xs text-white/45">
+                        Aktif melalui pemilihan eksplisit
+                      </span>
+                    )}
+                    {skill.metadataWarnings?.map((warning) => (
+                      <span key={warning} className="mt-1 block text-xs text-warning">
+                        {warning}
+                      </span>
+                    ))}
                   </span>
                 </Link>
               ))}

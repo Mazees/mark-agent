@@ -1,7 +1,9 @@
-import { getAllConfig, getAllLearnedSkills } from '../db'
+import { getAllConfig } from '../db'
+import { webApi } from '../web-bridge'
+import { buildSkillCatalog } from '@shared/skill-context.js'
 import { getCurrentTimeInfo } from './utils'
 import { getPersonaPrompt } from './persona'
-import { NATIVE_SKILLS } from '../../components/core/native-skills'
+
 import { getWorkspaceContext } from '../workspaceRag'
 import { getActiveToolsSchema, getGroupTools } from '../tools/index'
 import { formatAddonStatusesForPrompt } from '../addonStatus'
@@ -17,21 +19,10 @@ export const buildPlanningSystemPrompt = async (
   contextMsg = ''
 ) => {
   const { memories = [], archives = [] } = unifiedContext
-  const [currentConfig, fileSkills, learnedSkills, activePlugins, groupToolsData, addonCatalog] =
+  const [currentConfig, skillCatalog, activePlugins, groupToolsData, addonCatalog] =
     await Promise.all([
       getAllConfig(),
-      (async () => {
-        try {
-          return (await globalThis.window?.api?.getSkills?.()) || []
-        } catch (e) {
-          console.error('Failed to get file skills for planning', e)
-          return []
-        }
-      })(),
-      getAllLearnedSkills().catch((e) => {
-        console.error('Failed to get learned skills for planning', e)
-        return []
-      }),
+      webApi.getSkillCatalog(),
       (async () => {
         try {
           const plugins = await globalThis.window?.api?.getPlugins?.()
@@ -49,15 +40,6 @@ export const buildPlanningSystemPrompt = async (
   const conf = currentConfig[0] || {}
   const isWebProvider = conf.aiProvider === 'deepseek-web' || conf.aiProvider === 'gemini-web'
   const userId = options.waContext ? options.waContext.senderJid : 'owner'
-
-  const userSkillsList = [
-    ...(NATIVE_SKILLS || []).map((s) => ({ name: s.name, description: s.description })),
-    ...(fileSkills || []).map((s) => ({ name: s.name, description: s.description }))
-  ]
-  const learnedSkillsList = (learnedSkills || []).map((s) => ({
-    name: s.name,
-    description: s.description
-  }))
 
   const groupToolsGuide = Object.entries(groupToolsData?.schema || {})
     .map(([groupKey, groupData]) => `   - '${groupKey}': ${groupData.description || '-'}`)
@@ -100,36 +82,7 @@ ${personaPrompt}
 ${options.currentMusicTrack ? `\n# STATUS PLAYER MUSIK (REAL-TIME):\nLagu yang AKTIF DIPUTAR SEKARANG: "${options.currentMusicTrack.title}" oleh ${options.currentMusicTrack.artist}.\nPENTING: Lagu di playlist bisa berganti otomatis. JANGAN TERKECUH oleh riwayat chat lama yang menyebutkan lagu sebelumnya! Untuk semua pertanyaan atau obrolan tentang musik yang sedang berjalan, HANYA gunakan data REAL-TIME ini sebagai referensi utama!` : ''}
 ${options.systemTelemetry ? `\n# TELEMETRI FISIK PC (REAL-TIME):\n- Status Baterai: ${options.systemTelemetry.battery?.hasBattery ? `${options.systemTelemetry.battery.percent}% (${options.systemTelemetry.battery.isCharging ? 'Sedang Di-charge' : 'Discharging'})` : 'PC Desktop (Sumber daya AC tetap)'}\n- Beban Mesin: RAM ${options.systemTelemetry.hardware?.ramPercent || 0}%, CPU ${options.systemTelemetry.hardware?.cpuPercent || 0}%\n- Keberadaan Pengguna: ${options.systemTelemetry.isUserAFK ? 'Baru saja kembali dari AFK' : 'Aktif di depan layar'}` : ''}
 ${options.latestThought ? `\n# GUMAMAN BATIN TERAKHIR:\n"${options.latestThought}"` : ''}
-${
-  userSkillsList.length > 0 || learnedSkillsList.length > 0
-    ? `\n# MARK SKILLS & CAPABILITY REGISTRY (PRIORITAS TERTINGGI #1)
-${
-  userSkillsList.length > 0
-    ? `## 1. CORE & USER SKILLS (SOP RESMI DARI USER & SISTEM - PRIORITAS MUTLAK)
-Berikut adalah pedoman resmi yang wajib dipatuhi:
-${userSkillsList.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`
-    : ''
-}
-${
-  learnedSkillsList.length > 0
-    ? `\n## 2. INTERNAL LEARNED SKILLS (KEAHLIAN HASIL BELAJAR INTERNAL MARK)
-Berikut adalah prosedur teruji yang pernah berhasil kamu pelajari dari pengalaman sebelumnya:
-${learnedSkillsList.map((s) => `- ${s.name}: ${s.description}`).join('\n')}`
-    : ''
-}
-
-ATURAN PENGGUNAAN SKILL & PRINSIP SELALU BELAJAR:
-1. REFLEKS UTAMA: SEBELUM MENGEKSEKUSI TOOL LAIN, cocokkan jika user SECARA EKSPLISIT meminta tugas yang berkaitan dengan daftar skill di atas. Jika tugas jelas diminta oleh user, panggil tool 'read-skill' (skill_name: "nama_skill") sebagai panduan kerja.
-2. KLARIFIKASI UTAMA (ANTI-ASUMSI): JIKA PERINTAH USER KURANG SPESIFIK, AMBIGU, ATAU DARI SUARA MIKROFON YANG KURANG JELAS/ACAK, DILARANG MENJALANKAN SKILL ATAU TOOL APAPUN! Utamakan bertanya balik untuk mengonfirmasi maksud user terlebih dahulu.
-3. HARGAI PENGALAMAN & KEAHLIAN YANG PERNAH DIPELAJARI: Jika ada tugas nyata yang cocok dengan daftar LEARNED SKILLS, panggil 'read-skill' untuk memuat SOP langkah kerjanya agar kamu tidak perlu mengulang kesalahan dari awal.
-4. DILARANG MEMANGGIL BERULANG: Jika skill tidak ditemukan atau pedoman sudah dimuat sebelumnya, DILARANG KERAS memanggil 'read-skill' berulang kali. Segera lanjutkan eksekusi tugas atau berikan jawaban.
-5. HIERARKI KEPUTUSAN: Keduanya dimuat via 'read-skill'. Namun jika terjadi kontradiksi instruksi, pedoman pada CORE & USER SKILLS selalu mengalahkan LEARNED SKILLS.
-6. DILARANG MENYURUH USER: JANGAN menyuruh user mengetik slash command (/). Kamu yang proaktif mengeksekusi 'read-skill'.
-7. IKUTI ALUR DI DALAM SKILL: Setelah isi pedoman dari 'read-skill' masuk ke observasi, jalankan setiap langkah dan aturan di dalamnya sampai tuntas.
-8. SINTESIS OTOMATIS: Setelah tugas bermakna selesai, sistem akan mengevaluasi hasilnya untuk learned skill secara otomatis. Jangan panggil 'learn' hanya untuk menduplikasi proses otomatis tersebut.
-9. KELOLA SKILL ATAS PERMINTAAN: Gunakan core tool 'learn' saat user secara jelas meminta kamu menyimpan atau mengubah skill. Sebelum memperbarui skill yang ada, baca dengan 'read-skill' dan gabungkan panduan lama dengan temuan baru. Gunakan method 'insert' hanya untuk skill baru dan 'update' untuk skill bernama sama.`
-    : ''
-}
+${buildSkillCatalog(skillCatalog, conf.skillCatalogTokenBudget)}
 ${
   options.isSuperEffort || conf.superEffortEnabled
     ? `

@@ -35,6 +35,7 @@ export async function executeSubagentTool(tool, rawArgs, context) {
         taskId: context.taskId,
         stepId: context.stepId,
         initialMessage: args.initial_message,
+        skillRefs: context.skillRefs || [],
         parentSessionId: context.sessionId,
         parentSessionTitle: context.sessionTitle,
         workspaceRoot: context.workspaceRoot,

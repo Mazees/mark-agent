@@ -400,7 +400,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
 
     if (isCurrentLoading && typeof handleIntervention === 'function') {
-      handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
+      handleIntervention(prompt, activeSessionId, {
+        displayPrompt: rawDisplay,
+        skillRefs: sendOptions.skillRefs
+      })
       return
     }
 
@@ -887,6 +890,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                           content={cleanContent}
                           followsProcess={item.hideProcessDetails}
                           reasoning={msg.reasoning}
+                          skills={msg.skills}
                           isThinking={msg.isThinking}
                           isSearching={msg.isSearching}
                           isSummarizing={msg.isSummarizing}

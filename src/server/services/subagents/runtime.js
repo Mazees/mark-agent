@@ -264,6 +264,11 @@ export class SubagentRuntime {
         taskId: input.taskId || null,
         stepId: input.stepId || null,
         contextSummary: input.contextSummary || '',
+        skillRefs: Array.isArray(input.skillRefs)
+          ? input.skillRefs
+              .filter((ref) => typeof ref.id === 'string')
+              .map((ref) => ({ id: ref.id, name: ref.name }))
+          : [],
         createdAt: Date.now(),
         turnCount: 0,
         result: null,

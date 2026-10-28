@@ -659,14 +659,14 @@ export const guideArticles = [
       {
         title: 'User Skills',
         paragraphs: [
-          'Halaman User Skills digunakan untuk membuat, membuka, memperbarui daftar, dan memasang paket skill ZIP. Edit petunjuk serta berkas pendukung melalui editor skill, termasuk penambahan folder, penggantian nama, dan penghapusan item. Skill memakai petunjuk Markdown, biasanya melalui SKILL.md dalam Documents/Mark Skills. Isi nama, deskripsi, tahapan, serta batasan yang jelas agar Mark memahami kapan dan bagaimana menggunakannya.'
+          'Halaman User Skills digunakan untuk membuat, membuka, memperbarui daftar, dan memasang paket skill ZIP. Edit petunjuk serta berkas pendukung melalui editor skill, termasuk penambahan folder, penggantian nama, dan penghapusan item. Skill memakai petunjuk Markdown, biasanya melalui SKILL.md dalam ~/.agents/skills. Gunakan tombol Migrasi skill lama di halaman Skills untuk memindahkan skill dari Documents/Mark Skills. Folder beserta file pendukung dipindahkan tanpa menimpa nama yang sudah ada. Perubahan di folder bersama juga terlihat oleh agent lain yang membacanya. Isi nama, deskripsi, tahapan, serta batasan yang jelas agar Mark memahami kapan dan bagaimana menggunakannya.'
         ],
         links: [{ label: 'Buka User Skills', to: '/skills' }]
       },
       {
         title: 'Memanggil skill',
         paragraphs: [
-          'Ketik / pada pesan, pilih skill yang tersedia, lalu tambahkan permintaan. Skill bawaan saat ini mencakup /task, /setup-google-workspace, dan /create-plugin. Slash command yang hanya disebut dokumentasi lama belum tentu tersedia; ikuti daftar yang muncul pada aplikasi.'
+          'Ketik / pada pesan, pilih skill yang tersedia, lalu tambahkan permintaan. Skill bawaan saat ini mencakup /task, /setup-google-workspace, dan /create-plugin. Skill dipilih dari katalog yang memuat nama, deskripsi, sumber, serta lokasi SKILL.md. Isi lengkap dimuat ketika skill digunakan; Mark memperoleh direktori dasarnya untuk membaca references, scripts, atau assets sesuai kebutuhan. Penanda Menggunakan pada jawaban menampilkan sumber dan file referensi. Skill dengan kebijakan hanya eksplisit tidak dipilih otomatis. Instruksi skill tetap mengikuti izin dan batas tugas yang berlaku. Slash command yang hanya disebut dokumentasi lama belum tentu tersedia; ikuti daftar yang muncul pada aplikasi.'
         ],
         example:
           '/create-plugin Buat plugin untuk membaca ringkasan penggunaan penyimpanan pada folder yang saya tentukan.'
@@ -853,7 +853,7 @@ export const guideArticles = [
         title: 'Lokasi penyimpanan',
         bullets: [
           'Data utama dan konfigurasi berada di folder pengguna .config/mark-agent. Database utama menggunakan mark.db.',
-          'Folder umum untuk pekerjaan adalah Documents/Mark Workspace. Plugin berada di Documents/Mark Plugins dan skill di Documents/Mark Skills.',
+          'Folder umum untuk pekerjaan adalah Documents/Mark Workspace. Plugin berada di Documents/Mark Plugins dan skill di ~/.agents/skills. Skill dari Documents/Mark Skills dapat dipindahkan melalui tombol migrasi di halaman Skills.',
           'Artifact tugas serta unggahan sementara dapat memiliki lokasi tersendiri. Gunakan tautan atau folder hasil yang ditampilkan oleh pekerjaan tersebut.'
         ]
       },
