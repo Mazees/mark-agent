@@ -608,6 +608,7 @@ export const useMarkAgent = () => {
     audioIntensity: vad.audioIntensity,
     startRecording: vad.startRecording,
     stopRecording: vad.stopRecording,
+    wakeStatus: vad.wakeStatus,
     toggleRecording: vad.toggleRecording,
     toastMessage: vad.toastMessage
   }

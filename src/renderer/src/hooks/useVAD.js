@@ -53,7 +53,9 @@ export async function playWakeChime() {
     gain2.connect(ctx.destination)
     osc2.start(now + 0.08)
     osc2.stop(now + 0.26)
-  } catch (_) {}
+  } catch {
+    // Audio feedback is optional when playback is unavailable.
+  }
 }
 
 export const useVAD = ({
@@ -63,14 +65,17 @@ export const useVAD = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [audioIntensity, setAudioIntensity] = useState(0)
   const [toastMessage, setToastMessage] = useState('')
+  const [wakeStatus, setWakeStatus] = useState('starting')
 
   const isRecordingRef = useRef(false)
-  const isProcessingRef = useRef(false)
   const isWakeListeningRef = useRef(false)
   const wakeRecognitionRef = useRef(null)
   const manualRecognitionRef = useRef(null)
   const silenceTimerRef = useRef(null)
   const currentConfigRef = useRef({})
+  const configReadyRef = useRef(false)
+  const wakeBlockedRef = useRef(false)
+  const wakeErrorRef = useRef(null)
   const onTranscriptRef = useRef(onTranscript)
 
   // Real-time Web Audio Analyser references
@@ -90,7 +95,11 @@ export const useVAD = ({
       if (data && data.length > 0) {
         currentConfigRef.current = data[0] || {}
       }
-    } catch (_) {}
+    } catch {
+      // Use the default settings until the configuration can be loaded.
+    } finally {
+      configReadyRef.current = true
+    }
   }
 
   useEffect(() => {
@@ -98,7 +107,19 @@ export const useVAD = ({
 
     const handleConfigUpdated = (e) => {
       if (e?.detail) {
+        const previous = currentConfigRef.current
+        const changed = ['wakeWordEnabled', 'speechLanguage', 'customWakeWords'].some(
+          (key) => e.detail[key] !== undefined && e.detail[key] !== previous[key]
+        )
         currentConfigRef.current = { ...currentConfigRef.current, ...e.detail }
+        wakeBlockedRef.current = false
+        wakeErrorRef.current = null
+        if (changed && !isRecordingRef.current) {
+          stopWebSpeechRecognition()
+          isWakeListeningRef.current = false
+          wakeRecognitionRef.current = null
+          setWakeStatus('starting')
+        }
       }
     }
     window.addEventListener('config-updated', handleConfigUpdated)
@@ -123,7 +144,9 @@ export const useVAD = ({
     if (audioContextRef.current) {
       try {
         audioContextRef.current.close()
-      } catch (_) {}
+      } catch {
+        // The analyser may already be closed.
+      }
       audioContextRef.current = null
     }
     setAudioIntensity(0)
@@ -226,6 +249,7 @@ export const useVAD = ({
    * Memulai perekaman manual suara (Push-to-Talk / Klik Tombol Mic / Shortcut)
    */
   const startManualRecording = useCallback(async () => {
+    if (isRecordingRef.current) return
     if (!isWebSpeechSupported()) {
       setToastMessage('Web Speech API tidak didukung di browser ini.')
       setTimeout(() => setToastMessage(''), 4000)
@@ -233,23 +257,22 @@ export const useVAD = ({
     }
 
     // Jika wake word background listener sedang aktif, stop sementara
-    if (wakeRecognitionRef.current || isWakeListeningRef.current) {
-      stopWebSpeechRecognition()
-      wakeRecognitionRef.current = null
-      isWakeListeningRef.current = false
-    }
+    stopWebSpeechRecognition()
+    wakeRecognitionRef.current = null
+    isWakeListeningRef.current = false
 
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current)
       silenceTimerRef.current = null
     }
 
+    isRecordingRef.current = true
+    setIsRecording(true)
     await refreshConfig()
+    if (!isRecordingRef.current) return
     const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
     const customWakeWords = currentConfigRef.current?.customWakeWords || ''
 
-    isRecordingRef.current = true
-    setIsRecording(true)
     setIsProcessing(false)
 
     // Bunyikan chime feedback setiap mic manual mulai aktif
@@ -268,9 +291,9 @@ export const useVAD = ({
       }
       silenceTimerRef.current = setTimeout(() => {
         if (!isRecordingRef.current) return
-        const textToProcess = (accumulatedFinal || latestInterim || '').trim()
+        const textToProcess = [accumulatedFinal, latestInterim].filter(Boolean).join(' ').trim()
+        stopManualRecording()
         if (textToProcess) {
-          stopManualRecording()
           const cleanText = cleanSpokenCommand(textToProcess, customWakeWords)
           const textToSend = cleanText || textToProcess
           if (textToSend) {
@@ -295,7 +318,7 @@ export const useVAD = ({
       onResult: (finalText) => {
         if (!isRecordingRef.current) return
         if (finalText && finalText.trim()) {
-          accumulatedFinal = finalText.trim()
+          accumulatedFinal = [accumulatedFinal, finalText.trim()].filter(Boolean).join(' ')
           latestInterim = ''
           // Reset jeda hening setelah potongan kalimat selesai
           resetSilenceTimeout(1800)
@@ -303,6 +326,7 @@ export const useVAD = ({
       },
       onError: (err) => {
         console.warn('[VAD] Speech recognition error:', err.message)
+        setToastMessage('Pengenalan suara gagal: ' + err.message)
         if (silenceTimerRef.current) {
           clearTimeout(silenceTimerRef.current)
           silenceTimerRef.current = null
@@ -316,7 +340,7 @@ export const useVAD = ({
         }
         if (isRecordingRef.current) {
           stopManualRecording()
-          const textToProcess = (accumulatedFinal || latestInterim || '').trim()
+          const textToProcess = [accumulatedFinal, latestInterim].filter(Boolean).join(' ').trim()
           if (textToProcess) {
             const cleanText = cleanSpokenCommand(textToProcess, customWakeWords)
             const textToSend = cleanText || textToProcess
@@ -353,7 +377,7 @@ export const useVAD = ({
     let isStartingWake = false
 
     const checkAndEnsureWakeListener = async () => {
-      if (!isMounted || isStartingWake) return
+      if (!isMounted || isStartingWake || !configReadyRef.current) return
 
       const wakeEnabled = currentConfigRef.current?.wakeWordEnabled !== false
 
@@ -364,6 +388,9 @@ export const useVAD = ({
         window.isMarkSpeaking ||
         !isWebSpeechSupported()
       ) {
+        setWakeStatus(
+          !wakeEnabled ? 'disabled' : !isWebSpeechSupported() ? 'unsupported' : 'paused'
+        )
         if (isWakeListeningRef.current) {
           console.log('[WakeWord] Menjeda deteksi wake word latar belakang...')
           isWakeListeningRef.current = false
@@ -373,10 +400,16 @@ export const useVAD = ({
         return
       }
 
+      if (wakeBlockedRef.current) {
+        setWakeStatus(wakeErrorRef.current || 'error')
+        return
+      }
+
       // Jika sudah mendengarkan dengan baik, biarkan
       if (isWakeListeningRef.current) return
 
       isStartingWake = true
+      setWakeStatus('starting')
 
       const lang = currentConfigRef.current?.speechLanguage || 'id-ID'
       const customWakeWords = currentConfigRef.current?.customWakeWords || ''
@@ -388,40 +421,17 @@ export const useVAD = ({
           onStart: () => {
             if (!isMounted) return
             isWakeListeningRef.current = true
-            console.log('[WakeWord] Standby mendengarkan kata pemicu ("Hey Mark" / "Mark")...', {
-              lang,
-              customWakeWords
-            })
-          },
-          onInterim: (interim) => {
-            if (!interim || window.isMarkSpeaking || isRecordingRef.current) return
-            console.log('[WakeWord] Hearing (interim):', interim)
-            const check = detectWakeWord(interim, customWakeWords)
-            if (check.detected) {
-              console.log('[WakeWord] Wake word terdeteksi pada interim:', check)
-              if (check.command) {
-                stopWebSpeechRecognition()
-                isWakeListeningRef.current = false
-                playWakeChime()
-                console.log('[WakeWord] Menjalankan perintah suara langsung:', check.command)
-                onTranscriptRef.current(check.command, {
-                  isWakeWord: true,
-                  wakePhrase: check.wakePhrase || 'Mark'
-                })
-              }
-            }
+            setWakeStatus('listening')
+            console.log('[WakeWord] Standby mendengarkan kata pemicu.')
           },
           onResult: (finalText) => {
             if (!finalText || window.isMarkSpeaking || isRecordingRef.current) return
-            console.log('[WakeWord] Heard (final):', finalText)
             const check = detectWakeWord(finalText, customWakeWords)
             if (check.detected) {
-              console.log('[WakeWord] Wake word terdeteksi pada final text:', check)
               stopWebSpeechRecognition()
               isWakeListeningRef.current = false
-              playWakeChime()
               if (check.command) {
-                console.log('[WakeWord] Menjalankan perintah suara langsung:', check.command)
+                playWakeChime()
                 onTranscriptRef.current(check.command, {
                   isWakeWord: true,
                   wakePhrase: check.wakePhrase || 'Mark'
@@ -436,6 +446,9 @@ export const useVAD = ({
           },
           onError: (err) => {
             console.error('[WakeWord] Session error:', err?.message || err)
+            wakeBlockedRef.current = true
+            wakeErrorRef.current = err?.message || 'error'
+            setWakeStatus(wakeErrorRef.current)
             isWakeListeningRef.current = false
             wakeRecognitionRef.current = null
           },
@@ -451,7 +464,17 @@ export const useVAD = ({
             }
           }
         })
-        wakeRecognitionRef.current = rec
+        if (
+          !isMounted ||
+          isRecordingRef.current ||
+          window.isMarkSpeaking ||
+          currentConfigRef.current?.wakeWordEnabled === false
+        ) {
+          if (rec) stopWebSpeechRecognition()
+        } else {
+          wakeRecognitionRef.current = rec
+          if (!rec && !wakeBlockedRef.current) setWakeStatus('error')
+        }
       } catch (err) {
         console.error('[WakeWord] Gagal mengaktifkan session:', err?.message || err)
         isWakeListeningRef.current = false
@@ -468,9 +491,16 @@ export const useVAD = ({
 
     // Panggil langsung pada start
     checkAndEnsureWakeListener()
+    const retry = () => {
+      wakeBlockedRef.current = false
+      wakeErrorRef.current = null
+      checkAndEnsureWakeListener()
+    }
+    window.addEventListener('mark:wake-retry', retry)
 
     return () => {
       isMounted = false
+      window.removeEventListener('mark:wake-retry', retry)
       clearInterval(watchdogInterval)
       if (wakeRecognitionRef.current || isWakeListeningRef.current) {
         console.log('[WakeWord] Mematikan background listener on unmount...')
@@ -495,6 +525,9 @@ export const useVAD = ({
 
   useEffect(() => {
     return () => {
+      isRecordingRef.current = false
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+      stopWebSpeechRecognition()
       stopAudioAnalyser()
     }
   }, [stopAudioAnalyser])
@@ -506,6 +539,7 @@ export const useVAD = ({
     toggleRecording,
     startRecording: startManualRecording,
     stopRecording: stopManualRecording,
+    wakeStatus,
     toastMessage
   }
 }

@@ -49,6 +49,7 @@ const defaultChatContext = {
   audioIntensity: 0,
   startRecording: () => {},
   stopRecording: () => {},
+  wakeStatus: 'unavailable',
   toggleRecording: () => {},
   toastMessage: null,
   currentActiveSessionId: '1',

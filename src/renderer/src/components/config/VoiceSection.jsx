@@ -1,9 +1,25 @@
-import { ConfigField } from './ConfigFields'
+import { ConfigField, ConfigToggle } from './ConfigFields'
 import { useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { configProps, controlClass } from './configStyles'
+import { useChat } from '../../contexts/ChatContext'
+
+const wakeMessages = {
+  starting: 'Menghubungkan pengenalan suara…',
+  listening: 'Siap mendengarkan panggilan.',
+  paused: 'Dijeda sementara saat mikrofon digunakan atau Mark berbicara.',
+  disabled: 'Panggilan suara dinonaktifkan.',
+  unavailable: 'Status tersedia setelah pengaturan awal selesai.',
+  unsupported: 'Browser ini tidak mendukung pengenalan suara.',
+  'not-allowed': 'Izin mikrofon ditolak. Izinkan mikrofon untuk Mark di browser.',
+  'service-not-allowed': 'Layanan pengenalan suara diblokir oleh browser.',
+  'audio-capture': 'Mikrofon tidak tersedia. Periksa perangkat dan izin mikrofon Windows.',
+  network: 'Layanan pengenalan suara tidak dapat terhubung. Periksa koneksi internet.',
+  error: 'Pengenalan suara belum dapat dimulai.'
+}
 
 export const VoiceSection = ({ config, setConfig }) => {
+  const { wakeStatus } = useChat()
   const [error, setError] = useState('')
   const [opening, setOpening] = useState(false)
   const update = (key, value) => setConfig((previous) => ({ ...previous, [key]: value }))
@@ -30,6 +46,25 @@ export const VoiceSection = ({ config, setConfig }) => {
   return (
     <div id="tour-tts" className="space-y-7">
       <div id="tour-wakeword">
+        <ConfigToggle
+          id="wake-enabled"
+          label="Panggilan suara"
+          description="Panggil Mark dengan suara saat aplikasi terbuka."
+          checked={config.wakeWordEnabled !== false}
+          onChange={(event) => update('wakeWordEnabled', event.target.checked)}
+        />
+        <div className="mb-5 mt-4 text-xs leading-relaxed text-white/60" role="status">
+          {wakeMessages[wakeStatus] || wakeMessages.error}
+          {!['starting', 'listening', 'paused', 'disabled', 'unavailable'].includes(wakeStatus) && (
+            <button
+              type="button"
+              className="ml-2 text-primary underline underline-offset-2"
+              onClick={() => window.dispatchEvent(new Event('mark:wake-retry'))}
+            >
+              Coba lagi
+            </button>
+          )}
+        </div>
         <ConfigField
           id="wake-words"
           label="Kata panggilan tambahan"
@@ -50,7 +85,7 @@ export const VoiceSection = ({ config, setConfig }) => {
       <ConfigField
         id="speech-language"
         label="Bahasa input suara"
-        hint="Pilih bahasa yang Anda gunakan saat berbicara dengan Mark."
+        hint="Pengenalan suara menggunakan layanan browser dan dapat mengirim audio melalui internet."
       >
         <select
           id="speech-language"
