@@ -13,6 +13,10 @@ import { startOsActivityTracking } from './tools/awareness-tracker.js'
 import { startTelegramBot } from '../main/telegram/telegram-service.js'
 import { getActiveConfig } from './config-manager.js'
 import { registerRoutes } from './routes/index.js'
+import { setServerPort } from './tools/overlay-manager.js'
+import { subagentRuntime } from './services/subagents/service.js'
+import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
+import { mcpRuntime } from './services/mcp-service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -26,6 +30,14 @@ process.on('unhandledRejection', (reason) => {
 })
 
 process.on('uncaughtException', (err) => {
+  if (
+    err?.code === 'EPIPE' ||
+    err?.code === 'ECONNRESET' ||
+    err?.code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+    err?.code === 'ERR_STREAM_DESTROYED'
+  ) {
+    return
+  }
   console.error('[Server Error] Handled UncaughtException:', err?.message || err)
 })
 
@@ -66,15 +78,42 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 // Inisialisasi WebSocket Hub, Orama, Plugins & Awareness Tracking
 wsHub.init(server)
+subagentRuntime.start()
 initOramaIndices().catch(() => {})
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
+chromeBridge.events.on('status', (status) =>
+  wsHub.broadcast('addon:status', { id: 'chrome-bridge', ...status })
+)
+chromeBridge.start().catch((error) => console.warn('[Chrome Bridge]', error.message))
+server.on('close', () => {
+  subagentRuntime.stop().catch(() => {})
+  chromeBridge.stop().catch(() => {})
+  mcpRuntime.shutdown().catch(() => {})
+})
+const shutdownServices = () => {
+  const timeout = setTimeout(() => process.exit(0), 1500)
+  timeout.unref()
+  Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop(), mcpRuntime.shutdown()]).finally(() => {
+    for (const client of wsHub.clients) client.terminate()
+    server.close(() => {
+      clearTimeout(timeout)
+      process.exit(0)
+    })
+    server.closeAllConnections()
+  })
+}
+process.once('SIGTERM', shutdownServices)
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  process.once('SIGINT', shutdownServices)
+}
 startOsActivityTracking(10000)
 
 // Daftarkan listener event abort dari WebSocket
 wsHub.on('ai:abort', async () => {
+  // Minibot requests have independent cancellation scopes.
   try {
-    const { abortAllFetches } = await import('./services/ai-bridge.js')
-    abortAllFetches()
+    const { abortLeadFetches } = await import('./services/ai/ai-utils.js')
+    abortLeadFetches()
   } catch (_) {}
   return { success: true }
 })
@@ -82,7 +121,7 @@ wsHub.on('ai:abort', async () => {
 // Relaying WebSocket events dari client (misal: subagent:report) ke semua client
 wsHub.on('ws:broadcast', async (payload) => {
   const { event, data } = payload || {}
-  if (event) {
+  if (event && !event.startsWith('browser-panel:') && !event.startsWith('subagent:')) {
     wsHub.broadcast(event, data)
   }
   return { success: true }
@@ -169,6 +208,7 @@ server.on('listening', async () => {
   activePort = typeof address === 'object' && address ? address.port : activePort
   const activeHost = typeof address === 'object' && address?.address ? address.address : HOST
   app.set('port', activePort)
+  setServerPort(activePort)
   console.log(`\n======================================================`)
   console.log(`  Menyalakan Server MARK di http://${activeHost}:${activePort}`)
   console.log(`======================================================\n`)

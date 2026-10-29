@@ -1,7 +1,18 @@
 import { Router } from 'express'
 import { getActiveConfig } from '../config-manager.js'
 import { wsHub } from '../ws-hub.js'
+import { getStreamDiagnostics } from '../services/ai/stream-diagnostics.js'
 import { launchUI } from '../launcher.js'
+import { buildPluginToolGroups } from '../../shared/plugin-schema.js'
+import { mcpGroups, findMcpTool, executeMcpTool } from '../services/mcp-service.js'
+import { requestMcpPermission, decideMcpPermission, consumeMcpPermission } from '../services/mcp-permissions.js'
+import { isComputerUseSessionOpen } from '../../shared/computer-use.js'
+import { computerUseSessionStatus } from '../tools/pc-agent.js'
+import {
+  requestComputerUsePermission,
+  decideComputerUsePermission,
+  isLocalComputerUseOrigin
+} from '../tools/computer-use-permissions.js'
 import {
   GROUP_TOOLS_SCHEMA,
   GROUP_TOOL_GROUP_NAMES,
@@ -10,6 +21,11 @@ import {
 } from '../tools/group-tools.js'
 
 export const aiRouter = Router()
+
+aiRouter.get('/ai/diagnostics', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({ data: getStreamDiagnostics() })
+})
 
 // 1. AI Fetch Direct Gateway
 aiRouter.post('/ai/fetch', async (req, res) => {
@@ -35,6 +51,7 @@ aiRouter.post('/ai/fetch', async (req, res) => {
 
     wsHub.broadcast('ai:fetch', {
       type: 'fetch',
+      sessionId,
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
@@ -68,7 +85,8 @@ aiRouter.post('/ai/stream', async (req, res) => {
     tools = null,
     config = {},
     isSmallTask = false,
-    sessionId = null
+    sessionId = null,
+    requestId = null
   } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
@@ -85,6 +103,7 @@ aiRouter.post('/ai/stream', async (req, res) => {
 
     wsHub.broadcast('ai:fetch', {
       type: 'stream',
+      sessionId,
       provider,
       model: resolvedModel,
       messagesCount: Array.isArray(messages) ? messages.length : 0,
@@ -105,23 +124,24 @@ aiRouter.post('/ai/stream', async (req, res) => {
       isSmallTask,
       sessionId,
       signal: clientAbortController.signal,
+      requestId,
       onToken: (token) => {
-        wsHub.streamToken(token, 'answer')
+        wsHub.streamToken(token, 'answer', sessionId, requestId)
       },
       onReasoning: (rToken) => {
-        wsHub.streamToken(rToken, 'thought')
+        wsHub.streamToken(rToken, 'thought', sessionId, requestId)
       },
       onMood: (mood) => {
-        wsHub.broadcast('ai:mood', { mood })
+        wsHub.broadcast('ai:mood', { mood, sessionId, requestId })
       },
       onMeta: (meta) => {
-        wsHub.broadcast('ai:mark_meta', meta)
+        wsHub.broadcast('ai:mark_meta', { ...meta, sessionId, requestId })
         if (meta?.mood) {
-          wsHub.broadcast('ai:mood', { mood: meta.mood })
+          wsHub.broadcast('ai:mood', { mood: meta.mood, sessionId, requestId })
         }
       },
       onToolCall: (toolCalls) => {
-        wsHub.broadcast('ai:tool_calls', { toolCalls })
+        wsHub.broadcast('ai:tool_calls', { toolCalls, sessionId, requestId })
       }
     })
 
@@ -133,8 +153,8 @@ aiRouter.post('/ai/stream', async (req, res) => {
 
 aiRouter.post('/ai/abort', async (req, res) => {
   try {
-    const { abortAllFetches } = await import('../services/ai-bridge.js')
-    abortAllFetches()
+    const { abortLeadFetches } = await import('../services/ai/ai-utils.js')
+    abortLeadFetches()
     res.json({ success: true })
   } catch (err) {
     res.json({ success: false, error: err.message })
@@ -152,14 +172,57 @@ aiRouter.post('/ai/reset-session', async (req, res) => {
 })
 
 // 3. Group Tools Schema & Registry API
-aiRouter.get('/tools/groups', (_req, res) => {
+aiRouter.get('/tools/groups', async (_req, res) => {
+  let plugins = []
+  try {
+    const pluginLoader = await import('../../main/plugins/plugin-loader.js')
+    plugins = pluginLoader.getLoadedPlugins()
+    if (plugins.length === 0) {
+      plugins = await pluginLoader.loadAllPlugins()
+    }
+  } catch (err) {
+    console.warn('[Tools Groups] Gagal memuat daftar plugin:', err?.message || err)
+  }
+
+  const pluginGroups = plugins
+    .filter((plugin) => plugin.isEnabled !== false && plugin.name)
+    .map((plugin) => ({
+      name: plugin.name,
+      displayName: plugin.displayName || plugin.name,
+      description: plugin.description || '',
+      actionCount: Array.isArray(plugin.actions) ? plugin.actions.length : 0
+    }))
+
+  const pluginSchema = buildPluginToolGroups(
+    plugins,
+    Object.keys(group_tools_flat),
+    GROUP_TOOL_GROUP_NAMES
+  )
+  Object.assign(pluginSchema, mcpGroups())
+  const pluginDefinitions = Object.fromEntries(
+    Object.entries(pluginSchema).map(([name, group]) => [
+      name,
+      {
+        description: group.description,
+        tools: Object.fromEntries(
+          group.tools.map((tool) => [tool.function.name, tool.function.description])
+        )
+      }
+    ])
+  )
+
   res.json({
     success: true,
     data: {
-      schema: GROUP_TOOLS_SCHEMA,
-      names: GROUP_TOOL_GROUP_NAMES,
-      definition: GROUP_TOOLS_DEFINITION,
-      flat: group_tools_flat
+      schema: { ...GROUP_TOOLS_SCHEMA, ...pluginSchema },
+      names: [...GROUP_TOOL_GROUP_NAMES, ...Object.keys(pluginSchema)],
+      plugins: pluginGroups,
+      definition: { ...GROUP_TOOLS_DEFINITION, ...pluginDefinitions },
+      flat: Object.assign(
+        {},
+        group_tools_flat,
+        ...Object.values(pluginDefinitions).map((group) => group.tools)
+      )
     }
   })
 })
@@ -167,7 +230,16 @@ aiRouter.get('/tools/groups', (_req, res) => {
 // 4. Native Tools Execution API
 aiRouter.post('/tools/execute', async (req, res) => {
   const { tool, query, config } = req.body || {}
+  const controller = new AbortController()
+  res.once('close', () => {
+    if (!res.writableEnded) controller.abort()
+  })
   try {
+    if (typeof tool === 'string' && tool.startsWith('mcp_')) {
+      const owner = { sessionId: config?.sessionId, runId: config?.computerUseRunId }
+      if (!consumeMcpPermission(config?.mcpApprovalToken, tool, query, owner)) return res.status(403).json({ success:false, error:'Persetujuan tool MCP diperlukan.' })
+      return res.json(await executeMcpTool(tool, query, controller.signal))
+    }
     if (typeof tool === 'string' && tool.startsWith('plugin-')) {
       const { executePluginAction } = await import('../../main/plugins/plugin-loader.js')
       const result = await executePluginAction(tool, query)
@@ -176,9 +248,10 @@ aiRouter.post('/tools/execute', async (req, res) => {
     const { NATIVE_TOOLS } = await import('../../main/node-tools.js')
     const nativeTool = NATIVE_TOOLS[tool]
     if (!nativeTool) {
-      return res.json({ success: false, error: `Tool '${tool}' tidak ditemukan` })
+      const { executePluginAction } = await import('../../main/plugins/plugin-loader.js')
+      return res.json(await executePluginAction(tool, query))
     }
-    const finalConfig = config || getActiveConfig()
+    const finalConfig = { ...(config || getActiveConfig()), signal: controller.signal }
     const result = await nativeTool.handler(query, finalConfig)
     if (result && typeof result === 'object' && 'success' in result) {
       return res.json(result)
@@ -190,11 +263,35 @@ aiRouter.post('/tools/execute', async (req, res) => {
 })
 
 aiRouter.post('/tools/needs-approval', async (req, res) => {
-  const { tool, query } = req.body || {}
+  const { tool, query, config = {} } = req.body || {}
   try {
+    if (typeof tool === 'string' && tool.startsWith('mcp_')) {
+      const match = findMcpTool(tool)
+      const owner = { sessionId: config.sessionId, runId: config.computerUseRunId }
+      return res.json({ needsApproval: true, mcpPermissionRequestId:requestMcpPermission(tool,query,owner), message: match ? `Izinkan ${match.addon.name} menjalankan ${match.item.originalName}?` : 'Tool MCP tidak tersedia.' })
+    }
     const { NATIVE_TOOLS } = await import('../../main/node-tools.js')
     const nativeTool = NATIVE_TOOLS[tool]
     if (!nativeTool) return res.json({ needsApproval: false })
+    if (isComputerUseSessionOpen(tool, query)) {
+      const owner = {
+        sessionId: String(config.sessionId || 'default'),
+        runId: config.computerUseRunId || config.sessionId
+      }
+      const current = computerUseSessionStatus()
+      if (
+        current.status === 'active' &&
+        current.sessionId === owner.sessionId &&
+        current.runId === String(owner.runId || owner.sessionId)
+      )
+        return res.json({ needsApproval: false })
+      return res.json({
+        needsApproval: true,
+        requiresFreshApproval: true,
+        permissionRequestId: requestComputerUsePermission(owner),
+        message: nativeTool.approvalMessage(query)
+      })
+    }
     const needs =
       typeof nativeTool.needsApproval === 'function'
         ? nativeTool.needsApproval(query)
@@ -208,6 +305,41 @@ aiRouter.post('/tools/needs-approval', async (req, res) => {
   }
 })
 
+aiRouter.post('/computer-use/permission', (req, res) => {
+  try {
+    if (
+      !isLocalComputerUseOrigin(
+        req.get('origin'),
+        req.socket.localPort,
+        process.argv.includes('--dev')
+      )
+    )
+      return res
+        .status(403)
+        .json({
+          success: false,
+          error: 'Persetujuan sesi harus diberikan melalui antarmuka Mark lokal.'
+        })
+    const { requestId, sessionId, runId, approved } = req.body || {}
+    const token = decideComputerUsePermission(
+      requestId,
+      { sessionId: String(sessionId || 'default'), runId },
+      approved
+    )
+    res.json({ success: true, token })
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message })
+  }
+})
+
+aiRouter.post('/mcp/permission', (req, res) => {
+  try {
+    if (!isLocalComputerUseOrigin(req.get('origin'), req.socket.localPort, process.argv.includes('--dev'))) return res.status(403).json({ success:false, error:'Persetujuan harus diberikan melalui Mark lokal.' })
+    const { requestId, sessionId, runId, approved } = req.body || {}
+    return res.json({ success:true, token:decideMcpPermission(requestId,{sessionId,runId},approved === true) })
+  } catch (error) { return res.status(400).json({ success:false,error:error.message }) }
+})
+
 // 4. Edge-TTS Speech Synthesis API
 aiRouter.get('/tts/stream', async (req, res) => {
   const { text, voice, rate = 10, pitch = 55 } = req.query || {}
@@ -219,17 +351,40 @@ aiRouter.get('/tts/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store')
     res.setHeader('Access-Control-Allow-Origin', '*')
 
-    req.on('close', () => {
+    const handleClientAbort = () => {
       if (!audioStream.destroyed) {
-        audioStream.destroy()
+        try {
+          audioStream.unpipe(res)
+          audioStream.destroy()
+        } catch (_) {}
       }
+    }
+
+    req.once('close', handleClientAbort)
+    res.once('close', handleClientAbort)
+
+    res.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      console.warn('[TTS Stream GET] Response error:', err?.message || err)
     })
 
+    if (res.socket) {
+      res.socket.on('error', (err) => {
+        handleClientAbort()
+        if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      })
+    }
+
     audioStream.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: err.message })
       } else {
-        res.end()
+        try {
+          res.end()
+        } catch (_) {}
       }
     })
 
@@ -251,17 +406,40 @@ aiRouter.post('/tts/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store')
     res.setHeader('Access-Control-Allow-Origin', '*')
 
-    req.on('close', () => {
+    const handleClientAbort = () => {
       if (!audioStream.destroyed) {
-        audioStream.destroy()
+        try {
+          audioStream.unpipe(res)
+          audioStream.destroy()
+        } catch (_) {}
       }
+    }
+
+    req.once('close', handleClientAbort)
+    res.once('close', handleClientAbort)
+
+    res.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      console.warn('[TTS Stream POST] Response error:', err?.message || err)
     })
 
+    if (res.socket) {
+      res.socket.on('error', (err) => {
+        handleClientAbort()
+        if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
+      })
+    }
+
     audioStream.on('error', (err) => {
+      handleClientAbort()
+      if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: err.message })
       } else {
-        res.end()
+        try {
+          res.end()
+        } catch (_) {}
       }
     })
 

@@ -3,6 +3,11 @@
  * Reverse-engineered chat.deepseek.com client with native WASM PoW Solver
  */
 import https from 'https'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { setTimeout as delay } from 'node:timers/promises'
+const requestContext = new AsyncLocalStorage()
+export const withDeepSeekSignal = (signal, request) => requestContext.run({ signal }, request)
+const requestDelay = (ms) => delay(ms, undefined, { signal: requestContext.getStore()?.signal })
 import fs from 'fs'
 import path from 'path'
 import zlib from 'zlib'
@@ -157,6 +162,7 @@ function httpPostJson(path, headers, bodyObj) {
     const postData = JSON.stringify(bodyObj)
     const options = {
       hostname: BASE_HOST,
+      signal: requestContext.getStore()?.signal,
       port: 443,
       path: path,
       method: 'POST',
@@ -193,6 +199,7 @@ function httpGetJson(path, headers) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: BASE_HOST,
+      signal: requestContext.getStore()?.signal,
       port: 443,
       path: path,
       method: 'GET',
@@ -292,6 +299,7 @@ function httpPostMultipart(reqPath, headers, fields, fileField) {
 
     const options = {
       hostname: BASE_HOST,
+      signal: requestContext.getStore()?.signal,
       port: 443,
       path: reqPath,
       method: 'POST',
@@ -435,7 +443,7 @@ export async function waitForFileReady(
       const status = String(file?.status || '').toUpperCase()
       if (['SUCCESS', 'READY', 'DONE', 'COMPLETED', 'FINISHED', 'OK'].includes(status)) {
         if (settleMs > 0) {
-          await new Promise((r) => setTimeout(r, settleMs))
+          await requestDelay(settleMs)
         }
         return file
       }
@@ -444,11 +452,12 @@ export async function waitForFileReady(
         throw new Error(`Pemrosesan berkas DeepSeek gagal (status: ${status})`)
       }
     } catch (err) {
+      if (requestContext.getStore()?.signal?.aborted) throw err
       if (err.message?.includes('Pemrosesan berkas DeepSeek gagal')) {
         throw err
       }
     }
-    await new Promise((r) => setTimeout(r, intervalMs))
+    await requestDelay(intervalMs)
   }
   return { id: fileId, status: 'ready_assumed' }
 }
@@ -555,7 +564,7 @@ async function _executeSingleDeepSeekCall(
 
   // Jeda acak manusiawi (jitter delay 350-800ms) untuk menghindari deteksi burst
   const jitterMs = Math.floor(Math.random() * (800 - 350 + 1)) + 350
-  await new Promise((resolve) => setTimeout(resolve, jitterMs))
+  await requestDelay(jitterMs)
 
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
   let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
@@ -589,6 +598,7 @@ async function _executeSingleDeepSeekCall(
   return new Promise((resolve, reject) => {
     const reqOptions = {
       hostname: BASE_HOST,
+      signal: requestContext.getStore()?.signal,
       port: 443,
       path: '/api/v0/chat/completion',
       method: 'POST',
@@ -870,6 +880,7 @@ export async function generateDeepSeekResponse(
   const retryDelayMs = options.retryDelayMs ?? 5000
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    requestContext.getStore()?.signal?.throwIfAborted()
     try {
       return await _executeSingleDeepSeekCall(prompt, modelName, token, options)
     } catch (err) {
@@ -910,7 +921,7 @@ export async function generateDeepSeekResponse(
             `DeepSeek sibuk (${errMsg.substring(0, 35)}...). Jeda ${retryDelayMs / 1000}s (Percobaan ${attempt}/${maxAttempts})...`
           )
         }
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+        await requestDelay(retryDelayMs)
         continue
       }
       throw err

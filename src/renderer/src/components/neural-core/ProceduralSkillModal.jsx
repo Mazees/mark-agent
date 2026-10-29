@@ -1,53 +1,104 @@
-import React from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { FaGraduationCap, FaTimes } from 'react-icons/fa'
 import rehypeExternalLinks from 'rehype-external-links'
+import { Trash2 } from 'lucide-react'
+import PropTypes from 'prop-types'
 import { CodeBlock } from '../Chat/CodeBlock'
+import NeuralDialog from './NeuralDialog'
+import { neuralDate } from './neuralCoreData'
 
-export const ProceduralSkillModal = ({ skill, onClose }) => {
-  if (!skill) return null
-
+export const ProceduralSkillModal = ({ skill, onClose, onDeleteSkill }) => {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const remove = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await onDeleteSkill(skill)
+      onClose()
+    } catch (failure) {
+      setError(failure.message)
+      setBusy(false)
+    }
+  }
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in">
-      <div className="w-full max-w-3xl max-h-[85vh] bg-base-200 border border-white/10 rounded-2xl flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-base-300/60">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <FaGraduationCap size={15} />
-            </div>
-            <div>
-              <h3 className="font-mono font-bold text-sm text-base-content uppercase">
-                {skill.name}
-              </h3>
-            </div>
+    <NeuralDialog
+      title={confirming ? 'Hapus skill?' : skill.name}
+      subtitle={confirming ? undefined : `Skill yang dipelajari · ${neuralDate(skill.updatedAt)}`}
+      onClose={onClose}
+      busy={busy}
+      footer={
+        confirming ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+              className="btn btn-ghost rounded-full"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={remove}
+              className="btn rounded-full border-error/30 bg-error/10 text-error"
+            >
+              {busy ? 'Menghapus...' : 'Hapus skill'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="btn btn-ghost mr-auto rounded-full text-error"
+            >
+              <Trash2 size={15} />
+              Hapus skill
+            </button>
+            <button type="button" onClick={onClose} className="btn btn-ghost rounded-full">
+              Tutup
+            </button>
+          </>
+        )
+      }
+    >
+      {confirming ? (
+        <p className="text-sm leading-relaxed text-white/65">
+          Panduan “{skill.name}” akan dihapus dari skill yang dipelajari Mark.
+        </p>
+      ) : (
+        <>
+          <p className="mb-5 text-sm leading-relaxed text-white/55">
+            {skill.description || 'Belum ada deskripsi.'}
+          </p>
+          <div className="break-words text-sm leading-relaxed text-white/80 custom-markdown">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[
+                [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
+              ]}
+              components={{ code: CodeBlock }}
+            >
+              {skill.content || 'Belum ada isi panduan.'}
+            </ReactMarkdown>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-base-300 hover:bg-base-100 flex items-center justify-center text-base-content/50 hover:text-base-content transition-all cursor-pointer"
-          >
-            <FaTimes size={13} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 font-sans text-sm text-base-content/90 custom-scrollbar leading-relaxed custom-markdown">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[
-              [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
-            ]}
-            components={{
-              code: CodeBlock
-            }}
-          >
-            {skill.content || '*Tidak ada konten instruksi Markdown.*'}
-          </ReactMarkdown>
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-error">
+          {error}
+        </p>
+      )}
+    </NeuralDialog>
   )
 }
-
+ProceduralSkillModal.propTypes = {
+  skill: PropTypes.object.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onDeleteSkill: PropTypes.func.isRequired
+}
 export default ProceduralSkillModal

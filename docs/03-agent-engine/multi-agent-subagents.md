@@ -1,6 +1,6 @@
 # Mesin Multi-Agen & Orkestrasi Sub-Agen
 
-Dokumen ini menjelaskan arsitektur **Autonomous Multi-Agent Sub-Agent Engine** pada sistem **MARK** (dikenal pada antarmuka pengguna sebagai **Sub-Agents** / **Mission Control**), mencakup siklus hidup pembuatan agen spesialis, orkestrasi paralel, isolasi sesi peramban, komunikasi antar-agen (_inter-agent messaging_), dan pencegahan pemanggilan rekursif.
+Dokumen ini menjelaskan arsitektur **Autonomous Multi-Agent Minibot Engine** pada sistem **MARK** (dikenal pada antarmuka pengguna sebagai **Minibots**), mencakup siklus hidup pembuatan agen spesialis, orkestrasi paralel, isolasi sesi peramban, komunikasi antar-agen (_inter-agent messaging_), dan pencegahan pemanggilan rekursif.
 
 ---
 
@@ -11,17 +11,17 @@ Ketika dihadapkan pada tugas yang kompleks (misalnya riset mendalam di berbagai 
 MARK mengimplementasikan sistem **Multi-Agen Hirarkis**:
 
 1. **Lead Agent (Mark):** Agen utama yang berinteraksi langsung dengan pengguna. Bertindak sebagai arsitek tugas, memecah masalah besar menjadi sub-tugas independen, melakukan _batch spawning_, menunggu hasil, dan merangkum kesimpulan akhir.
-2. **Sub-Agents (Spesialis Otonom):** Agen turunan yang di-spawn secara dinamis dengan peran (_role_), tujuan (_goal_), dan batasan alat (_allowedTools_) tertentu.
+2. **Minibots (Spesialis Otonom):** Agen turunan yang di-spawn secara dinamis dengan peran (_role_), tujuan (_goal_), dan batasan alat (_allowedTools_) tertentu.
 3. **Penyimpanan Terisolasi:** Setiap sub-agen memiliki riwayat pesan mandiri di tabel basis data SQLite `subagents` dan `subagent_messages`, serta profil peramban Chromium terisolasi di disk.
 
 ```mermaid
 flowchart TD
     User["Pengguna (Prompt Chat / Suara)"] --> Lead["Lead Agent (MARK)"]
 
-    subgraph "Mission Control / Sub-Agent Engine"
-        Lead -- "spawn_subagent" --> SA1["Sub-Agent Alpha (Riset Web A)"]
-        Lead -- "spawn_subagent" --> SA2["Sub-Agent Beta (Riset Web B)"]
-        Lead -- "spawn_subagent" --> SA3["Sub-Agent Gamma (Analisis Data)"]
+    subgraph "Minibots / Minibot Engine"
+        Lead -- "spawn_subagent" --> SA1["Minibot Alpha (Riset Web A)"]
+        Lead -- "spawn_subagent" --> SA2["Minibot Beta (Riset Web B)"]
+        Lead -- "spawn_subagent" --> SA3["Minibot Gamma (Analisis Data)"]
 
         SA1 <-->|"message_agent (P2P)"| SA2
         SA1 -- "report_to_lead" --> Lead
@@ -99,7 +99,7 @@ Ketika sub-agen memanggil alat peramban (`browser-navigate`, `browser-click`, `b
    C:\Users\<Username>\.config\mark-agent\browser-sessions\<subagentId>\
    ```
 3. Cookie, cache, local storage, dan riwayat login sub-agen A tidak akan bercampur dengan sub-agen B maupun jendela peramban utama pengguna.
-4. Setiap sesi peramban memancarkan _frame screenshot_ base64 independen ke WebSocket Hub (`browser:preview`), memungkinkan antarmuka pengguna menampilkan banyak kartu Holo-Preview secara bersamaan di dasbor Mission Control.
+4. Setiap sesi peramban memancarkan _frame screenshot_ base64 independen ke WebSocket Hub (`browser:preview`), memungkinkan antarmuka pengguna menampilkan banyak kartu Holo-Preview secara bersamaan di dasbor Minibots.
 
 ---
 
@@ -141,7 +141,7 @@ Sub-agen dapat bertukar pesan langsung dengan sub-agen lain secara peer-to-peer 
 }
 ```
 
-Fungsi `runSubagentTurn` pada agen penerima akan dipicu dengan prefix `[DARI SESAMA SUB-AGENT]: ...`. Setelah agen penerima merespons, jawabannya langsung dikembalikan sebagai observasi bagi agen pemanggil.
+Fungsi `runSubagentTurn` pada agen penerima akan dipicu dengan prefix `[DARI SESAMA MINIBOT]: ...`. Setelah agen penerima merespons, jawabannya langsung dikembalikan sebagai observasi bagi agen pemanggil.
 
 ---
 
@@ -198,8 +198,8 @@ Data sub-agen disimpan secara terpusat pada dua tabel relasional:
 sequenceDiagram
     autonumber
     participant Lead as Lead Agent (MARK)
-    participant SA1 as Sub-Agent 1 (Researcher)
-    participant SA2 as Sub-Agent 2 (Data Analyst)
+    participant SA1 as Minibot 1 (Researcher)
+    participant SA2 as Minibot 2 (Data Analyst)
     participant DB as SQLite Engine
 
     Lead->>SA1: spawn_subagent(role: "Scraper", goal: "Kumpulkan data X")

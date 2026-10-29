@@ -54,16 +54,16 @@ export async function startWebSpeechRecognition({
 
   if (isStarting) return currentRecognition
 
-  // Hentikan instance sebelumnya jika ada
+  // Invalidate any previous session before waiting for its microphone to close.
   if (currentRecognition) {
     stopWebSpeechRecognition()
-    await new Promise((resolve) => setTimeout(resolve, 100))
   }
-
   isStarting = true
   const sessionId = ++currentSessionId
 
   try {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    if (sessionId !== currentSessionId) return null
     const recognition = new SpeechRec()
     recognition.lang = lang || DEFAULT_LANGUAGE
     recognition.continuous = continuous
@@ -143,7 +143,7 @@ export async function startWebSpeechRecognition({
     }
     return null
   } finally {
-    isStarting = false
+    if (sessionId === currentSessionId) isStarting = false
   }
 }
 
@@ -152,12 +152,15 @@ export async function startWebSpeechRecognition({
  * @param {boolean} [triggerOnEnd=false] Jika true, callback onend tetap dijalankan
  */
 export function stopWebSpeechRecognition() {
+  currentSessionId++
   if (currentRecognition) {
     try {
       const rec = currentRecognition
       currentRecognition = null
       rec.abort()
-    } catch (_) {}
+    } catch {
+      // Recognition may already have ended.
+    }
   }
   isListening = false
   isStarting = false

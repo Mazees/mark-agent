@@ -1,5 +1,8 @@
 import { Router } from 'express'
 import { dbStore } from '../memory/db-store.js'
+import { createTaskWorkflow, recoverTaskWorkflows } from '../services/task-workflow.js'
+import { subagentRuntime } from '../services/subagents/service.js'
+import { wsHub } from '../ws-hub.js'
 import {
   spawnBackgroundTask,
   readBackgroundTaskOutput,
@@ -12,15 +15,45 @@ import os from 'os'
 import fs from 'fs'
 
 export const tasksRouter = Router()
+export const taskWorkflow = createTaskWorkflow(dbStore)
+// A restart preserves the active checkpoint; it never retries an uncertain action.
+recoverTaskWorkflows(dbStore)
+const workflowRoute = (operation) => async (req, res) => {
+  try {
+    const task = taskWorkflow[operation](req.params.id, req.body || {})
+    if (task.status === 'cancelled') {
+      for (const job of subagentRuntime.jobs().filter((j) => j.taskId === task.id))
+        subagentRuntime.cancel(job.id)
+    }
+    wsHub.broadcast('task:updated', task)
+    res.json({ success: true, data: task })
+  } catch (error) {
+    res.status(error.status || 400).json({ success: false, error: error.message })
+  }
+}
+tasksRouter.post('/tasks/workflow', (req, res) => {
+  try {
+    const task = taskWorkflow.create(req.body || {})
+    wsHub.broadcast('task:updated', task)
+    res.json({ success: true, data: task })
+  } catch (error) {
+    res.status(error.status || 400).json({ success: false, error: error.message })
+  }
+})
+tasksRouter.get('/tasks/:id/workflow', (req, res) =>
+  res.json({ success: true, data: taskWorkflow.snapshot(req.params.id) })
+)
+for (const [suffix, operation] of Object.entries({
+  complete: 'complete',
+  plan: 'revise',
+  control: 'control',
+  finalize: 'finalize'
+}))
+  tasksRouter.post('/tasks/:id/' + suffix, workflowRoute(operation))
 
-// Artifacts directory helper (memastikan folder dibuat otomatis)
+// Reading the suggested path does not create an artifact folder.
 tasksRouter.get('/tasks/artifacts-dir', (_req, res) => {
   const artifactsDir = path.join(os.homedir(), 'Documents', 'Mark Tasks')
-  try {
-    if (!fs.existsSync(artifactsDir)) {
-      fs.mkdirSync(artifactsDir, { recursive: true })
-    }
-  } catch (_) {}
   res.json({ success: true, data: artifactsDir })
 })
 
@@ -39,6 +72,30 @@ tasksRouter.post('/tasks/ensure-dir', (req, res) => {
     res.status(500).json({ success: false, error: err.message })
   }
 })
+
+const managedTask = (id) => dbStore.agentTasks.getById(id)?.planVersion != null
+const rejectManaged = (req, res, next) => {
+  const step = dbStore.agentTaskSteps.getById(req.params.id)
+  const items = Array.isArray(req.body) ? req.body : [req.body || {}]
+  const managed = req.path.includes('/steps')
+    ? managedTask(step?.taskId) ||
+      items.some((item) =>
+        managedTask(item.taskId || item.task_id || dbStore.agentTaskSteps.getById(item.id)?.taskId)
+      )
+    : managedTask(req.params.id || req.body?.id) || req.body?.planVersion != null
+  if (managed)
+    return res
+      .status(409)
+      .json({ success: false, error: 'Gunakan operasi workflow transaksional.' })
+  next()
+}
+for (const method of ['post', 'put', 'delete']) {
+  tasksRouter[method]('/tasks/steps', rejectManaged)
+  tasksRouter[method]('/tasks/steps/batch', rejectManaged)
+  tasksRouter[method]('/tasks/steps/:id', rejectManaged)
+}
+tasksRouter.post('/tasks', rejectManaged)
+tasksRouter.put('/tasks/:id', rejectManaged)
 
 // Step Routes (Wajib didaftarkan sebelum wildcard /tasks/:id)
 tasksRouter.get('/tasks/steps', (_req, res) => {
@@ -138,14 +195,13 @@ tasksRouter.put('/tasks/:id', (req, res) => {
   }
 })
 tasksRouter.delete('/tasks/:id', (req, res) => {
-  const { id } = req.params
-  const allSteps = dbStore.agentTaskSteps.getAll()
-  for (const step of allSteps) {
-    if (step.task_id === id || step.taskId === id) {
-      dbStore.agentTaskSteps.delete(step.id)
-    }
-  }
-  const success = dbStore.agentTasks.delete(id)
+  const id = req.params.id
+  for (const job of subagentRuntime.jobs().filter((j) => j.taskId === id))
+    subagentRuntime.cancel(job.id)
+  const success = dbStore.sqlite.transaction(() => {
+    dbStore.sqlite.prepare('DELETE FROM agent_task_steps WHERE task_id=?').run(id)
+    return dbStore.agentTasks.delete(id)
+  })()
   res.json({ success })
 })
 

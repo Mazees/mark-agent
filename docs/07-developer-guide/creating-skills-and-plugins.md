@@ -1,6 +1,6 @@
 # Panduan Pembuatan Skills & Plugin Kustom
 
-Dokumen ini memandu pengembang dalam memperluas kapabilitas sistem **MARK**, mencakup penyusunan dokumen keahlian (_Learned Skills_), sintesis keahlian otomatis (_Autonomous Skill Synthesis_), serta pembuatan plugin eksternal (_External Plugins_) dengan skema OpenAPI kustom.
+Dokumen ini memandu pengembang dalam memperluas kapabilitas sistem **MARK**, mencakup learned skills dan pembuatan plugin eksternal (_External Plugins_) dengan skema OpenAPI kustom.
 
 ---
 
@@ -11,13 +11,13 @@ MARK menyediakan dua cara berbeda untuk memperluas kemampuannya:
 | Pola Ekstensi           | Sasaran                                                                     | Mekanisme Eksekusi                                                        | Lokasi Penyimpanan                                  |
 | :---------------------- | :-------------------------------------------------------------------------- | :------------------------------------------------------------------------ | :-------------------------------------------------- |
 | **Skills (`SKILL.md`)** | Prosedur kerja bertahap, panduan perilaku, dan instruksi domain spesifik    | Diinjeksi langsung ke System Prompt saat dipicu                           | Direktori `skills/` & tabel SQLite `learned_skills` |
-| **Plugins**             | Integrasi biner eksternal, CLI pihak ketiga, skrip Python/PowerShell kustom | Dieksekusi melalui sub-proses shell terisolasi via `/api/plugins/execute` | `~/.config/mark-agent/plugins/<nama>/`              |
+| **Plugins**             | Integrasi biner eksternal, CLI pihak ketiga, skrip Python/PowerShell kustom | Handler JavaScript dalam proses Node.js via `/api/plugins/execute` | `Documents/Mark Plugins/<nama>/` di home pengguna              |
 
 ```mermaid
 flowchart LR
     subgraph "Perluasan Kemampuan MARK"
         SkillPrompt["Instruksi / Skill (/nama-skill)"] --> PromptInjection["Injeksi ke System Prompt AI"]
-        PluginAction["Panggilan Alat (plugin-nama-aksi)"] --> PluginExec["Eksekusi Skrip via Endpoint REST"]
+        PluginAction["Group plugin / tool nama-aksi"] --> PluginExec["Eksekusi Skrip via Endpoint REST"]
     end
 
     PromptInjection --> Brain["MARK ReAct Engine"]
@@ -58,72 +58,96 @@ Pengguna dapat memicu skill dengan mengetikkan garis miring (_slash command_) di
 /verifikasi-kode-react tolong periksa komponen ChatList.jsx
 ```
 
-MARK akan membaca isi berkas skill tersebut via `window.api.readSkill()` dan menyuntikkannya sebagai instruksi sistem prioritas tinggi.
+MARK menyelesaikan referensi skill melalui layanan server yang sama dengan tool read-skill. Kontraknya memuat id, sumber, contentHash, isi instruksi, skillFile, dan basePath. Skill file memakai direktori ~/.agents/skills; skill bawaan dan learned memakai sumber masing-masing tanpa lokasi file palsu. Instruksi pengguna dan aturan aplikasi tetap berlaku. Katalog awal hanya memuat metadata dengan batas token; instruksi lengkap dan file pendukung dimuat saat diperlukan. Lihat [runtime skill](../skills-runtime.md).
 
 ---
 
-## 3. Sintesis Keahlian Otonom (Autonomous Skill Synthesis)
+## 3. Learned Skills
 
-MARK memiliki kemampuan belajar mandiri (_Continuous Cognitive Learning_):
+MARK menyediakan dua jalur belajar. Setelah tugas bermakna selesai, synthesizer mengevaluasi alur kerja di background dan dapat menyimpan atau memperbarui skill secara otomatis. Core tool `learn` tersedia untuk pengguna yang secara langsung meminta Mark menyimpan atau mengubah skill; tool ini menerima `name`, `description`, `content`, dan `method`:
 
-- Setiap kali MARK berhasil menyelesaikan tugas kompleks multi-langkah (misalnya men-debug bug baru atau mengonfigurasi database), modul [`src/renderer/src/api/ai/skillSynthesizer.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/skillSynthesizer.js) secara otomatis mengevaluasi riwayat aksi yang berhasil.
-- Sistem menyintesis prosedur teruji tersebut menjadi entitas keahlian baru.
-- Keahlian disimpan ke dalam tabel SQLite `learned_skills` dan dapat dipanggil kembali di masa depan jika MARK menghadapi masalah serupa.
+- `method: "insert"` membuat skill baru dan menolak nama yang sudah ada.
+- `method: "update"` memperbarui skill dengan nama yang sama dan menolak nama yang belum ada.
+- Sebelum memakai `method: "update"`, Mark membaca skill lama melalui `read-skill`, lalu menyatukan panduan lama dan temuan yang sudah diverifikasi.
+- Konten disimpan lokal ke tabel SQLite `learned_skills`. Sintesis otomatis tetap berjalan setelah tugas bermakna; tool `learn` tidak dipanggil hanya untuk menduplikasi proses itu.
 
 ---
 
 ## 4. Pembuatan Plugin Eksternal (Custom Plugins)
 
-Plugin eksternal memungkinkan pengembang menambahkan fungsi baru tanpa mengubah berkas inti server MARK.
+Gunakan skill bawaan `/create-plugin` untuk membuat atau mengubah plugin lokal. Kontrak runtime ada di `src/main/plugins/plugin-loader.js`.
 
-### Struktur Direktori Plugin:
+### Struktur direktori
 
 ```text
-~/.config/mark-agent/plugins/system-battery/
-├── manifest.json
-└── get-battery.ps1
+Documents/Mark Plugins/local-info/
+├── plugin.json
+├── index.js
+└── package.json
 ```
 
-### A. Berkas `manifest.json`
+`plugin.json` dan `index.js` wajib ada. Contoh ESM ini membutuhkan `package.json` berisi `{"type":"module","private":true}`. Plugin CommonJS lama tetap dapat memakai `module.exports` dan `require` sesuai tipe paketnya.
+
+### Manifest plugin.json
 
 ```json
 {
-  "name": "system-battery",
+  "name": "local-info",
+  "displayName": "Local Info",
   "version": "1.0.0",
-  "description": "Plugin pembaca status baterai laptop Windows tingkat lanjut.",
+  "description": "Membaca platform OS komputer lokal.",
   "isEnabled": true,
+  "editable": true,
+  "dependencies": [],
   "actions": [
     {
-      "name": "status",
-      "description": "Mengambil persentase sisa baterai, status charging, dan estimasi waktu.",
-      "triggerHint": "cek sisa baterai laptop",
-      "command": "powershell.exe",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "get-battery.ps1"]
+      "name": "local-info-platform",
+      "description": "Membaca platform OS. query boleh string kosong.",
+      "triggerHint": "pengguna menanyakan platform OS",
+      "code": "const os = await import('node:os'); return { platform: os.platform() };"
     }
   ]
 }
 ```
 
-### B. Berkas Skrip Eksekusi (`get-battery.ps1`)
+### Pengaturan penyuntingan
 
-```powershell
-$battery = Get-CimInstance -ClassName Win32_Battery
-[PSCustomObject]@{
-    Status = $battery.Status
-    EstimatedChargeRemaining = "$($battery.EstimatedChargeRemaining)%"
-    BatteryStatus = switch ($battery.BatteryStatus) {
-        1 { "Discharging" }
-        2 { "AC Connected (Charging)" }
-        default { "Unknown" }
-    }
-} | ConvertTo-Json -Compress
+`editable` mengatur apakah definisi plugin dapat diubah melalui editor dan endpoint `POST /api/plugins/save`:
+
+- Jika tidak dicantumkan, nilainya dianggap `true` agar plugin lama tetap dapat diedit.
+- `editable: false` menghilangkan tombol **Edit plugin** dan menolak penyimpanan melalui API. Server memeriksa nilai di berkas yang tersimpan; mengirim `editable: true` dalam request tidak membuka kuncinya.
+- Plugin tetap terlihat di Plugin Hub. Tool dan tag tetap tersedia selama plugin aktif. Plugin biasa tetap dapat diaktifkan atau dinonaktifkan.
+- Plugin dengan `managedByAddon` dikelola melalui add-on terkait. Plugin Hub tetap menampilkannya dan menyediakan **Kelola add-on**, tanpa kontrol edit atau status yang bertentangan. Engine Chrome Bridge tetap bernama `chrome-use` dan memakai `editable: false`.
+
+Properti ini merupakan aturan pengelolaan aplikasi, bukan pembatas akses filesystem. Pemilik komputer tetap dapat mengubah berkas plugin secara langsung.
+
+Plugin Hub menggunakan daftar ringkas dan halaman detail seperti Add-ons. Editor memisahkan **Informasi plugin** dan **Aksi**; pilih satu aksi untuk menyunting metadata dan kodenya. Draf tiap aksi tetap tersimpan saat berpindah pilihan, dan penghapusan aksi dapat diurungkan sebelum menyimpan. Editor kode disertakan dalam build Mark sehingga tidak memerlukan CDN.
+
+Validasi perubahan dengan `node --test scripts/plugin-editable.test.mjs scripts/plugin-hub-ui.test.mjs`. Pengujian memakai direktori dan metadata simulasi, tanpa mengubah plugin pengguna.
+
+### Handler index.js
+
+```js
+export default {
+  'local-info-platform': async ({ query }) => {
+    const os = await import('node:os')
+    return { platform: os.platform() }
+  }
+}
 ```
 
----
+Loader menjalankan export dari `index.js`; `actions[].code` dipakai editor untuk menyimpan atau membangun ulang handler. Sinkronkan nama export, badan fungsi, dan metadata manifest. Endpoint `/api/plugins/save` menghasilkan ESM, jadi pertahankan tipe paket yang kompatibel saat menyimpan melalui editor.
 
-## 5. Pemuatan & Pemanggilan Otomatis
+Handler menerima `query` berupa string. Untuk beberapa nilai, kirim JSON string dan validasi hasil `JSON.parse` di handler. Kembalikan data yang dapat diserialisasi atau lempar `Error` untuk kegagalan. Field `reason` adalah metadata timeline agen.
 
-1. Saat startup, backend membaca seluruh folder di `~/.config/mark-agent/plugins/` melalui [`src/server/routes/plugins.routes.js`](file:///d:/My%20Project/mark-project/mark/src/server/routes/plugins.routes.js).
-2. Frontend mendeteksi aksi plugin dan memetakan fungsinya ke skema OpenAPI dengan format `plugin-<namaPlugin>-<namaAksi>` (contoh: `plugin-system-battery-status`).
-3. Model bahasa MARK dapat memanggil alat tersebut secara otomatis saat pengguna menanyakan status baterai laptop.
-4. Output JSON dari skrip dikembalikan ke loop ReAct sebagai observasi sistem.
+Plugin diimpor dalam proses server, termasuk sebelum pengecekan `isEnabled`. Hindari efek samping di level modul; jalankan pekerjaan hanya di handler. Gunakan operasi async dan timeout untuk proses/jaringan. Field `dependencies` saja tidak memasang paket saat folder dibaca; pasang paket di direktori plugin bila diperlukan.
+
+## 5. Group, tool, dan pengujian
+
+- Nama plugin `local-info` menjadi group; `local-info-platform` menjadi nama tool persis seperti `actions[].name`.
+- Muat melalui `read-tools` dengan `group_name: "local-info"`, atau tag `@local-info` di input.
+- Nama tool memakai huruf, angka, underscore atau tanda hubung sepanjang 1–64 karakter. Nama aksi harus unik terhadap plugin aktif lainnya dan tool bawaan karena daftar tool model datar. Aksi bentrok tidak diekspos; panggilan ambigu ditolak.
+- Alias lama `plugin-<nama-plugin>-<nama-aksi>` tetap diterima untuk riwayat. Schema baru memakai nama aksi langsung.
+- Periksa JSON dan jalankan `node --check index.js`. Uji handler di proses Node terpisah, termasuk input tidak valid. Pengujian mutasi harus sesuai cakupan izin pengguna.
+- `list-plugins` memuat ulang daftar plugin. `POST /api/plugins/reload` juga mengirim event `plugins:updated`. Pakai origin/port server aktual untuk API.
+- Setelah aktif, muat group dan verifikasi pemanggilan tool melalui MARK. Laporkan hasil aktual; jika sesi masih memakai cache lama, refresh UI/sesi.

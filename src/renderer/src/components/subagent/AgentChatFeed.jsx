@@ -1,616 +1,423 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { onSubagentChange } from '../../api/subagent/client.js'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import PropTypes from 'prop-types'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
-import { CodeBlock } from '../Chat/CodeBlock'
-import {
-  Bot,
-  Send,
-  Square,
-  Terminal,
-  Brain,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  CheckCircle2,
-  ArrowDown,
-  Sparkles,
-  Trash2,
-  Info
-} from 'lucide-react'
+import { ArrowDown, Bot, ChevronRight, Loader2, Send, Terminal } from 'lucide-react'
 import { subagentStore } from '../../api/subagent/subagentStore'
-import { runSubagentTurn, killSubagentExecution } from '../../api/subagent/subagentExecutor'
+import { runSubagentTurn } from '../../api/subagent/subagentExecutor'
+import { agentDate } from './agentPresentation'
+import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 
-function extractTextContent(raw) {
-  if (raw === undefined || raw === null) return ''
-  if (typeof raw === 'string') return raw
-  if (typeof raw === 'object') {
-    if (raw.answer) return extractTextContent(raw.answer)
-    if (raw.content) return extractTextContent(raw.content)
-    if (raw.message) return extractTextContent(raw.message)
-    if (raw.text) return extractTextContent(raw.text)
-    return JSON.stringify(raw, null, 2)
+function textContent(raw) {
+  if (raw == null) return ''
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        (parsed.answer || parsed.content || parsed.text || Array.isArray(parsed))
+      )
+        return textContent(parsed)
+    } catch {
+      /* Plain text is already displayable. */
+    }
+    return raw
   }
+  if (Array.isArray(raw))
+    return raw
+      .map((item) =>
+        item.type === 'image_url'
+          ? `![Gambar dari Minibot](${item.image_url?.url || ''})`
+          : textContent(item.text || item.content)
+      )
+      .join('\n\n')
+  if (typeof raw === 'object')
+    return textContent(
+      raw.answer ?? raw.content ?? raw.text ?? raw.message ?? JSON.stringify(raw, null, 2)
+    )
   return String(raw)
 }
-
-function extractThoughtContent(raw, fallbackThought = null) {
-  if (fallbackThought) return fallbackThought
-  if (raw && typeof raw === 'object' && raw.thought) {
-    return String(raw.thought)
-  }
-  return null
+function MessageText({ children }) {
+  return (
+    <div className="min-w-0 break-words text-sm leading-7 text-white/80 [&_p+p]:mt-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-white/5 [&_pre]:p-4 [&_code]:font-mono [&_code]:text-xs [&_img]:my-3 [&_img]:max-w-full [&_table]:block [&_table]:overflow-x-auto">
+      <Markdown remarkPlugins={[remarkGfm, ...mathRemarkPlugins]} rehypePlugins={mathRehypePlugins}>
+        {preprocessLaTeX(textContent(children))}
+      </Markdown>
+    </div>
+  )
 }
+MessageText.propTypes = { children: PropTypes.any }
 
-const markdownComponents = {
-  code({ node, inline, className, children, ...props }) {
-    const match = /language-(\w+)/.exec(className || '')
-    return !inline ? (
-      <CodeBlock match={match} children={children} />
-    ) : (
-      <code
-        className="bg-base-300/90 text-primary font-mono text-[11px] px-1.5 py-0.5 rounded border border-base-content/10"
-        {...props}
-      >
-        {children}
-      </code>
-    )
-  }
-}
-
-/**
- * Format argument tool menjadi inline string bergaya Hermes / CLI terminal:
- * e.g. message_agent -target "Mr Tester" -msg "Hello"
- */
-function formatToolArgsToCLI(_toolName, rawArgs) {
-  if (!rawArgs) return ''
-  let args = rawArgs
-  if (typeof rawArgs === 'string') {
+function ToolActivity({ call, result, running }) {
+  const name = call.function?.name || call.name || 'Tool'
+  const args = call.function?.arguments ?? call.arguments ?? call.query
+  const received = result !== undefined
+  let resultValue = result
+  if (typeof result === 'string') {
     try {
-      args = JSON.parse(rawArgs)
+      resultValue = JSON.parse(result.replace(/^\[OBSERVATION\]:\s*/, ''))
     } catch {
-      return rawArgs
+      /* Tool results may be plain text. */
     }
   }
-
-  if (typeof args !== 'object') return String(args)
-
-  const parts = []
-  for (const [key, val] of Object.entries(args)) {
-    if (val === undefined || val === null || val === '') continue
-    const valStr = typeof val === 'object' ? JSON.stringify(val) : String(val)
-    const truncatedVal = valStr.length > 50 ? valStr.slice(0, 47) + '...' : valStr
-    parts.push(`--${key} "${truncatedVal}"`)
-  }
-  return parts.join(' ')
-}
-
-/**
- * Komponen Accordion Thought (Hermes style "Thought >")
- */
-function ThoughtAccordion({ thought }) {
-  const [isOpen, setIsOpen] = useState(false)
-  if (!thought) return null
-
+  const failed =
+    received &&
+    (resultValue?.success === false ||
+      resultValue?.error ||
+      (typeof result === 'string' && /^\[?error/i.test(result)))
+  const resultText = typeof resultValue === 'string' ? resultValue : ''
+  const outcome = /^\[DILEWATI\]|^Dilewati/i.test(resultText)
+    ? 'Dilewati'
+    : /^\[DITOLAK\]/i.test(resultText)
+      ? 'Ditolak'
+      : /^\[TERPUTUS\]/i.test(resultText)
+        ? 'Terputus'
+        : /^\[DITUNDA\]/i.test(resultText)
+          ? 'Ditunda'
+          : failed
+            ? 'Gagal'
+            : 'Selesai'
   return (
-    <div className="my-1.5 bg-base-300/40 hover:bg-base-300/60 rounded-xl border border-base-content/10 transition-all overflow-hidden text-xs">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 flex items-center justify-between text-left select-none text-base-content/75 hover:text-base-content"
-      >
-        <div className="flex items-center gap-2 font-mono text-[11px]">
-          <Brain className="w-3.5 h-3.5 text-accent shrink-0" />
-          <span className="font-semibold text-accent/90">Thought</span>
-          <span className="text-base-content/40 text-[10px]">&gt;</span>
-          <span className="text-base-content/50 text-[10px] truncate max-w-xs md:max-w-md">
-            {thought.slice(0, 60)}...
-          </span>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] text-base-content/40 font-mono">
-          <span>{isOpen ? 'hide' : 'expand'}</span>
-          {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        </div>
-      </button>
-
-      {isOpen && (
-        <div className="p-3.5 bg-base-100/80 border-t border-base-content/10 text-[11px] text-base-content/90 font-mono leading-relaxed whitespace-pre-wrap">
-          {thought}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Komponen Baris Eksekusi Tool Bergaya Terminal Inline
- * e.g. "> Ran message_agent --target_agent "Mr Tester" ..."
- */
-function InlineToolExecution({ toolCall, observation }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const toolName = toolCall?.function?.name || toolCall?.name || 'tool-execution'
-  const rawArgs = toolCall?.function?.arguments || toolCall?.arguments || toolCall?.query || ''
-  const cliArgs = formatToolArgsToCLI(toolName, rawArgs)
-
-  return (
-    <div className="my-1 font-mono text-[11px] bg-base-300/30 hover:bg-base-300/50 rounded-xl border border-base-content/10 transition-all overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 flex items-center justify-between text-left text-base-content/80 hover:text-base-content"
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <Terminal className="w-3.5 h-3.5 text-warning shrink-0" />
-          <div className="flex items-center gap-1.5 min-w-0 truncate">
-            <span className="text-base-content/40 font-bold">&gt;</span>
-            <span className="text-base-content/60">Ran</span>
-            <span className="text-primary font-semibold">{toolName}</span>
-            {cliArgs && (
-              <span className="text-base-content/50 text-[10px] truncate max-w-sm">{cliArgs}</span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0 pl-2 text-[10px] text-base-content/40">
-          {observation ? (
-            <span className="text-success flex items-center gap-0.5">
-              <CheckCircle2 className="w-2.5 h-2.5" />
-              <span>result</span>
-            </span>
-          ) : (
-            <span className="text-warning animate-pulse">executing...</span>
-          )}
-          {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-        </div>
-      </button>
-
-      {isOpen && (
-        <div className="p-3 bg-black/40 border-t border-base-content/10 space-y-2 text-[10px] text-base-content/85">
-          {rawArgs && (
-            <div>
-              <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">
-                Arguments:
-              </div>
-              <pre className="p-2 rounded-lg bg-base-100/50 overflow-x-auto text-warning font-mono whitespace-pre-wrap border border-base-content/5">
-                {typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs, null, 2)}
-              </pre>
-            </div>
-          )}
-
-          {observation && (
-            <div>
-              <div className="text-[10px] text-base-content/40 uppercase tracking-wider mb-1">
-                Output:
-              </div>
-              <pre className="p-2 rounded-lg bg-base-100/50 overflow-x-auto text-base-content/90 font-mono whitespace-pre-wrap max-h-56 overflow-y-auto border border-base-content/5">
-                {(typeof observation === 'string'
-                  ? observation
-                  : JSON.stringify(observation)
-                ).replace(/^\[OBSERVATION\]:\s*/, '')}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Bubble percakapan untuk pesan masuk (User / Lead Agent / Peer Sub-Agent)
- */
-function IncomingMessageBubble({ message }) {
-  const isMark = message.sender === 'mark'
-  const isPeer = message.sender === 'peer'
-
-  const senderBadge = isMark ? 'LEAD AGENT' : isPeer ? 'PEER AGENT' : 'CREATOR'
-  const badgeColor = isMark
-    ? 'bg-primary/20 text-primary border-primary/30'
-    : isPeer
-      ? 'bg-accent/20 text-accent border-accent/30'
-      : 'bg-secondary/20 text-secondary border-secondary/30'
-
-  // Bersihkan tag awalan jika ada
-  const cleanContent = extractTextContent(message.content)
-    .replace(/^\[DARI LEAD AGENT \(MARK\)\]:\s*/, '')
-    .replace(/^\[DARI CREATOR \/ USER\]:\s*/, '')
-    .replace(/^\[DARI SESAMA SUB-AGENT\]:\s*/, '')
-
-  return (
-    <div className="chat chat-end my-3 animate-fade-in">
-      <div className="chat-header text-[10px] font-mono opacity-50 mb-1 flex items-center gap-1.5">
-        <span className={`px-1.5 py-0.2 rounded-md border text-[9px] font-bold ${badgeColor}`}>
-          {senderBadge}
+    <details className="group py-1">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-xs text-white/55 hover:text-white/80 focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
+        <Terminal size={14} className="shrink-0" />
+        <span className="min-w-0 break-all">{name}</span>
+        <span className={`ml-auto shrink-0 ${failed ? 'text-error' : ''}`}>
+          {received ? outcome : running ? 'Berjalan' : 'Tanpa hasil'}
         </span>
-        <span>
-          {new Date(message.timestamp).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit'
-          })}
-        </span>
-      </div>
-
-      <div className="chat-bubble bg-base-100 border border-base-content/15 shadow-md max-w-[85%] rounded-2xl p-3.5 text-xs text-base-content leading-relaxed">
-        <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {cleanContent}
-        </Markdown>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Bubble percakapan untuk pesan keluar dari Sub-Agent (Hermes unified block)
- */
-function SubagentMessageTurn({ turn, subagentName, isRunning }) {
-  return (
-    <div className="chat chat-start my-3 animate-fade-in">
-      <div className="chat-image avatar placeholder">
-        <div className="w-8 h-8 rounded-2xl text-[10px] font-bold shadow-md flex items-center justify-center bg-primary/20 text-primary border border-primary/30 font-mono">
-          {subagentName.slice(0, 2).toUpperCase()}
-        </div>
-      </div>
-      <div className="chat-header text-[10px] font-mono opacity-50 mb-1 flex items-center gap-1.5">
-        <span className="font-semibold text-base-content/80">{subagentName}</span>
-        <span>
-          {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </span>
-      </div>
-
-      <div className="chat-bubble bg-base-200/90 text-base-content border border-base-content/15 shadow-lg max-w-[90%] md:max-w-[85%] rounded-2xl p-4 space-y-2.5">
-        {/* 1. Reasoning Accordion */}
-        {turn.thoughts && turn.thoughts.length > 0 && (
-          <div className="space-y-1">
-            {turn.thoughts.map((th, idx) => (
-              <ThoughtAccordion key={idx} thought={th} />
-            ))}
+        {!received && running && (
+          <Loader2 size={13} className="shrink-0 motion-safe:animate-spin text-primary" />
+        )}
+      </summary>
+      <div className="space-y-3 pb-2 pl-6 pt-2 text-xs text-white/55">
+        {args != null && (
+          <div>
+            <p className="mb-2 text-white/40">Input</p>
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white/[0.03] p-3 font-mono">
+              {typeof args === 'string' ? args : JSON.stringify(args, null, 2)}
+            </pre>
           </div>
         )}
-
-        {/* 2. Inline Tool Execution Items */}
-        {turn.toolCalls && turn.toolCalls.length > 0 && (
-          <div className="space-y-1">
-            {turn.toolCalls.map((tc, idx) => (
-              <InlineToolExecution
-                key={idx}
-                toolCall={tc}
-                observation={turn.observations?.[tc.id] || turn.observations?.[tc.function?.name]}
-              />
-            ))}
+        {received && (
+          <div>
+            <p className="mb-2 text-white/40">Hasil</p>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white/[0.03] p-3 font-mono">
+              {typeof result === 'string'
+                ? result.replace(/^\[OBSERVATION\]:\s*/, '')
+                : JSON.stringify(result, null, 2)}
+            </pre>
           </div>
         )}
-
-        {/* 3. Final Output Text */}
-        {turn.content ? (
-          <div className="prose prose-invert prose-sm max-w-none text-xs leading-relaxed font-normal pt-1 text-base-content/95">
-            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {extractTextContent(turn.content)}
-            </Markdown>
-          </div>
-        ) : isRunning ? (
-          <div className="flex items-center gap-2 text-xs text-base-content/60 py-1 font-mono">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
-            <span className="text-[11px]">Memproses langkah kerja...</span>
-          </div>
-        ) : null}
       </div>
-    </div>
+    </details>
   )
 }
+ToolActivity.propTypes = {
+  call: PropTypes.object.isRequired,
+  result: PropTypes.any,
+  running: PropTypes.bool
+}
 
-/**
- * Parser kronologis untuk menggabungkan message history menjadi struktur turn terorganisir
- */
-function groupChronologicalMessages(rawMessages) {
-  if (!Array.isArray(rawMessages)) return []
-  const result = []
-  let currentTurn = null
-
-  for (const msg of rawMessages) {
-    if (msg.sender === 'user' || msg.sender === 'mark' || msg.sender === 'peer') {
-      if (currentTurn) {
-        result.push(currentTurn)
-        currentTurn = null
-      }
-      result.push({
-        type: 'incoming',
-        id: msg.id,
-        sender: msg.sender,
-        content: msg.content,
-        timestamp: msg.timestamp
-      })
-    } else if (msg.sender === 'system' || msg.role === 'system') {
-      if (currentTurn) {
-        result.push(currentTurn)
-        currentTurn = null
-      }
-      result.push({
-        type: 'system',
-        id: msg.id,
-        sender: 'system',
-        content: msg.content,
-        timestamp: msg.timestamp
-      })
-    } else if (msg.sender === 'subagent' || msg.role === 'assistant') {
-      if (!currentTurn) {
-        currentTurn = {
-          type: 'subagent_turn',
-          id: msg.id,
-          timestamp: msg.timestamp,
-          thoughts: [],
-          toolCalls: [],
-          observations: {},
-          content: null
-        }
-      }
-
-      const extractedThought = extractThoughtContent(msg.content, msg.thought)
-      if (extractedThought && !currentTurn.thoughts.includes(extractedThought)) {
-        currentTurn.thoughts.push(extractedThought)
-      }
-
-      if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-        currentTurn.toolCalls.push(...msg.tool_calls)
-      }
-
-      if (msg.content) {
-        currentTurn.content = extractTextContent(msg.content)
-      }
-    } else if (msg.sender === 'tool' || msg.role === 'tool') {
-      if (currentTurn) {
-        const key = msg.tool_call_id || msg.name || 'last_tool'
-        currentTurn.observations[key] = msg.content
-      }
+function activityItems(messages) {
+  const items = []
+  const tools = new Map()
+  for (const message of messages) {
+    if (message.sender === 'tool' || message.role === 'tool') {
+      const target = tools.get(message.tool_call_id) || tools.get(message.name)
+      if (target) target.result = message.content
+      else
+        items.push({
+          type: 'tool',
+          id: message.id,
+          call: { name: message.name || 'Hasil tool' },
+          result: message.content
+        })
+      continue
     }
+    items.push({ type: 'message', message })
+    if (Array.isArray(message.tool_calls))
+      for (const call of message.tool_calls) {
+        const item = { type: 'tool', id: call.id || `${message.id}-${items.length}`, call }
+        items.push(item)
+        if (call.id) tools.set(call.id, item)
+        tools.set(call.function?.name || call.name, item)
+      }
   }
-
-  if (currentTurn) {
-    result.push(currentTurn)
-  }
-
-  return result
+  return items
 }
 
-export default function AgentChatFeed({ subagentId, onOpenInspector, onDeleteAgent }) {
-  const [subagent, setSubagent] = useState(null)
+export default function AgentChatFeed({ subagent, onRefresh }) {
   const [messages, setMessages] = useState([])
-  const [inputText, setInputText] = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false)
-
-  const messagesEndRef = useRef(null)
-  const containerRef = useRef(null)
-  const isAutoScrollRef = useRef(true)
-
-  const loadData = async () => {
-    if (!subagentId) return
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const [newJob, setNewJob] = useState(false)
+  const [away, setAway] = useState(false)
+  const scroll = useRef(null)
+  const bottom = useRef(null)
+  const follow = useRef(true)
+  const mounted = useRef(false)
+  const revision = useRef(0)
+  const previous = useRef('')
+  const running = subagent.status === 'running'
+  const load = useCallback(async () => {
+    const current = ++revision.current
     try {
-      const agent = await subagentStore.getSubagent(subagentId)
-      const msgs = await subagentStore.getMessages(subagentId)
-      setSubagent(agent)
-      setMessages(msgs || [])
-    } catch (err) {
-      console.error('[AgentChatFeed] Load error:', err)
-    }
-  }
-
-  useEffect(() => {
-    loadData()
-    const interval = setInterval(loadData, 1000)
-    return () => clearInterval(interval)
-  }, [subagentId])
-
-  useEffect(() => {
-    if (isAutoScrollRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [messages])
-
-  const handleScroll = () => {
-    if (!containerRef.current) return
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100
-    isAutoScrollRef.current = isAtBottom
-    setShowScrollBottomBtn(!isAtBottom)
-  }
-
-  const handleSendMessage = async (e) => {
-    e?.preventDefault()
-    if (!inputText.trim() || !subagentId || isSending) return
-
-    const text = inputText.trim()
-    setInputText('')
-    setIsSending(true)
-    isAutoScrollRef.current = true
-
-    try {
-      await runSubagentTurn(subagentId, text, 'user')
-      await loadData()
-    } catch (err) {
-      console.error('[AgentChatFeed] Send error:', err)
+      const result = await subagentStore.getMessages(subagent.id, subagent.jobId)
+      if (!mounted.current || current !== revision.current) return
+      const next = Array.isArray(result) ? result : []
+      const serialized = JSON.stringify(next)
+      if (serialized !== previous.current) {
+        previous.current = serialized
+        setMessages(next)
+      }
+      setError('')
+    } catch (failure) {
+      if (mounted.current && current === revision.current)
+        setError(failure.message || 'Aktivitas belum dapat dimuat.')
     } finally {
-      setIsSending(false)
+      if (mounted.current && current === revision.current) setLoading(false)
+    }
+  }, [subagent.id, subagent.jobId])
+  useEffect(() => {
+    mounted.current = true
+    let timer
+    let cancelled = false
+    const poll = async () => {
+      await load()
+      if (!cancelled) timer = setTimeout(poll, 10000)
+    }
+    poll()
+    const unsubscribe = onSubagentChange(load)
+    return () => {
+      unsubscribe()
+      mounted.current = false
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [load])
+  useEffect(() => {
+    if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
+  }, [messages, running])
+  const send = async (event) => {
+    event.preventDefault()
+    if (!draft.trim() || sending) return
+    const value = draft.trim()
+    setSending(true)
+    setError('')
+    setDraft('')
+    follow.current = true
+    try {
+      const result = await runSubagentTurn(subagent.id, value, 'user', {
+        newJob: newJob || ['completed', 'failed', 'cancelled'].includes(subagent.status),
+        jobId: subagent.jobId,
+        parentSessionId: subagent.parentSessionId,
+        parentSessionTitle: subagent.parentSessionTitle
+      })
+      if (result?.success === false)
+        throw new Error(result.error || 'Instruksi belum dapat diselesaikan.')
+    } catch (failure) {
+      if (mounted.current) {
+        setError(failure.message)
+        setDraft((current) => current || value)
+      }
+    } finally {
+      if (mounted.current) {
+        setSending(false)
+        await load()
+        await onRefresh()
+      }
     }
   }
-
-  const handleStopExecution = () => {
-    if (!subagentId) return
-    killSubagentExecution(subagentId)
-    loadData()
-  }
-
-  const handleClearHistory = async () => {
-    if (!subagentId) return
-    await subagentStore.clearMessages(subagentId)
-    await loadData()
-  }
-
-  if (!subagent) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-base-content/30 gap-2 font-mono">
-        <Bot className="w-8 h-8 stroke-[1.5]" />
-        <p className="text-xs">Memuat data sub-agent...</p>
-      </div>
-    )
-  }
-
-  const isRunning = subagent.status === 'running'
-  const groupedTurns = groupChronologicalMessages(messages)
-
+  const items = activityItems(messages)
+  const latestMessage = items.findLastIndex((item) => item.type === 'message')
+  const activeTool = running
+    ? items.findIndex(
+        (item, index) => index > latestMessage && item.type === 'tool' && item.result === undefined
+      )
+    : -1
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-base-200/40 relative font-['Poppins',sans-serif]">
-      {/* Feed Header */}
-      <div className="p-3 px-4 border-b border-base-content/10 flex items-center justify-between bg-base-200/70 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center font-bold text-xs font-mono">
-            {subagent.name.slice(0, 2).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xs font-bold text-base-content/90 truncate font-mono">
-                {subagent.name}
-              </h2>
-              {isRunning && (
-                <span className="badge badge-primary badge-xs gap-1 font-mono text-[9px] py-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-base-100 animate-ping" />
-                  Running
-                </span>
-              )}
-            </div>
-            <p className="text-[10px] text-base-content/50 truncate font-mono">
-              {subagent.role || 'Specialist'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {isRunning ? (
-            <button
-              type="button"
-              onClick={handleStopExecution}
-              className="btn btn-error btn-xs rounded-xl gap-1 px-2.5 font-mono text-[11px]"
-              title="Hentikan Eksekusi"
-            >
-              <Square className="w-3 h-3 fill-current" /> Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleClearHistory}
-              className="btn btn-ghost btn-xs text-base-content/40 hover:text-base-content rounded-xl font-mono text-[10px]"
-              title="Bersihkan Log Chat"
-            >
-              Clear Log
-            </button>
-          )}
-
-          {onDeleteAgent && (
-            <button
-              type="button"
-              onClick={() => onDeleteAgent(subagentId)}
-              className="btn btn-ghost btn-xs btn-circle text-base-content/40 hover:text-error transition-colors"
-              title="Hapus Sub-Agent"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {onOpenInspector && (
-            <button
-              type="button"
-              onClick={onOpenInspector}
-              className="btn btn-ghost btn-xs btn-circle text-base-content/60 hover:text-base-content"
-              title="Lihat Detail Agen"
-            >
-              <Info className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Goal Banner */}
-      {subagent.goal && (
-        <div className="px-4 py-2 bg-base-300/40 border-b border-base-content/5 flex items-start gap-2 text-[11px] text-base-content/75 font-mono">
-          <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-          <div className="truncate">
-            <span className="font-semibold text-primary/90 mr-1">Goal:</span>
-            <span>{subagent.goal}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Messages Scroll Area */}
+    <section aria-label="Aktivitas Minibot" className="relative flex min-h-0 flex-1 flex-col">
       <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 md:px-6 space-y-2 custom-scrollbar"
+        ref={scroll}
+        onScroll={() => {
+          const el = scroll.current
+          follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          setAway(!follow.current)
+        }}
+        className="min-h-0 flex-1 overflow-y-auto py-6 custom-scrollbar"
       >
-        {groupedTurns.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-base-content/30 gap-2.5">
-            <Bot className="w-8 h-8 stroke-[1.5]" />
-            <p className="text-xs font-mono">Belum ada aktivitas pada agen ini.</p>
-            <p className="text-[10px] text-base-content/40 max-w-xs font-mono">
-              Kirim instruksi melalui input di bawah untuk memulai giliran kerja mandiri.
+        {loading ? (
+          <p role="status" className="py-10 text-sm text-white/45">
+            Memuat aktivitas...
+          </p>
+        ) : items.length === 0 ? (
+          <div className="py-12 text-center">
+            <Bot size={28} className="mx-auto mb-4 text-white/25" />
+            <p className="text-sm text-white/65">
+              {running ? 'Minibot sedang menyiapkan tugas...' : 'Belum ada aktivitas.'}
+            </p>
+            <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-white/40">
+              {running
+                ? 'Langkah kerja akan muncul di sini.'
+                : 'Kirim instruksi di bawah untuk mulai bekerja.'}
             </p>
           </div>
         ) : (
-          groupedTurns.map((turn, idx) => {
-            if (turn.type === 'incoming') {
-              return <IncomingMessageBubble key={turn.id || idx} message={turn} />
-            }
-            return (
-              <SubagentMessageTurn
-                key={turn.id || idx}
-                turn={turn}
-                subagentName={subagent.name}
-                isRunning={isRunning && idx === groupedTurns.length - 1}
-              />
-            )
-          })
+          <div className="space-y-5">
+            {items.map((item, index) => {
+              if (item.type === 'tool')
+                return (
+                  <ToolActivity
+                    key={`tool-${item.id}`}
+                    call={item.call}
+                    result={item.result}
+                    running={index === activeTool}
+                  />
+                )
+              const message = item.message
+              const incoming = ['user', 'mark', 'peer'].includes(message.sender)
+              const system = message.sender === 'system' || message.role === 'system'
+              let thought = message.thought
+              if (!thought && typeof message.content === 'object')
+                thought = message.content?.thought
+              const content = textContent(message.content).replace(
+                /^\[DARI (?:LEAD AGENT \(MARK\)|CREATOR \/ USER|SESAMA (?:SUB-AGENT|MINIBOT))\]:\s*/,
+                ''
+              )
+              if (!content && !thought) return null
+              if (system)
+                return (
+                  <p
+                    key={message.id || index}
+                    role={/^\[ERROR/.test(content) ? 'alert' : undefined}
+                    className={`whitespace-pre-wrap break-words border-l-2 pl-4 text-sm leading-relaxed ${/^\[ERROR/.test(content) ? 'border-error/40 text-error' : 'border-white/10 text-white/50'}`}
+                  >
+                    {content.replace(/^\[ERROR EKSEKUSI\]:\s*/, '')}
+                  </p>
+                )
+              return (
+                <article
+                  key={message.id || index}
+                  className={
+                    incoming
+                      ? 'ml-auto w-fit max-w-[90%] rounded-xl bg-white/[0.05] px-4 py-3'
+                      : 'min-w-0'
+                  }
+                >
+                  <header className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span className="font-medium text-white/65">
+                      {incoming
+                        ? message.sender === 'mark'
+                          ? 'Mark'
+                          : message.sender === 'peer'
+                            ? 'Minibot lain'
+                            : 'Anda'
+                        : subagent.name}
+                    </span>
+                    <time className="text-white/30">{agentDate(message.timestamp)}</time>
+                  </header>
+                  {thought && (
+                    <details className="group mb-3 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/50">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+                        <ChevronRight size={14} className="shrink-0 group-open:rotate-90" />
+                        Pemikiran
+                      </summary>
+                      <p className="mt-3 whitespace-pre-wrap break-words leading-relaxed">
+                        {textContent(thought)}
+                      </p>
+                    </details>
+                  )}
+                  {content && <MessageText>{content}</MessageText>}
+                </article>
+              )
+            })}
+          </div>
         )}
-        <div ref={messagesEndRef} />
+        {running && items.length > 0 && (
+          <p role="status" className="mt-6 flex items-center gap-2 text-xs text-white/50">
+            <Loader2 size={14} className="text-primary motion-safe:animate-spin" />
+            Minibot sedang bekerja...
+          </p>
+        )}
+        {error && (
+          <div role="alert" className="mt-5 text-sm text-error">
+            {error}
+            <button type="button" onClick={load} className="ml-3 rounded-md underline">
+              Coba muat ulang
+            </button>
+          </div>
+        )}
+        <div ref={bottom} />
       </div>
-
-      {/* Floating Scroll to Bottom Button */}
-      {showScrollBottomBtn && (
+      {away && (
         <button
           type="button"
+          aria-label="Ke aktivitas terbaru"
           onClick={() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-            isAutoScrollRef.current = true
-            setShowScrollBottomBtn(false)
+            bottom.current?.scrollIntoView({ behavior: 'smooth' })
+            follow.current = true
+            setAway(false)
           }}
-          className="btn btn-circle btn-sm bg-base-100/90 border border-base-content/20 shadow-xl absolute bottom-18 right-6 z-20 hover:scale-105 transition-all text-primary"
-          title="Scroll ke Bawah"
+          className="btn btn-circle btn-sm absolute bottom-32 right-3 border-white/15 bg-base-200 text-white/75"
         >
-          <ArrowDown className="w-4 h-4" />
+          <ArrowDown size={16} />
         </button>
       )}
-
-      {/* Message Input Footer */}
-      <div className="p-3 border-t border-base-content/10 bg-base-200/70 backdrop-blur-sm shrink-0">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder={`Kirim instruksi langsung ke @${subagent.name}...`}
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            disabled={isRunning || isSending}
-            className="input input-sm flex-1 rounded-xl bg-base-100/70 border-base-content/10 text-xs focus:outline-none focus:border-primary/50 font-mono"
+      <form onSubmit={send} className="shrink-0 border-t border-white/10 pb-5 pt-4">
+        <label className="mb-3 flex items-center gap-2 text-xs text-white/50">
+          <input type="checkbox" checked={newJob} onChange={(e) => setNewJob(e.target.checked)} />{' '}
+          Jadikan penugasan baru dengan konteks terpisah
+        </label>
+        <label htmlFor="agent-instruction" className="sr-only">
+          Instruksi untuk {subagent.name}
+        </label>
+        <div className="flex items-end gap-3 rounded-xl border border-white/15 p-3 focus-within:border-primary/50">
+          <textarea
+            id="agent-instruction"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                event.currentTarget.form.requestSubmit()
+              }
+            }}
+            placeholder={
+              running
+                ? 'Tulis instruksi berikutnya...'
+                : `Berikan instruksi kepada ${subagent.name}...`
+            }
+            rows={2}
+            className="max-h-36 min-h-12 min-w-0 flex-1 resize-y bg-transparent text-sm leading-relaxed text-white/80 outline-none placeholder:text-white/30"
           />
           <button
             type="submit"
-            disabled={!inputText.trim() || isRunning || isSending}
-            className="btn btn-primary btn-sm rounded-xl px-3 font-medium shadow-sm shadow-primary/20"
+            aria-label="Kirim instruksi"
+            disabled={!draft.trim() || sending}
+            className="btn btn-circle btn-sm border-white bg-white text-neutral-900 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/25"
           >
-            {isSending ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {sending ? (
+              <Loader2 size={16} className="motion-safe:animate-spin" />
             ) : (
-              <Send className="w-3.5 h-3.5" />
+              <Send size={16} />
             )}
           </button>
-        </form>
-      </div>
-    </div>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-white/35">
+          {running
+            ? 'Pesan dibaca pada batas langkah yang aman. Tugas baru masuk antrean.'
+            : 'Enter untuk mengirim · Shift+Enter untuk baris baru'}
+        </p>
+      </form>
+    </section>
   )
+}
+AgentChatFeed.propTypes = {
+  subagent: PropTypes.object.isRequired,
+  onRefresh: PropTypes.func.isRequired
 }

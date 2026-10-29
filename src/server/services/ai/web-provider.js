@@ -6,7 +6,8 @@ import {
   generateDeepSeekResponse,
   uploadImageFile,
   waitForFileReady,
-  getSessionState
+  getSessionState,
+  withDeepSeekSignal
 } from '../deepseek-web.js'
 import {
   cleanAndParse,
@@ -155,15 +156,21 @@ Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali '{' dan diakh
 {
   "thought": "Penalaran ringkas atau rencana tindakan",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "message": "Update progres opsional 1-4 kalimat, atau null",
+  "await_user": false,
   "answer": "Teks balasan langsung ke pengguna (isi jika selesai/tidak memanggil tool, atau null jika memanggil tool)",
   "tool_calls": [ { "name": "nama_tool", "arguments": { ... } } ]
 }
 - Jika memanggil aksi/tool: isi array "tool_calls", dan isi "answer": null.
+- "message" opsional: isi 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala pada pekerjaan panjang; tidak perlu setiap loop dan jangan mengulang update sebelumnya. Jika tidak ada kabar berarti, isi null.
+- Jika perlu bantuan pengguna pada browser: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyatakan tugas selesai. Browser tetap terbuka. Balasan pengguna harus diperiksa bersama observasi halaman terbaru.
 - Jika obrolan santai/selesai: isi "answer" dengan jawaban teks lengkap, dan isi "tool_calls": null.
 Status emosi giliran sebelumnya: ${lastMood || 'neutral'}. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
 }
 
-export async function executeWebProvider({
+export const executeWebProvider = (options) => withDeepSeekSignal(options.signal, () => executeWebProviderInternal(options))
+
+async function executeWebProviderInternal({
   messages,
   tools = null,
   stream = false,
@@ -176,7 +183,8 @@ export async function executeWebProvider({
   onMood = null,
   onMeta = null,
   onToolCall = null,
-  onStatus = null
+  onStatus = null,
+  signal = null
 }) {
   const activeConf = getActiveConfig() || {}
   const conf = { ...activeConf, ...(config || {}) }
@@ -186,6 +194,7 @@ export async function executeWebProvider({
   const moodFilter = null
 
   await checkCloudThrottle(isSmallTask, onStatus)
+  signal?.throwIfAborted()
 
   let workMessages = (messages || []).map((m) => ({ ...m }))
 
@@ -258,6 +267,8 @@ ${toolSections.join('\n\n')}
 {
   "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
   "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
+  "message": "Update progres opsional 1-4 kalimat, atau null",
+  "await_user": false,
   "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
   "tool_calls": [
     {
@@ -269,6 +280,7 @@ ${toolSections.join('\n\n')}
 4. Jika kamu ingin memanggil tool/melakukan tindakan nyata:
    - "tool_calls" WAJIB berisi array pemanggilan tool (mendukung BATCH / MULTI-TOOL sekaligus).
    - "answer" WAJIB bernilai null.
+   - "message" opsional: berikan 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala selama pekerjaan panjang, tanpa wajib mengisi setiap loop. Jangan mengarang progres atau mengulang pesan. Jika tidak ada informasi baru, isi null.
 5. HANYA JIKA seluruh tindakan telah tuntas atau kamu tidak perlu memanggil tool sama sekali:
    - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
    - "tool_calls" WAJIB bernilai null.
@@ -277,7 +289,8 @@ ${toolSections.join('\n\n')}
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
 7. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
 8. DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
-9. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
+9. Jika perlu login, CAPTCHA, atau bantuan pengguna: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyelesaikan task. Jangan menutup browser. Periksa DOM/screenshot terbaru serta isi balasan sebelum melanjutkan.
+10. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
@@ -394,12 +407,13 @@ ${toolSections.join('\n\n')}
       'gemini-3.6-flash'
     const pld = getSystemSignature()
     try {
-      answer = await generateGeminiResponse(fullPrompt, modelName + pld.substring(999, 1000))
+      answer = await generateGeminiResponse(fullPrompt, modelName + pld.substring(999, 1000), undefined, undefined, { signal })
     } catch (err) {
+      if (signal?.aborted) throw err
       if (err.message?.includes('Session') || err.message?.includes('BardErrorInfo')) {
         onStatus?.('Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
         try {
-          answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite')
+          answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite', undefined, undefined, { signal })
         } catch {
           // ignore fallback error
         }
@@ -443,6 +457,7 @@ ${toolSections.join('\n\n')}
           await waitForFileReady(userToken, fileId)
           refFileIds.push(fileId)
         } catch (imgErr) {
+          if (signal?.aborted) throw imgErr
           console.warn(
             '[web-provider] Gagal mengunggah gambar ke DeepSeek:',
             imgErr?.message || imgErr
@@ -520,6 +535,8 @@ ${toolSections.join('\n\n')}
   let cleanReasoning = reasoning || ''
   let extractedToolCalls = null
   let extractedMood = 'neutral'
+  let extractedMessage = ''
+  let awaitingUser = false
 
   let parsedJson = null
   const trimmedContent = cleanContent.trim()
@@ -565,6 +582,8 @@ ${toolSections.join('\n\n')}
   }
 
   if (parsedJson && typeof parsedJson === 'object') {
+    awaitingUser = parsedJson.await_user === true
+    extractedMessage = stripMarkTags(parsedJson.message)
     // 1. Ekstraksi Mood dari properti JSON
     if (parsedJson.mood && typeof parsedJson.mood === 'string') {
       extractedMood = parsedJson.mood.toLowerCase().trim()
@@ -695,16 +714,69 @@ ${toolSections.join('\n\n')}
       ]
     }
 
-    // 4. Ekstraksi Answer
-    if (parsedJson.answer !== undefined && parsedJson.answer !== null) {
-      cleanContent = String(parsedJson.answer)
+    // 4. Ekstraksi Answer / Response
+    const possibleAnswer =
+      parsedJson.answer !== undefined
+        ? parsedJson.answer
+        : parsedJson.response !== undefined
+          ? parsedJson.response
+          : parsedJson.reply !== undefined
+            ? parsedJson.reply
+            : parsedJson.message !== undefined
+              ? parsedJson.message
+              : parsedJson.text !== undefined
+                ? parsedJson.text
+                : parsedJson.content !== undefined
+                  ? parsedJson.content
+                  : null
+
+    if (possibleAnswer !== null && possibleAnswer !== undefined) {
+      cleanContent =
+        typeof possibleAnswer === 'string'
+          ? possibleAnswer
+          : JSON.stringify(possibleAnswer, null, 2)
     } else if (extractedToolCalls && extractedToolCalls.length > 0) {
       cleanContent = ''
     }
   }
 
+  // 5. Fallback Regex jika parsing JSON gagal namun model menghasilkan format JSON raw di cleanContent
+  if (
+    !parsedJson &&
+    cleanContent.includes('"thought"') &&
+    (cleanContent.includes('"answer"') ||
+      cleanContent.includes('"response"') ||
+      cleanContent.includes('"content"') ||
+      cleanContent.includes('"tool_calls"'))
+  ) {
+    const thoughtMatch = cleanContent.match(
+      /"thought"\s*:\s*"([\s\S]*?)(?=",\s*"(?:answer|response|content|action|tool_calls|mood)")/
+    )
+    if (thoughtMatch) {
+      cleanReasoning = cleanReasoning
+        ? `${cleanReasoning}\n\n${thoughtMatch[1].trim()}`
+        : thoughtMatch[1].trim()
+      onReasoning?.(cleanReasoning)
+    }
+    const answerMatch = cleanContent.match(
+      /"(?:answer|response|content)"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"[^"]+"\s*:|\}\s*$)/
+    )
+    if (answerMatch) {
+      cleanContent = answerMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
+    }
+  }
+
   // Jika memanggil tool
-  if (extractedToolCalls && extractedToolCalls.length > 0) {
+  const progressMeta = {
+    await_user: awaitingUser,
+    mood: extractedMood,
+    message: extractedMessage,
+    done: !awaitingUser && !(extractedToolCalls && extractedToolCalls.length > 0),
+    hasExplicitDone: true,
+    hasTag: false
+  }
+  onMeta?.(progressMeta)
+  if (!awaitingUser && extractedToolCalls && extractedToolCalls.length > 0) {
     onToolCall?.(extractedToolCalls)
     return {
       content: null,
@@ -712,12 +784,7 @@ ${toolSections.join('\n\n')}
       toolCalls: extractedToolCalls,
       finishReason: 'tool_calls',
       mood: extractedMood,
-      meta: {
-        mood: extractedMood,
-        done: false,
-        hasExplicitDone: true,
-        hasTag: false
-      }
+      meta: progressMeta
     }
   }
 
@@ -736,11 +803,6 @@ ${toolSections.join('\n\n')}
     toolCalls: null,
     finishReason: 'stop',
     mood: extractedMood,
-    meta: {
-      mood: extractedMood,
-      done: true,
-      hasExplicitDone: true,
-      hasTag: false
-    }
+    meta: progressMeta
   }
 }

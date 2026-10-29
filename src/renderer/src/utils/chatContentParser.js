@@ -187,7 +187,7 @@ export function parseSubagentReport(content) {
   }
 
   const reportPrefixMatch = cleanReportContent.match(
-    /^\[SUB-AGENT REPORT RECEIVED\]:\s*Sub-agent\s*(@\w+)\s*telah menyelesaikan tugasnya dan melaporkan hasil berikut:\s*/i
+    /^\[(?:SUB-AGENT|MINIBOT) REPORT RECEIVED\]:\s*(?:Sub-agent|Minibot)\s*(@\w+)\s*telah menyelesaikan tugasnya dan melaporkan hasil berikut:\s*/i
   )
   if (reportPrefixMatch) {
     cleanReportContent = cleanReportContent.substring(reportPrefixMatch[0].length).trim()

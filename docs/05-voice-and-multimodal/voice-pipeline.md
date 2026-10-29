@@ -11,7 +11,7 @@ Banyak asisten suara modern bergantung pada transmisi audio streaming penuh ke s
 MARK menerapkan arsitektur suara hibrida:
 
 1. **Zero-Dependency STT (Speech-to-Text):** Menggunakan native Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`) yang telah terintegrasi di dalam engine Chromium Microsoft Edge.
-2. **Local Chime & Watchdog:** Pemicuan kata bangun ("Hey Mark" / "Mark") dievaluasi secara lokal tanpa latensi jaringan.
+2. **Local Chime & Watchdog:** Pencocokan kata panggilan pada teks dan nada konfirmasi dilakukan di perangkat. Transkripsi memakai layanan Web Speech browser dan dapat memerlukan internet atau mengirim audio ke penyedia browser; Mark tidak mengaktifkan mode pemrosesan lokal secara khusus.
 3. **Edge Neural TTS:** Sintesis suara menggunakan stream audio dari `msedge-tts` (suara alami `id-ID-ArdiNeural` / `id-ID-GadisNeural`) dengan latency _time-to-first-byte_ di bawah 300ms.
 
 ```mermaid
@@ -27,17 +27,17 @@ sequenceDiagram
     participant Speaker as Speaker / Headphone
 
     loop Continuous Background Listening
-        Mic->>VAD: Aliran Audio (RMS > 0.015)
+        Mic->>VAD: Aliran audio dari mikrofon utama
         VAD->>STT: Transkripsi Ucapan Real-time
-        STT-->>VAD: Deteksi Teks Parsial
+        STT-->>VAD: Transkripsi ucapan
     end
 
     alt Kata Pemicu Terdeteksi ("Hey Mark" / "Mark")
         VAD->>AudioAPI: playWakeChime()
         AudioAPI-->>Speaker: Bunyi Chime Sci-Fi (D5 587Hz -> A5 880Hz)
-        VAD->>VAD: Mulai Merekam Perintah Pengguna
+        VAD->>VAD: Gunakan perintah final atau mulai mendengarkan perintah berikutnya
 
-        Note over VAD: Menunggu Hening 2000ms (Auto-Cut)
+        Note over VAD: Menunggu hasil final dan jeda bicara
 
         VAD->>Plan: handlePlanningCommand("(Mikrofon) " + perintah)
         Plan->>Plan: Eksekusi ReAct & Sintesis Jawaban
@@ -89,9 +89,9 @@ Pendekatan ini menjamin suara chime berbunyi dalam 0ms tanpa kemungkinan gagal a
 
 Hook `useVAD.js` mengatur lifecycle mikrofon dengan konfigurasi:
 
-- **Speech Threshold:** Sensitivitas volume input `RMS > 0.015`. Di bawah ambang batas ini, suara dianggap sebagai desah angin atau noise ruangan.
-- **Auto-Cut Silence Timeout:** `2000 ms`. Jika pengguna berhenti berbicara selama 2 detik, sistem menganggap perintah selesai dan langsung mengirim teks ke ReAct loop.
-- **Continuous Restart Watchdog:** Jika koneksi Web Speech terputus oleh peramban, watchdog internal secara otomatis merestart engine dalam jeda 300ms.
+- **Auto-Cut Silence Timeout:** 1800 ms setelah hasil suara terakhir. Jika tidak ada ucapan, perekaman berhenti setelah 8 detik.
+- **Continuous Restart Watchdog:** Jika sesi Web Speech berakhir normal, listener mencoba menyala kembali. Kegagalan layanan atau izin ditampilkan di pengaturan suara dan dapat dicoba lagi.
+- Mark menunggu hasil transkripsi final sebelum menjalankan perintah yang diucapkan bersamaan dengan kata panggilan.
 
 ---
 

@@ -2,6 +2,32 @@ import { getAllConfig } from '../db.js'
 import { jsonrepair } from 'jsonrepair'
 import { resolveAbortSignal } from '../web-bridge.js'
 
+async function loadRequestConfig(signal) {
+  if (signal?.aborted) throw signal.reason || new Error('AbortError')
+  let timer
+  let abort
+  try {
+    return await Promise.race([
+      getAllConfig(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(
+            'Membaca konfigurasi AI lokal tidak selesai dalam 10 detik. Request belum dikirim ke provider.'
+          )
+          error.code = 'AI_CONFIG_TIMEOUT'
+          reject(error)
+        }, 10000)
+        abort = () => reject(signal.reason || new Error('AbortError'))
+        signal?.addEventListener('abort', abort, { once: true })
+        if (signal?.aborted) abort()
+      })
+    ])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+  }
+}
+
 /**
  * Frontend AI fetch wrapper.
  * @param {Array} messages - Array of chat messages
@@ -33,9 +59,17 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     sessionId = null
   } = actualOptions
 
-  const currentConfig = await getAllConfig()
-  const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
   const cleanSignal = resolveAbortSignal(signal)
+  const currentConfig = await loadRequestConfig(cleanSignal)
+  const conf = { ...(currentConfig[0] || {}), ...(configOverride || {}) }
+  if (!conf.aiProvider) {
+    const error = new Error(
+      'Konfigurasi provider AI tidak tersedia. Request dibatalkan agar tidak beralih ke provider lain.'
+    )
+    error.code = 'AI_CONFIG_UNAVAILABLE'
+    throw error
+  }
+  if (cleanSignal?.aborted) throw cleanSignal.reason || new Error('AbortError')
 
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     window.__LAST_AI__ = {
@@ -59,11 +93,13 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
 
   // 1. Streaming Mode
   if (actualStream) {
+    const requestId = crypto.randomUUID()
     let unsubToken = null
     let unsubMood = null
 
     if (window.api?.onAiToken && (onToken || onReasoning)) {
       unsubToken = window.api.onAiToken((payload) => {
+        if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (!payload?.token) return
         if (payload.type === 'thought') {
           onReasoning?.(payload.token)
@@ -76,19 +112,21 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     let unsubMeta = null
     if (window.api?.onAiMood && onMood) {
       unsubMood = window.api.onAiMood((payload) => {
+        if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (payload?.mood) onMood(payload.mood)
       })
     }
 
     if (window.api?.onAiMarkMeta && onMeta) {
       unsubMeta = window.api.onAiMarkMeta((payload) => {
+        if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (payload) onMeta(payload)
       })
     }
 
     try {
       const result = await window.api.fetchAI(
-        { messages, tools, config: conf, isSmallTask, stream: true, sessionId },
+        { messages, tools, config: conf, isSmallTask, stream: true, sessionId, requestId },
         cleanSignal
       )
       if (import.meta.env.DEV && typeof window !== 'undefined') {

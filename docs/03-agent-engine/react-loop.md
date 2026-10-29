@@ -101,8 +101,8 @@ Hasil observasi ini menjadi masukan langsung bagi model pada iterasi berikutnya 
 Memasukkan seluruh definisi alat ke dalam system prompt pada setiap turn akan menghabiskan jendela konteks (_context window_) dan meningkatkan latensi inferensi. MARK menerapkan strategi pemuatan bertingkat (_tiered tool loading_):
 
 1. **Core Tools (Selalu Tersedia):** Alat fundamental seperti manipulasi berkas (`read-file`, `write-file`, `replace-content`, `list-directory`), pencarian web dasar, pembaca memori, dan delegasi sub-agen selalu dimuat dalam `core_tools_schema`.
-2. **Tool Groups Khusus (Pemuatan Sesuai Permintaan):** Alat tingkat lanjut seperti automasi mouse/keyboard Win32 (`pc_automation`), automasi peramban interaktif (`advanced_browser`), dan Google Workspace (`google_workspace`) diisolasi dalam modul terpisah.
-3. **Lazy Discovery via `read-tools`:** Model dapat memanggil `read-tools({ group: "pc_automation" })`. Ketika dipanggil, sistem menandai kelompok tersebut ke dalam `dynamicallyLoadedToolGroups`. Pada langkah loop berikutnya, `getActiveToolsSchema` secara dinamis memasukkan skema OpenAPI kelompok tersebut ke dalam payload inferensi.
+2. **Tool Groups Khusus (Pemuatan Sesuai Permintaan):** Alat tingkat lanjut seperti kendali visual OS dan mouse/keyboard Win32 (`computer_use`), automasi peramban interaktif (`browser_use`), dan Google Workspace (`google_workspace`) diisolasi dalam modul terpisah.
+3. **Lazy Discovery via `read-tools`:** Model dapat memanggil `read-tools({ group: "computer_use" })`. Ketika dipanggil, sistem menandai kelompok tersebut ke dalam `dynamicallyLoadedToolGroups`. Pada langkah loop berikutnya, `getActiveToolsSchema` secara dinamis memasukkan skema OpenAPI kelompok tersebut ke dalam payload inferensi.
 4. **Custom Plugin Schema:** Plugin pihak ketiga di direktori plugin lokal diinjeksi secara otomatis sebagai fungsi OpenAPI berformat `plugin-<namaPlugin>-<namaAksi>`.
 
 ```mermaid
@@ -211,9 +211,11 @@ Pengguna dapat menghentikan eksekusi agen kapan saja melalui tombol Stop di UI a
 
 Untuk mendukung siklus ReAct yang berjalan puluhan hingga ratusan langkah tanpa batas turn (`maxTurns: unconstrained`), MARK mengadopsi arsitektur **In-Loop Context Compressor** dari **Hermes Agent (Nous Research)**:
 
+Indikator konteks diperbarui sebelum kompaksi dan diberi kesempatan tampil sebelum banner proses muncul. Auto-compact baru dimulai pada 90%; jumlah pesan saja tidak memicu pruning. Hitungan in-loop mencakup schema tool dan reminder selain pesan.
+
 1. **Evaluasi Per-Iterasi**: Pada setiap putaran siklus `while (!isDone)` tepat sebelum `fetchAI` dipanggil, sistem menjalankan `checkAndCompressInLoop`.
 2. **Fase 1 Tool Pruning**: Output dari pemanggilan tool sebelumnya yang berumur > 6 langkah dan berukuran > 200 karakter secara otomatis diganti menjadi stub `[Old tool output cleared to save context space]`. Ini memangkas 70–80% bobot memori secara instan tanpa biaya token LLM.
-3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 50% kapasitas (128.000 token dari batas 256.000 token), bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
+3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 90% kapasitas (230.400 token dari batas 256.000 token), bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
 4. **Pencegahan Context Ballooning**: Mekanisme ini menjamin bahwa model tidak akan mengalami kegagalan akibat batas konteks terlampaui (_context length exceeded_) meskipun menjalankan 500+ iterasi dalam satu tugas otonom.
 
 ---
@@ -227,12 +229,12 @@ stateDiagram-v2
     Inisialisasi --> Retrieval: Ambil Memori Vektor & Orama
     Retrieval --> Compaction: Evaluasi Batas Token Konteks
     Compaction --> Inferensi: Panggil fetchAI dengan Tools
-    Retrieval --> GatewayHygiene: Cek Kapasitas Sesi (>= 85%)
+    Retrieval --> GatewayHygiene: Cek Kapasitas Sesi (>= 90%)
     GatewayHygiene --> Inferensi: Masuk ReAct Loop
 
     state Inferensi {
         [*] --> StreamingThought: onReasoning
-        [*] --> InLoopCheck: Evaluasi Kapasitas loopMessages (>= 50%)
+        [*] --> InLoopCheck: Evaluasi Kapasitas loopMessages (>= 90%)
         InLoopCheck --> ToolPruning: Pangkas Output Tool Lama (Fase 1)
         ToolPruning --> HandoverSummary: Ringkas Middle Section jika Perlu (Fase 2-4)
         HandoverSummary --> StreamingThought: fetchAI (onReasoning)
@@ -256,7 +258,7 @@ stateDiagram-v2
     Observasi --> Inferensi: Rekam Hasil ke loopMessages & Ulangi
     IntervensiUser --> Inferensi: Suntikkan Instruksi Baru ke Loop
 
-    Inferensi --> Batal: Sinyal Abort (Stop / Ctrl+Shift+S)
+    Inferensi --> Batal: Stop proses atau pembatalan Computer Use dengan Ctrl+Shift+R
     EksekusiTool --> Batal: Sinyal Abort
 
     Batal --> Idle: Bersihkan State & Lepas Kunci Sesi
@@ -278,12 +280,24 @@ Pada model DeepSeek Web RPC, sesi peramban web memiliki batas kenyamanan obrolan
 
 ## 10. Ringkasan Teknis Penting
 
+Untuk diagnosis request OpenAI-compatible yang tertahan, `GET /api/ai/diagnostics` menyediakan metadata maksimal 32 stream terakhir di memori server. Setiap entri mencatat sesi/request, fase koneksi, waktu data/token terakhir, jumlah byte/event, status HTTP, penanda selesai, penerimaan usage, dan kode kegagalan. Prompt, jawaban, argumen tool, API key, serta pesan error mentah tidak disimpan di diagnostik ini. Riwayat diagnostik hilang saat server direstart.
+
+Fase `connecting` berarti header upstream belum diterima; `waiting-for-token` berarti header sudah diterima tetapi token belum terbaca; `streaming` berarti token pernah diterima. Bandingkan `lastDataAt`, `lastTokenAt`, `finishReason`, dan `usageReceived` untuk membedakan stream yang berhenti, heartbeat tanpa kemajuan, dan kegagalan parsing. Angka usage pada dashboard router saja tidak membuktikan bahwa MARK menerima penanda akhir stream.
+
+Custom API yang tidak mengirim data selama 90 detik, berakhir tanpa penanda selesai, atau kehilangan socket dipulihkan maksimal sekali memakai `stream: false`. Jalur kompatibilitas ini mempertahankan model, seluruh riwayat, dan deskripsi/schema tool, tetapi mengemasnya menjadi dua pesan: instruksi sistem beserta kontrak aksi JSON, lalu arsip percakapan berurutan. Gambar tetap dilampirkan sebagai konten multimodal. Field native `tools`/`tool_choice` dihilangkan dari request pengganti; model mengembalikan `{content, tool_calls: [{name, arguments}]}` sebagai teks JSON. MARK memvalidasi hasil lengkap tersebut dan mengubahnya menjadi tool calls untuk executor yang sama. Ini menghindari pengulangan jalur native function calling yang sebelumnya tertahan.
+
+Respons parsial dibuang dan tidak ditambahkan ke arsip prompt. Pemulihan dibatasi 120 detik dan tetap mengikuti Stop/perubahan kontrol browser. Respons pengganti harus berupa JSON lengkap dengan `finish_reason` valid; nama tool harus tersedia dan argumennya harus berupa objek JSON lengkap. Tool lama yang sudah selesai tetap tersimpan, sedangkan tool dari stream gagal tidak diteruskan. Chat menampilkan pesan pemulihan melalui metadata yang difilter menurut sesi/request; buffer parsial lead agent dan Minibot dibersihkan sebelum respons pengganti diterima.
+
+Setelah pemulihan berhasil, pasangan endpoint/model/sesi tersebut memakai JSON actions langsung selama 10 menit untuk menghindari pengulangan stream yang tertahan pada langkah berikutnya. Cache ini hanya di memori, dibatasi 64 sesi, dan tidak mengubah konfigurasi permanen atau sesi lain. Kegagalan request kompatibilitas menghapus entri tersebut tanpa retry tambahan.
+
+Diagnostik menampilkan fase `recovering`, `recoveryAttempts`, `streamErrorCode`, dan `recovered` untuk jalur ini; penggunaan ulang ditandai `compatibilityReused` dan fase aktif `compatibility`. Jika request pengganti juga gagal, error ditampilkan tanpa retry tambahan. Provider lokal tetap memakai batas transport 180 detik; batas tanpa kemajuan token sesudah token pertama adalah 300 detik, termasuk ketika heartbeat terus diterima.
+
 | Parameter / Fitur           | Nilai / Kebijakan                                      | Lokasi Kode                                 |
 | :-------------------------- | :----------------------------------------------------- | :------------------------------------------ |
 | **Batas Turn (`maxTurns`)** | Tidak Terbatas (berjalan hingga selesai / dibatalkan)  | `useMarkPlan.js` line 1256                  |
 | **Batas Global Konteks**    | 256.000 tokens (256K tokens via `gpt-tokenizer`)       | `src/renderer/src/api/ai/contextManager.js` |
-| **Gateway Hygiene Trigger** | 85% dari batas token (~217.6K tokens pra-turn safety)  | `useMarkPlan.js` line 1148                  |
-| **In-Loop Compact Trigger** | 50% dari batas token (~128K tokens in-loop guard)      | `src/renderer/src/api/ai/contextManager.js` |
+| **Gateway Hygiene Trigger** | 90% dari batas token (~230.4K tokens pra-turn safety)  | `useMarkPlan.js` line 1148                  |
+| **In-Loop Compact Trigger** | 90% dari batas token (~230.4K tokens in-loop guard)    | `src/renderer/src/api/ai/contextManager.js` |
 | **Rotasi Sesi DeepSeek**    | Maksimal 10 turn aktif (rotasi + State Anchor)         | `src/server/services/ai/deepseek-web.js`    |
 | **Toleransi Retry Error**   | Maksimal 50 kali kesalahan berturut-turut              | `useMarkPlan.js` line 1276                  |
 | **Streaming Engine**        | Server-Sent Events (SSE) dengan parser JSON / chunk    | `src/renderer/src/api/ai/core.js`           |
@@ -299,10 +313,10 @@ Untuk meningkatkan efisiensi dan kecepatan otomasi, MARK V5 mendukung eksekusi m
 
 ### A. Pola Tindakan Batch yang Didukung
 
-1. **Otomasi Desktop & PC (`pc_automation`)**:
-   - Rangkaian interaksi input sekuensial yang pasti dikirim dalam satu giliran: `os-click` (fokus elemen) + `os-type` (ketik string) + `os-key` (tekan Enter/Tab).
-   - Menghilangkan latensi 3 turn terpisah (~9-12 detik) menjadi 1 turn instan (~1-2 detik).
-2. **Otomasi Peramban Web (`advanced_browser`)**:
+1. **Computer Use & Otomasi Desktop (`computer_use`)**:
+   - Rangkaian interaksi input sekuensial yang dikirim dalam satu giliran: `computer_use` dengan action `batch` (atau kombinasi `computer_use` + `os-*`).
+   - Menghilangkan latensi multi-turn terpisah (~9-12 detik) menjadi 1 turn instan (~1-2 detik).
+2. **Otomasi Peramban Web (`browser_use`)**:
    - Pengisian form dan navigasi fisik: `browser-click` + `browser-type` dieksekusi secara berurutan dalam satu giliran.
 3. **Riset Web Multi-Link (`browser-fetch`)**:
    - Setelah `browser-search` mengembalikan daftar URL relevan, agen memanggil 2-4 `browser-fetch` secara serentak untuk membaca seluruh artikel sekaligus.

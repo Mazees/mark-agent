@@ -1,6 +1,8 @@
+import { skillService } from '../../main/skills/skill-service.js'
 import { Router, raw } from 'express'
 import { dbStore } from '../memory/db-store.js'
 import { wsHub } from '../ws-hub.js'
+import { getSkillMigrationStatus, migrateLegacySkills } from '../../main/skills/skill-migration.js'
 import {
   listAllSkills,
   getSkillFileTree,
@@ -39,6 +41,44 @@ skillsRouter.get('/skills', async (_req, res) => {
     res.json({ success: true, data: skills })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+skillsRouter.get('/skills/catalog', async (_req, res) => {
+  try {
+    res.json({ success: true, data: await skillService.catalog() })
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+skillsRouter.post('/skills/read', async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: await skillService.read(
+        req.body.skill_id || req.body.skill_name,
+        req.body.relative_path
+      )
+    })
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message })
+  }
+})
+skillsRouter.get('/skills/migration', async (_req, res) => {
+  try {
+    res.json({ success: true, data: await getSkillMigrationStatus() })
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+skillsRouter.post('/skills/migrate', async (_req, res) => {
+  try {
+    const result = await migrateLegacySkills()
+    wsHub.broadcast('skills:updated', { reason: 'migration', timestamp: Date.now() })
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
   }
 })
 

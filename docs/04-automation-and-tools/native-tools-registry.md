@@ -18,7 +18,8 @@ export const NATIVE_TOOLS = {
   ...taskTools,
   ...googleTools,
   ...telegramTools,
-  ...mediaTools
+  ...mediaTools,
+  ...learnTools
 }
 ```
 
@@ -123,6 +124,7 @@ Mengelola proses CLI jangka panjang (misalnya dev server, build watcher):
 - `google-tools.js`: Mengakses Google Calendar, membaca dan mengirim Gmail, serta mengunduh berkas Google Drive dengan autentikasi OAuth2.
 - `telegram-tools.js`: Mengirim pesan, foto, dan dokumen dari komputer pengguna ke chat Telegram via bot.
 - `media-tools.js`: Sintesis suara real-time via Edge-TTS dan pencarian transkrip YouTube.
+- `learn-tools.js`: core tool `learn` untuk menyimpan atau memperbarui learned skill di SQLite. `insert` menolak nama yang sudah ada; `update` hanya berlaku untuk nama yang ditemukan.
 
 ---
 
@@ -147,7 +149,10 @@ Fungsi `isDangerousCommand` di `system-tools.js` memindai string perintah sebelu
 
 MARK mendukung sistem plugin eksternal yang dapat diinstal tanpa harus mengubah kode inti server:
 
-- Setiap plugin disimpan dalam direktori `~/.config/mark-agent/plugins/<nama-plugin>/`.
-- Plugin mendefinisikan berkas konfigurasi `manifest.json` yang berisi nama aksi, deskripsi OpenAPI, dan skrip eksekusi.
+- Setiap plugin disimpan dalam direktori `Documents/Mark Plugins/<nama-plugin>/` di home pengguna.
+- `plugin.json` menyimpan identitas dan metadata aksi; `index.js` mengekspor handler JavaScript yang dijalankan dalam proses Node.js MARK.
 - Backend menyediakan endpoint eksekusi di `/api/plugins/execute`.
-- Saat aktif, aksi-aksi plugin secara otomatis dipetakan ke skema OpenAPI berformat `plugin-<namaPlugin>-<namaAksi>` dan dapat dipanggil langsung oleh loop ReAct MARK.
+- Nama plugin menjadi group tool, sedangkan `actions[].name` menjadi nama tool langsung. Contoh: group `system-ops` menyediakan `sys-ram-check`.
+- Muat group melalui `read-tools` atau tag `@system-ops`. Nama aksi harus unik terhadap plugin aktif lainnya dan tool bawaan. Nama bentrok tidak diekspos sebagai tool; resolver menolak panggilan ambigu.
+- Alias lama `plugin-<namaPlugin>-<namaAksi>` masih diterima untuk riwayat lama. Plugin baru memakai nama aksi langsung.
+- Skill bawaan `/create-plugin` menjelaskan pembuatan dan pengujian plugin berdasarkan kontrak runtime ini.

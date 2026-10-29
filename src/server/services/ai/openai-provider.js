@@ -1,4 +1,6 @@
 import { jsonrepair } from 'jsonrepair'
+import { beginStreamTrace, finishStreamTrace } from './stream-diagnostics.js'
+import { requestBufferedCompletion } from './buffered-completion.js'
 import {
   getSystemSignature,
   activeAbortControllers,
@@ -9,6 +11,9 @@ import {
   stripMarkTags
 } from './ai-utils.js'
 
+const compatibleSessions = new Map()
+const COMPATIBILITY_TTL_MS = 10 * 60 * 1000
+
 export async function executeOpenAIProvider({
   messages,
   tools = null,
@@ -17,6 +22,8 @@ export async function executeOpenAIProvider({
   isSmallTask = false,
   jsonSchema = null,
   signal = null,
+  sessionId = null,
+  requestId = null,
   onToken = null,
   onReasoning = null,
   onMood = null,
@@ -25,11 +32,12 @@ export async function executeOpenAIProvider({
   onStatus = null
 }) {
   const conf = config || {}
+  const latestUserMessageIndex = (messages || []).findLastIndex((m) => m.role === 'user')
 
   let formattedMessages = (messages || []).map((m, index) => {
     let sanitizedContent = m.content
     if (Array.isArray(m.content)) {
-      if (index < messages.length - 1) {
+      if (index < messages.length - 1 && index !== latestUserMessageIndex) {
         sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
       } else {
         sanitizedContent = m.content
@@ -116,6 +124,7 @@ export async function executeOpenAIProvider({
   // 1. STREAMING MODE (Agent ReAct Gateway)
   // ==========================================
   if (stream) {
+    const trace = beginStreamTrace({ requestId, sessionId, provider: conf.aiProvider, model })
     const body = {
       stream: true,
       stream_options: { include_usage: true },
@@ -129,37 +138,16 @@ export async function executeOpenAIProvider({
     }
 
     const abortController = new AbortController()
+    abortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
     activeAbortControllers.add(abortController)
 
-    if (signal) {
-      if (signal.aborted) {
-        abortController.abort(signal.reason || new Error('User Aborted'))
-      } else {
-        signal.addEventListener('abort', () =>
-          abortController.abort(signal.reason || new Error('User Aborted'))
-        )
-      }
-    }
+    const abortStream = () => abortController.abort(signal.reason || new Error('User Aborted'))
+    if (signal?.aborted) abortStream()
+    else signal?.addEventListener('abort', abortStream, { once: true })
 
     let isStreamDone = false
-    let streamWatchdogTimer = null
-    const STREAM_INACTIVITY_TIMEOUT_MS = 60000 // 60 detik tanpa chunk/data baru
 
-    const resetStreamWatchdog = () => {
-      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
-      if (isStreamDone) return
-      streamWatchdogTimer = setTimeout(() => {
-        if (!isStreamDone) {
-          abortController.abort(
-            new Error(
-              `Stream Inactivity Timeout: Tidak ada data dari server (${endpoint}) selama ${STREAM_INACTIVITY_TIMEOUT_MS / 1000} detik.`
-            )
-          )
-        }
-      }, STREAM_INACTIVITY_TIMEOUT_MS)
-    }
-
-    const CONNECT_TIMEOUT_MS = 60000
+    const CONNECT_TIMEOUT_MS = 120000 // 2 menit untuk handshaking / HTTP response headers awal
     let connectTimeoutTimer = setTimeout(() => {
       abortController.abort(
         new Error(
@@ -184,14 +172,48 @@ export async function executeOpenAIProvider({
     const accumulatedToolCalls = {}
     let finishReason = 'stop'
     let serverUsage = null
+    let markStreamActivity = () => {}
+    const compatibilityKey =
+      conf.aiProvider === 'custom' && sessionId != null
+        ? JSON.stringify([endpoint, model, String(sessionId)])
+        : null
+    const deliverBufferedResult = (recovered) => {
+      if (signal?.aborted) throw signal.reason || new Error('User Aborted')
+      onMeta?.(recovered.meta || {})
+      if (recovered.mood) onMood?.(recovered.mood)
+      if (recovered.reasoning) onReasoning?.(recovered.reasoning)
+      if (recovered.content) onToken?.(recovered.content)
+      if (recovered.toolCalls) onToolCall?.(recovered.toolCalls)
+      trace.finishReason = recovered.finishReason
+      trace.usageReceived = Boolean(recovered.usage)
+      trace.recovered = true
+      finishStreamTrace(trace)
+      return recovered
+    }
 
     try {
+      for (const [key, expires] of compatibleSessions) {
+        if (expires <= Date.now()) compatibleSessions.delete(key)
+      }
+      if (compatibilityKey && compatibleSessions.has(compatibilityKey)) {
+        clearTimeout(connectTimeoutTimer)
+        connectTimeoutTimer = null
+        trace.phase = 'compatibility'
+        trace.compatibilityReused = true
+        trace.recoveryMode = 'json-actions'
+        return deliverBufferedResult(
+          await requestBufferedCompletion({ endpoint, headers, body, signal })
+        )
+      }
       let response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         signal: abortController.signal
       })
+      trace.phase = 'waiting-for-token'
+      trace.httpStatus = response.status
+      trace.contentType = (response.headers?.get('content-type') || '').split(';')[0].slice(0, 80)
       if (connectTimeoutTimer) {
         clearTimeout(connectTimeoutTimer)
         connectTimeoutTimer = null
@@ -228,9 +250,6 @@ export async function executeOpenAIProvider({
         throw new Error(`API Error (${response.status}): ${errorMsg}`)
       }
 
-      // Mulai pantau inaktivitas stream setelah koneksi HTTP 200 OK berhasil terbuka
-      resetStreamWatchdog()
-
       const sseMoodFilter = createMoodStreamFilter(
         onToken,
         (mood) => {
@@ -250,23 +269,39 @@ export async function executeOpenAIProvider({
       const handleChunkText = (jsonStr) => {
         if (!jsonStr) return
         if (jsonStr === '[DONE]') {
+          trace.finishReason = '[DONE]'
           isStreamDone = true
           return
         }
-        resetStreamWatchdog()
         try {
           const parsed = JSON.parse(jsonStr)
+          trace.events++
+          if (parsed.error) {
+            const error = new Error(
+              typeof parsed.error === 'string'
+                ? parsed.error
+                : parsed.error.message || 'AI stream gagal.'
+            )
+            error.code = parsed.error.code || 'AI_STREAM_ERROR'
+            abortController.abort(error)
+            return
+          }
           if (parsed.usage) {
+            trace.usageReceived = true
             serverUsage = parsed.usage
           }
           const choice = parsed.choices?.[0]
           if (!choice) return
 
-          if (choice.finish_reason) {
-            finishReason = choice.finish_reason
-          }
-
           const delta = choice.delta || {}
+          if (
+            delta.content ||
+            delta.reasoning_content ||
+            delta.reasoning ||
+            delta.tool_calls?.some((call) => call.function?.name || call.function?.arguments)
+          ) {
+            markStreamActivity()
+          }
 
           if (delta.reasoning_content || delta.reasoning) {
             const rToken = delta.reasoning_content || delta.reasoning
@@ -300,33 +335,172 @@ export async function executeOpenAIProvider({
               }
             }
           }
-        } catch (_) {}
+
+          if (choice.finish_reason) {
+            trace.finishReason = choice.finish_reason
+            finishReason = choice.finish_reason
+            isStreamDone = true
+          }
+        } catch (_) {
+          trace.parseErrors++
+        }
       }
 
       if (response.body && (response.body.getReader || response.body[Symbol.asyncIterator])) {
-        if (response.body[Symbol.asyncIterator]) {
-          const decoder = new TextDecoder()
-          let lineBuffer = ''
-          for await (const chunk of response.body) {
-            resetStreamWatchdog()
-            lineBuffer +=
-              typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
-            const lines = lineBuffer.split('\n')
-            lineBuffer = lines.pop() || ''
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (trimmed.startsWith('data:')) {
-                const dataPayload = trimmed.slice(5).trim()
-                if (dataPayload === '[DONE]') {
-                  isStreamDone = true
-                  break
-                }
+        const reader =
+          typeof response.body.getReader === 'function' ? response.body.getReader() : null
+        const decoder = new TextDecoder()
+        let lineBuffer = ''
+        let receivedAnyData = false
+        let ttftTimer = null
+        let inactivityTimer = null
+        let progressTimer = null
+
+        const TTFT_TIMEOUT_MS = 180000 // 3 menit batas koneksi awal sebelum token pertama
+        const INACTIVITY_TIMEOUT_MS = conf.aiProvider === 'custom' ? 90000 : 180000
+        const PROGRESS_TIMEOUT_MS = 300000
+
+        const resetInactivityTimer = () => {
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer)
+            inactivityTimer = null
+          }
+          if (isStreamDone) return
+          inactivityTimer = setTimeout(() => {
+            if (!isStreamDone) {
+              const error = new Error(
+                `Koneksi stream AI tidak mengirim data selama ${INACTIVITY_TIMEOUT_MS / 1000} detik. Permintaan dihentikan; tool yang belum lengkap tidak dijalankan.`
+              )
+              error.code = 'AI_STREAM_STALLED'
+              abortController.abort(error)
+            }
+          }, INACTIVITY_TIMEOUT_MS)
+        }
+
+        markStreamActivity = () => {
+          trace.phase = 'streaming'
+          trace.lastTokenAt = Date.now()
+          if (!receivedAnyData) {
+            receivedAnyData = true
+            clearTimeout(ttftTimer)
+            ttftTimer = null
+          }
+          if (progressTimer) clearTimeout(progressTimer)
+          progressTimer = setTimeout(() => {
+            if (isStreamDone) return
+            const error = new Error(
+              `AI tidak mengirim token atau tool baru selama ${PROGRESS_TIMEOUT_MS / 1000} detik meski koneksi masih terbuka. Permintaan dihentikan; tool yang belum lengkap tidak dijalankan.`
+            )
+            error.code = 'AI_STREAM_STALLED'
+            abortController.abort(error)
+          }, PROGRESS_TIMEOUT_MS)
+        }
+
+        // Watchdog hanya untuk koneksi awal / token pertama (Time-To-First-Token)
+        ttftTimer = setTimeout(() => {
+          if (!receivedAnyData && !isStreamDone) {
+            abortController.abort(
+              new Error(
+                `Connection Timeout: Server API (${endpoint}) tidak mengirim data awal selama ${TTFT_TIMEOUT_MS / 1000} detik.`
+              )
+            )
+          }
+        }, TTFT_TIMEOUT_MS)
+
+        const cancelStream = () => {
+          isStreamDone = true
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer)
+            inactivityTimer = null
+          }
+          if (reader) {
+            try {
+              reader.cancel().catch(() => {})
+            } catch (_) {}
+          } else if (typeof response.body.cancel === 'function') {
+            try {
+              response.body.cancel().catch(() => {})
+            } catch (_) {}
+          }
+        }
+
+        const processRawChunk = (chunkText) => {
+          trace.bytes += Buffer.byteLength(chunkText)
+          trace.lastDataAt = Date.now()
+          // Heartbeat dan JSON yang terpecah tetap membuktikan koneksi masih mengirim data.
+          if (chunkText) resetInactivityTimer()
+          lineBuffer += chunkText
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() || ''
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (trimmed.startsWith('data:')) {
+              const dataPayload = trimmed.slice(5).trim()
+              if (dataPayload === '[DONE]') {
+                trace.finishReason = '[DONE]'
+                isStreamDone = true
+                break
+              }
+              handleChunkText(dataPayload)
+              if (isStreamDone) break
+            }
+          }
+          // Periksa jika lineBuffer merupakan event SSE utuh (misal berakhiran '}' tanpa newline)
+          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
+            const trimmed = lineBuffer.trim()
+            if (trimmed === 'data: [DONE]') {
+              trace.finishReason = '[DONE]'
+              isStreamDone = true
+              lineBuffer = ''
+            } else if (trimmed.endsWith('}')) {
+              const dataPayload = trimmed.slice(5).trim()
+              try {
+                JSON.parse(dataPayload)
                 handleChunkText(dataPayload)
+                lineBuffer = ''
+              } catch (_) {}
+            }
+          }
+        }
+
+        try {
+          if (reader) {
+            while (!isStreamDone) {
+              const { done, value } = await reader.read()
+              if (done) break
+              const chunkText =
+                typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+              processRawChunk(chunkText)
+              if (isStreamDone) {
+                cancelStream()
+                break
               }
             }
-            if (isStreamDone) break
+          } else if (response.body[Symbol.asyncIterator]) {
+            for await (const chunk of response.body) {
+              const chunkText =
+                typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
+              processRawChunk(chunkText)
+              if (isStreamDone) {
+                cancelStream()
+                break
+              }
+            }
           }
-          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
+        } finally {
+          if (ttftTimer) {
+            clearTimeout(ttftTimer)
+            ttftTimer = null
+          }
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer)
+            inactivityTimer = null
+          }
+          if (progressTimer) {
+            clearTimeout(progressTimer)
+            progressTimer = null
+          }
+          if (lineBuffer.trim().startsWith('data:')) {
             const dataPayload = lineBuffer.trim().slice(5).trim()
             if (dataPayload === '[DONE]') {
               isStreamDone = true
@@ -335,43 +509,14 @@ export async function executeOpenAIProvider({
             }
           }
           sseMoodFilter.flush()
-        } else {
-          const reader = response.body.getReader()
-          const decoder = new TextDecoder()
-          let lineBuffer = ''
-          while (true) {
-            resetStreamWatchdog()
-            const { done, value } = await reader.read()
-            if (done) break
-            lineBuffer +=
-              typeof value === 'string' ? value : decoder.decode(value, { stream: true })
-            const lines = lineBuffer.split('\n')
-            lineBuffer = lines.pop() || ''
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (trimmed.startsWith('data:')) {
-                const dataPayload = trimmed.slice(5).trim()
-                if (dataPayload === '[DONE]') {
-                  isStreamDone = true
-                  break
-                }
-                handleChunkText(dataPayload)
-              }
-            }
-            if (isStreamDone) {
-              await reader.cancel().catch(() => {})
-              break
-            }
-          }
-          if (!isStreamDone && lineBuffer.trim().startsWith('data:')) {
-            const dataPayload = lineBuffer.trim().slice(5).trim()
-            if (dataPayload === '[DONE]') {
-              isStreamDone = true
-            } else {
-              handleChunkText(dataPayload)
-            }
-          }
-          sseMoodFilter.flush()
+        }
+        if (abortController.signal.aborted) throw abortController.signal.reason
+        if (!isStreamDone) {
+          const error = new Error(
+            'Stream AI terputus sebelum penanda selesai diterima; tool yang belum lengkap tidak dijalankan.'
+          )
+          error.code = 'AI_STREAM_INCOMPLETE'
+          throw error
         }
       } else {
         const raw = await response.text()
@@ -412,6 +557,7 @@ export async function executeOpenAIProvider({
         }
       }
 
+      finishStreamTrace(trace)
       return {
         content: accumulatedContent,
         reasoning: accumulatedReasoning,
@@ -422,13 +568,55 @@ export async function executeOpenAIProvider({
         usage: serverUsage
       }
     } catch (error) {
+      const failure = abortController.signal.aborted ? abortController.signal.reason : error
+      const failureCode = failure?.code || failure?.cause?.code
+      const canRecover =
+        conf.aiProvider === 'custom' &&
+        !trace.compatibilityReused &&
+        !signal?.aborted &&
+        ['AI_STREAM_STALLED', 'AI_STREAM_INCOMPLETE', 'UND_ERR_SOCKET', 'ECONNRESET'].includes(
+          failureCode
+        )
+      if (canRecover) {
+        abortController.abort(failure)
+        activeAbortControllers.delete(abortController)
+        signal?.removeEventListener('abort', abortStream)
+        trace.phase = 'recovering'
+        trace.recoveryAttempts = 1
+        trace.recoveryMode = 'json-actions'
+        trace.streamErrorCode = failureCode
+        try {
+          onMeta?.({
+            streamRecovery: true,
+            message: 'Koneksi stream terhenti. Mark sedang meminta ulang respons lengkap.'
+          })
+          onStatus?.('Memulihkan respons AI (1/1)...')
+          const recovered = await requestBufferedCompletion({ endpoint, headers, body, signal })
+          if (signal?.aborted) throw signal.reason || new Error('User Aborted')
+          if (compatibilityKey) {
+            if (compatibleSessions.size >= 64) {
+              compatibleSessions.delete(compatibleSessions.keys().next().value)
+            }
+            compatibleSessions.set(compatibilityKey, Date.now() + COMPATIBILITY_TTL_MS)
+          }
+          return deliverBufferedResult(recovered)
+        } catch (recoveryError) {
+          finishStreamTrace(trace, recoveryError.code || 'AI_RECOVERY_FAILED')
+          throw recoveryError
+        }
+      }
+      if (trace.compatibilityReused) compatibleSessions.delete(compatibilityKey)
+      finishStreamTrace(
+        trace,
+        error.code || (abortController.signal.aborted ? 'ABORTED' : 'AI_ERROR')
+      )
       if (conf.aiProvider !== 'custom' && isLMStudioOfflineError(error)) {
         throw createLMStudioOfflineError(error)
       }
       throw error
     } finally {
       if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer)
-      if (streamWatchdogTimer) clearTimeout(streamWatchdogTimer)
+      signal?.removeEventListener('abort', abortStream)
       activeAbortControllers.delete(abortController)
     }
   }
@@ -466,6 +654,7 @@ export async function executeOpenAIProvider({
   }
 
   const parentAbortController = new AbortController()
+  parentAbortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
   activeAbortControllers.add(parentAbortController)
 
   if (signal) {
@@ -483,13 +672,18 @@ export async function executeOpenAIProvider({
 
     const timeoutMs = 300000
     const abortController = new AbortController()
+    abortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
     activeAbortControllers.add(abortController)
     const timeoutId = setTimeout(
       () => abortController.abort(new Error('Request Timeout (Tidak ada respon dari server)')),
       timeoutMs
     )
+    const abortRequest = () => abortController.abort(parentAbortController.signal.reason)
+    parentAbortController.signal.addEventListener('abort', abortRequest, { once: true })
+    if (parentAbortController.signal.aborted) abortRequest()
 
     let response
+    let rawText
     try {
       response = await fetch(endpoint, {
         method: 'POST',
@@ -497,7 +691,7 @@ export async function executeOpenAIProvider({
         body: JSON.stringify(currentBody),
         signal: abortController.signal
       })
-      clearTimeout(timeoutId)
+      rawText = await response.text()
     } catch (err) {
       clearTimeout(timeoutId)
       if (parentAbortController.signal.aborted) {
@@ -520,15 +714,12 @@ export async function executeOpenAIProvider({
       throw enrichedError
     } finally {
       clearTimeout(timeoutId)
-      parentAbortController.signal.removeEventListener(
-        'abort',
-        abortController.abort.bind(abortController)
-      )
+      parentAbortController.signal.removeEventListener('abort', abortRequest)
       activeAbortControllers.delete(abortController)
     }
 
     if (!response.ok) {
-      const textData = await response.text()
+      const textData = rawText
       let errorData = null
       try {
         errorData = JSON.parse(textData)
@@ -570,7 +761,6 @@ export async function executeOpenAIProvider({
       throw err
     }
 
-    const rawText = await response.text()
     const cleanText = rawText.trim()
 
     // 1. Tangani jika response berupa JSON Array chunk

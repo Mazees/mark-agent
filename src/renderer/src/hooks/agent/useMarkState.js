@@ -11,13 +11,15 @@ export const useMarkState = () => {
   const runningSessionId = runningSessionIds[0] || null
 
   const addRunningSessionId = (id) => {
-    const num = Number(id)
-    setRunningSessionIds((prev) => (prev.map(Number).includes(num) ? prev : [...prev, num]))
+    if (id === null || id === undefined) return
+    const strId = String(id)
+    setRunningSessionIds((prev) => (prev.map(String).includes(strId) ? prev : [...prev, strId]))
   }
 
   const removeRunningSessionId = (id) => {
-    const num = Number(id)
-    setRunningSessionIds((prev) => prev.filter((x) => Number(x) !== num))
+    if (id === null || id === undefined) return
+    const strId = String(id)
+    setRunningSessionIds((prev) => prev.filter((x) => String(x) !== strId))
   }
 
   const setRunningSessionId = (id) => {
@@ -38,6 +40,8 @@ export const useMarkState = () => {
   const [isChatLoaded, setIsChatLoaded] = useState(false)
   const [isBooting, setIsBooting] = useState(true)
   const sessionId = useRef('mark-main-thread')
+  const chatSaveQueueRef = useRef(Promise.resolve())
+  const savedGreetingIdsRef = useRef(new Set())
 
   const abortControllerRef = useRef(null)
 
@@ -47,8 +51,9 @@ export const useMarkState = () => {
   }
 
   useEffect(() => {
+    let cancelled = false
     loadConfig()
-    loadMainThread()
+    loadMainThread(() => cancelled)
 
     const handleConfigUpdate = (e) => {
       if (e.detail) {
@@ -68,25 +73,47 @@ export const useMarkState = () => {
     window.addEventListener('config-updated', handleConfigUpdate)
     window.addEventListener('ai-reset-complete', handleAiReset)
     return () => {
+      cancelled = true
       window.removeEventListener('config-updated', handleConfigUpdate)
       window.removeEventListener('ai-reset-complete', handleAiReset)
     }
   }, [])
 
-  const loadMainThread = async () => {
-    const data = await getMainThread()
-    if (data && data.length > 0) {
-      setChatData(data)
+  const loadMainThread = async (isCancelled) => {
+    try {
+      const data = await getMainThread()
+      if (isCancelled()) return
+      if (data && data.length > 0) {
+        savedGreetingIdsRef.current = new Set(
+          data.filter((message) => message.source === 'startup').map((message) => message.id)
+        )
+        setChatData(data)
+      }
+    } finally {
+      if (!isCancelled()) setIsChatLoaded(true)
     }
-    setIsChatLoaded(true)
   }
 
   useEffect(() => {
-    // Debounce simpan ke DB agar tidak membanjiri SQLite REST endpoint saat streaming token
     if (chatData !== undefined && isChatLoaded) {
-      const timer = setTimeout(() => {
-        saveMainThread(chatData)
-      }, 800)
+      const greetings = chatData.filter((message) => message.source === 'startup' && message.id)
+      const hasNewGreeting = greetings.some(
+        (message) => !savedGreetingIdsRef.current.has(message.id)
+      )
+      const save = () => {
+        chatSaveQueueRef.current = chatSaveQueueRef.current
+          .then(async () => {
+            const saved = await saveMainThread(chatData)
+            if (!saved) throw new Error('Riwayat Main Thread belum tersimpan.')
+            for (const greeting of greetings) savedGreetingIdsRef.current.add(greeting.id)
+          })
+          .catch((error) => console.warn('[useMarkState] Gagal menyimpan riwayat chat:', error))
+      }
+      if (hasNewGreeting) {
+        save()
+        return
+      }
+      const timer = setTimeout(save, 800)
       return () => clearTimeout(timer)
     }
   }, [chatData, isChatLoaded])
@@ -131,6 +158,7 @@ export const useMarkState = () => {
   return {
     chatData,
     setChatData,
+    clearChat,
     sessionId: sessionId.current,
     config,
     setConfig,

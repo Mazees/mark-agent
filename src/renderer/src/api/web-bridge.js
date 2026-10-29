@@ -34,6 +34,10 @@ export const WS_BASE = SERVER_CONFIG.wsBase
 
 let ws = null
 const listeners = new Map()
+let groupToolsRevision = 0
+let groupToolsRequest = null
+let workspaceInfoRequest = null
+const browserRequests = new Map()
 
 function getWebSocket() {
   if (typeof window === 'undefined') return null
@@ -55,6 +59,17 @@ function getWebSocket() {
       try {
         const data = JSON.parse(event.data)
         const { event: evtName, payload } = data
+        if (evtName === 'browser-panel:command:response') {
+          const request = browserRequests.get(payload?.id)
+          if (request) {
+            browserRequests.delete(payload.id)
+            clearTimeout(request.timer)
+            if (payload.success) request.resolve(payload.data)
+            else request.reject(new Error(payload.error || 'Perintah browser gagal.'))
+          }
+        }
+
+        if (evtName === 'plugins:updated') webApi.invalidateGroupTools()
 
         if (evtName && listeners.has(evtName)) {
           listeners.get(evtName).forEach((cb) => {
@@ -71,6 +86,11 @@ function getWebSocket() {
     }
 
     ws.onclose = () => {
+      for (const request of browserRequests.values()) {
+        clearTimeout(request.timer)
+        request.reject(new Error('Koneksi browser terputus.'))
+      }
+      browserRequests.clear()
       console.warn('[WebBridge] Koneksi WebSocket terputus. Mencoba reconnect dalam 3 detik...')
       setTimeout(getWebSocket, 3000)
     }
@@ -125,6 +145,101 @@ export function resolveAbortSignal(sig) {
 }
 
 export const webApi = {
+  chromeBridgeRequest: async (operation = 'status', values = {}) => {
+    const response = await fetch(
+      `${API_BASE}/api/addons/chrome-bridge/${operation}`,
+      operation === 'status'
+        ? { cache: 'no-store' }
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(values)
+          }
+    )
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw Object.assign(new Error(result.error || 'Chrome Bridge gagal dihubungi.'), {
+        code: result.code
+      })
+    return result.data
+  },
+  onChromeBridgeStatus: (callback) => {
+    const listener = (status) => {
+      if (status.id === 'chrome-bridge') callback(status)
+    }
+    addWebListener('addon:status', listener)
+    const refresh = () => {
+      webApi
+        .chromeBridgeRequest()
+        .then(callback)
+        .catch(() => {})
+    }
+    addWebListener('core:ready', refresh)
+    return () => {
+      removeWebListener('addon:status', listener)
+      removeWebListener('core:ready', refresh)
+    }
+  },
+  onBrowserReconnect: (callback) => {
+    addWebListener('core:ready', callback)
+    return () => removeWebListener('core:ready', callback)
+  },
+  browserPanelRequest: async (sessionId, action, values = {}) => {
+    const socket = getWebSocket()
+    if (!socket) throw new Error('WebSocket browser tidak tersedia.')
+    if (socket.readyState !== WebSocket.OPEN)
+      await new Promise((resolve, reject) => {
+        const done = () => {
+          clearTimeout(timer)
+          socket.removeEventListener('open', ready)
+          socket.removeEventListener('close', closed)
+        }
+        const ready = () => {
+            done()
+            resolve()
+          },
+          closed = () => {
+            done()
+            reject(new Error('Koneksi browser terputus.'))
+          }
+        const timer = setTimeout(() => {
+          done()
+          reject(new Error('Koneksi browser belum siap.'))
+        }, 5000)
+        socket.addEventListener('open', ready, { once: true })
+        socket.addEventListener('close', closed, { once: true })
+      })
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID()
+      const timer = setTimeout(() => {
+        browserRequests.delete(id)
+        reject(new Error('Perintah browser melewati batas waktu.'))
+      }, 60000)
+      browserRequests.set(id, { resolve, reject, timer })
+      try {
+        socket.send(
+          JSON.stringify({
+            event: 'browser-panel:command',
+            id,
+            payload: { ...values, sessionId, action }
+          })
+        )
+      } catch (error) {
+        clearTimeout(timer)
+        browserRequests.delete(id)
+        reject(error)
+      }
+    })
+  },
+  getBrowserSessions: async () => {
+    const res = await fetch(`${API_BASE}/api/browser/sessions`)
+    if (!res.ok) throw new Error('Status browser belum dapat dimuat.')
+    return (await res.json()).data || []
+  },
+  onBrowserPanel: (event, callback) => {
+    addWebListener(`browser-panel:${event}`, callback)
+    return () => removeWebListener(`browser-panel:${event}`, callback)
+  },
   // 1. Health & Config
   getHealth: async () => {
     const res = await fetch(`${API_BASE}/api/health`)
@@ -302,12 +417,13 @@ export const webApi = {
   },
 
   // 6. Tools Execution
-  executeNativeTool: async (tool, query, config) => {
+  executeNativeTool: async (tool, query, config, signal = null) => {
     try {
       const res = await fetch(`${API_BASE}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, query, config })
+        body: JSON.stringify({ tool, query, config }),
+        signal: resolveAbortSignal(signal)
       })
       const json = await res.json()
       return json
@@ -317,25 +433,61 @@ export const webApi = {
   },
 
   _groupToolsCache: null,
-  getGroupTools: async () => {
+  invalidateGroupTools: () => {
+    groupToolsRevision += 1
+    webApi._groupToolsCache = null
+    groupToolsRequest = null
+  },
+  getGroupTools: async ({ forceRefresh = false } = {}) => {
+    if (forceRefresh) webApi.invalidateGroupTools()
     if (webApi._groupToolsCache) return webApi._groupToolsCache
-    try {
-      const res = await fetch(`${API_BASE}/api/tools/groups`)
-      const json = await res.json()
-      if (json && json.success && json.data) {
-        webApi._groupToolsCache = json.data
-        return webApi._groupToolsCache
+    if (groupToolsRequest) return groupToolsRequest
+    const revision = groupToolsRevision
+    const request = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/tools/groups`)
+        const json = await res.json()
+        if (revision !== groupToolsRevision) return webApi.getGroupTools()
+        if (json && json.success && json.data) {
+          webApi._groupToolsCache = json.data
+          return webApi._groupToolsCache
+        }
+      } catch (err) {
+        if (revision !== groupToolsRevision) return webApi.getGroupTools()
+        console.error('Gagal memuat skema group tools dari server:', err)
       }
-    } catch (err) {
-      console.error('Gagal memuat skema group tools dari server:', err)
+      return { schema: {}, names: [], definition: {}, flat: {} }
+    })()
+    groupToolsRequest = request
+    try {
+      return await request
+    } finally {
+      if (groupToolsRequest === request) groupToolsRequest = null
     }
-    return { schema: {}, names: [], definition: {}, flat: {} }
+  },
+
+  getWorkspaceInfo: () => {
+    if (!workspaceInfoRequest) {
+      workspaceInfoRequest = (async () => {
+        const res = await fetch(`${API_BASE}/api/workspace/info`, {
+          signal: AbortSignal.timeout(10000)
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success || !json.data?.defaultWorkspaceRoot)
+          throw new Error('Informasi workspace belum dapat dimuat.')
+        return json.data
+      })().catch((error) => {
+        workspaceInfoRequest = null
+        throw error
+      })
+    }
+    return workspaceInfoRequest
   },
 
   getWorkspaceFiles: async (query = '', root = '') => {
     try {
       const q = encodeURIComponent(query || '')
-      const r = encodeURIComponent(root || '')
+      const r = encodeURIComponent(root || (await webApi.getWorkspaceInfo()).defaultWorkspaceRoot)
       const res = await fetch(`${API_BASE}/api/workspace/files?query=${q}&root=${r}`)
       const json = await res.json()
       return json?.data || []
@@ -345,12 +497,12 @@ export const webApi = {
     }
   },
 
-  checkToolApproval: async (tool, query) => {
+  checkToolApproval: async (tool, query, config = {}) => {
     try {
       const res = await fetch(`${API_BASE}/api/tools/needs-approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, query })
+        body: JSON.stringify({ tool, query, config })
       })
       return await res.json()
     } catch (_) {
@@ -360,6 +512,31 @@ export const webApi = {
 
   needsApproval: async (tool, query) => {
     return webApi.checkToolApproval(tool, query)
+  },
+  decideComputerUsePermission: async (requestId, owner, approved) => {
+    const response = await fetch(`${API_BASE}/api/computer-use/permission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId,
+        sessionId: owner.sessionId,
+        runId: owner.computerUseRunId,
+        approved
+      })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Izin sesi Computer Use tidak dapat diproses.')
+    return result.token
+  },
+  decideMcpPermission: async (requestId, owner, approved) => {
+    const response = await fetch(`${API_BASE}/api/mcp/permission`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId, sessionId: owner.sessionId, runId: owner.computerUseRunId, approved })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success) throw new Error(result.error || 'Izin MCP tidak dapat diproses.')
+    return result.token
   },
 
   selectDirectory: async (description = 'Pilih Folder Workspace Proyek') => {
@@ -387,15 +564,26 @@ export const webApi = {
       'browser-close',
       typeof sessionId === 'string' ? sessionId : sessionId?.sessionId || 'default'
     ),
-  showBrowserWindow: async (sessionId = 'default') =>
-    webApi.executeNativeTool('browser-show', typeof sessionId === 'string' ? sessionId : 'default'),
-  hideBrowserWindow: async (sessionId = 'default') =>
-    webApi.executeNativeTool('browser-hide', typeof sessionId === 'string' ? sessionId : 'default'),
   onBrowserPreview: (cb) => {
     addWebListener('browser:preview', cb)
   },
 
-  // Windows Desktop OS Tools Bridges
+  // Windows Desktop OS Tools Bridges (Computer Use)
+  computerUse: async (params) => webApi.executeNativeTool('computer_use', params),
+  computerScreenshot: async (params) =>
+    webApi.executeNativeTool('computer_use', { action: 'screenshot', ...(params || {}) }),
+  onComputerPreview: (cb) => {
+    addWebListener('computer:preview', cb)
+    return () => removeWebListener('computer:preview', cb)
+  },
+  onComputerClick: (cb) => {
+    addWebListener('computer:click', cb)
+    return () => removeWebListener('computer:click', cb)
+  },
+  onComputerInterrupted: (cb) => {
+    addWebListener('computer:interrupted', cb)
+    return () => removeWebListener('computer:interrupted', cb)
+  },
   osRead: async () => webApi.executeNativeTool('os-read', ''),
   osClick: async (query) => webApi.executeNativeTool('os-click', query),
   osType: async (query) => webApi.executeNativeTool('os-type', query),
@@ -406,6 +594,22 @@ export const webApi = {
   osFocusWindow: async (title) => webApi.executeNativeTool('os-focus-window', title),
 
   // 7. Pure Node.js Skills Engine
+  getSkillMigrationStatus: async () => {
+    const response = await fetch(`${API_BASE}/api/skills/migration`)
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Status migrasi skill belum dapat dimuat.')
+    return result.data
+  },
+
+  migrateSkills: async () => {
+    const response = await fetch(`${API_BASE}/api/skills/migrate`, { method: 'POST' })
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Migrasi skill belum berhasil.')
+    return result
+  },
+
   getSkills: async () => {
     try {
       const res = await fetch(`${API_BASE}/api/skills`)
@@ -438,20 +642,24 @@ export const webApi = {
     }
   },
 
-  readSkill: async (name) => {
-    const fileRes = await webApi.readSkillFile(name, 'SKILL.md')
-    if (fileRes) return fileRes
-    try {
-      const serverRes = await webApi.executeNativeTool('read-skill', { skill_name: name })
-      if (serverRes && serverRes.success && (serverRes.content || serverRes.data)) {
-        return serverRes.content || serverRes.data
-      }
-    } catch {
-      // ignore fallback error
-    }
-    return ''
+  getSkillCatalog: async () => {
+    const response = await fetch(`${API_BASE}/api/skills/catalog`)
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Katalog skill belum dapat dimuat.')
+    return result.data
   },
-
+  readSkill: async (reference, relativePath = null) => {
+    const response = await fetch(`${API_BASE}/api/skills/read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill_id: reference, relative_path: relativePath })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Skill belum dapat dibaca.')
+    return result.data
+  },
   saveSkillFile: async (name, filePath, content) => {
     const res = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(name)}/file`, {
       method: 'POST',
@@ -591,18 +799,6 @@ export const webApi = {
     return () => removeWebListener('plugins:updated', cb)
   },
 
-  // 9. Document RAG Binary Parser
-  parseDocument: async (arrayBuffer, isDocx = false) => {
-    const res = await fetch(`${API_BASE}/api/documents/parse?isDocx=${isDocx}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: arrayBuffer
-    })
-    const json = await res.json()
-    if (!res.ok || !json.success) throw new Error(json.error || 'Parse error')
-    return json.text
-  },
-
   // 10. Awareness & OS Vision
   getActivityBuffer: async () => {
     try {
@@ -683,7 +879,7 @@ export const webApi = {
       const res = await fetch(`${API_BASE}/api/telegram/status`)
       return await res.json()
     } catch (_) {
-      return { status: 'disconnected' }
+      return { success: false, status: 'disconnected' }
     }
   },
   tgGetHistory: async () => {
@@ -726,6 +922,14 @@ export const webApi = {
   sendTgAgentExecutionDone: async (payload) => {
     return await webApi.tgAgentExecutionDone(payload)
   },
+  sendTgAgentProgress: async (payload) => {
+    const res = await fetch(`${API_BASE}/api/telegram/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    return await res.json()
+  },
   tgBroadcastToAdmins: async (message) => {
     const res = await fetch(`${API_BASE}/api/telegram/broadcast`, {
       method: 'POST',
@@ -757,6 +961,10 @@ export const webApi = {
   onTgCommandSession: (cb) => {
     addWebListener('tg:command-session', cb)
     return () => removeWebListener('tg:command-session', cb)
+  },
+  onTgCommandAbort: (cb) => {
+    addWebListener('tg:command-abort', cb)
+    return () => removeWebListener('tg:command-abort', cb)
   },
   onTgConnection: (cb) => {
     addWebListener('tg:connection', cb)

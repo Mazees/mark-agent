@@ -27,7 +27,12 @@ class WebSocketHub {
       }
     })
 
-    this.wss.on('connection', (ws) => {
+    this.wss.on('connection', (ws, req) => {
+      try {
+        ws.browserPanelAllowed = new URL(req.headers.origin).host === req.headers.host
+      } catch {
+        ws.browserPanelAllowed = false
+      }
       this.clients.add(ws)
 
       // Kirim event sambutan ready dan status presence UI terkini
@@ -151,8 +156,8 @@ class WebSocketHub {
    * @param {string} token
    * @param {string} [type='answer'] 'thought' | 'answer'
    */
-  streamToken(token, type = 'answer') {
-    this.broadcast('ai:token', { token, type, timestamp: Date.now() })
+  streamToken(token, type = 'answer', sessionId = null, requestId = null) {
+    this.broadcast('ai:token', { token, type, sessionId, requestId, timestamp: Date.now() })
   }
 
   /**

@@ -63,6 +63,7 @@ const Avatar = ({
   status = 'idle',
   intensity = 0,
   mood = 'neutral',
+  isActive = true,
   onClick = null,
   onInteract = null,
   className = ''
@@ -89,6 +90,12 @@ const Avatar = ({
   const thrusterRef = useRef(null)
   const desktopReflectionRef = useRef(null)
   const prevStatusRef = useRef(status)
+  const isWindowFocusedRef = useRef(typeof document !== 'undefined' ? document.hasFocus() : true)
+  const isActiveRef = useRef(isActive)
+
+  useEffect(() => {
+    isActiveRef.current = isActive
+  }, [isActive])
 
   // State refs for animation loop
   const stateRef = useRef({
@@ -1233,15 +1240,51 @@ const Avatar = ({
     }
   }, [handlePointerUp])
 
-  // Main 60 FPS requestAnimationFrame physics ticker
+  // Keep the idle animation lightweight while preserving full-rate interactions.
   useEffect(() => {
-    let animId
+    let animId = null
+    let timerId = null
     let prevTime = performance.now()
     stateRef.current.lastQuirkTime = performance.now()
 
     renderFace()
 
+    const scheduleFrame = () => {
+      if (document.hidden || !isActiveRef.current || animId !== null || timerId !== null) return
+
+      const s = stateRef.current
+      const effectiveStatus = s.tactileState || (s.isSleeping ? 'sleeping' : s.status)
+      const isInteracting =
+        s.isSeeingDesktop ||
+        s.isDragging ||
+        s.dropAnim.active ||
+        s.tactileState ||
+        (effectiveStatus !== 'idle' && effectiveStatus !== 'sleeping')
+
+      if (isInteracting) {
+        animId = requestAnimationFrame(updateFrame)
+        return
+      }
+
+      // Auto-throttle saat window kehilangan fokus: turunkan ke 5 FPS (200ms) untuk menghemat iGPU 100%
+      if (!isWindowFocusedRef.current) {
+        timerId = window.setTimeout(() => {
+          timerId = null
+          if (!document.hidden && isActiveRef.current) animId = requestAnimationFrame(updateFrame)
+        }, 200)
+        return
+      }
+
+      // Idle normal: 20 FPS (50ms) - hemat baterai dan iGPU namun tetap halus
+      const interval = effectiveStatus === 'sleeping' ? 1000 / 12 : 1000 / 20
+      timerId = window.setTimeout(() => {
+        timerId = null
+        if (!document.hidden && isActiveRef.current) animId = requestAnimationFrame(updateFrame)
+      }, interval)
+    }
+
     const updateFrame = (now) => {
+      animId = null
       const dt = Math.min(0.05, (now - prevTime) / 1000)
       prevTime = now
       const t = now * 0.001
@@ -1613,12 +1656,54 @@ const Avatar = ({
         renderFace()
       }
 
-      animId = requestAnimationFrame(updateFrame)
+      scheduleFrame()
     }
 
-    animId = requestAnimationFrame(updateFrame)
-    return () => cancelAnimationFrame(animId)
-  }, [renderFace, updateAutonomousQuirks])
+    const handleVisibilityChange = () => {
+      if (document.hidden || !isActiveRef.current) {
+        if (animId !== null) cancelAnimationFrame(animId)
+        if (timerId !== null) window.clearTimeout(timerId)
+        animId = null
+        timerId = null
+        return
+      }
+
+      prevTime = performance.now()
+      scheduleFrame()
+    }
+
+    const handleWindowFocus = () => {
+      isWindowFocusedRef.current = true
+      if (isActiveRef.current && !document.hidden) {
+        scheduleFrame()
+      }
+    }
+
+    const handleWindowBlur = () => {
+      isWindowFocusedRef.current = false
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleWindowFocus)
+    window.addEventListener('blur', handleWindowBlur)
+
+    if (isActive) {
+      scheduleFrame()
+    } else {
+      if (animId !== null) cancelAnimationFrame(animId)
+      if (timerId !== null) window.clearTimeout(timerId)
+      animId = null
+      timerId = null
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleWindowFocus)
+      window.removeEventListener('blur', handleWindowBlur)
+      if (animId !== null) cancelAnimationFrame(animId)
+      if (timerId !== null) window.clearTimeout(timerId)
+    }
+  }, [renderFace, updateAutonomousQuirks, isActive])
 
   return (
     <div
@@ -1647,6 +1732,12 @@ const Avatar = ({
         .avatar-preserve-3d {
           transform-style: preserve-3d;
         }
+        .avatar-gpu-layer {
+          will-change: transform;
+          transform: translateZ(0);
+          contain: layout paint;
+          backface-visibility: hidden;
+        }
         .avatar-core-beat {
           animation: avatarCoreHeartbeat 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
@@ -1659,7 +1750,7 @@ const Avatar = ({
       {/* Robot Root Pivot (Handles organic breathing, floating, & tactile interactions) */}
       <div
         ref={robotRootRef}
-        className="relative w-full h-full avatar-preserve-3d cursor-pointer"
+        className="relative w-full h-full avatar-preserve-3d avatar-gpu-layer cursor-pointer"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -1668,13 +1759,13 @@ const Avatar = ({
         {/* ── 1. UNIFIED 3D HEAD ASSEMBLY (Throat pivot joint 130px 165px) ── */}
         <div
           ref={robotHeadRef}
-          className="absolute left-[30px] top-[18px] w-[260px] h-[180px] avatar-preserve-3d"
+          className="absolute left-[30px] top-[18px] w-[260px] h-[180px] avatar-preserve-3d avatar-gpu-layer"
           style={{ transformOrigin: '130px 165px' }}
         >
           {/* Background Helmet Shell & Antennas (Single unified SVG with 3D gradients) */}
           <svg
             viewBox="0 0 260 180"
-            className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-[0_16px_36px_rgba(0,0,0,0.9)]"
+            className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-[0_8px_16px_rgba(0,0,0,0.7)]"
             style={{ overflow: 'visible' }}
           >
             <defs>
@@ -1688,7 +1779,7 @@ const Avatar = ({
                 <stop offset="100%" stopColor="#14241c" />
               </linearGradient>
               <filter id="avatar-neon-glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feGaussianBlur stdDeviation="2" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             </defs>
@@ -1875,7 +1966,7 @@ const Avatar = ({
         {/* ── 2. BODY CHASSIS & INTEGRATED NECK COLLAR (Centered: X: 95px, Y: 172px) ── */}
         <div
           ref={robotBodyRef}
-          className="absolute left-[95px] top-[172px] w-[130px] h-[126px] avatar-preserve-3d"
+          className="absolute left-[95px] top-[172px] w-[130px] h-[126px] avatar-preserve-3d avatar-gpu-layer"
           style={{
             transformOrigin: '65px 12px',
             transform: 'translateZ(-5px)'
@@ -1883,7 +1974,7 @@ const Avatar = ({
         >
           <svg
             viewBox="0 0 130 126"
-            className="w-full h-full drop-shadow-[0_12px_30px_rgba(0,0,0,0.85)]"
+            className="w-full h-full drop-shadow-[0_6px_14px_rgba(0,0,0,0.65)]"
           >
             <defs>
               <radialGradient id="avatarBodyGrad" cx="50%" cy="40%" r="65%">
@@ -1968,7 +2059,7 @@ const Avatar = ({
         <div
           ref={handLeftRef}
           data-zone="hand-left"
-          className="absolute left-[36px] top-[215px] w-[44px] h-[52px] avatar-preserve-3d cursor-pointer pointer-events-auto"
+          className="absolute left-[36px] top-[215px] w-[44px] h-[52px] avatar-preserve-3d avatar-gpu-layer cursor-pointer pointer-events-auto"
           style={{ transform: 'translateZ(18px)' }}
         >
           <svg

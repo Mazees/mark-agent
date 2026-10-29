@@ -1,7 +1,9 @@
+import { McpToolName } from './McpToolName'
 /* eslint-disable react/prop-types */
 import { useState, useRef, useEffect } from 'react'
 import { useApproval, extractToolTarget } from '../../contexts/ApprovalContext'
 import FileDiffModal from './FileDiffModal'
+import { isComputerUseSessionOpen } from '../../../../shared/computer-use.js'
 
 const FILE_TOOLS = ['write-file', 'replace-content', 'replace-lines', 'delete-file']
 
@@ -33,8 +35,9 @@ export const ApprovalBubble = ({
 
   const targetInfo = extractToolTarget(tool, query)
   const isFileTool = FILE_TOOLS.includes(tool)
+  const opensComputerUse = isComputerUseSessionOpen(tool, query)
   const previewValue =
-    targetInfo.value ||
+    (opensComputerUse ? message : targetInfo.value) ||
     message ||
     (typeof query === 'string' ? query : JSON.stringify(query, null, 2))
 
@@ -54,11 +57,11 @@ export const ApprovalBubble = ({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-semibold text-white/90 text-xs tracking-wide">
-            Persetujuan Eksekusi
+            {opensComputerUse ? 'Sesi Computer Use' : 'Persetujuan Eksekusi'}
           </span>
           {tool && (
             <span className="bg-warning/10 text-warning px-2 py-0.5 rounded text-[11px] font-mono font-medium">
-              {tool}
+              <McpToolName name={tool} />
             </span>
           )}
         </div>
@@ -80,7 +83,7 @@ export const ApprovalBubble = ({
 
       {/* Parameter / Command Preview */}
       <div className="bg-black/30 rounded-lg p-2.5 font-mono text-[11px] text-white/90 space-y-1">
-        {targetInfo.value && (
+        {targetInfo.value && !opensComputerUse && (
           <div className="text-[10px] uppercase font-bold text-warning/70 select-none">
             {targetInfo.type === 'command' ? 'Perintah Shell' : 'Target Berkas'}
           </div>
@@ -100,26 +103,30 @@ export const ApprovalBubble = ({
           Tolak
         </button>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => handleDecision('approve_session')}
-            className="btn btn-ghost btn-xs text-warning/80 hover:text-warning hover:bg-warning/10 rounded-lg px-2.5"
-          >
-            Izinkan Sesi Ini
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDecision('approve_always')}
-            className="btn btn-ghost btn-xs text-white/40 hover:text-error hover:bg-error/10 rounded-lg px-2.5"
-          >
-            Izinkan Selamanya
-          </button>
+          {!opensComputerUse && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleDecision('approve_session')}
+                className="btn btn-ghost btn-xs text-warning/80 hover:text-warning hover:bg-warning/10 rounded-lg px-2.5"
+              >
+                Izinkan Sesi Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDecision('approve_always')}
+                className="btn btn-ghost btn-xs text-white/40 hover:text-error hover:bg-error/10 rounded-lg px-2.5"
+              >
+                Izinkan Selamanya
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => handleDecision('approve_once')}
             className="btn btn-primary btn-xs text-black font-semibold rounded-lg px-3 shadow-sm"
           >
-            Izinkan Sekali
+            {opensComputerUse ? 'Izinkan Computer Use' : 'Izinkan Sekali'}
           </button>
         </div>
       </div>

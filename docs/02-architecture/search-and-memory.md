@@ -55,12 +55,15 @@ export async function getExtractor() {
 
 ## 2. Pencarian Hibrida Orama WASM (`orama-store.js`)
 
-Untuk mengindeks dan mencari riwayat percakapan serta berkas dokumen pengguna, MARK menggunakan engine database vektor berbasis in-memory WebAssembly: [`@orama/orama`](https://orama.com/).
+Untuk mengindeks dan mencari memori pengguna serta riwayat percakapan, MARK menggunakan engine pencarian in-memory: [`@orama/orama`](https://orama.com/).
 
-### Dua Indeks Utama:
+### Indeks Aktif:
 
 1. **`archiveIndex`**: Menyimpan dan mengindeks seluruh giliran percakapan yang diarsipkan (`chat_archives`).
-2. **`documentIndex`**: Menyimpan potongan berkas dokumen pengguna untuk Retrieval-Augmented Generation (RAG).
+2. **`memoryIndex`**: Mengindeks memori eksplisit pengguna.
+3. **`turnPairIndex`**: Mengindeks pasangan pesan pengguna dan jawaban AI.
+
+Dokumen Knowledge lama tidak lagi dimuat, dibuatkan embedding, atau dicari. Tabel SQLite `documents` hanya dipertahankan untuk kompatibilitas backup. Tool `read-document` membaca file langsung tanpa memakai indeks Knowledge.
 
 ### Algoritma Pencarian Vektor + BM25:
 
@@ -75,7 +78,7 @@ Orama menggabungkan pencarian teks tradisional (BM25 full-text keyword matching)
 
 ## 3. Alur Pengambilan Konteks Terpadu (_Unified Context_)
 
-Sebelum perintah pengguna diteruskan ke model LLM, sistem mengumpulkan seluruh konteks relevan secara paralel melalui fungsi `getUnifiedContext()`:
+Sebelum perintah pengguna diteruskan ke model LLM, `getUnifiedContext()` mengumpulkan memori profil/preferensi, arsip, dan pasangan percakapan yang relevan:
 
 ```mermaid
 sequenceDiagram
@@ -83,22 +86,21 @@ sequenceDiagram
     participant UI as Chat Engine (useMarkPlan.js)
     participant VM as Vector Memory (vectorMemory.js)
     participant SQLite as SQLite (db.memories)
-    participant Orama as Orama WASM (Server)
+    participant Orama as Orama (Renderer)
     participant Prompt as System Prompt Assembler
 
     UI->>VM: getUnifiedContext(userInput)
 
     par Ambil Memori Kognitif (MMS)
         VM->>SQLite: db.memories.toArray()
-        VM->>VM: Hitung cosineSimilarity(inputVector, memoryVector)
-        VM->>VM: Filter threshold >= 0.30
+        VM->>VM: Pilih profil dan preferensi
     and Cari Arsip Percakapan Lampau
         VM->>Orama: Cari di archiveIndex (Threshold >= 0.25)
-    and Cari Dokumen RAG
-        VM->>Orama: Cari di documentIndex (Threshold >= 0.25)
+    and Cari Pasangan Percakapan
+        VM->>Orama: Cari di turnPairIndex (Threshold >= 0.30)
     end
 
-    VM->>Prompt: Kembalikan { memories, archives, documents }
+    VM->>Prompt: Kembalikan { memories, archives, turnPairs }
     Prompt->>Prompt: Susun blok konteks terpadu ke System Prompt
 ```
 
@@ -131,7 +133,7 @@ Mengadopsi pola arsitektur dari **Hermes Agent (Nous Research)**, MARK menerapka
 1. **Layer 1: Gateway Session Hygiene (Pra-Turn - 85% Ambang Batas / ~217.6K Tokens)**:
    Berjalan di `useMarkPlan.js` sebelum pesan diproses oleh agen. Ini adalah jaring pengaman untuk mencegah kegagalan API ketika sesi menjadi terlalu besar di antara giliran (misalnya akumulasi percakapan ribuan pesan).
 2. **Layer 2: In-Loop Agent Context Engine (Setiap Iterasi - 50% Ambang Batas / ~128K Tokens)**:
-   Berjalan di dalam perulangan ReAct `while (!isDone)` pada Lead Agent (`useMarkPlan.js`) dan `while (!abortController.signal.aborted)` pada Sub-Agent (`subagentExecutor.js`). Memastikan agen dapat menjalankan 50–500 iterasi tool tanpa mengalami pembengkakan konteks (_context ballooning_).
+   Berjalan di dalam perulangan ReAct `while (!isDone)` pada Lead Agent (`useMarkPlan.js`) dan `while (!abortController.signal.aborted)` pada Minibot (`subagentExecutor.js`). Memastikan agen dapat menjalankan 50–500 iterasi tool tanpa mengalami pembengkakan konteks (_context ballooning_).
 
 ```mermaid
 flowchart TD
@@ -155,7 +157,7 @@ flowchart TD
     AISummary --> SaveCompact["Simpan ke tabel session_compact di SQLite"]
     SaveCompact --> Assemble["Bentuk Prompt: [ COMPACTED MESSAGE SUMMARY ] + Sisa Pesan Baru"]
     subgraph Layer2["Layer 2: In-Loop ReAct Engine (Per-Iterasi, 50%)"]
-        D --> E["Mulai Iterasi Tool (Lead Agent / Sub-Agent)"]
+        D --> E["Mulai Iterasi Tool (Lead Agent / Minibot)"]
         E --> F{"Ukuran loopMessages >= 50%?"}
         F -- "Ya: Fase 1" --> G["Pangkas Tool Output Lama di Luar Tail (O(n), Tanpa LLM)"]
         G --> H{"Masih >= 50%?"}
@@ -221,4 +223,4 @@ Persentase kapasitas konteks aktif dipantau secara visual di samping tombol inpu
 
 - [Arsitektur Basis Data SQLite Terpusat](./state-and-database.md)
 - [Pusat Orkestrasi ReAct Loop & Intent Routing](../03-agent-engine/react-loop.md)
-- [Sistem Sub-Agent Mandiri Mission Control](../03-agent-engine/multi-agent-subagents.md)
+- [Sistem Minibot Mandiri Minibots](../03-agent-engine/multi-agent-subagents.md)

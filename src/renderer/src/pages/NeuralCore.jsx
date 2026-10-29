@@ -1,12 +1,23 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Brain,
+  Download,
+  GraduationCap,
+  Network,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X
+} from 'lucide-react'
 import {
   getRelationship,
   getAllLearnedSkills,
   deleteLearnedSkill,
   getAllChatArchives,
   getAllMemory,
-  getAllDocuments,
   deleteMemory,
   deleteChatArchive,
   resetAiDatabase,
@@ -14,773 +25,499 @@ import {
   restoreDatabaseDump
 } from '../api/db'
 import { webApi } from '../api/web-bridge'
-import { useConfirm } from '../hooks/useConfirm'
 import { useMemoryGroomer } from '../hooks/useMemoryGroomer'
-import ConfirmModal from '../components/core/ConfirmModal'
 import { EmotionalCortexLobe } from '../components/neural-core/EmotionalCortexLobe'
 import { SynapticMemoryLobe } from '../components/neural-core/SynapticMemoryLobe'
 import { ProceduralMatrixLobe } from '../components/neural-core/ProceduralMatrixLobe'
 import { ProceduralSkillModal } from '../components/neural-core/ProceduralSkillModal'
 import { NodeDissectionModal } from '../components/neural-core/NodeDissectionModal'
 import { ResetAiModal } from '../components/neural-core/ResetAiModal'
-import {
-  FaBrain,
-  FaNetworkWired,
-  FaGraduationCap,
-  FaFire,
-  FaLayerGroup,
-  FaBookOpen
-} from 'react-icons/fa'
+import NeuralDialog from '../components/neural-core/NeuralDialog'
+import { buildMemoryGraph, neuralTab } from '../components/neural-core/neuralCoreData'
+import { describePersonality } from '../components/neural-core/traitMeta'
 
-const NeuralCore = () => {
-  const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const initialTab = searchParams.get('tab') || 'overview'
-  const [activeTab, setActiveTab] = useState(
-    initialTab === 'tri-lobe' || initialTab === 'overview'
-      ? 'overview'
-      : initialTab === 'synaptic' || initialTab === 'memory'
-        ? 'memory'
-        : initialTab === 'emotional' || initialTab === 'personality'
-          ? 'personality'
-          : initialTab === 'procedural' || initialTab === 'skills'
-            ? 'skills'
-            : initialTab === 'journal'
-              ? 'journal'
-              : 'overview'
-  )
+const tabs = {
+  overview: 'Ringkasan',
+  personality: 'Karakter',
+  memory: 'Memori',
+  skills: 'Skill dipelajari',
+  data: 'Kelola data'
+}
+const emptyData = { traits: null, skills: [], archives: [], memories: [], diskSkills: [] }
 
-  // Data States
-  const [traits, setTraits] = useState(null)
-  const [learnedSkills, setLearnedSkills] = useState([])
+export default function NeuralCore() {
+  const [params, setParams] = useSearchParams()
+  const activeTab = neuralTab(params.get('tab'))
+  const [data, setData] = useState(emptyData)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [notice, setNotice] = useState(null)
   const [skillSearch, setSkillSearch] = useState('')
   const [selectedSkill, setSelectedSkill] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isResetModalOpen, setIsResetModalOpen] = useState(false)
-  const [isResettingAi, setIsResettingAi] = useState(false)
-  const [isExportingDb, setIsExportingDb] = useState(false)
-  const [isRestoringDb, setIsRestoringDb] = useState(false)
-  const [journalEntries, setJournalEntries] = useState([])
-  const fileInputRef = useRef(null)
-  const [toastMessage, setToastMessage] = useState(null)
-
-  const showToast = (message) => {
-    setToastMessage(message)
-    setTimeout(() => setToastMessage(null), 4000)
-  }
-
-  // Memory Graph States
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] })
   const [selectedNode, setSelectedNode] = useState(null)
-  const [graphDimensions, setGraphDimensions] = useState({ width: 800, height: 500 })
-  const graphContainerRef = useRef(null)
-  const fgRef = useRef()
-
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreFile, setRestoreFile] = useState(null)
+  const [restoreError, setRestoreError] = useState('')
+  const fileInput = useRef(null)
+  const mounted = useRef(false)
+  const revision = useRef(0)
+  const reloadTimer = useRef(null)
   const { isGrooming, groomResult, triggerGrooming } = useMemoryGroomer(false)
-  const { confirm, ModalComponent } = useConfirm()
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, node: null })
-
-  // Sinkronkan URL param saat tab berubah
-  const handleTabChange = (tabId) => {
-    setActiveTab(tabId)
-    setSearchParams({ tab: tabId })
+  const notify = (text, error = false) => {
+    if (mounted.current) setNotice({ text, error })
   }
-
-  // Muat Data Pusat Otak
-  const loadBrainData = useCallback(async () => {
+  const loadData = useCallback(async () => {
+    if (!mounted.current) return
+    const current = ++revision.current
+    setRefreshing(true)
     try {
-      setLoading(true)
-
-      // 1. Karakter & Status Hubungan (Owner)
-      const userTraits = await getRelationship('owner')
-      setTraits(userTraits)
-
-      // 2. Data Keahlian Hasil Belajar (Learned Skills)
-      const skills = await getAllLearnedSkills()
-      setLearnedSkills(skills || [])
-
-      let customDiskSkills = []
-      try {
-        if (webApi && typeof webApi.getSkills === 'function') {
-          customDiskSkills = (await webApi.getSkills()) || []
-        }
-      } catch (err) {
-        console.warn('[NeuralCore] Gagal mengambil custom skills dari disk:', err)
-      }
-
-      // 3. Peta Memori (Chat, RAG, Dokumen)
-      const archives = await getAllChatArchives()
-      const explicitMemories = await getAllMemory()
-      const documents = await getAllDocuments()
-
-      const journals = (explicitMemories || [])
-        .filter((m) => m.type === 'private_journal' || m.type === 'journal')
-        .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-      setJournalEntries(journals)
-
-      const nodes = []
-      const links = []
-
-      // 0. Node Pusat Otak (Warna Klasik Cyber: Neon Green)
-      const coreNodeId = 'core'
-      nodes.push({ id: coreNodeId, name: 'Pusat Otak Mark', group: 0, val: 25, color: '#00ff66' })
-
-      // 1. Kategori Utama Memori (Sub-Cores: Cyan, Pink, Orange, Purple)
-      nodes.push({
-        id: 'archives-root',
-        name: 'Riwayat Obrolan',
-        group: 1,
-        val: 15,
-        color: '#00e5ff'
+      const [traits, skills, archives, memories, diskSkills] = await Promise.all([
+        getRelationship('owner'),
+        getAllLearnedSkills(),
+        getAllChatArchives(),
+        getAllMemory(),
+        webApi.getSkills()
+      ])
+      if (!mounted.current || current !== revision.current) return
+      setData({
+        traits,
+        skills: Array.isArray(skills) ? skills : [],
+        archives: Array.isArray(archives) ? archives : [],
+        memories: Array.isArray(memories) ? memories : [],
+        diskSkills: Array.isArray(diskSkills) ? diskSkills : []
       })
-      nodes.push({
-        id: 'vector-root',
-        name: 'Basis Pengetahuan',
-        group: 1,
-        val: 15,
-        color: '#ff00aa'
-      })
-      nodes.push({ id: 'doc-root', name: 'Gudang Dokumen', group: 1, val: 15, color: '#ffaa00' })
-      nodes.push({
-        id: 'skills-root',
-        name: 'Skill Yang Dipelajari',
-        group: 1,
-        val: 15,
-        color: '#a855f7'
-      })
-      nodes.push({
-        id: 'custom-skills-root',
-        name: 'Custom User Skills',
-        group: 1,
-        val: 15,
-        color: '#38bdf8'
-      })
-
-      links.push({ source: coreNodeId, target: 'archives-root', color: 'rgba(255,255,255,0.3)' })
-      links.push({ source: coreNodeId, target: 'vector-root', color: 'rgba(255,255,255,0.3)' })
-      links.push({ source: coreNodeId, target: 'doc-root', color: 'rgba(255,255,255,0.3)' })
-      links.push({ source: coreNodeId, target: 'skills-root', color: 'rgba(255,255,255,0.3)' })
-      links.push({
-        source: coreNodeId,
-        target: 'custom-skills-root',
-        color: 'rgba(255,255,255,0.3)'
-      })
-
-      // 2 & 3. Data Riwayat Obrolan
-      const topics = [...new Set(archives.map((a) => a.topic || 'Umum'))]
-      topics.forEach((topic) => {
-        nodes.push({ id: `topic-${topic}`, name: topic, group: 2, val: 10, color: '#00e5ff' })
-        links.push({
-          source: 'archives-root',
-          target: `topic-${topic}`,
-          color: 'rgba(255,255,255,0.1)'
-        })
-      })
-
-      archives.forEach((arc) => {
-        const topicId = `topic-${arc.topic || 'Umum'}`
-        nodes.push({
-          id: `arc-${arc.id}`,
-          name: arc.summary ? arc.summary.substring(0, 30) + '...' : 'Arsip Obrolan',
-          fullText: arc.summary,
-          date: new Date(arc.timestamp).toLocaleDateString('id-ID'),
-          group: 3,
-          val: 4,
-          color: '#a0a0a0',
-          typeLabel: 'Arsip Obrolan'
-        })
-        links.push({ source: topicId, target: `arc-${arc.id}`, color: 'rgba(255,255,255,0.1)' })
-      })
-
-      // 2 & 3. Data Memori Tersimpan
-      const memoryTypes = [...new Set(explicitMemories.map((m) => m.type || 'Lainnya'))]
-      memoryTypes.forEach((type) => {
-        nodes.push({
-          id: `type-${type}`,
-          name: type.toUpperCase(),
-          group: 2,
-          val: 10,
-          color: '#ff00aa'
-        })
-        links.push({
-          source: 'vector-root',
-          target: `type-${type}`,
-          color: 'rgba(255,255,255,0.1)'
-        })
-      })
-
-      explicitMemories.forEach((mem) => {
-        const typeId = `type-${mem.type || 'Lainnya'}`
-        nodes.push({
-          id: `mem-${mem.id}`,
-          name: mem.summary
-            ? mem.summary
-            : mem.memory
-              ? mem.memory.substring(0, 30) + '...'
-              : 'Memori Tersimpan',
-          fullText: mem.memory,
-          date: 'Memori RAG',
-          group: 3,
-          val: 5,
-          color: '#e0e0e0',
-          typeLabel: 'Memori Tersimpan'
-        })
-        links.push({ source: typeId, target: `mem-${mem.id}`, color: 'rgba(255,255,255,0.1)' })
-      })
-
-      // 2 & 3. Data Dokumen
-      const docNames = [...new Set(documents.map((d) => d.docName || 'Dokumen Tanpa Judul'))]
-      docNames.forEach((docName) => {
-        nodes.push({
-          id: `docGroup-${docName}`,
-          name: docName,
-          group: 2,
-          val: 12,
-          color: '#ffaa00'
-        })
-        links.push({
-          source: 'doc-root',
-          target: `docGroup-${docName}`,
-          color: 'rgba(255,255,255,0.1)'
-        })
-      })
-
-      documents.forEach((doc) => {
-        const docGroupId = `docGroup-${doc.docName || 'Dokumen Tanpa Judul'}`
-        nodes.push({
-          id: `doc-${doc.id}`,
-          name: `Bagian ${doc.chunkIndex}`,
-          fullText: doc.content,
-          date: doc.timestamp ? new Date(doc.timestamp).toLocaleDateString('id-ID') : 'Dokumen',
-          group: 3,
-          val: 4,
-          color: '#d0b080',
-          typeLabel: 'Potongan Dokumen'
-        })
-        links.push({ source: docGroupId, target: `doc-${doc.id}`, color: 'rgba(255,255,255,0.1)' })
-      })
-
-      // 2 & 3. Data Skill Yang Di Pelajari (Learned Skills)
-      skills.forEach((skill) => {
-        nodes.push({
-          id: `skill-${skill.id}`,
-          name: `/${skill.name}`,
-          fullText: skill.content,
-          description: skill.description,
-          date: new Date(skill.updatedAt || Date.now()).toLocaleDateString('id-ID'),
-          group: 3,
-          val: 5,
-          color: '#c084fc',
-          typeLabel: 'Skill Yang Di Pelajari'
-        })
-        links.push({
-          source: 'skills-root',
-          target: `skill-${skill.id}`,
-          color: 'rgba(255,255,255,0.1)'
-        })
-      })
-
-      // 4. Data Custom User Skills (Disk Documents/Mark Skills)
-      customDiskSkills.forEach((cSkill) => {
-        const cSkillId = `custom-skill-${cSkill.name}`
-        nodes.push({
-          id: cSkillId,
-          name: `/${cSkill.name}`,
-          fullText: cSkill.description || `Custom skill: ${cSkill.name}`,
-          description: cSkill.description,
-          date: 'Custom Disk Skill',
-          group: 3,
-          val: 5,
-          color: '#38bdf8',
-          typeLabel: 'Custom Skill'
-        })
-        links.push({
-          source: 'custom-skills-root',
-          target: cSkillId,
-          color: 'rgba(255,255,255,0.1)'
-        })
-      })
-
-      setGraphData({ nodes, links })
-    } catch (err) {
-      console.error('[NeuralCore] Error loading brain data:', err)
+      setLoadError('')
+    } catch (failure) {
+      if (mounted.current && current === revision.current)
+        setLoadError(failure.message || 'Data Neural Core belum dapat dimuat.')
     } finally {
-      setLoading(false)
+      if (mounted.current && current === revision.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }, [])
-
   useEffect(() => {
-    loadBrainData()
-    const handleRelUpdated = () => {
-      loadBrainData()
-    }
-    window.addEventListener('relationship-updated', handleRelUpdated)
-    return () => window.removeEventListener('relationship-updated', handleRelUpdated)
-  }, [loadBrainData])
-
-  // Resize canvas graph
-  useEffect(() => {
-    const updateSize = () => {
-      if (graphContainerRef.current) {
-        setGraphDimensions({
-          width: graphContainerRef.current.clientWidth,
-          height: graphContainerRef.current.clientHeight
-        })
-      }
-    }
-    updateSize()
-    window.addEventListener('resize', updateSize)
-    const timer = setTimeout(updateSize, 300)
+    mounted.current = true
+    loadData()
+    window.addEventListener('relationship-updated', loadData)
     return () => {
-      window.removeEventListener('resize', updateSize)
-      clearTimeout(timer)
+      mounted.current = false
+      window.removeEventListener('relationship-updated', loadData)
+      clearTimeout(reloadTimer.current)
     }
-  }, [activeTab])
-
-  // Reset Total AI (2-step Modal Handler)
-  const handleExecuteResetAi = async () => {
-    setIsResettingAi(true)
+  }, [loadData])
+  const changeTab = (tab) => {
+    setNotice(null)
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('tab', tab)
+      return next
+    })
+  }
+  const graphData = useMemo(() => buildMemoryGraph(data), [data])
+  const working = exporting || restoring || resetting || isGrooming
+  const download = async () => {
+    if (working) return
+    setExporting(true)
+    setNotice(null)
     try {
-      const res = await resetAiDatabase()
+      const dump = window.api?.exportDatabase
+        ? await window.api.exportDatabase()
+        : await exportDatabaseDump()
+      if (!dump || dump.success === false)
+        throw new Error(dump?.error || 'Cadangan database belum dapat dibuat.')
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' })
+      )
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `mark-full-backup-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      notify('File cadangan JSON telah disiapkan untuk diunduh.')
+    } catch (failure) {
+      notify(failure.message, true)
+    } finally {
+      if (mounted.current) setExporting(false)
+    }
+  }
+  const selectRestore = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setNotice(null)
+    try {
+      const dump = JSON.parse(await file.text())
+      if (!dump || typeof dump !== 'object')
+        throw new Error('Isi file bukan cadangan JSON yang valid.')
+      setRestoreError('')
+      setRestoreFile({ name: file.name, dump })
+    } catch {
+      notify('File tidak dapat dibaca. Pilih cadangan berformat JSON yang valid.', true)
+    }
+  }
+  const restore = async () => {
+    if (working || !restoreFile) return
+    setRestoring(true)
+    setRestoreError('')
+    try {
+      const result = window.api?.restoreDatabase
+        ? await window.api.restoreDatabase(restoreFile.dump, true)
+        : await restoreDatabaseDump(restoreFile.dump, true)
+      if (result?.success === false) throw new Error(result.error || 'Data belum dapat dipulihkan.')
+      notify('Data berhasil dipulihkan. Halaman akan dimuat ulang.')
+      setRestoreFile(null)
+      reloadTimer.current = setTimeout(() => window.location.reload(), 1500)
+    } catch (failure) {
+      setRestoreError(failure.message)
+    } finally {
+      if (mounted.current) setRestoring(false)
+    }
+  }
+  const reset = async () => {
+    if (working) return false
+    setResetting(true)
+    try {
+      const result = await resetAiDatabase()
+      if (result?.success === false) throw new Error(result.error || 'Data belum dapat direset.')
       setSelectedNode(null)
       setSelectedSkill(null)
-      await loadBrainData()
-      showToast(
-        'Seluruh data memori, sesi percakapan, dan sifat Mark berhasil direset ke kondisi awal!'
-      )
-      setTimeout(() => {
-        window.location.reload()
-      }, 1500)
-      return res?.success !== false
-    } catch (err) {
-      console.error('[NeuralCore] Gagal mereset total AI:', err)
-      showToast('Gagal mereset AI: ' + err.message)
+      reloadTimer.current = setTimeout(() => window.location.reload(), 1500)
+      return true
+    } catch (failure) {
+      notify(failure.message, true)
       return false
     } finally {
-      setIsResettingAi(false)
+      if (mounted.current) setResetting(false)
     }
   }
-
-  // Backup Database (JSON)
-  const handleExportDatabase = async () => {
-    try {
-      setIsExportingDb(true)
-      let exportData
-      if (window.api && window.api.exportDatabase) {
-        exportData = await window.api.exportDatabase()
-      } else {
-        exportData = await exportDatabaseDump()
-      }
-
-      if (!exportData) {
-        throw new Error('Data export database kosong.')
-      }
-
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `mark-full-backup-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      showToast('Database berhasil diekspor ke file JSON!')
-    } catch (err) {
-      console.error('[NeuralCore] Gagal export database:', err)
-      showToast('Gagal export database: ' + err.message)
-    } finally {
-      setIsExportingDb(false)
-    }
+  const removeSkill = async (skill) => {
+    const result = await deleteLearnedSkill(skill.id)
+    if (result?.success === false) throw new Error(result.error || 'Skill belum dapat dihapus.')
+    await loadData()
+    notify('Skill telah dihapus.')
   }
-
-  // Restore Database (JSON)
-  const handleFileRestoreSelect = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const result = await confirm({
-      title: 'Restore Database?',
-      message:
-        'Data saat ini akan ditimpa dengan data backup dari file JSON yang kamu pilih. Lanjutkan?',
-      isError: true,
-      confirmText: 'Ya, Restore Sekarang'
-    })
-
-    if (!result.isConfirmed) {
-      if (fileInputRef.current) fileInputRef.current.value = ''
+  const removeNode = async (node) => {
+    let result
+    if (node.kind === 'memory') result = await deleteMemory(node.recordId)
+    else if (node.kind === 'archive') result = await deleteChatArchive(node.recordId)
+    else if (node.kind === 'skill') result = await deleteLearnedSkill(node.recordId)
+    else throw new Error('Data ini dikelola melalui halaman Skills.')
+    if (result?.success === false) throw new Error(result.error || 'Data belum dapat dihapus.')
+    await loadData()
+    notify('Data telah dihapus.')
+  }
+  const groom = async () => {
+    if (working) return
+    const result = await triggerGrooming(true)
+    if (!result) {
+      notify('Memori belum dapat diperiksa. Coba lagi.', true)
       return
     }
-
-    setIsRestoringDb(true)
-    try {
-      const text = await file.text()
-      const dumpData = JSON.parse(text)
-
-      if (window.api && window.api.restoreDatabase) {
-        await window.api.restoreDatabase(dumpData, true)
-      } else {
-        await restoreDatabaseDump(dumpData, true)
-      }
-
-      showToast('Database MARK berhasil dipulihkan!')
-      setTimeout(() => {
-        window.location.reload()
-      }, 1500)
-    } catch (err) {
-      console.error('[NeuralCore] Gagal restore database:', err)
-      showToast('Gagal restore database: ' + err.message)
-    } finally {
-      setIsRestoringDb(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
+    await loadData()
+    notify('Pemeriksaan memori selesai.')
   }
-
-  // Hapus Skill Action
-  const handleDeleteSkill = async (skill) => {
-    const result = await confirm({
-      title: 'Hapus Skill Yang Di Pelajari?',
-      message: `Apakah kamu yakin ingin menghapus keahlian "/${skill.name}" dari memori Mark?`,
-      isError: true,
-      confirmText: 'Hapus Keahlian'
-    })
-
-    if (result.isConfirmed) {
-      await deleteLearnedSkill(skill.id)
-      if (selectedSkill?.id === skill.id) setSelectedSkill(null)
-      await loadBrainData()
+  const sections = [
+    {
+      tab: 'personality',
+      title: 'Karakter Mark',
+      icon: Brain,
+      description: data.traits
+        ? describePersonality(data.traits)
+        : 'Lihat perkembangan sikap dan karakter Mark.',
+      meta: `${data.traits?.evalCount || 0} evaluasi`
+    },
+    {
+      tab: 'memory',
+      title: 'Memori dan pengetahuan',
+      icon: Network,
+      description: 'Telusuri ingatan dan arsip percakapan dalam daftar atau peta hubungan.',
+      meta: `${data.memories.length} ingatan · ${data.archives.length} arsip`
+    },
+    {
+      tab: 'skills',
+      title: 'Skill yang dipelajari',
+      icon: GraduationCap,
+      description: 'Buka panduan yang disimpan Mark setelah menyelesaikan tugas.',
+      meta: `${data.skills.length} skill dipelajari`
     }
-  }
-
-  // Hapus Titik Memori Action
-  const executeDeleteNode = async () => {
-    const node = confirmModal.node || selectedNode
-    if (!node) return
-    setConfirmModal({ isOpen: false, node: null })
-
-    try {
-      if (node.typeLabel === 'Memori Tersimpan' || node.typeLabel === 'Explicit Memory') {
-        const id = parseInt(String(node.id).split('-')[1])
-        await deleteMemory(id)
-      } else if (node.typeLabel === 'Arsip Obrolan' || node.typeLabel === 'Chat Archive') {
-        const id = parseInt(String(node.id).split('-')[1])
-        await deleteChatArchive(id)
-      } else if (
-        node.typeLabel === 'Skill Yang Di Pelajari' ||
-        node.typeLabel === 'Learned Skill'
-      ) {
-        const id = String(node.id).replace('skill-', '')
-        await deleteLearnedSkill(id)
-      }
-      setSelectedNode(null)
-      await loadBrainData()
-    } catch (err) {
-      console.error('Gagal menghapus data memori:', err)
-    }
-  }
-
+  ]
   return (
-    <div className="h-screen w-screen bg-base-300 text-base-content overflow-hidden relative font-['Poppins',sans-serif] flex flex-col select-none">
-      {/* ── BACKGROUND AMBIENCE (Tenang & Halus) ── */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,oklch(var(--p)/0.04)_0%,transparent_60%)] pointer-events-none" />
-
-      {/* ── 1. TOP HEADER ── */}
-      <header className="h-16 px-6 border-b border-white/5 bg-base-200/70 backdrop-blur-xl flex items-center justify-between z-30 shrink-0">
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="btn btn-ghost btn-sm btn-circle shrink-0"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            title="Kembali ke Dashboard Utama"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="1.2em"
-              height="1.2em"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
+    <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
+      <div className="mx-auto max-w-5xl px-5 py-7 sm:px-8 sm:py-10">
+        <Link
+          to="/"
+          className="mb-10 inline-flex items-center gap-2 text-sm text-white/50 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          <ArrowLeft size={17} />
+          Kembali
+        </Link>
+        <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold tracking-wider uppercase font-mono text-base-content flex items-center gap-2">
-                <FaBrain className="text-primary" /> Pusat Otak Mark
-              </h1>
-            </div>
-            <p className="text-[10px] font-mono text-base-content/50 tracking-tight">
-              STATUS SIFAT, JARINGAN MEMORI, DAN Skill Yang Di Pelajari
+            <h1 className="text-2xl font-semibold text-white">Neural Core</h1>
+            <p className="mt-3 text-sm leading-relaxed text-white/50">
+              Lihat perkembangan karakter, memori, dan pengetahuan Mark.
             </p>
           </div>
-        </div>
-
-        {/* Mode Switcher Buttons (Palet Bersih & Seragam) */}
-        <div className="flex items-center gap-1.5 p-1 bg-base-300/60 border border-white/5 rounded-xl">
           <button
             type="button"
-            onClick={() => handleTabChange('overview')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'overview'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
-                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
-            }`}
+            disabled={refreshing || working}
+            onClick={loadData}
+            className="btn btn-ghost w-fit shrink-0 rounded-full"
           >
-            <FaLayerGroup size={11} /> Semua Bagian
+            <RefreshCw size={16} className={refreshing ? 'motion-safe:animate-spin' : ''} />
+            Muat ulang
           </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('personality')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'personality'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
-                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
-            }`}
+        </header>
+        <nav
+          aria-label="Bagian Neural Core"
+          className="mt-7 flex flex-wrap gap-2 border-b border-white/10 pb-5"
+        >
+          {Object.entries(tabs).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-current={activeTab === id ? 'page' : undefined}
+              onClick={() => changeTab(id)}
+              className={`rounded-full px-4 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary ${activeTab === id ? 'bg-white/10 text-white' : 'text-white/45 hover:text-white/75'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        {notice && (
+          <div
+            role={notice.error ? 'alert' : 'status'}
+            className={`mt-6 flex items-start justify-between gap-4 rounded-lg border px-4 py-3 text-sm leading-relaxed ${notice.error ? 'border-error/20 bg-error/5 text-error' : 'border-white/10 text-white/70'}`}
           >
-            <FaFire size={11} /> Karakter & Emosi
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('memory')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'memory'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
-                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
-            }`}
-          >
-            <FaNetworkWired size={11} /> Peta Memori
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('skills')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'skills'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
-                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
-            }`}
-          >
-            <FaGraduationCap size={11} /> Skill Yang Di Pelajari
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('journal')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'journal'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
-                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
-            }`}
-          >
-            <FaBookOpen size={11} /> Buku Harian
-          </button>
-        </div>
-      </header>
-
-      {/* ── 2. MAIN VIEWPORT ── */}
-      <main className="flex-1 min-h-0 relative z-10 p-4 md:p-6 overflow-hidden flex flex-col">
-        {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
-            <span className="loading loading-spinner loading-lg text-primary" />
-            <p className="font-mono text-xs text-base-content/50 tracking-widest uppercase">
-              Memuat Data Pikiran Mark...
-            </p>
+            <p>{notice.text}</p>
+            <button
+              type="button"
+              aria-label="Tutup pemberitahuan"
+              onClick={() => setNotice(null)}
+              className="shrink-0 rounded-md p-1 focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <X size={14} />
+            </button>
           </div>
+        )}
+        {loadError ? (
+          <div role="alert" className="py-10 text-sm">
+            <p className="text-error">{loadError}</p>
+            <button type="button" onClick={loadData} className="btn btn-ghost mt-3 rounded-full">
+              Coba lagi
+            </button>
+          </div>
+        ) : loading ? (
+          <p role="status" className="py-12 text-sm text-white/45">
+            Memuat data Neural Core...
+          </p>
         ) : (
-          <>
-            {/* MODE 1: RINGKASAN SEMUA BAGIAN */}
+          <div className="pt-8">
             {activeTab === 'overview' && (
-              <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar">
-                <EmotionalCortexLobe
-                  traits={traits}
-                  onNavigateToFull={() => handleTabChange('personality')}
-                  onResetAi={() => setIsResetModalOpen(true)}
-                  onExportDatabase={handleExportDatabase}
-                  onRestoreDatabase={() => fileInputRef.current?.click()}
-                  isExportingDb={isExportingDb}
-                  isRestoringDb={isRestoringDb}
-                />
-                <SynapticMemoryLobe
-                  graphData={graphData}
-                  graphDimensions={graphDimensions}
-                  graphContainerRef={graphContainerRef}
-                  fgRef={fgRef}
-                  groomResult={groomResult}
-                  isGrooming={isGrooming}
-                  triggerGrooming={triggerGrooming}
-                  loadBrainData={loadBrainData}
-                  onSelectNode={(node) => setSelectedNode(node)}
-                  onNavigateToFull={() => handleTabChange('memory')}
-                />
-                <ProceduralMatrixLobe
-                  learnedSkills={learnedSkills}
-                  skillSearch={skillSearch}
-                  setSkillSearch={setSkillSearch}
-                  onSelectSkill={(skill) => setSelectedSkill(skill)}
-                  onDeleteSkill={handleDeleteSkill}
-                  onNavigateToFull={() => handleTabChange('skills')}
-                />
-              </div>
+              <section aria-label="Ringkasan Neural Core">
+                <div className="grid grid-cols-1 gap-x-10 gap-y-2 md:grid-cols-2">
+                  {sections.map((section) => (
+                    <button
+                      key={section.tab}
+                      type="button"
+                      onClick={() => changeTab(section.tab)}
+                      className="flex min-w-0 items-start gap-4 rounded-lg px-4 py-5 text-left hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-primary"
+                    >
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 text-primary">
+                        <section.icon size={24} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-white">
+                          {section.title}
+                        </span>
+                        <span className="mt-2 line-clamp-3 text-sm leading-relaxed text-white/55">
+                          {section.description}
+                        </span>
+                        <span className="mt-3 block text-xs text-white/40">{section.meta}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-9 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center">
+                  <div>
+                    <h2 className="text-sm font-medium text-white/75">
+                      Cadangan dan pengelolaan data
+                    </h2>
+                    <p className="mt-2 text-xs leading-relaxed text-white/40">
+                      Unduh cadangan, pulihkan database, atau reset data Mark.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => changeTab('data')}
+                    className="btn btn-ghost w-fit shrink-0 rounded-full"
+                  >
+                    Kelola data
+                    <ArrowRight size={15} />
+                  </button>
+                </div>
+              </section>
             )}
-
-            {/* MODE 2: KARAKTER & EMOSI PENUH */}
-            {activeTab === 'personality' && (
-              <EmotionalCortexLobe
-                traits={traits}
-                isFullView={true}
-                onResetAi={() => setIsResetModalOpen(true)}
-                onExportDatabase={handleExportDatabase}
-                onRestoreDatabase={() => fileInputRef.current?.click()}
-                isExportingDb={isExportingDb}
-                isRestoringDb={isRestoringDb}
-              />
-            )}
-
-            {/* MODE 3: PETA MEMORI PENUH */}
+            {activeTab === 'personality' && <EmotionalCortexLobe traits={data.traits} />}
             {activeTab === 'memory' && (
               <SynapticMemoryLobe
                 graphData={graphData}
-                graphDimensions={graphDimensions}
-                graphContainerRef={graphContainerRef}
-                fgRef={fgRef}
+                onSelectNode={setSelectedNode}
                 groomResult={groomResult}
                 isGrooming={isGrooming}
-                triggerGrooming={triggerGrooming}
-                loadBrainData={loadBrainData}
-                onSelectNode={(node) => setSelectedNode(node)}
-                isFullView={true}
+                onGroom={groom}
               />
             )}
-
-            {/* MODE 4: GUDANG KEAHLIAN PENUH */}
             {activeTab === 'skills' && (
               <ProceduralMatrixLobe
-                learnedSkills={learnedSkills}
+                learnedSkills={data.skills}
                 skillSearch={skillSearch}
                 setSkillSearch={setSkillSearch}
-                onSelectSkill={(skill) => setSelectedSkill(skill)}
-                onDeleteSkill={handleDeleteSkill}
-                isFullView={true}
+                onSelectSkill={setSelectedSkill}
               />
             )}
-
-            {/* MODE 5: BUKU HARIAN MARK (PRIVATE JOURNAL) */}
-            {activeTab === 'journal' && (
-              <div className="flex-1 flex flex-col min-h-0 bg-base-200/40 border border-white/5 rounded-2xl p-6 overflow-hidden">
-                <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/5 shrink-0">
-                  <div>
-                    <h2 className="text-sm font-bold font-mono tracking-wider uppercase text-white flex items-center gap-2">
-                      <FaBookOpen className="text-primary" /> Buku Harian Refleksi Mark
-                    </h2>
-                    <p className="text-[11px] font-mono text-white/40 mt-0.5">
-                      Catatan perenungan batin dan kesan pribadi Mark mengenai hari-harinya bersama
-                      Anda.
-                    </p>
-                  </div>
-                  <span className="text-xs font-mono px-2.5 py-1 bg-white/5 rounded-lg border border-white/5 text-white/60">
-                    {journalEntries.length} Catatan
-                  </span>
-                </div>
-
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
-                  {journalEntries.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/30 font-mono text-xs">
-                      <FaBookOpen className="w-8 h-8 mb-3 opacity-20 text-primary" />
-                      <p>Belum ada catatan refleksi batin.</p>
-                      <p className="text-[10px] text-white/20 mt-1 max-w-sm">
-                        Mark menulis buku harian secara otomatis di tengah malam atau setelah sesi
-                        kerja panjang.
-                      </p>
-                    </div>
-                  ) : (
-                    journalEntries.map((item) => {
-                      const dateStr = item.created_at
-                        ? new Date(item.created_at).toLocaleDateString('id-ID', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })
-                        : 'Waktu Tidak Tercatat'
-                      const timeStr = item.created_at
-                        ? new Date(item.created_at).toLocaleTimeString('id-ID', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
-                        : ''
-
-                      return (
-                        <div
-                          key={item.id}
-                          className="p-4 rounded-xl bg-base-300/60 border border-white/5 hover:border-primary/20 transition-all flex flex-col gap-2"
+            {activeTab === 'data' && (
+              <section aria-labelledby="neural-data-title">
+                <h2 id="neural-data-title" className="text-base font-medium text-white/90">
+                  Kelola data Mark
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-white/50">
+                  Buat cadangan sebelum memindahkan atau mengganti database.
+                </p>
+                <div className="mt-7 divide-y divide-white/10">
+                  {[
+                    {
+                      title: 'Unduh cadangan',
+                      description:
+                        'Simpan salinan database Mark sebagai file JSON untuk cadangan atau pemindahan perangkat.',
+                      label: exporting ? 'Menyiapkan cadangan...' : 'Unduh JSON',
+                      icon: Download,
+                      onClick: download
+                    },
+                    {
+                      title: 'Pulihkan dari cadangan',
+                      description:
+                        'Ganti database saat ini dengan isi file cadangan JSON. Anda akan diminta mengonfirmasi sebelum data diganti.',
+                      label: restoring ? 'Memulihkan...' : 'Pilih file JSON',
+                      icon: Upload,
+                      onClick: () => fileInput.current?.click()
+                    },
+                    {
+                      title: 'Reset data Mark',
+                      description:
+                        'Hapus memori, percakapan, skill yang dipelajari, serta riwayat tugas dan perkembangan karakter. Konfigurasi sistem tetap disimpan.',
+                      label: 'Reset data',
+                      icon: Trash2,
+                      onClick: () => setResetOpen(true),
+                      danger: true
+                    }
+                  ].map((item) => (
+                    <div
+                      key={item.title}
+                      className="flex flex-col justify-between gap-4 py-6 first:pt-0 sm:flex-row sm:items-center"
+                    >
+                      <div className="max-w-xl">
+                        <h3
+                          className={`text-sm font-medium ${item.danger ? 'text-error' : 'text-white/85'}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-mono font-bold text-primary tracking-wide">
-                              {dateStr} {timeStr ? `• ${timeStr}` : ''}
-                            </span>
-                            <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">
-                              {item.summary || 'Refleksi Harian'}
-                            </span>
-                          </div>
-                          <p className="text-xs font-mono italic text-white/80 leading-relaxed whitespace-pre-wrap">
-                            &ldquo;{item.memory}&rdquo;
-                          </p>
-                        </div>
-                      )
-                    })
-                  )}
+                          {item.title}
+                        </h3>
+                        <p className="mt-2 text-sm leading-relaxed text-white/50">
+                          {item.description}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={working}
+                        onClick={item.onClick}
+                        className={`btn w-fit shrink-0 rounded-full ${item.danger ? 'btn-ghost text-error' : 'btn-ghost'}`}
+                      >
+                        <item.icon size={16} />
+                        {item.label}
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              </section>
             )}
-          </>
-        )}
-      </main>
-
-      {/* ── 3. MODALS & HIDDEN INPUTS ── */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileRestoreSelect}
-        accept=".json"
-        className="hidden"
-      />
-
-      <ProceduralSkillModal skill={selectedSkill} onClose={() => setSelectedSkill(null)} />
-
-      <NodeDissectionModal
-        node={selectedNode}
-        onClose={() => setSelectedNode(null)}
-        onDeleteNode={(node) => setConfirmModal({ isOpen: true, node })}
-      />
-
-      <ResetAiModal
-        isOpen={isResetModalOpen}
-        onClose={() => setIsResetModalOpen(false)}
-        onConfirm={handleExecuteResetAi}
-        isResetting={isResettingAi}
-      />
-
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        title="Hapus Data Memori?"
-        message={`Apakah kamu yakin ingin menghapus data memori ini secara permanen dari ingatan Mark?\n"${confirmModal.node?.name || ''}"`}
-        onConfirm={executeDeleteNode}
-        onCancel={() => setConfirmModal({ isOpen: false, node: null })}
-        confirmText="Hapus Permanen"
-        cancelText="Batal"
-        isError={true}
-      />
-      <ModalComponent />
-
-      {/* ── TOAST NOTIFIKASI FEEDBACK ── */}
-      {toastMessage && (
-        <div className="toast toast-top toast-end z-[9999] animate-fade-in pointer-events-none">
-          <div className="alert alert-success shadow-2xl rounded-2xl border border-success/30 flex items-center gap-3 py-3 px-4 backdrop-blur-md bg-success/20 text-success-content">
-            <span className="text-xs font-mono font-medium">{toastMessage}</span>
           </div>
-        </div>
+        )}
+      </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".json,application/json"
+        aria-label="File cadangan JSON"
+        className="hidden"
+        onChange={selectRestore}
+      />
+      {selectedSkill && (
+        <ProceduralSkillModal
+          key={selectedSkill.id}
+          skill={selectedSkill}
+          onClose={() => setSelectedSkill(null)}
+          onDeleteSkill={removeSkill}
+        />
       )}
-    </div>
+      {selectedNode && (
+        <NodeDissectionModal
+          key={selectedNode.id}
+          node={selectedNode}
+          onClose={() => setSelectedNode(null)}
+          onDeleteNode={removeNode}
+        />
+      )}
+      {resetOpen && (
+        <ResetAiModal
+          onClose={() => setResetOpen(false)}
+          onConfirm={reset}
+          isResetting={resetting}
+        />
+      )}
+      {restoreFile && (
+        <NeuralDialog
+          title="Pulihkan database?"
+          onClose={() => setRestoreFile(null)}
+          busy={restoring}
+          footer={
+            <>
+              <button
+                type="button"
+                disabled={restoring}
+                onClick={() => setRestoreFile(null)}
+                className="btn btn-ghost rounded-full"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={restoring}
+                onClick={restore}
+                className="btn rounded-full border-error/30 bg-error/10 text-error"
+              >
+                {restoring ? 'Memulihkan...' : 'Pulihkan data'}
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm leading-relaxed text-white/65">
+            Isi database saat ini akan diganti dengan cadangan{' '}
+            <strong className="break-all text-white/85">{restoreFile.name}</strong>. Pastikan data
+            yang masih diperlukan sudah dicadangkan.
+          </p>
+          {restoreError && (
+            <p role="alert" className="mt-4 text-sm text-error">
+              {restoreError}
+            </p>
+          )}
+        </NeuralDialog>
+      )}
+    </main>
   )
 }
-
-export default NeuralCore

@@ -1,216 +1,141 @@
-import React, { useState } from 'react'
-import {
-  Bot,
-  Plus,
-  Trash2,
-  Cpu,
-  Layers,
-  Search,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  Play,
-  Terminal
-} from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Bot, Search } from 'lucide-react'
+import PropTypes from 'prop-types'
+import { agentStatus } from './agentPresentation'
 
 export default function AgentSidebar({
-  subagents = [],
-  selectedId = null,
-  onSelectAgent = () => {},
-  onOpenNewAgentModal = () => {},
-  onDeleteAgent = () => {}
+  subagents,
+  query,
+  onQueryChange,
+  filter,
+  onFilterChange,
+  loading,
+  error,
+  onRetry
 }) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterTab, setFilterTab] = useState('all') // 'all' | 'running' | 'idle' | 'completed'
-
-  const filteredAgents = subagents.filter((agent) => {
-    const matchesSearch =
-      agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (agent.role && agent.role.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (agent.goal && agent.goal.toLowerCase().includes(searchQuery.toLowerCase()))
-
-    if (!matchesSearch) return false
-
-    if (filterTab === 'running') return agent.status === 'running'
-    if (filterTab === 'idle') return agent.status === 'idle'
-    if (filterTab === 'completed') return agent.status === 'completed'
-    return true
+  const visible = subagents.filter((agent) => {
+    const matches = [agent.name, agent.role, agent.goal]
+      .join(' ')
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+    return (
+      matches &&
+      (filter === 'all' ||
+        (filter === 'stopped'
+          ? ['failed', 'killed', 'cancelled', 'interrupted'].includes(agent.status)
+          : agent.status === filter))
+    )
   })
-
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'running':
-        return (
-          <span className="flex items-center gap-1 text-[10px] text-primary font-mono font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
-            Running
-          </span>
-        )
-      case 'completed':
-        return (
-          <span className="flex items-center gap-1 text-[10px] text-success font-mono font-medium">
-            <CheckCircle2 className="w-2.5 h-2.5" />
-            Done
-          </span>
-        )
-      case 'failed':
-      case 'killed':
-        return (
-          <span className="flex items-center gap-1 text-[10px] text-error font-mono font-medium">
-            <AlertCircle className="w-2.5 h-2.5" />
-            Stopped
-          </span>
-        )
-      default:
-        return (
-          <span className="flex items-center gap-1 text-[10px] text-base-content/50 font-mono">
-            <Clock className="w-2.5 h-2.5" />
-            Idle
-          </span>
-        )
-    }
-  }
-
   return (
-    <aside className="w-72 md:w-80 flex flex-col bg-base-200/60 border-r border-base-content/10 flex-none select-none h-full overflow-hidden">
-      {/* Header with New Agent Action */}
-      <div className="p-3.5 border-b border-base-content/10 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary">
-            <Bot className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-xs font-bold tracking-wide uppercase text-base-content/90 font-mono">
-              Bots & Agents
-            </h2>
-            <span className="text-[10px] text-base-content/50 font-mono">
-              {subagents.length} terdaftar
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onOpenNewAgentModal}
-          className="btn btn-primary btn-xs rounded-xl gap-1 px-2.5 font-medium shadow-sm shadow-primary/20"
-          title="Tambah Sub-Agent Baru"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span className="text-[11px]">New Agent</span>
-        </button>
-      </div>
-
-      {/* Search Input */}
-      <div className="p-2.5 pb-1">
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-          <input
-            type="text"
-            placeholder="Cari agen atau peran..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="input input-xs w-full pl-8 pr-3 py-3 rounded-xl bg-base-100/60 border-base-content/10 text-[11px] focus:outline-none focus:border-primary/50"
+    <section aria-labelledby="subagent-list-title" className="mt-9">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+        <h2 id="subagent-list-title" className="text-sm font-medium text-white/75">
+          Minibots terdaftar <span className="ml-1 text-white/40">{!loading && subagents.length}</span>
+        </h2>
+        <label className="relative w-full sm:w-72">
+          <Search
+            size={16}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
           />
-        </div>
+          <input
+            aria-label="Cari Minibot"
+            placeholder="Cari nama, peran, atau tugas..."
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            className="h-10 w-full rounded-full border border-white/15 bg-transparent pl-10 pr-4 text-sm outline-none focus:border-primary/60"
+          />
+        </label>
       </div>
-
-      {/* Filter Tabs */}
-      <div className="px-2.5 py-1.5">
-        <div className="flex gap-1 p-0.5 bg-base-300/60 rounded-xl w-full border border-base-content/5">
-          {['all', 'running', 'idle', 'completed'].map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setFilterTab(tab)}
-              className={`flex-1 py-1 text-[10px] font-medium rounded-lg transition-all capitalize font-mono ${
-                filterTab === tab
-                  ? 'bg-base-100 text-base-content shadow-sm font-semibold'
-                  : 'text-base-content/50 hover:text-base-content'
-              }`}
-            >
-              {tab === 'all' ? 'Semua' : tab}
-            </button>
-          ))}
-        </div>
+      <div aria-label="Filter status Minibot" className="mt-5 flex flex-wrap gap-2">
+        {Object.entries({
+          all: 'Semua',
+          running: 'Berjalan',
+          queued: 'Antrean',
+          waiting_peer: 'Menunggu kolega',
+          waiting_user: 'Perlu keputusan',
+          waiting_review: 'Ditinjau Mark',
+          idle: 'Siap',
+          completed: 'Selesai',
+          stopped: 'Gagal / dihentikan'
+        }).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={filter === value}
+            onClick={() => onFilterChange(value)}
+            className={`rounded-full px-4 py-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary ${filter === value ? 'bg-white/10 text-white' : 'text-white/45 hover:bg-white/5 hover:text-white/75'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-
-      {/* Agent List */}
-      <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 custom-scrollbar">
-        {filteredAgents.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-base-content/30 gap-2">
-            <Layers className="w-7 h-7 stroke-[1.5]" />
-            <p className="text-[11px] font-mono">Tidak ada agen ditemukan.</p>
-          </div>
-        ) : (
-          filteredAgents.map((agent) => {
-            const isSelected = agent.id === selectedId
-            const isRunning = agent.status === 'running'
-
+      {error ? (
+        <div role="alert" className="py-10 text-sm">
+          <p className="text-error">{error}</p>
+          <button type="button" onClick={onRetry} className="btn btn-ghost mt-3 rounded-full">
+            Coba lagi
+          </button>
+        </div>
+      ) : loading ? (
+        <p role="status" className="py-12 text-sm text-white/45">
+          Memuat Minibot...
+        </p>
+      ) : visible.length ? (
+        <div className="mt-5 grid grid-cols-1 gap-x-12 md:grid-cols-2">
+          {visible.map((agent) => {
+            const status = agentStatus(agent.status)
             return (
-              <div
+              <Link
                 key={agent.id}
-                onClick={() => onSelectAgent(agent.id)}
-                className={`p-3 rounded-xl border transition-all cursor-pointer relative group ${
-                  isSelected
-                    ? 'bg-primary/10 border-primary/40 shadow-sm'
-                    : 'bg-base-100/40 border-base-content/5 hover:border-base-content/15 hover:bg-base-100/70'
-                }`}
+                to={`/subagents/${encodeURIComponent(agent.id)}`}
+                className="flex min-w-0 items-start gap-4 rounded-lg px-5 py-5 hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-primary"
               >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-[10px] shrink-0 font-mono ${
-                        isRunning
-                          ? 'bg-primary/20 text-primary border border-primary/40 shadow-sm'
-                          : isSelected
-                            ? 'bg-primary/10 text-primary border border-primary/20'
-                            : 'bg-base-300 text-base-content/70 border border-base-content/10'
-                      }`}
-                    >
-                      {agent.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-xs text-base-content/95 truncate">
-                          {agent.name}
-                        </span>
-                        {(agent.role?.toLowerCase().includes('curiosity') ||
-                          agent.name.toLowerCase().includes('sideproject')) && (
-                          <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 uppercase tracking-tight shrink-0">
-                            Curiosity
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-base-content/50 truncate font-mono">
-                        {agent.role || 'Technical Specialist'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDeleteAgent(agent.id)
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error transition-all p-1 rounded-md hover:bg-base-content/5"
-                      title="Hapus Agen"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10">
+                  <Bot
+                    size={25}
+                    className={agent.status === 'running' ? 'text-primary' : 'text-white/50'}
+                    aria-hidden="true"
+                  />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="break-words text-sm font-semibold text-white">{agent.name}</h3>
+                  <p className="mt-1 line-clamp-1 text-xs text-white/40">
+                    {agent.role || 'Spesialis tugas'}
+                  </p>
+                  <p className="mt-2 line-clamp-2 break-words text-sm leading-relaxed text-white/60">
+                    {agent.goal || 'Belum ada tugas.'}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                    <span className={`inline-flex items-center gap-1.5 ${status.color}`}>
+                      {agent.status === 'running' && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
+                      )}
+                      {status.label}
+                    </span>
+                    <span className="text-white/35">· {agent.turnCount || 0} langkah</span>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between text-[10px] text-base-content/45 font-mono pt-1 border-t border-base-content/5 mt-1.5">
-                  <div className="flex items-center gap-1">{getStatusBadge(agent.status)}</div>
-                  <span>Langkah: {agent.turnCount || 0}</span>
-                </div>
-              </div>
+              </Link>
             )
-          })
-        )}
-      </div>
-    </aside>
+          })}
+        </div>
+      ) : (
+        <div role="status" className="py-12 text-sm leading-relaxed text-white/50">
+          {subagents.length
+            ? 'Tidak ada Minibot yang sesuai dengan pencarian atau filter ini.'
+            : 'Belum ada Minibot. Pilih Buat Minibot untuk memberikan tugas pertama.'}
+        </div>
+      )}
+    </section>
   )
+}
+AgentSidebar.propTypes = {
+  subagents: PropTypes.array.isRequired,
+  query: PropTypes.string.isRequired,
+  onQueryChange: PropTypes.func.isRequired,
+  filter: PropTypes.string.isRequired,
+  onFilterChange: PropTypes.func.isRequired,
+  loading: PropTypes.bool.isRequired,
+  error: PropTypes.string,
+  onRetry: PropTypes.func.isRequired
 }

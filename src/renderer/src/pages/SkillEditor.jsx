@@ -1,380 +1,574 @@
-import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Save, Trash2, Terminal, Folder, File as FileIcon, Plus, FolderPlus, Edit2, ChevronRight, ChevronDown, Heading1, Heading2, Bold, Italic, CheckSquare, Code, Link, Quote, List } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Save,
+  Trash2,
+  Plus,
+  FolderPlus,
+  FileText,
+  ChevronDown,
+  Heading1,
+  Heading2,
+  Bold,
+  Italic,
+  CheckSquare,
+  Code,
+  Link,
+  Quote,
+  List
+} from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import { webApi } from '../api/web-bridge'
+import SkillFileTree from '../components/skills/SkillFileTree'
+import SkillEditorDialog from '../components/skills/SkillEditorDialog'
 
-const FileTreeNode = ({ node, level = 0, selectedPath, onSelect, onRename, onDelete, expandedFolders, toggleFolder }) => {
-  const isSelected = selectedPath === node.path
-  const isExpanded = expandedFolders[node.path]
-
-  return (
-    <div className="select-none">
-      <div
-        className={`flex items-center gap-1.5 py-1 px-2 cursor-pointer hover:bg-white/10 transition-colors group ${isSelected ? 'bg-primary/20 text-primary' : 'text-gray-300'}`}
-        style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={() => {
-          if (node.type === 'folder') {
-            toggleFolder(node.path)
-          } else {
-            onSelect(node.path)
-          }
-        }}
-      >
-        <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
-          {node.type === 'folder' ? (
-            isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
-          ) : (
-            <FileIcon size={14} className="opacity-70" />
-          )}
-        </div>
-
-        {node.type === 'folder' && (
-          <Folder size={14} className={isExpanded ? 'text-blue-400' : 'text-blue-400/70'} />
-        )}
-
-        <span className="text-sm truncate flex-1">{node.name}</span>
-
-        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-          <button
-            className="p-1 hover:bg-white/20 rounded text-gray-400 hover:text-white transition-colors"
-            onClick={(e) => { e.stopPropagation(); onRename(node) }}
-            title="Rename"
-          >
-            <Edit2 size={12} />
-          </button>
-          <button
-            className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
-            onClick={(e) => { e.stopPropagation(); onDelete(node) }}
-            title="Delete"
-          >
-            <Trash2 size={12} />
-          </button>
-        </div>
-      </div>
-
-      {node.type === 'folder' && isExpanded && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <FileTreeNode
-              key={child.path}
-              node={child}
-              level={level + 1}
-              selectedPath={selectedPath}
-              onSelect={onSelect}
-              onRename={onRename}
-              onDelete={onDelete}
-              expandedFolders={expandedFolders}
-              toggleFolder={toggleFolder}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
+const flattenTree = (nodes) => nodes.flatMap((node) => [node, ...flattenTree(node.children || [])])
+const parentPath = (path = '') => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
+const languages = {
+  md: 'markdown',
+  json: 'json',
+  js: 'javascript',
+  mjs: 'javascript',
+  ts: 'typescript',
+  py: 'python',
+  html: 'html',
+  css: 'css',
+  yaml: 'yaml',
+  yml: 'yaml',
+  sh: 'shell',
+  ps1: 'powershell'
 }
+const formats = [
+  ['h1', Heading1, 'Judul utama'],
+  ['h2', Heading2, 'Subjudul'],
+  ['bold', Bold, 'Tebal'],
+  ['italic', Italic, 'Miring'],
+  ['check', CheckSquare, 'Checklist'],
+  ['list', List, 'Daftar'],
+  ['code', Code, 'Blok kode'],
+  ['link', Link, 'Tautan'],
+  ['quote', Quote, 'Kutipan']
+]
 
-const SkillEditor = () => {
+export default function SkillEditor() {
   const { id } = useParams()
   const navigate = useNavigate()
-
   const [tree, setTree] = useState([])
-  const [selectedPath, setSelectedPath] = useState('SKILL.md')
+  const [selectedPath, setSelectedPath] = useState(null)
   const [content, setContent] = useState('')
-  const [isEditing, setIsEditing] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [expandedFolders, setExpandedFolders] = useState({})
+  const [savedContent, setSavedContent] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [expanded, setExpanded] = useState({})
+  const [filesOpen, setFilesOpen] = useState(false)
+  const [dialog, setDialog] = useState(null)
+  const [itemName, setItemName] = useState('')
   const editorRef = useRef(null)
+  const fileRequestRef = useRef(0)
+  const cancelFileRequests = useCallback(() => {
+    fileRequestRef.current++
+  }, [])
+  const dirty = content !== savedContent
+  const markdown = selectedPath?.toLowerCase().endsWith('.md')
 
-  const handleFormat = (format) => {
-    if (!editorRef.current) return
-    const editor = editorRef.current
-    const selection = editor.getSelection()
-    const model = editor.getModel()
-    if (!selection || !model) return
-
-    const selectedText = model.getValueInRange(selection)
-
-    let textToInsert = ''
-
-    switch (format) {
-      case 'h1': textToInsert = `# ${selectedText || 'Heading 1'}`; break;
-      case 'h2': textToInsert = `## ${selectedText || 'Heading 2'}`; break;
-      case 'bold': textToInsert = `**${selectedText || 'teks tebal'}**`; break;
-      case 'italic': textToInsert = `*${selectedText || 'teks miring'}*`; break;
-      case 'check': textToInsert = `- [ ] ${selectedText || 'Tugas baru'}`; break;
-      case 'list': textToInsert = `- ${selectedText || 'Item list'}`; break;
-      case 'code': textToInsert = `\`\`\`javascript\n${selectedText || '// Tulis kode di sini'}\n\`\`\``; break;
-      case 'quote': textToInsert = `> ${selectedText || 'Kutipan'}`; break;
-      case 'link': textToInsert = `[${selectedText || 'Teks Link'}](https://url-di-sini)`; break;
-      default: return;
+  useEffect(() => {
+    let disposed = false
+    setLoading(true)
+    setError('')
+    setNotice('')
+    setSelectedPath(null)
+    setContent('')
+    setSavedContent('')
+    setExpanded({})
+    const load = async () => {
+      try {
+        const data = await webApi.getSkillTree(id)
+        if (!Array.isArray(data)) throw new Error('Daftar file belum dapat dimuat.')
+        const files = flattenTree(data).filter((node) => node.type === 'file')
+        const initial = files.find((node) => node.path === 'SKILL.md') || files[0]
+        const text = initial ? await webApi.readSkillFile(id, initial.path) : ''
+        if (disposed) return
+        setTree(data)
+        setSelectedPath(initial?.path || null)
+        setContent(text)
+        setSavedContent(text)
+      } catch (failure) {
+        if (!disposed) setError(failure.message || 'Skill belum dapat dimuat.')
+      } finally {
+        if (!disposed) setLoading(false)
+      }
     }
+    load()
+    return () => {
+      disposed = true
+      cancelFileRequests()
+    }
+  }, [id, cancelFileRequests])
 
-    editor.executeEdits('toolbar', [{
-      range: selection,
-      text: textToInsert,
-      forceMoveMarkers: true
-    }])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  const save = useCallback(async () => {
+    if (!selectedPath || busy || loading || !dirty) return
+    setBusy('save')
+    setError('')
+    setNotice('')
+    const snapshot = content
+    try {
+      const result = await webApi.saveSkillFile(id, selectedPath, snapshot)
+      if (!result?.success) throw new Error(result?.error || 'Perubahan belum dapat disimpan.')
+      setSavedContent(snapshot)
+      setNotice('Perubahan berhasil disimpan.')
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(null)
+    }
+  }, [id, selectedPath, content, busy, loading, dirty])
+
+  useEffect(() => {
+    const shortcut = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        if (!dialog) save()
+      }
+    }
+    window.addEventListener('keydown', shortcut)
+    return () => window.removeEventListener('keydown', shortcut)
+  }, [save, dialog])
+
+  const reloadTree = async () => {
+    const data = await webApi.getSkillTree(id)
+    if (!Array.isArray(data)) throw new Error('Daftar file belum dapat dimuat.')
+    setTree(data)
+    return data
+  }
+  const loadFile = async (path) => {
+    const request = ++fileRequestRef.current
+    setLoading(true)
+    setError('')
+    setNotice('')
+    try {
+      const text = await webApi.readSkillFile(id, path)
+      if (request !== fileRequestRef.current) return
+      setSelectedPath(path)
+      setContent(text)
+      setSavedContent(text)
+      setFilesOpen(false)
+    } catch (failure) {
+      if (request === fileRequestRef.current) setError(failure.message)
+    } finally {
+      if (request === fileRequestRef.current) setLoading(false)
+    }
+  }
+  const proceed = (action) => {
+    if (busy || loading) return
+    setError('')
+    if (dirty) setDialog({ kind: 'discard', action })
+    else action()
+  }
+  const openDialog = (kind, node = null) => {
+    setError('')
+    setNotice('')
+    setItemName(node?.name || '')
+    setDialog({ kind, node })
+  }
+  const handleFormat = (format) => {
+    const editor = editorRef.current
+    const selection = editor?.getSelection()
+    const model = editor?.getModel()
+    if (!selection || !model) return
+    const selected = model.getValueInRange(selection)
+    const text = {
+      h1: `# ${selected || 'Judul'}`,
+      h2: `## ${selected || 'Subjudul'}`,
+      bold: `**${selected || 'teks tebal'}**`,
+      italic: `*${selected || 'teks miring'}*`,
+      check: `- [ ] ${selected || 'Langkah kerja'}`,
+      list: `- ${selected || 'Butir daftar'}`,
+      code: `\`\`\`\n${selected || 'kode'}\n\`\`\``,
+      link: `[${selected || 'Teks tautan'}](https://alamat-situs)`,
+      quote: `> ${selected || 'Kutipan'}`
+    }[format]
+    editor.executeEdits('toolbar', [{ range: selection, text, forceMoveMarkers: true }])
     editor.focus()
   }
 
-  const loadTree = async () => {
-    try {
-      const data = await webApi.getSkillTree(id)
-      setTree(data)
-    } catch (e) {
-      console.error(e)
+  const confirmDialog = async () => {
+    if (!dialog || busy) return
+    if (dialog.kind === 'discard') {
+      const action = dialog.action
+      setDialog(null)
+      action()
+      return
     }
-  }
-
-  const loadFileContent = async (path) => {
-    setIsLoading(true)
+    setError('')
+    setBusy('item')
     try {
-      const text = await webApi.readSkillFile(id, path)
-      setContent(text)
-      setSelectedPath(path)
-      setIsEditing(false)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadTree().then(() => loadFileContent('SKILL.md'))
-  }, [id])
-
-  const toggleFolder = (path) => {
-    setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }))
-  }
-
-  const handleSave = async () => {
-    try {
-      await webApi.saveSkillFile(id, selectedPath, content)
-      setIsEditing(false)
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  const handleCreateItem = async (isFolder) => {
-    const defaultPath = selectedPath.includes('/') ? selectedPath.substring(0, selectedPath.lastIndexOf('/')) : ''
-    const itemName = prompt(`Nama ${isFolder ? 'folder' : 'file'} baru:`)
-    if (!itemName) return
-
-    const newPath = defaultPath ? `${defaultPath}/${itemName}` : itemName
-
-    try {
-      await webApi.createSkillItem(id, newPath, isFolder)
-      await loadTree()
-      if (!isFolder) {
-        loadFileContent(newPath)
+      const { kind, node } = dialog
+      if (kind === 'delete-skill') {
+        const result = await webApi.deleteSkill(id)
+        if (!result?.success) throw new Error(result?.error || 'Skill belum dapat dihapus.')
+        setDialog(null)
+        navigate('/skills')
+        return
+      }
+      if (kind === 'delete') {
+        const result = await webApi.deleteSkillItem(id, node.path)
+        if (!result?.success) throw new Error(result?.error || 'Item belum dapat dihapus.')
+        const data = await reloadTree()
+        if (selectedPath === node.path || selectedPath?.startsWith(node.path + '/')) {
+          const next =
+            flattenTree(data).find((item) => item.path === 'SKILL.md') ||
+            flattenTree(data).find((item) => item.type === 'file')
+          if (next) await loadFile(next.path)
+          else {
+            setSelectedPath(null)
+            setContent('')
+            setSavedContent('')
+          }
+        }
       } else {
-        setExpandedFolders(prev => ({ ...prev, [newPath]: true }))
+        const name = itemName.trim()
+        if (
+          !name ||
+          /[<>:"/\\|?*]/.test(name) ||
+          name === '.' ||
+          name === '..' ||
+          /[. ]$/.test(name)
+        )
+          throw new Error('Gunakan nama file atau folder yang valid, tanpa pemisah direktori.')
+        const base = parentPath(kind === 'rename' ? node.path : selectedPath || '')
+        const nextPath = base ? `${base}/${name}` : name
+        if (
+          flattenTree(tree).some(
+            (item) => item.path.toLowerCase() === nextPath.toLowerCase() && item.path !== node?.path
+          )
+        )
+          throw new Error('Nama tersebut sudah digunakan di folder ini.')
+        if (kind === 'rename') {
+          if (nextPath !== node.path) {
+            const result = await webApi.renameSkillItem(id, node.path, nextPath)
+            if (!result?.success) throw new Error(result?.error || 'Nama belum dapat diubah.')
+            if (selectedPath === node.path || selectedPath?.startsWith(node.path + '/'))
+              setSelectedPath(nextPath + selectedPath.slice(node.path.length))
+            setExpanded((current) =>
+              Object.fromEntries(
+                Object.entries(current).map(([key, value]) => [
+                  key === node.path || key.startsWith(node.path + '/')
+                    ? nextPath + key.slice(node.path.length)
+                    : key,
+                  value
+                ])
+              )
+            )
+          }
+        } else {
+          const folder = kind === 'folder'
+          const result = await webApi.createSkillItem(id, nextPath, folder)
+          if (!result?.success) throw new Error(result?.error || 'Item belum dapat dibuat.')
+          if (base) setExpanded((current) => ({ ...current, [base]: true }))
+          if (folder) setExpanded((current) => ({ ...current, [nextPath]: true }))
+          else await loadFile(nextPath)
+        }
+        await reloadTree()
       }
-    } catch (e) {
-      console.error(e)
-      alert('Gagal membuat item')
+      setDialog(null)
+    } catch (failure) {
+      setError(failure.message || 'Perubahan belum dapat diproses.')
+    } finally {
+      setBusy(null)
     }
   }
 
-  const handleDeleteItem = async (node) => {
-    if (!confirm(`Hapus ${node.type} "${node.name}"?`)) return
-    try {
-      await webApi.deleteSkillItem(id, node.path)
-      await loadTree()
-      if (selectedPath === node.path || selectedPath.startsWith(node.path + '/')) {
-        loadFileContent('SKILL.md')
+  const dialogContent =
+    dialog &&
+    {
+      file: {
+        title: 'Buat file',
+        description: `File akan dibuat di ${parentPath(selectedPath || '') || 'folder utama skill'}. Sertakan ekstensi, misalnya panduan.md.`,
+        confirmLabel: 'Buat file'
+      },
+      folder: {
+        title: 'Buat folder',
+        description: `Folder akan dibuat di ${parentPath(selectedPath || '') || 'folder utama skill'}.`,
+        confirmLabel: 'Buat folder'
+      },
+      rename: {
+        title: 'Ubah nama',
+        description: `Ubah nama ${dialog.node?.name}. Isi file tetap dipertahankan.`,
+        confirmLabel: 'Simpan nama'
+      },
+      delete: {
+        title: 'Hapus item?',
+        description: `Hapus ${dialog.node?.name}${dialog.node?.type === 'folder' ? ' beserta seluruh isinya' : ''}? Tindakan ini tidak dapat dibatalkan.`,
+        confirmLabel: 'Hapus',
+        destructive: true
+      },
+      'delete-skill': {
+        title: 'Hapus skill?',
+        description: `Skill ${id} beserta semua filenya akan dihapus. Tindakan ini tidak dapat dibatalkan.`,
+        confirmLabel: 'Hapus skill',
+        destructive: true
+      },
+      discard: {
+        title: 'Perubahan belum disimpan',
+        description:
+          'Jika dilanjutkan, perubahan pada file ini akan dibuang. Batalkan untuk kembali mengedit dan menyimpannya.',
+        confirmLabel: 'Buang perubahan',
+        destructive: true
       }
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  const handleRenameItem = async (node) => {
-    const newName = prompt('Nama baru:', node.name)
-    if (!newName || newName === node.name) return
-
-    const basePath = node.path.includes('/') ? node.path.substring(0, node.path.lastIndexOf('/')) : ''
-    const newPath = basePath ? `${basePath}/${newName}` : newName
-
-    try {
-      await webApi.renameSkillItem(id, node.path, newPath)
-      await loadTree()
-      if (selectedPath === node.path) {
-        setSelectedPath(newPath)
-      }
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  const handleDeleteSkill = async () => {
-    if (!confirm(`Hapus keseluruhan skill ${id} beserta semua filenya?`)) return
-    try {
-      await webApi.deleteSkill(id)
-      navigate('/skills')
-    } catch (e) {
-      console.error(e)
-    }
-  }
+    }[dialog.kind]
 
   return (
-    <div className="h-full flex flex-col p-6 overflow-hidden relative font-['Poppins',sans-serif] bg-base-300 rounded-xl border border-white/5 shadow-2xl">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,oklch(var(--n))_0%,transparent_70%)] opacity-20 pointer-events-none" />
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 pointer-events-none" />
-
-      <div className="relative z-10 flex flex-col h-full">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
+    <main className="h-screen overflow-y-auto bg-base-300 text-base-content custom-scrollbar">
+      <div className="mx-auto max-w-6xl px-5 py-7 pb-24 sm:px-8 sm:py-10 sm:pb-24">
+        <button
+          type="button"
+          onClick={() => proceed(() => navigate('/skills'))}
+          disabled={!!busy || loading}
+          className="mb-8 inline-flex items-center gap-2 rounded-sm text-sm text-white/50 hover:text-white focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-4"
+        >
+          <ArrowLeft size={17} aria-hidden="true" /> Kembali ke Skills
+        </button>
+        <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-semibold text-white">{id}</h1>
+            <p className="mt-3 text-sm leading-relaxed text-white/50">
+              Edit instruksi utama dan file pendukung skill.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate('/skills')}
-              className="btn btn-ghost btn-sm btn-circle shrink-0"
-              style={{ WebkitAppRegion: 'no-drag' }}
-              title="Kembali ke Skills"
+              onClick={save}
+              disabled={!dirty || !!busy || loading}
+              className="btn rounded-full border-white bg-white px-5 text-neutral-900 hover:bg-white/90"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="1.2em"
-                height="1.2em"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+              <Save size={16} aria-hidden="true" />
+              {busy === 'save' ? 'Menyimpan...' : 'Simpan'}
+            </button>
+            <button
+              type="button"
+              onClick={() => openDialog('delete-skill')}
+              disabled={!!busy || loading}
+              className="btn btn-ghost rounded-full px-4 text-white/50 hover:text-error"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              Hapus skill
+            </button>
+          </div>
+        </header>
+        {!dialog && error && (
+          <p role="alert" className="mt-5 text-sm leading-relaxed text-error">
+            {error}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="mt-5 text-sm text-primary">
+            {notice}
+          </p>
+        )}
+        <div className="mt-8 flex min-h-[480px] flex-col overflow-hidden rounded-xl border border-white/10 md:h-[min(650px,calc(100dvh-240px))] md:flex-row">
+          <aside
+            aria-label="File skill"
+            className="shrink-0 border-b border-white/10 md:w-64 md:border-r md:border-b-0"
+          >
+            <div className="flex min-h-14 items-center justify-between gap-2 border-b border-white/5 px-3">
+              <h2 className="hidden px-1 text-sm font-medium text-white/75 md:block">File skill</h2>
+              <button
+                type="button"
+                onClick={() => setFilesOpen(!filesOpen)}
+                aria-expanded={filesOpen}
+                aria-controls="skill-files"
+                className="flex items-center gap-2 rounded-md px-1 py-2 text-sm text-white/75 focus-visible:outline-2 focus-visible:outline-primary md:hidden"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Terminal className="text-emerald-400" size={22} />
-                <span>{id}</span>
-              </h1>
-              <p className="opacity-50 text-xs mt-0.5">Workspace Editor</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              className="btn btn-outline btn-error gap-2"
-              onClick={handleDeleteSkill}
-            >
-              <Trash2 size={16} /> Delete Skill
-            </button>
-            <button
-              className={`btn gap-2 ${isEditing ? 'btn-primary' : 'btn-disabled'}`}
-              onClick={handleSave}
-              disabled={!isEditing}
-            >
-              <Save size={16} /> Save Changes
-            </button>
-          </div>
-        </div>
-
-        {/* IDE Layout */}
-        <div className="flex-1 flex gap-4 overflow-hidden">
-
-          {/* Sidebar: Explorer */}
-          <div className="w-64 flex flex-col bg-[#1e1e1e]/80 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
-            <div className="p-3 flex items-center justify-between border-b border-white/5 bg-black/20">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Explorer</span>
-              <div className="flex gap-1">
-                <button
-                  className="p-1.5 hover:bg-white/10 rounded-md text-gray-400 transition-colors"
-                  onClick={() => handleCreateItem(false)}
-                  title="New File"
-                >
-                  <Plus size={14} />
-                </button>
-                <button
-                  className="p-1.5 hover:bg-white/10 rounded-md text-gray-400 transition-colors"
-                  onClick={() => handleCreateItem(true)}
-                  title="New Folder"
-                >
-                  <FolderPlus size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
-              {tree.map(node => (
-                <FileTreeNode
-                  key={node.path}
-                  node={node}
-                  selectedPath={selectedPath}
-                  onSelect={loadFileContent}
-                  onRename={handleRenameItem}
-                  onDelete={handleDeleteItem}
-                  expandedFolders={expandedFolders}
-                  toggleFolder={toggleFolder}
+                File skill
+                <ChevronDown
+                  size={14}
+                  className={filesOpen ? 'rotate-180' : ''}
+                  aria-hidden="true"
                 />
-              ))}
-            </div>
-          </div>
-
-          {/* Editor Container */}
-          <div className="flex-1 flex flex-col bg-[#1e1e1e] rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative">
-            <div className="bg-black/20 border-b border-white/5 px-4 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileIcon size={14} className="text-gray-400" />
-                <span className="text-sm text-gray-300 font-mono">{selectedPath}</span>
-                {isEditing && <span className="w-2 h-2 rounded-full bg-primary ml-2"></span>}
+              </button>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  disabled={!!busy || loading}
+                  onClick={() => proceed(() => openDialog('file'))}
+                  aria-label="Buat file"
+                  title="Buat file"
+                  className="rounded-lg p-2 text-white/50 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <Plus size={16} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy || loading}
+                  onClick={() => openDialog('folder')}
+                  aria-label="Buat folder"
+                  title="Buat folder"
+                  className="rounded-lg p-2 text-white/50 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <FolderPlus size={16} aria-hidden="true" />
+                </button>
               </div>
-
-              {selectedPath.endsWith('.md') && (
-                <div className="flex items-center gap-1 bg-black/30 rounded-lg p-1 border border-white/5">
-                  <button onClick={() => handleFormat('h1')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Heading 1"><Heading1 size={14} /></button>
-                  <button onClick={() => handleFormat('h2')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Heading 2"><Heading2 size={14} /></button>
-                  <div className="w-px h-4 bg-white/10 mx-1"></div>
-                  <button onClick={() => handleFormat('bold')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Bold"><Bold size={14} /></button>
-                  <button onClick={() => handleFormat('italic')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Italic"><Italic size={14} /></button>
-                  <div className="w-px h-4 bg-white/10 mx-1"></div>
-                  <button onClick={() => handleFormat('check')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Checklist"><CheckSquare size={14} /></button>
-                  <button onClick={() => handleFormat('list')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Bulleted List"><List size={14} /></button>
-                  <div className="w-px h-4 bg-white/10 mx-1"></div>
-                  <button onClick={() => handleFormat('code')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Code Block"><Code size={14} /></button>
-                  <button onClick={() => handleFormat('link')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Link"><Link size={14} /></button>
-                  <button onClick={() => handleFormat('quote')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors" title="Quote"><Quote size={14} /></button>
-                </div>
+            </div>
+            <div
+              id="skill-files"
+              className={`${filesOpen ? 'block' : 'hidden'} max-h-64 overflow-y-auto p-2 custom-scrollbar md:block md:max-h-none md:h-[calc(100%-3.5rem)]`}
+            >
+              {loading && !tree.length ? (
+                <p role="status" className="px-2 py-4 text-xs text-white/45">
+                  Memuat file...
+                </p>
+              ) : tree.length ? (
+                <SkillFileTree
+                  nodes={tree}
+                  selectedPath={selectedPath}
+                  expanded={expanded}
+                  onToggle={(path) =>
+                    setExpanded((current) => ({ ...current, [path]: !current[path] }))
+                  }
+                  onSelect={(path) => {
+                    if (path !== selectedPath) proceed(() => loadFile(path))
+                  }}
+                  onRename={(node) => openDialog('rename', node)}
+                  onDelete={(node) => openDialog('delete', node)}
+                  disabled={!!busy || loading}
+                />
+              ) : (
+                <p className="px-2 py-4 text-xs leading-relaxed text-white/45">
+                  Belum ada file. Buat SKILL.md untuk menulis instruksi utama.
+                </p>
               )}
             </div>
-
-            <div className="flex-1 relative">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  Loading editor...
-                </div>
-              ) : (
+          </aside>
+          <section
+            aria-label="Editor file"
+            className="flex min-h-[440px] min-w-0 flex-1 flex-col bg-[#141211]"
+          >
+            <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/10 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2 text-sm text-white/75">
+                <FileText size={15} className="shrink-0 text-white/40" aria-hidden="true" />
+                <span className="break-all">{selectedPath || 'Pilih file'}</span>
+              </div>
+              <span
+                role="status"
+                className={`shrink-0 text-xs ${dirty ? 'text-primary' : 'text-white/40'}`}
+              >
+                {loading ? 'Memuat...' : dirty ? 'Belum disimpan' : selectedPath ? 'Tersimpan' : ''}
+              </span>
+            </div>
+            {markdown && (
+              <div
+                role="toolbar"
+                aria-label="Format Markdown"
+                className="flex flex-wrap gap-1 border-b border-white/5 px-3 py-2"
+              >
+                {formats.map(([key, Icon, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleFormat(key)}
+                    disabled={loading || !!busy}
+                    aria-label={label}
+                    title={label}
+                    className="rounded-md p-2 text-white/50 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    <Icon size={16} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="relative min-h-[340px] flex-1">
+              {loading ? (
+                <p role="status" className="p-6 text-sm text-white/45">
+                  Memuat editor...
+                </p>
+              ) : selectedPath ? (
                 <Editor
                   height="100%"
-                  defaultLanguage={selectedPath.endsWith('.md') ? 'markdown' : selectedPath.endsWith('.json') ? 'json' : 'javascript'}
-                  theme="vs-dark"
+                  path={`${id}/${selectedPath}`}
+                  language={languages[selectedPath.split('.').pop()?.toLowerCase()] || 'plaintext'}
+                  theme="mark-skill"
+                  beforeMount={(monaco) =>
+                    monaco.editor.defineTheme('mark-skill', {
+                      base: 'vs-dark',
+                      inherit: true,
+                      rules: [],
+                      colors: {
+                        'editor.background': '#141211',
+                        'editorLineNumber.foreground': '#59524f',
+                        'editorGutter.background': '#141211'
+                      }
+                    })
+                  }
                   value={content}
-                  onMount={(editor) => { editorRef.current = editor }}
-                  onChange={(val) => {
-                    setContent(val || '')
-                    setIsEditing(true)
+                  loading={<p className="p-6 text-sm text-white/45">Memuat editor...</p>}
+                  onMount={(editor) => {
+                    editorRef.current = editor
+                  }}
+                  onChange={(value) => {
+                    setContent(value || '')
+                    setNotice('')
                   }}
                   options={{
                     minimap: { enabled: false },
-                    fontSize: 14,
+                    fontSize: 13,
                     wordWrap: 'on',
                     lineNumbers: 'on',
-                    padding: { top: 16 },
-                    fontFamily: "'Fira Code', 'JetBrains Mono', monospace",
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    padding: { top: 18, bottom: 18 },
+                    fontFamily: 'Consolas, monospace',
+                    readOnly: !!busy
                   }}
                 />
+              ) : (
+                <p className="p-6 text-sm text-white/45">
+                  Pilih atau buat file untuk mulai mengedit.
+                </p>
               )}
             </div>
-          </div>
-
+            <footer className="border-t border-white/5 px-4 py-2 text-xs text-white/35">
+              {selectedPath === 'SKILL.md'
+                ? 'Instruksi utama yang dibaca Mark.'
+                : selectedPath
+                  ? 'File pendukung skill.'
+                  : 'File skill disimpan di perangkat ini.'}{' '}
+              <span className="ml-2">Ctrl+S untuk menyimpan.</span>
+            </footer>
+          </section>
         </div>
       </div>
-    </div>
+      {dialog && (
+        <SkillEditorDialog
+          {...dialogContent}
+          name={itemName}
+          onNameChange={
+            ['file', 'folder', 'rename'].includes(dialog.kind) ? setItemName : undefined
+          }
+          onConfirm={confirmDialog}
+          onClose={() => {
+            if (!busy) {
+              setDialog(null)
+              setError('')
+            }
+          }}
+          busy={!!busy}
+          error={error}
+        />
+      )}
+    </main>
   )
 }
-
-export default SkillEditor

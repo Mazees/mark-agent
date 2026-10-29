@@ -5,7 +5,6 @@ import { generateVector } from './vectorMemory'
 const VECTOR_SIZE = 384
 
 let archiveIndex = null
-let documentIndex = null
 let memoryIndex = null
 let turnPairIndex = null
 
@@ -25,17 +24,6 @@ export async function initOramaIndices() {
     schema: {
       summary: 'string',
       topic: 'string',
-      timestamp: 'number',
-      dbId: 'string',
-      vector: `vector[${VECTOR_SIZE}]`
-    }
-  })
-
-  documentIndex = await create({
-    schema: {
-      docName: 'string',
-      chunkIndex: 'number',
-      content: 'string',
       timestamp: 'number',
       dbId: 'string',
       vector: `vector[${VECTOR_SIZE}]`
@@ -132,32 +120,6 @@ export async function hydrateFromDb(onProgress) {
     await insertMultiple(archiveIndex, validArchives)
   }
 
-  const docs = await db.documents.toArray()
-  const validDocs = []
-  for (let d of docs) {
-    if (needsMigration || !d.vector || d.vector.length !== VECTOR_SIZE) {
-      console.log(`[Orama] Re-generating vector for doc ID ${d.id}`)
-      d.vector = await generateVector(d.content)
-      if (d.vector && d.vector.length === VECTOR_SIZE) {
-        db.documents.update(d.id, { vector: d.vector }).catch(console.error)
-      }
-    }
-    if (d.vector && d.vector.length === VECTOR_SIZE) {
-      validDocs.push({
-        docName: String(d.docName || d.doc_name || ''),
-        chunkIndex: Number(d.chunkIndex ?? d.chunk_index ?? 0),
-        content: String(d.content || ''),
-        timestamp: Number(d.timestamp) || Date.now(),
-        dbId: String(d.id || ''),
-        vector: d.vector
-      })
-    }
-  }
-
-  if (validDocs.length > 0) {
-    await insertMultiple(documentIndex, validDocs)
-  }
-
   const memories = await db.memory.toArray()
   const validMemories = []
   for (let m of memories) {
@@ -189,7 +151,7 @@ export async function hydrateFromDb(onProgress) {
     console.log('[Orama] Successfully migrated all old vectors to new model!')
   }
 
-  console.log(`[Orama] Hydrated: ${validTurnsCount} turn pairs, ${validArchives.length} archives, ${validDocs.length} doc chunks, ${validMemories.length} memories`)
+  console.log(`[Orama] Hydrated: ${validTurnsCount} turn pairs, ${validArchives.length} archives, ${validMemories.length} memories`)
 }
 
 // Vector search di arsip obrolan
@@ -209,24 +171,6 @@ export async function searchArchives(queryVector, limit = 3) {
   }
 }
 
-// Vector search di dokumen RAG
-export async function searchDocuments(queryText, queryVector, limit = 5) {
-  if (!documentIndex) return []
-  try {
-    const results = await search(documentIndex, {
-      term: queryText,
-      mode: 'hybrid',
-      vector: { value: queryVector, property: 'vector' },
-      similarity: 0.25,
-      limit
-    })
-    return results.hits.map(hit => hit.document)
-  } catch (error) {
-    console.error('[Orama] Error in searchDocuments:', error)
-    return []
-  }
-}
-
 // Insert baru (dipanggil setelah penyimpanan arsip)
 export async function insertArchiveToOrama(data) {
   if (!archiveIndex) return
@@ -237,19 +181,6 @@ export async function insertArchiveToOrama(data) {
     dbId: String(data.dbId || data.id || ''),
     vector: data.vector
   })
-}
-
-export async function insertDocumentChunksToOrama(chunks) {
-  if (!documentIndex || !Array.isArray(chunks)) return
-  const validChunks = chunks.map((c) => ({
-    docName: String(c.docName || c.doc_name || ''),
-    chunkIndex: Number(c.chunkIndex ?? c.chunk_index ?? 0),
-    content: String(c.content || ''),
-    timestamp: Number(c.timestamp) || Date.now(),
-    dbId: String(c.dbId || c.id || ''),
-    vector: c.vector
-  }))
-  await insertMultiple(documentIndex, validChunks)
 }
 
 export async function deleteArchiveFromOrama(dbId) {
@@ -264,13 +195,6 @@ export async function deleteArchiveFromOrama(dbId) {
   } catch (err) {
     console.error('[Orama] Error deleteArchiveFromOrama:', err)
   }
-}
-
-export async function deleteDocumentFromOrama(docName) {
-  if (!documentIndex) return
-  const res = await search(documentIndex, { term: docName, properties: ['docName'] })
-  const ids = res.hits.map(h => h.id)
-  await removeMultiple(documentIndex, ids)
 }
 
 // ======================== TURN PAIR ORAMA INDEX ========================
@@ -501,92 +425,6 @@ export async function findSimilarMemoryClusters(threshold = 0.60) {
     return clusters
   } catch (err) {
     console.error('[Orama] Error in findSimilarMemoryClusters:', err)
-    return []
-  }
-}
-
-// On-the-fly Orama Hybrid Vector Search for read-document
-export async function searchDocumentWithOrama(rawText, searchQuery, limit = 5) {
-  try {
-    if (!rawText || !searchQuery) return []
-
-    // 1. Chunk text (500 chars with 50 overlap)
-    const chunks = []
-    let start = 0
-    const chunkSize = 500
-    const overlap = 50
-    while (start < rawText.length) {
-      const end = Math.min(start + chunkSize, rawText.length)
-      const chunkStr = rawText.slice(start, end).trim()
-      if (chunkStr) chunks.push(chunkStr)
-      start += chunkSize - overlap
-    }
-
-    if (chunks.length === 0) return []
-
-    // 2. Pre-filter candidate chunks to avoid CPU freeze (Max 20 chunks)
-    const terms = searchQuery.toLowerCase().split(/\s+/).filter((t) => t.length > 2)
-    let candidateChunks = chunks
-    if (chunks.length > 20) {
-      if (terms.length > 0) {
-        const scored = chunks.map((c) => {
-          const lower = c.toLowerCase()
-          let score = 0
-          for (const term of terms) {
-            if (lower.includes(term)) score += 1
-          }
-          return { chunk: c, score }
-        })
-        scored.sort((a, b) => b.score - a.score)
-        candidateChunks = scored.slice(0, 20).map((s) => s.chunk)
-      } else {
-        candidateChunks = chunks.slice(0, 20)
-      }
-    }
-
-    // 3. Generate query vector
-    const queryVector = await generateVector(searchQuery)
-    if (!queryVector || queryVector.length !== VECTOR_SIZE) {
-      return candidateChunks.slice(0, limit)
-    }
-
-    // 4. Create ephemeral in-memory Orama index
-    const tempIndex = await create({
-      schema: {
-        content: 'string',
-        vector: `vector[${VECTOR_SIZE}]`
-      }
-    })
-
-    // 5. Generate embeddings for candidate chunks
-    const chunkVectors = await Promise.all(
-      candidateChunks.map(async (c) => {
-        const v = await generateVector(c)
-        return { content: c, vector: v }
-      })
-    )
-
-    const validDocs = chunkVectors.filter((d) => d.vector && d.vector.length === VECTOR_SIZE)
-    if (validDocs.length === 0) return candidateChunks.slice(0, limit)
-
-    await insertMultiple(tempIndex, validDocs)
-
-    // 6. Execute Hybrid Search
-    const searchRes = await search(tempIndex, {
-      term: searchQuery,
-      mode: 'hybrid',
-      vector: { value: queryVector, property: 'vector' },
-      similarity: 0.25,
-      limit
-    })
-
-    if (searchRes.hits && searchRes.hits.length > 0) {
-      return searchRes.hits.map((h) => h.document.content)
-    }
-
-    return candidateChunks.slice(0, limit)
-  } catch (err) {
-    console.error('[Orama] Ephemeral searchDocumentWithOrama error:', err)
     return []
   }
 }

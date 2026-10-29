@@ -2,6 +2,8 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import Database from 'better-sqlite3'
+import { createSubagentSchema } from '../services/subagents/storage.js'
+import { createMcpStore } from '../services/mcp-store.js'
 import { getCurrentVersion } from '../services/updater.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
@@ -9,10 +11,11 @@ if (!fs.existsSync(CONFIG_DIR)) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true })
 }
 
-const DB_PATH = path.join(CONFIG_DIR, 'mark.db')
+const DB_PATH = process.env.MARK_DB_PATH || path.join(CONFIG_DIR, 'mark.db')
 
 // Inisialisasi Database SQLite
 export const sqlite = new Database(DB_PATH)
+export const mcpStore = createMcpStore(sqlite)
 
 // Optimasi performa SQLite (WAL mode, memory temp store, normal sync)
 sqlite.pragma('journal_mode = WAL')
@@ -100,7 +103,7 @@ sqlite.exec(`
     last_chat_index INTEGER DEFAULT 0
   );
 
-  -- 8. Sub-Agents
+  -- 8. Minibots
   CREATE TABLE IF NOT EXISTS subagents (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -116,7 +119,7 @@ sqlite.exec(`
     updated_at INTEGER
   );
 
-  -- 9. Sub-Agent Messages
+  -- 9. Minibot Messages
   CREATE TABLE IF NOT EXISTS subagent_messages (
     id TEXT PRIMARY KEY,
     subagent_id TEXT NOT NULL,
@@ -199,6 +202,8 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_task_steps_task ON agent_task_steps(task_id);
 `)
 
+createSubagentSchema(sqlite)
+
 // Helper migrasi kolom otomatis jika tabel SQLite sudah ada dari versi sebelumnya
 function ensureTableColumns(tableName, requiredColumns) {
   try {
@@ -259,6 +264,14 @@ ensureTableColumns('subagent_messages', {
 })
 
 ensureTableColumns('agent_tasks', {
+  session_id: 'TEXT',
+  plan_version: 'INTEGER',
+  create_request_id: 'TEXT',
+  request_log: 'TEXT',
+  plan_revisions: 'TEXT',
+  final_answer: 'TEXT',
+  final_message_id: 'TEXT',
+  finalization_status: 'TEXT',
   current_step_index: 'INTEGER DEFAULT 0',
   active_step_id: 'TEXT',
   constraints: 'TEXT',
@@ -271,6 +284,8 @@ ensureTableColumns('agent_tasks', {
 })
 
 ensureTableColumns('agent_task_steps', {
+  verification_proof: 'TEXT',
+  required_artifact: 'INTEGER DEFAULT 0',
   objective: 'TEXT',
   deliverable: 'TEXT',
   acceptance_criteria: 'TEXT',
@@ -360,7 +375,14 @@ class SqliteTable {
       delete res.workspace_root
     }
 
+    const structuredFields =
+      this.tableName === 'agent_tasks'
+        ? ['constraints', 'request_log', 'requestLog', 'plan_revisions', 'planRevisions']
+        : this.tableName === 'agent_task_steps'
+          ? ['acceptance_criteria', 'acceptanceCriteria', 'validation']
+          : null
     for (const key of Object.keys(res)) {
+      if (structuredFields && !structuredFields.includes(key)) continue
       if (typeof res[key] === 'string') {
         const str = res[key].trim()
         if (
@@ -446,6 +468,52 @@ class SqliteTable {
       raw.workspaceRoot = raw.workspaceRoot || null
       delete raw.workspace
       delete raw.workspace_root
+    }
+
+    if (this.tableName === 'sessions' && raw.data != null) {
+      let messages = typeof raw.data === 'string' ? JSON.parse(raw.data) : raw.data
+      if (Array.isArray(messages)) {
+        for (const task of dbStore.agentTasks
+          .getAll()
+          .filter((t) => t.planVersion && String(t.sessionId) === cleanId)) {
+          const steps = dbStore.agentTaskSteps
+            .getAll()
+            .filter((step) => step.taskId === task.id)
+            .sort((a, b) => a.stepIndex - b.stepIndex)
+          messages = messages.map((m) =>
+            m.isPlanSteps && m.taskId === task.id
+              ? {
+                  ...m,
+                  taskStatus: task.status,
+                  plan: steps,
+                  currentStep: task.currentStepIndex,
+                  planVersion: task.planVersion,
+                  artifactRoot: task.artifactRoot
+                }
+              : m
+          )
+          if (
+            task.finalAnswer &&
+            task.finalMessageId &&
+            messages.some((m) => m.taskId === task.id)
+          ) {
+            messages = messages.filter(
+              (m, i, list) =>
+                m.id !== task.finalMessageId || list.findIndex((other) => other.id === m.id) === i
+            )
+            if (!messages.some((m) => m.id === task.finalMessageId))
+              messages.push({
+                id: task.finalMessageId,
+                taskId: task.id,
+                role: 'ai',
+                content: task.finalAnswer,
+                isTaskDone: true,
+                created_at: task.completedAt
+              })
+          }
+        }
+        raw.data = messages
+      }
     }
 
     const record = {
@@ -599,10 +667,15 @@ export function exportFullDatabase() {
     documents: dbStore.documents.getAll(),
     relationships: dbStore.relationships.getAll(),
     subagents: dbStore.subagents.getAll(),
+    subagentJobs: dbStore.subagentJobs.getAll(),
+    subagentRuns: dbStore.subagentRuns.getAll(),
+    subagentInbox: dbStore.subagentInbox.getAll(),
+    subagentReports: dbStore.subagentReports.getAll(),
     subagentMessages: dbStore.subagentMessages.getAll(),
     learnedSkills: dbStore.learnedSkills.getAll(),
     agentTasks: dbStore.agentTasks.getAll(),
-    agentTaskSteps: dbStore.agentTaskSteps.getAll()
+    agentTaskSteps: dbStore.agentTaskSteps.getAll(),
+    mcpAddons: mcpStore.list()
   }
 
   return {
@@ -637,6 +710,14 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
     chat_archives: dbStore.chatArchives,
     documents: dbStore.documents,
     relationships: dbStore.relationships,
+    subagentJobs: dbStore.subagentJobs,
+    subagent_jobs: dbStore.subagentJobs,
+    subagentRuns: dbStore.subagentRuns,
+    subagent_runs: dbStore.subagentRuns,
+    subagentInbox: dbStore.subagentInbox,
+    subagent_inbox: dbStore.subagentInbox,
+    subagentReports: dbStore.subagentReports,
+    subagent_reports: dbStore.subagentReports,
     subagents: dbStore.subagents,
     subagent_messages: dbStore.subagentMessages,
     subagentMessages: dbStore.subagentMessages,
@@ -651,6 +732,14 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
   }
 
   const restoreTransaction = sqlite.transaction(() => {
+    if (Array.isArray(rawTables.mcpAddons)) {
+      mcpStore.replaceAll(rawTables.mcpAddons, overwrite)
+      results.mcpAddons = rawTables.mcpAddons.length
+    }
+    if (overwrite) {
+      for (const name of ['subagentJobs', 'subagentRuns', 'subagentInbox', 'subagentReports'])
+        dbStore[name].clear()
+    }
     for (const [key, items] of Object.entries(rawTables)) {
       const targetStore = tableMapping[key]
       if (targetStore && Array.isArray(items)) {
@@ -698,6 +787,10 @@ export function resetAllExceptConfig() {
     dbStore.chatTurns.clear()
     dbStore.chatArchives.clear()
     dbStore.documents.clear()
+    dbStore.subagentJobs.clear()
+    dbStore.subagentRuns.clear()
+    dbStore.subagentInbox.clear()
+    dbStore.subagentReports.clear()
     dbStore.subagents.clear()
     dbStore.subagentMessages.clear()
     dbStore.learnedSkills.clear()
@@ -740,6 +833,7 @@ export function resetAllExceptConfig() {
 
 export const dbStore = {
   sqlite,
+  mcpAddons: mcpStore,
   config: new SqliteTable('config'),
   memories: new SqliteTable('memories'),
   sessions: new SqliteTable('sessions'),
@@ -748,6 +842,10 @@ export const dbStore = {
   chatArchives: new SqliteTable('chat_archives'),
   documents: new SqliteTable('documents'),
   relationships: new SqliteTable('relationships', 'user_id'),
+  subagentJobs: new SqliteTable('subagent_jobs'),
+  subagentRuns: new SqliteTable('subagent_runs'),
+  subagentInbox: new SqliteTable('subagent_inbox'),
+  subagentReports: new SqliteTable('subagent_reports'),
   subagents: new SqliteTable('subagents'),
   subagentMessages: new SqliteTable('subagent_messages'),
   learnedSkills: new SqliteTable('learned_skills'),

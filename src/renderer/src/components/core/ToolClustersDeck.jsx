@@ -25,6 +25,17 @@ const ToolClustersDeck = ({ activeProcesses = [], dismissProcess, className = ''
         if (webApi && typeof webApi.getPlugins === 'function') {
           const list = await webApi.getPlugins()
           if (isMounted) setPlugins(list || [])
+          if (isMounted) {
+            const unique = []
+            const seen = new Set()
+            for (const p of list || []) {
+              if (p?.name && !seen.has(p.name.toLowerCase())) {
+                seen.add(p.name.toLowerCase())
+                unique.push(p)
+              }
+            }
+            setPlugins(unique)
+          }
         }
       } catch (err) {
         console.error('[ToolClustersDeck] Gagal memuat plugins:', err)

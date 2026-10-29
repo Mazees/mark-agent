@@ -6,6 +6,7 @@ import { taskTools } from './task-tools.js'
 import { googleTools, parsePagination, getGoogleCredentials } from './google-tools.js'
 import { telegramTools } from './telegram-tools.js'
 import { mediaTools } from './media-tools.js'
+import { learnTools } from './learn-tools.js'
 
 export const NATIVE_TOOLS = {
   ...fileTools,
@@ -15,7 +16,8 @@ export const NATIVE_TOOLS = {
   ...taskTools,
   ...googleTools,
   ...telegramTools,
-  ...mediaTools
+  ...mediaTools,
+  ...learnTools
 }
 
 export const getNativeToolsDefinition = () => NATIVE_TOOLS
@@ -29,6 +31,7 @@ export {
   googleTools,
   telegramTools,
   mediaTools,
+  learnTools,
   isDangerousCommand,
   isDangerousKeyCombo,
   parsePagination,

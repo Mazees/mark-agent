@@ -2,7 +2,8 @@ import { getAgentTaskContentHash, validateAgentTaskStepOutput } from './taskStor
 
 // Executor helper hanya menentukan hasil checkpoint; eksekusi tool tetap berada di ReAct loop utama.
 export function buildDurableStepCheckpoint(step, output, maxRetries = 2) {
-  const validation = validateAgentTaskStepOutput(step, output)
+  const result = output && typeof output === 'object' ? output : { summary: String(output || '') }
+  const validation = validateAgentTaskStepOutput(step, result)
   const attempts = step?.attempts || 0
   const canRetry = !validation.isComplete && attempts < maxRetries + 1
 

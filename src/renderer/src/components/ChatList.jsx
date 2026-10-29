@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import { memo, useState } from 'react'
+import SkillUsage from './Chat/SkillUsage'
 import { Copy, Check, Bot, User, ChevronRight } from 'lucide-react'
 import { FaTelegramPlane } from 'react-icons/fa'
 import {
@@ -22,6 +23,10 @@ const ChatList = ({
   role = 'user',
   content = '',
   reasoning = null,
+  skills = [],
+  compactActivity = false,
+  followsProcess = false,
+  isActivityActive = false,
   isThinking = false,
   isIntervention = false,
   isCompacting = false,
@@ -63,6 +68,9 @@ const ChatList = ({
   approvalStatus = 'pending'
 }) => {
   const [isCopied, setIsCopied] = useState(false)
+  const reasoningText =
+    typeof reasoning === 'string' ? reasoning : reasoning ? JSON.stringify(reasoning, null, 2) : ''
+  const hasReasoning = Boolean(reasoningText.trim())
   const resolvedCurrentStep = currentStep !== undefined ? currentStep : plan ? plan.length : 0
 
   if (isCompacting) {
@@ -178,10 +186,10 @@ const ChatList = ({
 
     return (
       <div className="w-full my-4 group animate-[response-fade-in_0.2s_ease-out_forwards]">
-        {/* Header (Nama Sub-Agent & Badge) */}
+        {/* Header (Nama Minibot & Badge) */}
         <div className="flex items-center gap-2 mb-2 px-1 text-[11px] font-semibold opacity-75">
           <Bot className="w-4 h-4 text-white/70" />
-          <span className="text-white font-medium">{sender || 'Sub-Agent'}</span>
+          <span className="text-white font-medium">{sender || 'Minibot'}</span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
         </div>
 
@@ -191,7 +199,7 @@ const ChatList = ({
             <summary className="list-none flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none">
               <div className="flex items-center gap-2 min-w-0 pr-2">
                 <span className="text-xs font-semibold text-white/90 truncate">
-                  Lihat Rangkuman Laporan Dari Sub Agents
+                  Lihat Rangkuman Laporan Dari Minibots
                 </span>
               </div>
               <ChevronRight className="w-4 h-4 text-white/50 transition-transform duration-200 group-open/subreport:rotate-90 shrink-0" />
@@ -296,23 +304,32 @@ const ChatList = ({
           </div>
         )
       ) : (
-        <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
+        <div
+          className={`w-full ${compactActivity ? 'my-1 py-0' : 'my-3 py-1'} ${followsProcess ? 'chat-process-answer' : ''} group animate-[response-fade-in_0.2s_ease-out_forwards]`}
+        >
           {/* Header & Actions */}
-          <div className="flex items-center justify-between mb-2.5 px-0.5">
-            <div className="flex items-center gap-2 text-xs font-medium text-white/70">
-              <Bot className="w-4 h-4 text-primary" />
-              <span className="font-semibold text-white/90">Mark</span>
+          <div className="flex items-center justify-between gap-2 mb-2.5 px-0.5">
+            <div className="flex flex-1 items-center gap-2 min-w-0 text-xs font-medium text-white/70">
+              <Bot className="w-4 h-4 shrink-0 text-primary" />
+              <span className="shrink-0 font-semibold text-white/90">Mark</span>
               {isTelegram && (
                 <span className="badge badge-xs bg-[#229ED9]/15 text-[#229ED9] border-[#229ED9]/30 gap-1 font-mono text-[9px] py-0.5 px-1.5 flex items-center font-normal">
                   <FaTelegramPlane className="w-2.5 h-2.5" /> Telegram Reply
                 </span>
               )}
-              {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
+              {timestamp && (
+                <span
+                  title={timestamp}
+                  className="min-w-0 truncate text-[10px] opacity-50 font-normal"
+                >
+                  {timestamp}
+                </span>
+              )}
             </div>
 
             {/* Action: Copy Button on hover */}
             {content && !isThinking && !isSummarizing && !isSearchingMusic && (
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
+              <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
                 <button
                   onClick={handleCopy}
                   className="btn btn-ghost btn-xs text-white/50 hover:text-white p-1 h-auto min-h-0 flex items-center gap-1 rounded cursor-pointer"
@@ -334,6 +351,22 @@ const ChatList = ({
             )}
           </div>
 
+          {!compactActivity && <SkillUsage skills={skills} />}
+          {hasReasoning && (
+            <details className="group/reasoning mb-3 rounded-lg border border-transparent open:border-white/10 open:bg-white/[0.03]">
+              <summary className="flex list-none items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-normal text-white/55 hover:text-white/80 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                <ChevronRight
+                  aria-hidden="true"
+                  className="w-3 h-3 shrink-0 transition-transform duration-150 group-open/reasoning:rotate-90"
+                />
+                Pemikiran
+              </summary>
+              <div className="chat-reasoning-content max-h-64 overflow-y-auto custom-scrollbar px-3 pb-2.5 pt-1 text-white/65">
+                <MessageBubble isUser={false} content={reasoningText} />
+              </div>
+            </details>
+          )}
+
           {/* Document Content Flow */}
           <div className="w-full text-base-content leading-relaxed">
             {(isThinking &&
@@ -353,7 +386,6 @@ const ChatList = ({
                 isSearchingMusic={isSearchingMusic}
                 content={content}
                 youtubeLink={youtubeLink}
-                reasoning={reasoning}
                 executionSteps={executionSteps}
                 executedTools={executedTools}
               />
@@ -367,12 +399,12 @@ const ChatList = ({
                 <MessageBubble
                   isUser={false}
                   content={cleanAiContent}
-                  reasoning={reasoning}
                   sources={sources}
                   executionSteps={executionSteps}
                   executedTools={executedTools}
                   isPlanConclusion={isPlanConclusion}
-                  isThinking={isThinking}
+                  isThinking={isThinking || isActivityActive}
+                  compactActivity={compactActivity}
                 />
 
                 {/* Opsi Klarifikasi (ElicitationsGroup dari Gemini) */}

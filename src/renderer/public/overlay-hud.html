@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"
+    />
+    <title>Mark Computer Use Overlay</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: 'Segoe UI', sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        pointer-events: none;
+        user-select: none;
+      }
+      .banner {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        max-width: calc(100vw - 32px);
+        padding: 11px 17px;
+        border: 1px solid rgba(100, 235, 149, 0.5);
+        border-radius: 12px;
+        background: rgba(9, 32, 20, 0.96);
+        color: #eefbf2;
+        box-shadow:
+          0 5px 22px rgba(0, 0, 0, 0.25),
+          0 0 18px rgba(34, 197, 94, 0.18);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .activity {
+        width: 7px;
+        height: 7px;
+        flex: none;
+        border-radius: 50%;
+        background: #6cf09a;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      .copy {
+        min-width: 0;
+      }
+      .title {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .detail {
+        max-width: 380px;
+        color: #bdd4c5;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .shortcut {
+        flex: none;
+        padding-left: 12px;
+        border-left: 1px solid #41624b;
+        color: #c9ded1;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .shortcut kbd {
+        font: inherit;
+        color: #f2fff6;
+        font-weight: 600;
+      }
+      .cursor {
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0;
+        will-change: transform;
+      }
+      .pointer-layer {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .cursor svg {
+        display: block;
+        filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.6));
+      }
+      .ripple {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 28px;
+        height: 28px;
+        border: 2px solid #22c55e;
+        border-radius: 50%;
+        opacity: 0;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.45;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .activity {
+          animation: none;
+        }
+      }
+      @media (max-width: 520px) {
+        .banner {
+          gap: 9px;
+          padding: 10px 12px;
+        }
+        .title {
+          font-size: 12px;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+        }
+        .detail {
+          max-width: 180px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner" id="banner" role="status" aria-live="polite">
+      <span class="activity" aria-hidden="true"></span>
+      <div class="copy">
+        <div class="title" id="title">Mark menggunakan komputer</div>
+        <div class="detail" id="detail">Menyiapkan kendali</div>
+      </div>
+      <span class="shortcut"
+        ><span id="lockState">Mouse tersedia</span><br /><kbd>Ctrl+Shift+R</kbd> untuk
+        membatalkan</span
+      >
+    </div>
+    <div class="pointer-layer" aria-hidden="true">
+      <div class="cursor" id="cursor" aria-hidden="true">
+        <svg width="24" height="28" viewBox="0 0 24 28">
+          <path
+            d="M2 2L20 13L12 15L8 23Z"
+            fill="#111"
+            stroke="#fff"
+            stroke-width="1.7"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+      <div class="ripple" id="ripple" aria-hidden="true"></div>
+    </div>
+    <script>
+      ;(() => {
+        const banner = document.getElementById('banner')
+        const title = document.getElementById('title')
+        const detail = document.getElementById('detail')
+        const cursor = document.getElementById('cursor')
+        const ripple = document.getElementById('ripple')
+        const lockState = document.getElementById('lockState')
+        const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+        let active = false
+        let position = { x: 0, y: 0 }
+        const host = window.chrome && window.chrome.webview
+        window.markOverlay = {
+          control(enabled) {
+            active = enabled
+            lockState.textContent = enabled ? 'Mouse dikunci' : 'Mouse tersedia'
+            if (!enabled) cursor.style.opacity = '0'
+            if (enabled) requestAnimationFrame(() => host && host.postMessage('cursor-ready'))
+          },
+          position(value) {
+            const scaleX = innerWidth / value.width
+            const scaleY = innerHeight / value.height
+            position = { x: value.x * scaleX, y: value.y * scaleY }
+            cursor.style.transform =
+              'translate(' + (position.x - 2) + 'px,' + (position.y - 2) + 'px)'
+            cursor.style.opacity = active && value.cursorVisible ? '1' : '0'
+            banner.style.left = (value.monitorLeft + value.monitorWidth / 2) * scaleX + 'px'
+            banner.style.top = value.monitorTop * scaleY + 16 + 'px'
+          },
+          update(value) {
+            const name =
+              value.sessionName && value.sessionName !== 'Mark Utama' ? value.sessionName : 'Mark'
+            title.textContent = name + ' menggunakan komputer'
+            if (value.detail) detail.textContent = value.detail
+            if (value.cursorAction === 'click' && active && !reducedMotion.matches) {
+              ripple.style.left = position.x + 'px'
+              ripple.style.top = position.y + 'px'
+              ripple.getAnimations().forEach((animation) => animation.cancel())
+              ripple.animate(
+                [
+                  { opacity: 0.7, transform: 'translate(-50%,-50%) scale(.4)' },
+                  { opacity: 0, transform: 'translate(-50%,-50%) scale(1.6)' }
+                ],
+                { duration: 250 }
+              )
+            }
+          }
+        }
+        if (host) host.postMessage('ready')
+      })()
+    </script>
+  </body>
+</html>

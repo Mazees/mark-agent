@@ -1,136 +1,72 @@
-# Automasi Peramban & Engine Puppeteer Multi-Sesi
+# Browser di Chat Studio
 
-Dokumen ini membedah arsitektur **Browser Automation Engine** pada sistem **MARK**, merinci isolasi multi-sesi Chromium via `puppeteer-core`, parser DOM dengan penandaan elemen interaktif (`data-mark-id`), injeksi kursor animasi dan overlay pemblokir interaksi, penanganan binding input React 18+, serta penyiaran cuplikan visual (_Holo-Preview Stream_) melalui WebSocket.
+Browser memakai Puppeteer headless dan tampil di panel kanan Chat Studio. Pengguna dapat langsung mengklik, mengetik, scroll, dan membuka alamat pada halaman yang sama dengan Mark, tanpa tombol Ambil alih.
 
----
+Tautan yang meminta tab baru (`target="_blank"` atau nama jendela lain), form dengan target baru, dan `window.open(url)` diarahkan ke halaman Browser yang sama. Tautan dan form tetap memakai navigasi bawaan situs agar handler klik serta metode POST tetap berjalan. Popup yang lolos pengalihan ditutup dan URL HTTP/HTTPS-nya dibuka pada halaman sesi asal melalui antrean browser. Alur yang membutuhkan objek jendela terpisah, misalnya `window.open('')` lalu mengubah isi popup atau komunikasi antarpopup, belum didukung.
 
-## 1. Arsitektur Engine Peramban Terisolasi
+Permintaan umum seperti "buka di browser", "buka website", atau "buka localhost" memakai `browser_use` → `browser-navigate`. Tool membuka panel otomatis; Mark tidak perlu meluncurkan Chrome/Edge desktop atau memakai computer-use untuk menampilkannya. Browser desktop, tab Chrome pengguna, atau plugin seperti chrome-use dipilih jika diminta secara eksplisit. Jika browser bawaan gagal, Mark melaporkan kendala tanpa otomatis beralih ke browser desktop. Minibot memakai browser Puppeteer sesinya sendiri, bukan browser percakapan utama.
 
-MARK menggunakan [`puppeteer-core`](https://github.com/puppeteer/puppeteer) yang dihubungkan langsung ke instalasi Microsoft Edge atau Google Chrome yang sudah ada di Windows, tanpa perlu mengunduh Chromium biner berukuran ratusan megabyte:
+## Sesi dan profil
 
-Implementasi:
+- Main Thread memakai profil browser main; percakapan lain memakai workspace-<id>. Browser Minibot tetap terisolasi.
+- Profil Chromium berada di `~/.config/mark-agent/browser-sessions/<sessionId>`.
+- Cookie login dipertahankan ketika browser ditutup dan dibuka kembali. Startup serta penanganan halaman blokir tidak menghapus cookie profil.
+- Permintaan launch bersamaan pada profil yang sama menunggu satu promise. Kegagalan launch dikembalikan sebagai error; percobaan berikutnya dapat mencoba lagi.
+- Menutup panel menghentikan streaming. Browser tanpa pelanggan, antrean aksi, atau pekerjaan aktif ditutup setelah pemeriksaan idle lima menit. Cookie profil tetap tersimpan.
+- Tool browser-close mengakhiri proses browser sesi tersebut. Akhir giliran chat dan tombol Stop tidak menutup browser.
 
-- Berkas Utama: [`src/main/browser-agent.js`](file:///d:/My%20Project/mark-project/mark/src/main/browser-agent.js)
-- Widget Pratinjau Frontend: [`src/renderer/src/components/BrowserPreviewWidget.jsx`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/components/BrowserPreviewWidget.jsx)
+## Hasil setiap aksi
 
-```mermaid
-flowchart TD
-    subgraph "Sesi Agen (Lead / Sub-Agents)"
-        AgentLead["Lead Agent (Mark)"]
-        SubAgent1["Sub-Agent Alpha"]
-        SubAgent2["Sub-Agent Beta"]
-    end
+Navigasi, klik, ketik, scroll, script, ekstraksi, screenshot, dan download menyertakan observasi DOM halaman setelah aksi. Screenshot tetap membawa gambar untuk model. Hasil script/ekstraksi tetap dicantumkan sebelum observasi; teks hasil yang terlalu panjang dipotong terpisah agar DOM terbaru tetap tersedia.
 
-    subgraph "Browser Agent Engine (browser-agent.js)"
-        MapSessions["Map<sessionId, SessionState>()"]
-        DOMParser["DOM Parser & Element Tagger (Max 80 Elements)"]
-        Overlay["Injeksi Kursor SVG & Blocking Glassmorphism"]
-        Broadcaster["Screenshot Streamer (JPEG Base64)"]
-    end
+Contoh hasil browser-click:
 
-    subgraph "Lingkungan Chromium Fisik"
-        EdgeLead["Edge Session: ~/.config/mark-agent/browser-sessions/main/"]
-        EdgeSA1["Edge Session: ~/.config/mark-agent/browser-sessions/subagent-1/"]
-        EdgeSA2["Edge Session: ~/.config/mark-agent/browser-sessions/subagent-2/"]
-    end
+```text
+Berhasil klik elemen [2].
 
-    subgraph "WebSocket Hub & UI"
-        WSHub["WebSocket Hub (/stream)"]
-        HoloCards["Multi-Card Holo-Preview di WebUI"]
-    end
+[Observasi halaman setelah aksi]
+[URL Aktif]: https://example.com/hasil
+[Title]: Hasil pencarian
 
-    AgentLead -->|"sessionId: main"| MapSessions
-    SubAgent1 -->|"sessionId: subagent-1"| MapSessions
-    SubAgent2 -->|"sessionId: subagent-2"| MapSessions
-
-    MapSessions --> EdgeLead
-    MapSessions --> EdgeSA1
-    MapSessions --> EdgeSA2
-
-    MapSessions --> DOMParser
-    MapSessions --> Overlay
-    MapSessions --> Broadcaster
-
-    Broadcaster -->|"event: browser:preview"| WSHub
-    WSHub --> HoloCards
+== ELEMEN INTERAKTIF (2 ditemukan) ==
+[1] Input (search): "kata pencarian"
+[2] Button: "Cari"
 ```
 
----
+Model menggunakan observasi dan ID elemen terbaru itu langsung. browser-read tersedia untuk perubahan halaman berikutnya atau jika observasi otomatis gagal. browser-search dan browser-fetch tetap mengembalikan daftar sumber/konten tanpa membuka browser. browser-close hanya mengembalikan status penutupan karena halaman sudah berakhir.
 
-## 2. Deteksi Biner Peramban Windows
+Sesudah aksi, engine memberi kesempatan singkat agar perubahan DOM selesai, dengan batas waktu supaya animasi atau halaman yang terus berubah tidak menahan loop. Jika DOM tidak dapat dibaca, tool menyatakan observasi belum tersedia; kegagalan pembacaan tidak mengubah aksi yang sudah berhasil menjadi klaim bahwa pembacaan berhasil.
 
-Fungsi `getEdgePath()` secara berurutan mencari lokasi executable peramban Chromium yang terpasang di sistem Windows:
+## Balasan pengguna dan Stop
 
-1. Microsoft Edge (Program Files x86, Program Files 64-bit, atau Local AppData).
-2. Google Chrome (Program Files, Local AppData).
-3. Brave Browser.
-4. Vivaldi Browser.
-5. Fallback ke nama executable `msedge.exe` pada PATH sistem operasi.
+Pada awal giliran dan setelah intervensi melalui chat, Mark menerima DOM dan screenshot terbaru dari browser yang sudah terbuka. Pengambilan observasi tidak membuka browser baru. Pesan pengguna tetap diteruskan apa adanya, termasuk jika pengguna mengatakan langkahnya belum selesai.
 
----
+Stop dengan ID sesi hanya membatalkan request sesi itu. Stop global tetap tersedia untuk penghentian semua sesi. Browser dan cookie tidak ikut ditutup atau dihapus.
 
-## 3. Penandaan Elemen DOM Interaktif (`data-mark-id`)
+## Antrean dan resize
 
-Model bahasa besar (LLM) tidak dapat secara efisien membaca seluruh pohon DOM HTML yang berukuran megabyte. MARK mengatasi tantangan ini dengan algoritma pemangkasan cerdas:
+Aksi AI, input panel, observasi, dan perubahan viewport memakai antrean per browser. Resize menunggu aksi yang sedang berlangsung selesai. Perubahan viewport memperbarui revisi browser sehingga rencana dari ukuran sebelumnya perlu diamati ulang. Perilaku berbagi halaman tidak menjamin dua input yang saling bertentangan akan menghasilkan tujuan yang sama; setiap aksi tetap dijalankan berurutan.
 
-1. **Penyaringan Elemen Interaktif:** Skrip injeksi memindai elemen-elemen yang dapat berinteraksi dengan pengguna: `<a>`, `<button>`, `<input>`, `<textarea>`, `<select>`, dan elemen dengan atribut `role="button"` atau `onclick`.
-2. **Pemberian Tag ID Unik:** Maksimal 80 elemen teratas yang terlihat (_visible_) pada viewport ditandai dengan atribut `data-mark-id="1"`, `data-mark-id="2"`, dan seterusnya.
-3. **Penyusunan Peta DOM Ringkas:** Elemen-elemen tersebut dirangkum menjadi daftar teks terstruktur yang dikirimkan ke model AI:
-   ```text
-   [1] Input "Cari di Google" (name="q")
-   [2] Button "Telusuri dengan Google"
-   [3] Link "Tentang Kami" (href="/about")
-   ```
-4. **Eksekusi Tindakan Presisi:** Ketika agen ingin mengklik tombol, agen cukup memanggil `browser-click({ markId: 2, sessionId: "subagent-1" })`. Sistem langsung mengeksekusi klik pada elemen dengan atribut `[data-mark-id="2"]` tanpa ambiguitas selektor CSS kompleks.
+## Kursor dan streaming
 
----
+Kursor AI adalah overlay di panel React. Kursor muncul sejak browser terbuka di posisi awal (64, 64), mengikuti target aksi, dan menetap di posisi terakhir. Membuka ulang panel memulihkan posisi kursor sesi tersebut. Perubahan ukuran panel menghitung ulang skala dan area kosong gambar. Pergerakan kursor tidak memerlukan tambahan frame browser.
 
-## 4. Injeksi Kursor Animasi & Overlay Glassmorphism
+Perpindahan target memakai transisi sekitar 180 ms; efek klik sekitar 250 ms. Reduced motion mengurangi animasi. Overlay tidak menerima input dan tidak masuk screenshot model. Eksekusi script dengan target klik yang tidak diketahui tidak menghasilkan animasi target buatan.
 
-Untuk memberikan pengalaman visual transparan bagi pengguna:
+CDP screencast mengirim JPEG hanya kepada pelanggan sesi terkait. Streaming berhenti ketika panel ditutup, halaman Mark tersembunyi, atau client terputus. Jika screencast tidak tersedia, engine memakai screenshot berkala. Frame yang akan menambah antrean koneksi lambat dilewati.
 
-- **Overlay Glassmorphism:** Saat peramban dioperasikan dalam mode non-headless, MARK menyuntikkan layer CSS transparan untuk mencegah pengguna secara tidak sengaja mengklik halaman web saat otomasi agen sedang berlangsung.
-- **Kursor SVG Animasi:** MARK menginjeksi elemen kursor SVG khusus ke dalam DOM halaman web. Setiap kali agen bergerak atau mengklik, kursor virtual berpindah dengan animasi mulus dan menampilkan cincin efek ripple pada koordinat target.
-- **Mode Buka Kunci Pengguna (`browser-ask-user`):** Jika situs web menampilkan verifikasi captcha Cloudflare atau formulir login 2FA yang rumit, agen dapat mengaktifkan mode minta bantuan pengguna. Overlay dilepas sementara, memungkinkan pengguna menyelesaikan captcha secara manual sebelum agen melanjutkan tugasnya.
+Pengiriman ditargetkan maksimum 30 FPS, JPEG kualitas 65, dengan viewport 1280×720. Ini adalah batas pengiriman, bukan jaminan FPS minimum pada setiap situs atau perangkat. Setelah navigasi, screencast dimulai ulang. Jika tidak ada frame baru selama dua detik, watchdog mengambil frame melalui CDP dengan batas waktu tiga detik; kegagalan memulai ulang stream. Pengambilan frame tidak memakai antrean screenshot Puppeteer. Timer pemulihan berhenti bersama subscription terakhir.
 
----
+Browser headless diluncurkan dengan preferensi Chromium `--force-high-performance-gpu` agar memprioritaskan GPU performa tinggi jika tersedia. Tidak ada pemilihan indeks GPU atau pemaksaan backend grafis; pemilihan adapter dan fallback tetap ditangani Chromium, Windows, dan driver. Preferensi ini bukan jaminan dGPU akan dipakai pada semua konfigurasi. Kompresi JPEG dan pengiriman frame tetap dapat memakai CPU.
 
-## 5. Bypass Binding Input React 18+
+Perintah protokol browser dibatasi 15 detik; pembacaan DOM memakai batas tiga detik. Timeout aksi mengembalikan hasil yang belum pasti, bukan mengulangi klik otomatis. Gerakan mouse manual yang masih mengantre digabungkan menjadi posisi terbaru. Input yang tertahan lebih dari tiga detik dilewati agar tidak memicu klik lama setelah browser pulih; pelepasan mouse dan keyboard tetap diteruskan.
 
-Pada situs web modern yang dibangun dengan React 18, Vue, atau Angular, manipulasi langsung nilai input (`element.value = "teks"`) sering kali tidak memicu pembaruan state internal framework (_virtual DOM desynchronization_).
+## Lokasi implementasi
 
-MARK mengimplementasikan bypass khusus pada fungsi `browser-type`:
+- Engine dan profil: src/main/browser-agent.js
+- Antrean, streaming, dan kontrol panel: src/main/browser-panel-runtime.js
+- Route serta perintah WebSocket: src/server/routes/browser.routes.js
+- Tampilan panel dan kursor: src/renderer/src/components/BrowserPanel.jsx
+- Integrasi observasi ke loop AI: src/renderer/src/hooks/agent/useMarkPlan.js
 
-```javascript
-// Memanggil setter native prototype HTMLInputElement
-const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-  window.HTMLInputElement.prototype,
-  'value'
-).set
-nativeInputValueSetter.call(element, text)
-
-// Memicu event input dan change dengan bubbles: true
-element.dispatchEvent(new Event('input', { bubbles: true }))
-element.dispatchEvent(new Event('change', { bubbles: true }))
-```
-
-Hal ini memastikan formulir pencarian dan input login pada aplikasi web modern langsung merespons ketikan agen tanpa gagal validasi.
-
----
-
-## 6. Penyiaran Cuplikan Visual Real-time (Holo-Preview Stream)
-
-Setiap sesi peramban yang sedang aktif secara berkala menangkap cuplikan layar halaman web:
-
-- Format: JPEG terkompresi dengan pengkodean string Base64.
-- Penyiaran: Dipancarkan ke WebSocket Hub `/stream` dengan nama event `browser:preview`.
-- Payload menyertakan `sessionId`, `url`, `title`, dan `previewData` (dataURL gambar).
-- Komponen frontend `BrowserPreviewWidget.jsx` menangkap event ini dan merendernya dalam panel mengambang holografis (_Holo-Card_), memungkinkan pengguna memantau proses penelusuran web secara visual tanpa harus membuka jendela peramban fisik.
-
----
-
-## 7. Manajemen Siklus Hidup & Keamanan Sesi
-
-- **Batas Waktu Idle (5 Menit):** Jika sebuah sesi peramban tidak menerima perintah baru selama 5 menit (`resetSessionIdleTimeout`), peramban akan ditutup secara otomatis untuk menghemat memori RAM komputer.
-- **Batas Waktu Pemuatan (60 Detik):** Setiap navigasi halaman dibatasi batas waktu maksimal 60 detik untuk mencegah agen hang pada halaman web yang lambat.
-- **Pemblokiran Jendela Popup:** Flag Chromium `--disable-popup-blocking=false` dan penanganan event `page.on('popup')` secara otomatis menutup tab liar atau iklan tak diinginkan.
+Browser mendukung HTTP/HTTPS termasuk localhost. Browser memakai sandbox bawaan Chromium; nama fitur ini tidak berarti filesystem, plugin, atau seluruh tool Mark berada di dalam sandbox.

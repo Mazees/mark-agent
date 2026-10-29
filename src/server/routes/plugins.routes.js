@@ -15,7 +15,7 @@ pluginsRouter.get('/plugins', async (_req, res) => {
     const plugins = await loadAllPlugins()
     res.json({ success: true, data: plugins })
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message })
   }
 })
 
@@ -25,7 +25,7 @@ pluginsRouter.post('/plugins/reload', async (_req, res) => {
     wsHub.broadcast('plugins:updated', { timestamp: Date.now() })
     res.json({ success: true, data: plugins })
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message })
   }
 })
 
@@ -35,7 +35,7 @@ pluginsRouter.post('/plugins/save', async (req, res) => {
     wsHub.broadcast('plugins:updated', { name: manifest.name, timestamp: Date.now() })
     res.json({ success: true, data: manifest })
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message })
   }
 })
 
@@ -46,7 +46,7 @@ pluginsRouter.post('/plugins/toggle', async (req, res) => {
     wsHub.broadcast('plugins:updated', { name, isEnabled, timestamp: Date.now() })
     res.json({ success })
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message })
   }
 })
 
@@ -57,7 +57,7 @@ pluginsRouter.delete('/plugins/:name', async (req, res) => {
     wsHub.broadcast('plugins:updated', { name, timestamp: Date.now() })
     res.json({ success })
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message })
   }
 })
 
@@ -67,6 +67,6 @@ pluginsRouter.post('/plugins/execute', async (req, res) => {
     const result = await executePluginAction(action, query)
     res.json(result)
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message })
   }
 })

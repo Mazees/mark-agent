@@ -17,3 +17,9 @@ PLUGIN_SYSTEM_SRS.md
 MARK.exe
 src/renderer/public/robot-simulator.html
 tests/
+graphify-out/
+.agents/
+src/main/pc-agent-scripts/overlay-runtime/MarkOverlay.exe
+src/main/pc-agent-scripts/overlay-runtime/build-id
+docs/computer-use-validation.md
+docs/computer-use-observations.md

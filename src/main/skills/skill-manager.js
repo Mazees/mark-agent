@@ -1,95 +1,15 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import matter from 'gray-matter'
 import AdmZip from 'adm-zip'
+import { getSkillsDirectory, getSkillRoot, resolveSkillFile } from './skill-paths.js'
 
-export function getSkillsDirectory() {
-  const dir = path.join(os.homedir(), 'Documents', 'Mark Skills')
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  return dir
-}
+export { getSkillsDirectory } from './skill-paths.js'
 
-export async function listAllSkills() {
-  const dir = getSkillsDirectory()
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true })
-  const skills = []
-
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const skillFolderPath = path.join(dir, entry.name)
-      const skillMdPath = path.join(skillFolderPath, 'SKILL.md')
-      let name = entry.name
-      let description = 'Custom Mark Skill'
-      let author = 'User'
-      let tags = []
-
-      if (fs.existsSync(skillMdPath)) {
-        try {
-          const raw = await fs.promises.readFile(skillMdPath, 'utf-8')
-          const parsed = matter(raw)
-          if (parsed.data.name) name = parsed.data.name
-          if (parsed.data.description) description = parsed.data.description
-          if (parsed.data.author) author = parsed.data.author
-          if (Array.isArray(parsed.data.tags)) tags = parsed.data.tags
-        } catch (_) {}
-      }
-
-      skills.push({
-        name,
-        folderName: entry.name,
-        description,
-        author,
-        tags,
-        path: skillFolderPath,
-        hasSkillMd: fs.existsSync(skillMdPath)
-      })
-    } else if (entry.name.endsWith('.md')) {
-      // Auto-migrate standalone .md to folder format
-      const cleanName = entry.name.replace('.md', '')
-      const folderPath = path.join(dir, cleanName)
-      const fullPath = path.join(dir, entry.name)
-      if (!fs.existsSync(folderPath)) {
-        await fs.promises.mkdir(folderPath, { recursive: true })
-        const newFilePath = path.join(folderPath, 'SKILL.md')
-        await fs.promises.rename(fullPath, newFilePath)
-      }
-
-      const skillMdPath = path.join(folderPath, 'SKILL.md')
-      let name = cleanName
-      let description = 'Custom Mark Skill'
-      let author = 'User'
-      let tags = []
-      if (fs.existsSync(skillMdPath)) {
-        try {
-          const raw = await fs.promises.readFile(skillMdPath, 'utf-8')
-          const parsed = matter(raw)
-          if (parsed.data.name) name = parsed.data.name
-          if (parsed.data.description) description = parsed.data.description
-          if (parsed.data.author) author = parsed.data.author
-          if (Array.isArray(parsed.data.tags)) tags = parsed.data.tags
-        } catch (_) {}
-      }
-
-      skills.push({
-        name,
-        folderName: cleanName,
-        description,
-        author,
-        tags,
-        path: folderPath,
-        hasSkillMd: true
-      })
-    }
-  }
-  return skills
-}
+export { listFileSkills as listAllSkills } from './skill-registry.js'
 
 export async function getSkillFileTree(skillFolderName) {
-  const dir = getSkillsDirectory()
-  const rootSkillPath = path.join(dir, skillFolderName)
+  const rootSkillPath = getSkillRoot(skillFolderName)
   if (!fs.existsSync(rootSkillPath)) return []
 
   async function walk(currentPath, relativePath = '') {
@@ -127,13 +47,7 @@ export async function getSkillFileTree(skillFolderName) {
 }
 
 export async function readSkillFileContent(skillFolderName, relativeFilePath) {
-  const dir = getSkillsDirectory()
-  const fullPath = path.resolve(dir, skillFolderName, relativeFilePath)
-  const rootSkillPath = path.resolve(dir, skillFolderName)
-
-  if (!fullPath.startsWith(rootSkillPath)) {
-    throw new Error('Akses direktori di luar batas skill dilarang.')
-  }
+  const fullPath = resolveSkillFile(skillFolderName, relativeFilePath)
 
   if (!fs.existsSync(fullPath)) {
     return ''
@@ -142,13 +56,7 @@ export async function readSkillFileContent(skillFolderName, relativeFilePath) {
 }
 
 export async function writeSkillFileContent(skillFolderName, relativeFilePath, content) {
-  const dir = getSkillsDirectory()
-  const fullPath = path.resolve(dir, skillFolderName, relativeFilePath)
-  const rootSkillPath = path.resolve(dir, skillFolderName)
-
-  if (!fullPath.startsWith(rootSkillPath)) {
-    throw new Error('Akses direktori di luar batas skill dilarang.')
-  }
+  const fullPath = resolveSkillFile(skillFolderName, relativeFilePath)
 
   const parentDir = path.dirname(fullPath)
   if (!fs.existsSync(parentDir)) {
@@ -160,13 +68,7 @@ export async function writeSkillFileContent(skillFolderName, relativeFilePath, c
 }
 
 export async function createSkillItem(skillFolderName, relativePath, isFolder = false) {
-  const dir = getSkillsDirectory()
-  const fullPath = path.resolve(dir, skillFolderName, relativePath)
-  const rootSkillPath = path.resolve(dir, skillFolderName)
-
-  if (!fullPath.startsWith(rootSkillPath)) {
-    throw new Error('Akses direktori tidak valid.')
-  }
+  const fullPath = resolveSkillFile(skillFolderName, relativePath)
 
   if (isFolder) {
     if (!fs.existsSync(fullPath)) {
@@ -185,14 +87,8 @@ export async function createSkillItem(skillFolderName, relativePath, isFolder = 
 }
 
 export async function renameSkillItem(skillFolderName, oldRelativePath, newRelativePath) {
-  const dir = getSkillsDirectory()
-  const oldPath = path.resolve(dir, skillFolderName, oldRelativePath)
-  const newPath = path.resolve(dir, skillFolderName, newRelativePath)
-  const rootSkillPath = path.resolve(dir, skillFolderName)
-
-  if (!oldPath.startsWith(rootSkillPath) || !newPath.startsWith(rootSkillPath)) {
-    throw new Error('Akses direktori tidak valid.')
-  }
+  const oldPath = resolveSkillFile(skillFolderName, oldRelativePath)
+  const newPath = resolveSkillFile(skillFolderName, newRelativePath)
 
   if (fs.existsSync(oldPath)) {
     await fs.promises.rename(oldPath, newPath)
@@ -202,13 +98,7 @@ export async function renameSkillItem(skillFolderName, oldRelativePath, newRelat
 }
 
 export async function deleteSkillItem(skillFolderName, relativePath) {
-  const dir = getSkillsDirectory()
-  const fullPath = path.resolve(dir, skillFolderName, relativePath)
-  const rootSkillPath = path.resolve(dir, skillFolderName)
-
-  if (!fullPath.startsWith(rootSkillPath)) {
-    throw new Error('Akses direktori tidak valid.')
-  }
+  const fullPath = resolveSkillFile(skillFolderName, relativePath)
 
   if (fs.existsSync(fullPath)) {
     const stat = await fs.promises.stat(fullPath)
@@ -223,8 +113,7 @@ export async function deleteSkillItem(skillFolderName, relativePath) {
 }
 
 export async function deleteFullSkill(skillFolderName) {
-  const dir = getSkillsDirectory()
-  const fullPath = path.resolve(dir, skillFolderName)
+  const fullPath = getSkillRoot(skillFolderName)
   if (fs.existsSync(fullPath)) {
     await fs.promises.rm(fullPath, { recursive: true, force: true })
     return true
@@ -239,13 +128,17 @@ export async function installSkillPackage(zipBuffer, overrideName = null) {
 
   let detectedName = overrideName
   if (!detectedName) {
-    const skillEntry = entries.find((e) => e.entryName === 'SKILL.md' || e.entryName.endsWith('/SKILL.md'))
+    const skillEntry = entries.find(
+      (e) => e.entryName === 'SKILL.md' || e.entryName.endsWith('/SKILL.md')
+    )
     if (skillEntry) {
       try {
         const text = skillEntry.getData().toString('utf-8')
         const parsed = matter(text)
         if (parsed.data.name) detectedName = parsed.data.name
-      } catch (_) {}
+      } catch {
+        detectedName = null
+      }
     }
   }
 

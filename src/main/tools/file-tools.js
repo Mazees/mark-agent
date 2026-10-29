@@ -5,7 +5,7 @@ import { exec } from 'child_process'
 import util from 'util'
 import { fileURLToPath } from 'url'
 import { validateFileSyntax } from '../syntax-validator.js'
-import { dbStore } from '../../server/memory/db-store.js'
+import { skillService } from '../skills/skill-service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -15,62 +15,24 @@ export const fileTools = {
   'read-skill': {
     needsApproval: false,
     handler: async (args) => {
-      const skillName = (
-        typeof args === 'object' && args !== null
-          ? args.skill_name || args.name
-          : String(args || '')
-      ).trim()
-      if (!skillName) return { success: false, error: 'Nama skill kosong' }
-      const skillDir = path.join(os.homedir(), 'Documents', 'Mark Skills')
-
-      // 1. Cek jika folder skill berisi SKILL.md
-      const folderSkillPath = path.join(skillDir, skillName, 'SKILL.md')
-      if (fs.existsSync(folderSkillPath)) {
-        const content = await fs.promises.readFile(folderSkillPath, 'utf8')
-        return { success: true, content, data: content }
-      }
-
-      // 2. Cek jika file standalone .md
-      const fileSkillPath = path.join(skillDir, `${skillName}.md`)
-      if (fs.existsSync(fileSkillPath)) {
-        const content = await fs.promises.readFile(fileSkillPath, 'utf8')
-        return { success: true, content, data: content }
-      }
-
-      // 3. Cek direct file path jika query mengandung sub-path
-      const directPath = path.join(skillDir, skillName)
-      if (fs.existsSync(directPath) && !fs.statSync(directPath).isDirectory()) {
-        const content = await fs.promises.readFile(directPath, 'utf8')
-        return { success: true, content, data: content }
-      }
-
-      // 4. Fallback: Cek apakah tersimpan di SQLite database learned_skills
-      if (dbStore && dbStore.learnedSkills) {
-        try {
-          const allLearned = dbStore.learnedSkills.getAll()
-          const matched = allLearned.find(
-            (s) =>
-              s.name?.toLowerCase() === skillName.toLowerCase() ||
-              s.id?.toLowerCase() === skillName.toLowerCase()
-          )
-          if (matched && matched.content) {
-            return {
-              success: true,
-              content: matched.content,
-              data: matched.content,
-              source: 'learned_skills_db'
-            }
-          }
-        } catch (_) {}
-      }
-
-      return {
-        success: false,
-        error: `Skill '${skillName}' tidak ditemukan di folder 'Documents/Mark Skills' maupun di basis data Learned Skills.`
+      try {
+        const skill = await skillService.read(args.skill_id || args.skill_name, args.relative_path)
+        return { success: true, data: skill, skill }
+      } catch (error) {
+        return { success: false, error: error.message }
       }
     }
   },
-
+  'search-skills': {
+    needsApproval: false,
+    handler: async (args) => {
+      try {
+        return { success: true, data: await skillService.search(args.query, args.limit) }
+      } catch (error) {
+        return { success: false, error: error.message }
+      }
+    }
+  },
   'read-file': {
     needsApproval: false,
     handler: async (args, config) => {

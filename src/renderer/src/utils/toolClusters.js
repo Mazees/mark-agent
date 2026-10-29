@@ -35,16 +35,30 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
       : webApi._groupToolsCache?.schema || {}
   const clusters = []
   const hasDynamicPlugins = Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0
+  const seenClusterKeys = new Set()
 
   let currentRadius = 170
   let isClockwise = true
 
   // 1. Ambil seluruh tool groups dari groupToolsSchema
   Object.entries(effectiveSchema).forEach(([groupKey, groupData]) => {
-    // Jika custom_plugins memiliki dynamic plugin terpasang, tangani terpisah di bawah
-    if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
+    const normalizedKey = groupKey.toLowerCase()
 
-    const clusterName = formatClusterName(groupKey)
+    const isPluginGroup =
+      groupData?.kind === 'plugin' ||
+      (hasDynamicPlugins &&
+        dynamicPlugins.some((p) => (p?.name || '').toLowerCase() === normalizedKey))
+
+    if (isPluginGroup && hasDynamicPlugins) return
+    if (groupKey === 'custom_plugins' && hasDynamicPlugins) return
+    if (seenClusterKeys.has(normalizedKey)) return
+
+    seenClusterKeys.add(normalizedKey)
+    if (groupData?.displayName) {
+      seenClusterKeys.add(groupData.displayName.toLowerCase())
+    }
+
+    const clusterName = groupData?.displayName || formatClusterName(groupKey)
     const clusterColor = getDeterministicColor(groupKey)
     const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
     isClockwise = !isClockwise
@@ -107,6 +121,7 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
       item.clusterKey = 'subagents'
       subagentTools.push(item)
     } else if (
+      fn.name === 'read-document' ||
       fn.name.includes('file') ||
       fn.name.includes('replace') ||
       fn.name.includes('list-dir') ||
@@ -129,13 +144,17 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
   })
 
   const additionalCoreGroups = [
-    { key: 'subagents', name: 'Sub-Agents', tools: subagentTools, size: 8 },
+    { key: 'subagents', name: 'Minibots', tools: subagentTools, size: 8 },
     { key: 'file_system', name: 'File System', tools: fileTools, size: 7 },
     { key: 'memory_rag', name: 'Memory RAG', tools: memoryTools, size: 6.5 },
     { key: 'core_system', name: 'Core System', tools: coreControlTools, size: 6.5 }
   ]
 
   additionalCoreGroups.forEach((cg) => {
+    const normalizedKey = cg.key.toLowerCase()
+    if (seenClusterKeys.has(normalizedKey)) return
+    seenClusterKeys.add(normalizedKey)
+
     if (cg.tools.length > 0) {
       const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
       isClockwise = !isClockwise
@@ -156,18 +175,27 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
 
   // 3. Tambahkan Custom Plugins jika ada
   if (Array.isArray(dynamicPlugins) && dynamicPlugins.length > 0) {
-    const pluginTools = []
     dynamicPlugins.forEach((p) => {
+      if (!p || !p.name) return
+      const pKey = p.name.toLowerCase()
+      const dispNameKey = (p.displayName || '').toLowerCase()
+
+      if (seenClusterKeys.has(pKey) || (dispNameKey && seenClusterKeys.has(dispNameKey))) {
+        return
+      }
+      seenClusterKeys.add(pKey)
+      if (dispNameKey) seenClusterKeys.add(dispNameKey)
+
       if (p.isEnabled !== false && Array.isArray(p.actions)) {
-        p.actions.forEach((act) => {
+        const pluginTools = p.actions.map((act) => {
           const actionName = act.name
           const fullPrefix = `plugin-${p.name}-${actionName}`
-          pluginTools.push({
+          return {
             id: `plugin-tool-${p.name}-${actionName}`,
-            name: `${p.name}/${actionName}`,
+            name: actionName,
             label: actionName,
             description: act.description || p.description || `Custom plugin ${p.name}`,
-            clusterKey: 'custom_plugins',
+            clusterKey: p.name,
             color: getDeterministicColor(`${p.name}-${actionName}`),
             matchTools: [
               actionName,
@@ -176,25 +204,25 @@ export function buildCompleteToolClusters(dynamicPlugins = [], groupToolsSchema 
               `plugin_${p.name}_${actionName}`,
               `plugin_${actionName}`
             ]
-          })
+          }
         })
+
+        if (pluginTools.length > 0) {
+          const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
+          clusters.push({
+            id: `cluster-${p.name}`,
+            key: p.name,
+            name: p.displayName || p.name,
+            color: getDeterministicColor(p.name),
+            radius: currentRadius,
+            speed: speed || -0.0002,
+            size: 7,
+            tools: pluginTools
+          })
+          currentRadius += 55
+        }
       }
     })
-
-    if (pluginTools.length > 0) {
-      const speed = (0.0008 - clusters.length * 0.00005) * (isClockwise ? 1 : -1)
-      clusters.push({
-        id: 'cluster-custom_plugins',
-        key: 'custom_plugins',
-        name: 'Custom Plugins',
-        color: getDeterministicColor('custom_plugins'),
-        radius: currentRadius,
-        speed: speed || -0.0002,
-        size: 7,
-        tools: pluginTools
-      })
-      currentRadius += 55
-    }
   }
 
   return clusters

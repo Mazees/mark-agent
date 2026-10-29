@@ -45,6 +45,12 @@ let abortGeneration = 0
 
 export const activeAbortControllers = new Set()
 
+export const abortLeadFetches = () => {
+  for (const controller of activeAbortControllers) {
+    if (controller.markScope !== 'subagent') controller.abort(new Error('User Aborted'))
+  }
+}
+
 export const abortAllFetches = () => {
   abortGeneration += 1
   activeAbortControllers.forEach((controller) => {

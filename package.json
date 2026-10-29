@@ -1,6 +1,6 @@
 {
   "name": "@mazees/mark",
-  "version": "5.0.8",
+  "version": "5.5.0",
   "description": "Mark: Metacognitive Artificial Relational Knowledge AI",
   "main": "./src/server/index.js",
   "type": "module",
@@ -28,7 +28,8 @@
     "dev:server": "node src/server/index.js --dev",
     "dev:ui": "vite",
     "build": "vite build",
-    "build:ui": "vite build",
+    "build:ui": "node scripts/build-computer-overlay.mjs && vite build",
+    "build:computer-overlay": "node scripts/build-computer-overlay.mjs",
     "prepublishOnly": "npm run build:ui",
     "cli": "node bin/mark.js"
   },
@@ -41,6 +42,10 @@
     "index.html",
     "LICENSE",
     "README.md",
+    "docs/chrome-bridge.md",
+    "scripts/build-computer-overlay.mjs",
+    "src/main/pc-agent-scripts/overlay-runtime/MarkOverlay.exe",
+    "src/main/pc-agent-scripts/overlay-runtime/build-id",
     "package.json"
   ],
   "dependencies": {
@@ -68,7 +73,7 @@
     "katex": "^0.18.9",
     "lucide-react": "^1.25.0",
     "mammoth": "^1.12.0",
-    "msedge-tts": "^2.0.4",
+    "msedge-tts": "^2.1.0",
     "open": "^11.0.0",
     "openai": "^6.17.0",
     "pdf-parse": "^2.4.5",
