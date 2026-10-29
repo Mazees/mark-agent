@@ -1,9 +1,24 @@
 export const guideCategories = [
-  { id: 'start', title: 'Mulai menggunakan Mark' },
-  { id: 'work', title: 'Pekerjaan dan otomasi' },
-  { id: 'personal', title: 'Interaksi dan memori' },
-  { id: 'extend', title: 'Add-ons dan ekstensi' },
-  { id: 'manage', title: 'Pengaturan dan bantuan' }
+  {
+    id: 'start',
+    title: 'Mulai menggunakan Mark'
+  },
+  {
+    id: 'work',
+    title: 'Pekerjaan dan otomasi'
+  },
+  {
+    id: 'personal',
+    title: 'Interaksi dan memori'
+  },
+  {
+    id: 'extend',
+    title: 'Add-ons dan ekstensi'
+  },
+  {
+    id: 'manage',
+    title: 'Pengaturan dan bantuan'
+  }
 ]
 
 export const guideArticles = [
@@ -11,30 +26,36 @@ export const guideArticles = [
     id: 'overview',
     category: 'start',
     title: 'Mengenal Mark',
-    summary: 'Asisten AI di komputer Anda untuk percakapan, pekerjaan, dan otomasi.',
+    summary:
+      'Mark adalah asisten AI yang berjalan di komputer Anda untuk membantu percakapan, pengolahan informasi, dan pekerjaan yang memerlukan tindakan pada berkas, browser, atau aplikasi.',
     keywords: 'beranda avatar companion menu studio fitur kemampuan',
     sections: [
       {
-        title: 'Beranda dan Chat Studio',
+        title: 'Apa yang dapat dilakukan Mark?',
         paragraphs: [
-          'Beranda menampilkan avatar Mark, respons langsung, aktivitas tool, dan kontrol percakapan. Chat Studio menyediakan riwayat yang lebih luas, daftar sesi, workspace, dan panel Browser. Keduanya memakai mesin AI dan penyimpanan yang sama.'
-        ],
-        links: [{ label: 'Buka Chat Studio', to: '/chat' }]
-      },
-      {
-        title: 'Kemampuan utama',
-        bullets: [
-          'Menjawab pertanyaan, membantu menulis, membaca dokumen, dan menelusuri web.',
-          'Membaca serta mengubah berkas, menjalankan perintah, membantu coding, dan memeriksa Git.',
-          'Mengoperasikan browser bawaan, tab Chrome pilihan, atau aplikasi Windows.',
-          'Membagi pekerjaan ke Minibots dan menyusun pekerjaan bertahap dengan Task Workflow.',
-          'Mengelola memori dan skill, memakai suara atau kamera, memutar musik, serta terhubung ke Google Workspace dan Telegram.'
+          'Mark menerima instruksi melalui percakapan, kemudian menggunakan model AI untuk memahami tujuan dan menentukan langkah yang diperlukan. Untuk pertanyaan biasa, Mark dapat langsung menyusun jawaban. Ketika pekerjaan membutuhkan akses ke berkas, situs, atau aplikasi, Mark menggunakan tool yang tersedia dan membaca hasilnya sebelum melanjutkan.',
+          'Anda dapat meminta bantuan menulis, merangkum dokumen, mencari informasi, memperbaiki kode, atau mengoperasikan halaman web. Beberapa pekerjaan memerlukan layanan yang sudah dihubungkan, model yang sesuai, atau persetujuan tindakan. Karena itu, kemampuan Mark mengikuti konfigurasi dan akses yang tersedia pada komputer Anda.'
         ]
       },
       {
-        title: 'Kebutuhan setiap fitur',
+        title: 'Beranda dan Chat Studio',
         paragraphs: [
-          'Sebagian fitur bekerja dengan layanan lokal. Pencarian web, provider online, musik YouTube, dan integrasi layanan memerlukan internet. Hasil kerja bergantung pada kemampuan model, izin, perangkat, serta layanan yang sudah dihubungkan. Mark dapat salah; periksa hasil sebelum digunakan.'
+          'Beranda merupakan tempat untuk mulai berbicara dengan Mark. Anda dapat mengajukan pertanyaan, menyampaikan permintaan, dan melihat respons serta aktivitasnya dari halaman yang sama. Halaman ini juga menampilkan avatar dan kontrol percakapan untuk interaksi sehari-hari.',
+          'Chat Studio menyediakan ruang kerja dengan daftar sesi, pilihan workspace, dan panel Browser. Gunakan sesi terpisah untuk membahas pekerjaan yang berbeda, misalnya riset dan pengembangan aplikasi. Dengan memilih folder proyek sebagai workspace, Anda memberi Mark konteks lokasi berkas yang akan dikerjakan.',
+          'Kedua halaman menggunakan mesin AI dan penyimpanan Mark yang sama. Pilih Beranda untuk memulai interaksi dengan cepat, atau buka Chat Studio ketika Anda perlu mengelola percakapan dan mengikuti pekerjaan yang melibatkan proyek atau browser.'
+        ],
+        links: [
+          {
+            label: 'Buka Chat Studio',
+            to: '/chat'
+          }
+        ]
+      },
+      {
+        title: 'Sebelum mulai bekerja',
+        paragraphs: [
+          'Pilih provider AI dan model melalui Pengaturan, lalu uji dengan mengirim pertanyaan singkat. Setelah koneksi berhasil, coba pekerjaan sederhana seperti meminta ringkasan teks. Untuk pekerjaan berkas, pilih workspace dan jelaskan hasil yang ingin dibuat.',
+          'Pencarian web, layanan akun, musik YouTube, dan provider online memerlukan internet. Analisis gambar memerlukan model yang mendukung vision. Periksa kembali hasil penting, terutama sebelum menerapkan perubahan atau menggunakannya sebagai dasar keputusan.'
         ]
       }
     ],
@@ -44,31 +65,40 @@ export const guideArticles = [
     id: 'getting-started',
     category: 'start',
     title: 'Pengaturan awal dan provider AI',
-    summary: 'Pilih Gemini Web, DeepSeek Web, LM Studio, atau endpoint API sendiri.',
+    summary:
+      'Provider AI adalah layanan atau server model yang digunakan Mark untuk memahami instruksi dan menyusun jawaban. Anda dapat memilih layanan web, model lokal, atau API yang sesuai dengan kebutuhan.',
     keywords: 'instalasi setup model custom API key localhost internet offline',
     sections: [
       {
-        title: 'Mulai dari provider AI',
-        steps: [
-          'Buka Pengaturan Mark, lalu pilih bagian AI.',
-          'Pilih provider dan lengkapi kolom yang muncul.',
-          'Simpan pengaturan, lalu kirim pertanyaan singkat untuk memeriksa koneksi.'
+        title: 'Menghubungkan provider AI',
+        paragraphs: [
+          'Pengaturan provider menentukan ke mana Mark mengirim permintaan AI. Jika menggunakan model lokal, server model harus berjalan di komputer Anda. Jika menggunakan layanan online, koneksi internet dan kredensial yang diminta harus tersedia.',
+          'Setelah menyimpan konfigurasi, kirim pertanyaan singkat untuk menguji koneksi. Jika permintaan gagal, periksa pesan kesalahan dan cocokkan kembali alamat server, nama model, atau kredensialnya.'
         ],
-        links: [{ label: 'Buka Pengaturan', to: '/config' }]
-      },
-      {
-        title: 'Pilihan yang tersedia',
-        bullets: [
-          'Gemini Web: pilih model dari daftar. Jalur ini tidak meminta API key, memerlukan internet, dan saat ini tidak mendukung input gambar.',
-          'DeepSeek Web: masukkan user token sesuai petunjuk di Pengaturan. Integrasi memakai sesi web, bukan API resmi; akses dapat dibatasi layanan.',
-          'LM Studio: jalankan server lokal dan muat model yang akan digunakan, lalu isi nama model di Mark.',
-          'Custom API: isi URL lengkap berakhiran /chat/completions, ID model, serta API key jika diperlukan. Endpoint dapat berupa layanan lokal atau online yang kompatibel.'
+        steps: [
+          'Buka Pengaturan Mark dan pilih bagian AI.',
+          'Pilih provider, lalu lengkapi kolom konfigurasi yang ditampilkan.',
+          'Simpan perubahan dan kirim pesan percobaan.'
+        ],
+        links: [
+          {
+            label: 'Buka Pengaturan',
+            to: '/config'
+          }
         ]
       },
       {
-        title: 'Dukungan gambar',
+        title: 'Memilih layanan atau model lokal',
         paragraphs: [
-          'Kemampuan membaca gambar mengikuti model dan provider yang dipakai. Memilih model teks saja tidak mengaktifkan vision. Jika gambar tidak dapat dianalisis, gunakan model yang mendukungnya atau kirim teks yang perlu diperiksa.'
+          'Gemini Web menggunakan jalur layanan web dan tidak meminta API key pada konfigurasi ini. DeepSeek Web menggunakan user token sesuai petunjuk Pengaturan. Keduanya memerlukan internet; integrasi sesi web dapat terpengaruh perubahan atau pembatasan layanan.',
+          'Untuk LM Studio, muat model dan jalankan server lokal terlebih dahulu. Pilihan Custom API digunakan untuk endpoint yang kompatibel dengan format OpenAI: masukkan URL lengkap berakhiran /chat/completions, ID model, dan API key jika server memerlukannya. Endpoint tersebut dapat berada di komputer lokal maupun layanan online.'
+        ]
+      },
+      {
+        title: 'Memeriksa dukungan gambar',
+        paragraphs: [
+          'Dukungan gambar ditentukan oleh model dan jalur provider yang digunakan. Model teks tidak dapat membaca lampiran gambar hanya karena gambar berhasil ditambahkan ke chat. Jalur Gemini Web yang didokumentasikan di Mark saat ini juga belum mendukung input gambar.',
+          'Jika ingin meminta analisis screenshot atau kamera, pilih model dan provider yang mendukung vision. Bila dukungan tersebut belum tersedia, sertakan teks pesan kesalahan atau informasi lain yang dapat dibaca melalui percakapan.'
         ]
       }
     ],
@@ -78,36 +108,39 @@ export const guideArticles = [
     id: 'chat',
     category: 'start',
     title: 'Percakapan, lampiran, dan konteks',
-    summary: 'Kirim instruksi, sertakan berkas, dan pilih konteks yang tepat.',
+    summary:
+      'Percakapan adalah tempat Anda memberi instruksi, menyertakan bahan, dan mengikuti hasil pekerjaan Mark. Pesan dapat dilengkapi lampiran, pilihan tool, atau skill agar konteksnya lebih jelas.',
     keywords:
       'chat studio pesan proses aktivitas pemikiran lampiran paste drag drop mention tag @ file slash stop context token',
     sections: [
       {
-        title: 'Tujuan dan hasil yang diinginkan',
+        title: 'Menulis permintaan yang jelas',
         paragraphs: [
-          'Jelaskan pekerjaan, lokasi berkas, batasan, dan bentuk hasil yang Anda butuhkan. Untuk tugas besar, sebutkan cara memeriksa keberhasilannya. Anda dapat memberi arahan tambahan saat pekerjaan berlangsung.'
+          'Jelaskan tujuan pekerjaan terlebih dahulu, kemudian sertakan bahan atau lokasi yang perlu digunakan. Untuk tugas berkas, sebutkan folder atau pilih workspace. Jika ada batasan, seperti hanya membaca kode atau tidak mengirim email, tuliskan bersama permintaan awal.',
+          'Sebutkan bentuk hasil yang diharapkan dan cara memeriksanya. Misalnya, perbaikan aplikasi dapat diakhiri dengan build, sedangkan riset dapat menghasilkan ringkasan beserta sumber. Arahan tambahan dapat diberikan saat Mark bekerja jika kebutuhan Anda berubah.'
         ],
         example:
-          'Periksa proyek pada workspace ini. Temukan penyebab build gagal, perbaiki, lalu jalankan build untuk memeriksa hasilnya.'
+          'Periksa proyek pada workspace ini, temukan penyebab build gagal, lalu perbaiki dan jalankan build kembali. Jelaskan perubahan serta hasil pemeriksaannya.'
       },
       {
-        title: 'Lampiran dan penandaan',
-        bullets: [
-          'Gunakan tombol lampiran atau seret berkas ke kolom pesan. Gambar dari clipboard juga dapat ditempelkan.',
-          'Ketik @ untuk mencari berkas workspace atau memilih grup tool dan plugin aktif. Pilih saran yang muncul agar konteksnya dikenali.',
-          'Ketik / untuk memilih skill. Skill memberi petunjuk kerja kepada AI; kemampuan mengeksekusi tetap berasal dari tool yang tersedia.'
+        title: 'Menyertakan lampiran, tool, dan skill',
+        paragraphs: [
+          'Gunakan tombol lampiran atau seret berkas ke kolom pesan untuk menyertakan bahan yang ingin diperiksa. Gambar dari clipboard juga dapat ditempelkan. Jelaskan bagian yang ingin ditinjau agar Mark memahami hubungan lampiran dengan permintaan Anda.',
+          'Ketik @ untuk memilih berkas workspace atau grup tool dan plugin aktif dari saran yang muncul. Ketik / untuk memilih skill, lalu tambahkan instruksi pekerjaan. Skill memberikan panduan kerja, sedangkan tool menyediakan tindakan yang dapat dijalankan Mark.'
         ]
       },
       {
-        title: 'Membaca proses pekerjaan',
+        title: 'Mengikuti aktivitas dan hasil',
         paragraphs: [
-          'Bagian Proses memuat pesan kemajuan dan Aktivitas yang dapat dibuka untuk melihat pemanggilan tool. Detail Pemikiran tersedia jika respons model menyertakannya. Jawaban yang hanya berisi hasil akhir tidak memerlukan daftar langkah. Hasil visual atau berkas dapat ditampilkan sebagai pratinjau atau tautan artifact.'
+          'Bagian Proses menampilkan pesan kemajuan selama pekerjaan berlangsung. Buka Aktivitas untuk melihat tool yang digunakan, input yang dikirim, dan hasil yang dikembalikan. Bagian Pemikiran dapat tersedia jika model menyertakannya dalam respons.',
+          'Jawaban akhir merangkum hasil pekerjaan untuk Anda. Jika ada gambar atau berkas keluaran, hasilnya dapat disertakan sebagai pratinjau atau tautan. Pertanyaan yang langsung dijawab tanpa tool tidak selalu memiliki bagian Proses.'
         ]
       },
       {
-        title: 'Menghentikan dan melanjutkan',
+        title: 'Menghentikan atau mengarahkan ulang pekerjaan',
         paragraphs: [
-          'Gunakan tombol penghentian pada area pesan untuk membatalkan proses aktif, lalu berikan arahan baru. Penghentian tidak membatalkan perubahan yang sudah terjadi pada berkas, halaman web, atau layanan lain. Konteks dapat diringkas ketika percakapan panjang; gunakan berkas dan sasaran yang jelas untuk melanjutkan pekerjaan.'
+          'Gunakan tombol penghentian pada area pesan jika Anda ingin membatalkan proses aktif. Setelah itu, tuliskan arahan baru dan sebutkan bagian pekerjaan yang ingin dilanjutkan atau diubah. Perubahan yang sudah diterapkan pada berkas atau layanan tidak otomatis diurungkan.',
+          'Pada percakapan panjang, konteks dapat diringkas agar pekerjaan dapat dilanjutkan. Gunakan nama berkas, lokasi, dan tujuan yang jelas ketika kembali membahas pekerjaan lama, terutama jika kondisi proyek sudah berubah.'
         ]
       }
     ],
@@ -117,29 +150,36 @@ export const guideArticles = [
     id: 'workspaces',
     category: 'start',
     title: 'Sesi dan workspace',
-    summary: 'Pisahkan percakapan umum dan pekerjaan berdasarkan folder proyek.',
+    summary:
+      'Sesi menyimpan percakapan untuk suatu pembahasan, sedangkan workspace menentukan folder yang menjadi konteks pekerjaan. Keduanya membantu Anda mengatur proyek dan melanjutkan pekerjaan sebelumnya.',
     keywords:
       'main thread percakapan umum tambah folder sidebar editor judul sesi hapus workspace @workspace',
     sections: [
       {
-        title: 'Percakapan umum dan folder proyek',
+        title: 'Hubungan sesi dan workspace',
         paragraphs: [
-          'Main Thread memakai folder Documents/Mark Workspace dan selalu berada dalam kelompok Percakapan Umum. Folder Main Thread tidak dapat diganti. Sesi lain dapat memakai folder proyek sendiri sehingga pencarian berkas dan tool mengikuti lokasi kerja sesi tersebut. Workspace memberi konteks kerja, bukan pembatas akses filesystem seperti sandbox.'
+          'Satu sesi berisi percakapan dan riwayat pekerjaan yang dapat dibuka kembali melalui Chat Studio. Beberapa sesi dapat memakai workspace yang sama, sehingga pembahasan proyek dapat dipisahkan tanpa harus memilih folder lain.',
+          'Main Thread berada pada kelompok Percakapan Umum dan menggunakan Documents/Mark Workspace. Folder sesi utama ini tidak dapat diganti. Sesi lain dapat dikaitkan dengan folder proyek pilihan Anda; folder tersebut menjadi acuan kerja, tetapi bukan pembatas akses filesystem seperti sandbox.'
         ]
       },
       {
-        title: 'Membuat dan mengatur sesi',
-        steps: [
-          'Buka Chat Studio. Gunakan Percakapan Baru untuk sesi umum, atau Tambah Workspace untuk memilih folder dan membuat sesi di dalamnya.',
-          'Gunakan tombol tambah pada sebuah kelompok untuk membuat sesi dengan folder yang sama.',
-          'Buka pengaturan sesi untuk mengubah judul atau workspace, lalu Simpan. Workspace tidak dapat diganti ketika sesi sedang berjalan.'
+        title: 'Membuat dan mengatur percakapan',
+        paragraphs: [
+          'Gunakan Percakapan Baru untuk memulai sesi umum atau Tambah Workspace untuk memilih folder proyek. Tombol tambah pada kelompok workspace membuat sesi baru dengan folder yang sama. Berikan judul yang menggambarkan pekerjaan agar sesi mudah ditemukan kembali.',
+          'Judul dan workspace sesi dapat diatur melalui pengaturan sesi. Simpan setelah mengubahnya. Workspace tidak dapat diganti ketika sesi sedang menjalankan pekerjaan, agar lokasi kerja tidak berpindah di tengah proses.'
         ],
-        links: [{ label: 'Buka Chat Studio', to: '/chat' }]
+        links: [
+          {
+            label: 'Buka Chat Studio',
+            to: '/chat'
+          }
+        ]
       },
       {
-        title: 'Sidebar dan penghapusan',
+        title: 'Mencari dan menghapus sesi',
         paragraphs: [
-          'Sidebar dapat dilipat dan memiliki pencarian sesi. Membuka panel Browser memberi lebih banyak ruang dengan melipat sidebar. Menghapus sesi melalui konfirmasi hanya menghapus percakapan tersebut; folder proyek dan berkas di dalamnya tidak ikut dihapus.'
+          'Sidebar menyediakan pencarian dan pengelompokan sesi. Anda dapat melipatnya ketika membutuhkan ruang lebih luas untuk percakapan atau Browser. Membuka panel Browser juga dapat membuat sidebar terlipat untuk menyesuaikan ruang yang tersedia.',
+          'Penghapusan sesi memerlukan konfirmasi dan menghapus percakapan yang dipilih. Folder proyek serta berkas hasil pekerjaan tetap berada di disk. Jika Anda juga ingin menghapus berkas proyek, lakukan sebagai tindakan terpisah dengan target yang jelas.'
         ]
       }
     ],
@@ -149,32 +189,37 @@ export const guideArticles = [
     id: 'agent',
     category: 'work',
     title: 'Cara kerja agen dan Super Effort',
-    summary: 'Pahami hubungan instruksi, tool, hasil pemeriksaan, dan jawaban akhir.',
+    summary:
+      'Mark bekerja sebagai agen yang dapat memilih tindakan, menjalankan tool, dan menilai hasilnya untuk menyelesaikan permintaan. Super Effort mengatur ketekunan kerja, sedangkan Auto Mode berkaitan dengan persetujuan tindakan.',
     keywords:
       'ReAct reasoning thought action observation read-tools routing auto mode rencana verifikasi',
     sections: [
       {
-        title: 'Dari instruksi ke tindakan',
+        title: 'Bagaimana Mark mengerjakan permintaan',
         paragraphs: [
-          'Mark menyusun langkah, memilih tool, membaca hasilnya, dan menentukan tindakan berikutnya. Satu permintaan dapat membutuhkan beberapa aksi. Pesan kemajuan belum berarti tugas berhasil; lihat hasil tool, berkas keluaran, dan pemeriksaan yang dilaporkan.'
+          'Mark membaca instruksi dan konteks yang tersedia, lalu menentukan apakah pekerjaan memerlukan jawaban langsung atau tindakan melalui tool. Setelah tool selesai, hasilnya digunakan untuk memilih langkah berikutnya. Satu pekerjaan dapat melibatkan beberapa kali pembacaan, perubahan, dan pemeriksaan.',
+          'Sebagai contoh, perbaikan aplikasi dapat dimulai dengan membaca kode, dilanjutkan perubahan berkas, lalu pengujian. Pesan kemajuan menjelaskan proses yang sedang berlangsung; keberhasilan pekerjaan perlu dilihat dari hasil dan pemeriksaan yang dilaporkan.'
         ]
       },
       {
-        title: 'Grup tool dimuat sesuai kebutuhan',
+        title: 'Memuat kemampuan yang diperlukan',
         paragraphs: [
-          'Tool inti tersedia untuk pekerjaan dasar. Mark dapat memuat grup tambahan melalui read-tools; penandaan @grup atau @plugin membantu memilih kemampuan yang dimaksud. Tidak semua tool dimasukkan ke setiap permintaan model sekaligus.'
+          'Tool dikelompokkan berdasarkan fungsi agar Mark dapat memuat kemampuan yang sesuai dengan pekerjaan. Grup tambahan dimuat melalui read-tools ketika dibutuhkan. Menandai @grup atau @plugin membantu menunjukkan kemampuan yang Anda maksud.',
+          'Layanan seperti Google Workspace atau MCP tetap memerlukan koneksi yang siap digunakan. Memuat definisi tool memberi Mark informasi cara memanggilnya, tetapi tidak menggantikan penyiapan layanan atau izin tindakan.'
         ]
       },
       {
-        title: 'Super Effort dan mode otomatis',
+        title: 'Super Effort dan Auto Mode',
         paragraphs: [
-          'Super Effort menekankan kelanjutan pekerjaan dan pemeriksaan hasil sebelum selesai. Pengaturan ini tersedia di Pengaturan serta kontrol pada kolom pesan. Mode otomatis pada sesi berkaitan dengan persetujuan tool; fungsinya berbeda dari Super Effort dan dapat melewati dialog izin pada sesi tersebut. Aktifkan sesuai pekerjaan yang Anda percayakan.'
+          'Super Effort mendorong Mark untuk melanjutkan pekerjaan dan memeriksa hasil sebelum menyatakan selesai. Pengaturannya tersedia melalui Pengaturan dan kontrol pada kolom pesan. Gunakan ketika pekerjaan membutuhkan penelusuran atau pemeriksaan yang lebih tekun.',
+          'Auto Mode mengatur persetujuan tool pada sesi yang digunakan. Mode ini dapat membuat tindakan berjalan tanpa dialog izin baru sesuai aturan fitur. Mengaktifkan Auto Mode tidak sama dengan meningkatkan kemampuan model; pilih mode tersebut berdasarkan pekerjaan dan akses yang Anda percayakan.'
         ]
       },
       {
-        title: 'Menangani kendala',
+        title: 'Saat pekerjaan memerlukan bantuan',
         paragraphs: [
-          'Jika model, layanan, atau tool gagal, baca pesan kendalanya dan tentukan langkah berikutnya. Login, CAPTCHA, keputusan pengguna, atau akses yang belum tersedia dapat memerlukan bantuan Anda.'
+          'Mark dapat menemui kendala pada model, tool, koneksi, atau akses akun. Login, CAPTCHA, dan keputusan yang memerlukan informasi pribadi Anda dapat membuat pekerjaan menunggu bantuan. Baca keterangan yang diberikan sebelum menentukan tindakan berikutnya.',
+          'Setelah membantu, jelaskan apa yang sudah Anda lakukan dan minta Mark memeriksa kondisi terbaru. Jika aksi sebelumnya sudah mengubah berkas atau halaman, hasilnya perlu diperiksa sebelum tindakan yang sama dicoba kembali.'
         ]
       }
     ],
@@ -184,19 +229,16 @@ export const guideArticles = [
     id: 'tools',
     category: 'work',
     title: 'Referensi tool',
-    summary: 'Nama, fungsi, grup, dan parameter tool yang dikenali Mark.',
+    summary:
+      'Tool adalah fungsi yang digunakan Mark untuk melakukan tindakan, seperti membaca berkas, membuka halaman, atau mengakses layanan. Referensi ini membantu Anda memahami fungsi dan input yang tersedia.',
     keywords: 'registry schema parameter read-tools core builtin native tool action fungsi',
     sections: [
       {
-        title: 'Cara memakai referensi ini',
+        title: 'Membaca referensi tool',
         paragraphs: [
-          'Anda tidak perlu menulis parameter tool untuk memakai Mark. Berikan instruksi melalui chat. Referensi ini membantu memeriksa kemampuan dan format input saat menyusun plugin, skill, atau instruksi teknis.'
-        ],
-        bullets: [
-          'Daftar bawaan mengikuti schema aplikasi, bukan daftar nama yang ditulis ulang secara manual.',
-          'Grup aktif dan tool plugin dimuat dari Mark ketika referensi dibuka. Layanan terhubung tetap menjadi syarat penggunaan tool integrasi.',
-          'Nama tool dapat muncul dalam lebih dari satu grup. Jumlah tool unik dihitung tanpa duplikasi.',
-          'Persetujuan mengikuti aksi, sesi, dan izin tersimpan. Tool tanpa dialog pada suatu kondisi tidak otomatis berarti aman untuk semua penggunaan.'
+          'Anda dapat memberi instruksi kepada Mark dengan bahasa biasa tanpa menulis pemanggilan tool. Referensi ini berguna ketika Anda ingin memeriksa suatu kemampuan atau menyusun plugin dan skill yang membutuhkan format input tertentu.',
+          'Cari berdasarkan nama atau fungsi, lalu buka detail tool untuk melihat deskripsi dan parameter. Daftar bawaan mengikuti definisi aplikasi, sementara grup aktif dan tool plugin dimuat saat referensi dibuka. Tool yang muncul dalam beberapa grup dihitung satu kali pada jumlah unik.',
+          'Layanan pendukung tetap harus siap digunakan. Jika pemanggilan gagal, periksa koneksi dan izin layanan; keberadaan nama tool dalam daftar belum memastikan akun atau server sudah terhubung.'
         ]
       }
     ],
@@ -206,34 +248,32 @@ export const guideArticles = [
     id: 'browsers',
     category: 'work',
     title: 'Pencarian web dan browser bawaan',
-    summary: 'Cari sumber, baca artikel, dan operasikan halaman di panel Browser.',
+    summary:
+      'Browser bawaan adalah browser milik Mark yang ditampilkan pada panel Chat Studio. Melalui grup browser_use, Mark dapat membuka situs, membaca konten, dan berinteraksi dengan halaman yang Anda perlukan.',
     keywords:
       'browser_use browser-search browser-fetch browser-navigate read click type scroll extract script screenshot download localhost login',
     sections: [
       {
-        title: 'Pencarian dan pembacaan cepat',
+        title: 'Pencarian dan pembacaan halaman',
         paragraphs: [
-          'browser-search mencari judul dan URL. browser-fetch mengambil isi teks tanpa membuka panel Browser. Untuk halaman dinamis, formulir, login, atau interaksi, Mark dapat membuka browser bawaan. Hasil pencarian dan isi website tetap perlu diperiksa sebelum dijadikan kesimpulan.'
+          'browser-search mencari judul dan alamat halaman, sedangkan browser-fetch mengambil teks tanpa membuka panel Browser. Keduanya digunakan saat pekerjaan hanya memerlukan pencarian sumber atau pembacaan informasi.',
+          'Untuk halaman dinamis, formulir, atau login, Mark dapat menggunakan browser-navigate. Panel terbuka otomatis saat tindakan tersebut dijalankan; membuka ulang percakapan yang pernah menggunakan browser tidak menjadi permintaan baru untuk membuka panel.'
         ]
       },
       {
-        title: 'Panel Browser dalam Chat Studio',
+        title: 'Menggunakan panel Browser',
         paragraphs: [
-          'Browser bawaan adalah pilihan untuk permintaan browser umum, termasuk membuka localhost. Panel mendukung pembacaan halaman, klik, pengetikan, scroll, ekstraksi data, JavaScript, tangkapan layar, unduhan, serta penutupan sesi. Anda dapat mengikuti halaman dari dalam Mark.'
+          'Panel Browser menampilkan halaman yang sedang dikerjakan Mark dan dapat dibuka sendiri melalui tombol Browser. Anda dapat mengikuti navigasi atau membantu melalui halaman yang sama ketika pekerjaan memerlukan interaksi pengguna.',
+          'Mark dapat membaca halaman, mengeklik, mengetik, menggulir, mengekstrak data, menjalankan JavaScript, mengambil screenshot, dan mengunduh berkas. Untuk aplikasi lokal, sertakan alamat localhost dan jelaskan bagian yang perlu diuji.'
         ],
         example:
-          'Buka localhost proyek ini di browser bawaan, periksa formulirnya, lalu ambil screenshot hasil pengujian.'
+          'Buka localhost proyek ini di browser bawaan, periksa formulir pendaftaran, lalu ambil screenshot hasilnya.'
       },
       {
-        title: 'Login dan sesi',
+        title: 'Login dan bantuan pengguna',
         paragraphs: [
-          'Browser bawaan memakai sesi browser yang terkait percakapan; sesi Minibot dipisahkan dari agen lain. Login atau cookie di Chrome pribadi tidak otomatis tersedia di browser bawaan. Untuk memakai tab Chrome yang sudah login, gunakan Chrome Bridge.'
-        ]
-      },
-      {
-        title: 'Bantuan pengguna',
-        paragraphs: [
-          'CAPTCHA, verifikasi akun, atau pilihan sensitif dapat membutuhkan tindakan Anda. Jangan mengirim password atau token ke dalam pesan. Pembatalan aksi tidak mengembalikan perubahan situs yang sudah terlanjur dikirim.'
+          'Browser bawaan memiliki sesi yang terkait percakapan. Sesi Minibot dipisahkan dari agen lain. Login pada Chrome pribadi tidak otomatis tersedia; gunakan Chrome Bridge untuk bekerja pada tab Chrome yang sudah Anda pilih.',
+          'Jika perlu login atau CAPTCHA, lakukan melalui halaman yang tersedia lalu beri tahu Mark. Minta pemeriksaan kondisi terbaru sebelum melanjutkan. Perubahan situs yang sudah dikirim tidak otomatis dibatalkan ketika pekerjaan dihentikan.'
         ]
       }
     ],
@@ -243,32 +283,32 @@ export const guideArticles = [
     id: 'computer',
     category: 'work',
     title: 'Kendali komputer Windows',
-    summary: 'Operasikan aplikasi desktop melalui screenshot, mouse, keyboard, dan jendela.',
+    summary:
+      'Computer Use adalah fitur untuk mengoperasikan aplikasi Windows melalui pengamatan layar, mouse, dan keyboard. Mark menggunakan desktop Anda dalam sesi kendali yang memerlukan persetujuan.',
     keywords:
       'computer_use desktop Win32 daemon screenshot click drag hotkey batch windows Ctrl Shift R emergency overlay mouse terkunci',
     sections: [
       {
-        title: 'Aksi yang didukung',
-        bullets: [
-          'Mengambil tangkapan layar dan membaca kondisi desktop.',
-          'Klik biasa, ganda, kanan, tengah, gerakan mouse, tahan atau lepas tombol, drag, dan scroll.',
-          'Mengetik teks, menekan tombol, mengirim kombinasi keyboard, serta menjalankan rangkaian aksi.',
-          'Membuka aplikasi, melihat daftar jendela, memfokuskan, dan memaksimalkan jendela.'
+        title: 'Memulai sesi kendali',
+        paragraphs: [
+          'Mark meminta izin sebelum membuka sesi Computer Use. Setelah disetujui, mouse dikunci dan pointer Windows digantikan secara visual oleh cursor Mark. Overlay tetap terlihat selama sesi aktif, termasuk ketika Mark sedang menentukan tindakan berikutnya.',
+          'Sesi berakhir ketika Mark menutupnya atau Anda membatalkan kendali. Mouse kemudian kembali tersedia dan overlay ditutup. Membuka sesi berikutnya memerlukan persetujuan baru.'
         ]
       },
       {
-        title: 'Desktop yang digunakan',
+        title: 'Tindakan dan hasil pengamatan',
         paragraphs: [
-          'Mark meminta izin sebelum membuka sesi Computer Use. Setelah diizinkan, mouse dikunci dan pointer Windows digantikan secara visual oleh cursor Mark. Overlay terus muncul selama sesi aktif, termasuk saat Mark berpikir. Ketika Mark menutup sesi, mouse kembali tersedia dan overlay ditutup. Izin baru diperlukan untuk sesi berikutnya.',
-          'Mark dapat mengklik lalu menunggu beberapa detik sebelum melihat hasil. Screenshot dikembalikan bersama hasil aksi, sehingga Mark tidak perlu mengambil gambar lagi hanya untuk memeriksa aksi tersebut. Gunakan browser bawaan untuk tugas web yang tidak perlu mengendalikan desktop.'
+          'Mark dapat mengambil screenshot, mengeklik, menyeret, menggulir, mengetik, dan menggunakan kombinasi tombol. Fitur ini juga menyediakan tindakan untuk membuka aplikasi, melihat daftar jendela, memfokuskan, dan memaksimalkan jendela.',
+          'Setelah tindakan, Mark dapat menunggu beberapa detik sebelum menerima screenshot hasilnya. Jelaskan aplikasi, tujuan, dan batas pekerjaan agar kondisi layar yang diharapkan dapat diperiksa.'
         ],
         example:
-          'Buka Notepad, ketik daftar tugas berikut, lalu perlihatkan hasilnya tanpa menyimpan file.'
+          'Buka Notepad dan ketik daftar tugas berikut. Tampilkan hasilnya tanpa menyimpan berkas.'
       },
       {
-        title: 'Menghentikan kendali',
+        title: 'Membatalkan kendali',
         paragraphs: [
-          'Tekan Ctrl+Shift+R untuk membatalkan Computer Use. Pintasan ini bekerja tanpa memfokuskan overlay: kendali mouse dilepas, pointer dipulihkan, overlay ditutup, dan Mark menerima alasan pembatalan. Mark tidak boleh melanjutkan kendali desktop dalam giliran yang dibatalkan. Berikan instruksi baru jika ingin melanjutkan. Aksi yang sudah terjadi tidak otomatis diurungkan.'
+          'Tekan Ctrl+Shift+R untuk menghentikan Computer Use tanpa memfokuskan overlay. Pintasan melepas kunci mouse, memulihkan pointer, menutup overlay, dan memberi tahu Mark tentang pembatalan.',
+          'Giliran yang dibatalkan tidak boleh melanjutkan aksi desktop. Periksa keadaan aplikasi dan berikan instruksi baru jika ingin melanjutkan. Pembatalan tidak mengurungkan tindakan yang sudah terjadi.'
         ]
       }
     ],
@@ -278,34 +318,32 @@ export const guideArticles = [
     id: 'files',
     category: 'work',
     title: 'Berkas, dokumen, coding, dan Git',
-    summary: 'Cari dan ubah berkas, baca dokumen, jalankan perintah, dan periksa repositori.',
+    summary:
+      'Fitur berkas dan proyek memungkinkan Mark membaca dokumen, mencari informasi, mengubah kode, dan memeriksa hasil pekerjaan melalui tool filesystem, terminal, serta Git.',
     keywords:
       'read-file read-image write-file replace-content replace-lines delete-file list-dir find-files grep-search file-outline read-document PDF DOCX PowerShell git diff terminal artifact',
     sections: [
       {
-        title: 'Menemukan dan membaca informasi',
+        title: 'Menemukan dan membaca bahan',
         paragraphs: [
-          'Mark dapat melihat isi folder, mencari nama berkas atau teks, membaca bagian berkas, dan melihat garis besar kode. read-document menyediakan pembacaan teks dokumen, termasuk PDF dan DOCX. Pembacaan gambar mengikuti dukungan vision. Format lain bergantung pada pembaca yang tersedia; jangan menganggap semua format Office didukung penuh.'
+          'Mark dapat melihat isi folder, mencari nama berkas atau teks, membaca bagian berkas, dan melihat garis besar kode. Pilih workspace atau sebutkan lokasi agar pekerjaan diarahkan pada proyek yang sesuai.',
+          'read-document menyediakan pembacaan teks dokumen seperti PDF dan DOCX. Analisis gambar memerlukan vision. Kemampuan membaca dokumen tidak selalu mencakup penyuntingan visual atau seluruh format aplikasi Office.'
         ]
       },
       {
-        title: 'Mengubah proyek dan memeriksa hasil',
+        title: 'Mengubah dan memeriksa proyek',
         paragraphs: [
-          'Tool berkas mendukung pembuatan, penulisan ulang, penggantian teks atau baris, dan penghapusan. Mark juga dapat menjalankan PowerShell untuk build, pemeriksaan sintaks, atau test. Sebutkan folder target dan hasil yang diharapkan agar perubahan tidak dilakukan pada proyek yang salah.'
+          'Tool berkas mendukung pembuatan, penulisan ulang, penggantian teks atau baris, dan penghapusan. Jelaskan perubahan perilaku yang diinginkan serta bagian yang harus dipertahankan sebelum meminta pengeditan.',
+          'Mark dapat menjalankan PowerShell untuk build, pemeriksaan sintaks, dan pengujian yang tersedia. Minta penjelasan perubahan beserta hasil pemeriksaannya agar Anda mengetahui apa yang sudah berhasil diuji.'
         ],
         example:
-          'Cari komponen halaman login di workspace ini, perbaiki validasi email, lalu jalankan pemeriksaan proyek yang tersedia.'
+          'Perbaiki validasi email pada halaman login di workspace ini, lalu jalankan pemeriksaan proyek dan jelaskan hasilnya.'
       },
       {
-        title: 'Git dan hasil perubahan',
+        title: 'Git dan proses latar belakang',
         paragraphs: [
-          'Grup Git menyediakan status repositori, diff, commit, dan revert. Minta pemeriksaan diff sebelum menyimpan perubahan ke riwayat Git. Pratinjau berkas dan perubahan pada chat membantu meninjau hasil; perubahan berkas, commit, dan revert memiliki dampak berbeda.'
-        ]
-      },
-      {
-        title: 'Pekerjaan terminal yang lama',
-        paragraphs: [
-          'run-task menjalankan proses di latar belakang, misalnya server pengembangan atau build panjang. Mark dapat membaca output, melihat daftar proses, dan menghentikannya melalui grup task_terminal. Proses latar belakang berbeda dari Minibots maupun daftar tahapan Task Workflow.'
+          'Gunakan grup Git untuk memeriksa status dan diff, membuat commit, atau menjalankan revert. Tinjau perubahan sebelum menyimpannya ke riwayat; perubahan berkas kerja, commit, dan revert mempunyai dampak yang berbeda.',
+          'run-task menjalankan proses lama di latar belakang, seperti server pengembangan atau build. Grup task_terminal menyediakan pembacaan output, daftar proses, dan penghentian. Proses terminal ini dikelola terpisah dari penugasan Minibot dan checklist workflow.'
         ]
       }
     ],
@@ -315,45 +353,46 @@ export const guideArticles = [
     id: 'subagents',
     category: 'work',
     title: 'Minibots',
-    summary: 'Bagi pekerjaan ke agen terpisah dan pantau aktivitasnya.',
+    summary:
+      'Minibots adalah agen pendamping yang menerima tugas dari Mark dan mengerjakannya secara terpisah di latar belakang. Setiap Minibot mempunyai peran, akses tool, dan riwayat penugasan sendiri, sehingga pekerjaan dapat dibagi dan laporannya ditinjau melalui Mark.',
     keywords:
       'Minibots Minibot sub agent sub-agent subagent paralel multi agent spawn_subagent message_agent send_message list_subagents report_to_lead kill_subagent topologi',
     sections: [
       {
-        title: 'Kapan memakai Minibot?',
+        title: 'Kapan menggunakan Minibots?',
         paragraphs: [
-          'Gunakan untuk pekerjaan yang dapat dibagi menjadi tugas mandiri, misalnya riset beberapa topik atau pemeriksaan modul berbeda. Mark dapat membuat Minibot dan menggabungkan hasilnya. Profil agent menyimpan identitas dan akses tool. Setiap penugasan memiliki konteks, riwayat, hasil, dan percobaan eksekusi sendiri. Pekerjaan dijalankan oleh server dengan sesi browser terpisah.'
+          'Minibots berguna untuk pekerjaan yang dapat dibagi menjadi tugas mandiri. Pada riset, satu agen dapat membaca dokumentasi dan agen lain memeriksa contoh penerapan. Pada proyek kode, beberapa agen dapat meninjau modul berbeda dan mengirimkan temuan masing-masing.',
+          'Mark memberikan tujuan dan batas tugas, lalu meninjau laporan untuk menyusun hasil bagi Anda. Pekerjaan berjalan pada server sehingga chat tetap dapat digunakan. Setiap Minibot mempunyai sesi browser terpisah.'
         ],
         example:
-          'Bagi riset ini ke dua Minibot: satu memeriksa dokumentasi API, satu memeriksa contoh implementasi. Gabungkan temuan beserta sumbernya.'
+          'Gunakan dua Minibot: satu meninjau dokumentasi resmi, satu mencari contoh penerapan. Gabungkan temuan beserta sumbernya.'
       },
       {
-        title: 'Menggunakan Minibots',
-        steps: [
-          'Buka Minibots untuk mencari agen menurut nama, peran, atau tugas dan memfilter statusnya.',
-          'Gunakan Buat agen untuk menentukan nama, peran opsional, dan tugas. Pekerjaan dimulai setelah agen dibuat.',
-          'Pilih agen untuk membaca Aktivitas atau Detail agen. Tampilan Topologi memperlihatkan hubungan agen dengan Mark.'
+        title: 'Membuat dan memantau agen',
+        paragraphs: [
+          'Halaman Minibots menyediakan pencarian nama, peran, atau tugas dan filter status. Pilih agen untuk membaca aktivitas serta detail penugasannya. Tampilan Topologi memperlihatkan hubungan agen dengan Mark.',
+          'Gunakan Buat agen dan tentukan nama, peran opsional, serta tugas. Pekerjaan dimulai setelah agen dibuat. Sertakan bahan yang perlu digunakan, batas pekerjaan, dan bentuk laporan yang diharapkan.'
         ],
-        links: [{ label: 'Buka Minibots', to: '/subagents' }]
-      },
-      {
-        title: 'Instruksi lanjutan dan penghentian',
-        paragraphs: [
-          'Pesan dapat dikirim ketika agent masih bekerja dan dibaca pada batas langkah yang aman. Pilih Jadikan penugasan baru untuk memasukkan pekerjaan dengan konteks terpisah ke antrean. Semua agent dapat bekerja bersamaan tanpa batas jumlah dari scheduler. Satu agent tetap mengerjakan satu pekerjaan pada satu waktu. Pilih penugasan untuk meninjau aktivitas dan hasilnya. Hentikan membatalkan pekerjaan yang dipilih. Riwayat dipertahankan sebagai checkpoint; menghapus agent melalui konfirmasi juga menghapus penugasannya.'
+        links: [
+          {
+            label: 'Buka Minibots',
+            to: '/subagents'
+          }
         ]
       },
       {
-        title: 'Menunggu, melanjutkan, dan pelaporan',
+        title: 'Arahan lanjutan dan penugasan',
         paragraphs: [
-          'Mark meninjau kendala teknis Minibot dan memberikan arahan secara otomatis. Pilihan pribadi, informasi Anda, atau persetujuan khusus dikumpulkan di bagian Koordinasi Minibots pada chat asal. Anda dapat menyetujui, menolak, atau mengirim arahan tanpa membuka agent satu per satu. Penulisan berkas biasa di workspace dapat ditinjau Mark; izin sensitif tetap mengikuti persetujuan Anda atau izin tersimpan.',
-          'Agent dapat menunggu kolega, persetujuan tindakan, atau informasi pengguna. Mark menetapkan penugasan; agent bertukar informasi melalui kotak masuk tanpa menjalankan executor kolega. Pertanyaan yang tidak terjawab dalam 120 detik meminta peninjauan. Status Terputus memerlukan pemeriksaan langkah terakhir sebelum Lanjutkan pekerjaan. Status Gagal atau Dibatalkan menyediakan Coba lagi; aksi yang hasilnya tidak diketahui tidak otomatis diulang.',
-          'Menutup atau memuat ulang UI tidak menghentikan pekerjaan selama server Mark hidup. Jika server berhenti, pekerjaan belum selesai menunggu peninjauan saat startup berikutnya. Laporan tersimpan di sesi asal sebelum notifikasi dikirim, termasuk ketika chat sedang sibuk atau UI tertutup. Laporan akhir baru otomatis ditinjau dan ditanggapi Mark saat Mark tidak sibuk, tanpa meminta pengguna mengetik perintah lanjutan. Jika UI tertutup, laporan menunggu sampai UI tersambung kembali. wait_subagents hanya opsional jika Anda khusus meminta menunggu.'
+          'Pesan dapat dikirim ketika Minibot bekerja dan dibaca pada batas langkah yang aman. Gunakan Jadikan penugasan baru untuk pekerjaan dengan konteks terpisah. Beberapa Minibot dapat berjalan bersamaan, tetapi satu agen tetap mengerjakan satu penugasan aktif pada satu waktu.',
+          'Pilih penugasan untuk membaca hasil atau menghentikannya. Menghapus agen ikut menghapus penugasannya setelah konfirmasi. Berkas workspace dapat dipakai bersama meskipun browser terpisah; bagilah tanggung jawab berkas agar perubahan tidak saling menimpa.'
         ]
       },
       {
-        title: 'Batas pemisahan agen',
+        title: 'Laporan dan kelanjutan pekerjaan',
         paragraphs: [
-          'Sesi browser agen dipisahkan, tetapi berkas workspace dapat tetap dipakai bersama. Berikan bagian pekerjaan atau berkas yang berbeda agar perubahan tidak saling menimpa. Minibot tidak diberi orkestrasi rekursif untuk membuat Minibot baru.'
+          'Mark dapat meninjau kendala teknis dan memberi arahan kepada Minibot. Permintaan informasi pribadi atau persetujuan Anda dikumpulkan dalam Koordinasi Minibots pada chat asal, sehingga Anda dapat menjawab tanpa membuka setiap agen.',
+          'Laporan disimpan di sesi asal dan ditanggapi ketika Mark tersedia untuk meninjaunya. Menutup antarmuka tidak menghentikan pekerjaan selama server masih hidup. Tindak lanjut laporan ketika UI tertutup menunggu sampai tersambung kembali; wait_subagents bersifat opsional untuk menunggu secara khusus.',
+          'Jika pekerjaan terputus karena server berhenti, periksa langkah terakhir sebelum Lanjutkan pekerjaan. Gagal atau Dibatalkan menyediakan Coba lagi. Aksi yang hasilnya belum diketahui perlu diperiksa sebelum diulang. Minibot tidak membuat Minibot baru secara rekursif.'
         ]
       }
     ],
@@ -363,28 +402,32 @@ export const guideArticles = [
     id: 'workflows',
     category: 'work',
     title: 'Task Workflow dan hasil bertahap',
-    summary: 'Susun pekerjaan panjang menjadi tahapan dengan hasil dan bukti pemeriksaan.',
+    summary:
+      'Task Workflow adalah rencana kerja tersimpan dalam bentuk checklist berurutan. Mark mengerjakan langkah aktif, memeriksa hasilnya, dan menyimpan ringkasan beserta bukti sebelum melanjutkan.',
     keywords:
       'agent workflows durable tasks task create_agent_task mark_done_task read_task update_task_plan checkpoint artifact /task',
     sections: [
       {
-        title: 'Tahapan yang bisa diperiksa',
+        title: 'Membuat rencana kerja',
         paragraphs: [
-          'Aktifkan dengan /task atau permintaan jelas membuat rencana kerja. Mark juga menggunakannya untuk tugas besar. Checklist dibuat terlebih dahulu, lalu Mark langsung mengerjakan poin aktif: kerjakan, periksa hasil, tandai selesai, lanjutkan. Server hanya menerima penyelesaian langkah aktif; langkah gagal atau menunggu tidak dihitung selesai. Pekerjaan sederhana dapat diselesaikan langsung.'
+          'Gunakan /task atau minta rencana untuk pekerjaan bertahap. Mark membuat checklist terlebih dahulu lalu langsung mengerjakannya. Workflow juga dapat digunakan secara otomatis untuk tugas besar.',
+          'Hanya langkah aktif yang dapat diselesaikan. Langkah gagal atau menunggu tidak menambah progres. Jika kebutuhan berubah, langkah mendatang dapat direvisi dengan alasan, sementara langkah aktif dan hasil yang sudah selesai dipertahankan.'
         ],
         example:
-          '/task Susun laporan audit aplikasi ini: inventaris fitur, temukan masalah, lakukan perbaikan, lalu buat laporan pengujian.'
+          '/task Petakan aplikasi ini, periksa masalah keamanan, lalu susun laporan temuan beserta bukti kode.'
       },
       {
-        title: 'Memantau hasil di chat',
+        title: 'Memantau checklist',
         paragraphs: [
-          'Kartu menampilkan judul, status, dan jumlah langkah yang benar-benar selesai. Klik langkah untuk membuka sasaran, hasil, bukti pemeriksaan, dan berkas jika tersedia. Aktivitas tool dan pemikiran berada di Detail proses yang tertutup secara default. Kartu terbuka selama berjalan dan otomatis ringkas setelah selesai; Anda dapat membukanya kembali. Audit baca-saja tidak wajib menghasilkan dokumen atau menjalankan build. Berkas dan folder hanya ditampilkan jika ada keluaran nyata.'
+          'Kartu workflow menampilkan judul, status, dan jumlah langkah selesai. Buka langkah untuk melihat sasaran, hasil, bukti pemeriksaan, dan berkas jika ada. Aktivitas tool serta pemikiran tersedia pada Detail proses.',
+          'Kartu terbuka selama pekerjaan berjalan dan dapat diringkas setelah selesai. Setiap langkah tidak wajib membuat dokumen. Pemeriksaan mengikuti pekerjaan: audit baca-saja dapat menggunakan rujukan kode tanpa build yang tidak berkaitan.'
         ]
       },
       {
-        title: 'Penyimpanan dan kelanjutan eksekusi',
+        title: 'Melanjutkan atau menghentikan',
         paragraphs: [
-          'Checkpoint dan sesi asal disimpan. Setelah restart, pekerjaan yang terputus dijeda: pilih Lanjutkan pada kartu untuk memeriksa kondisi terakhir sebelum meneruskan. Coba lagi tersedia untuk kegagalan; Hentikan membatalkan workflow yang dipilih beserta penugasan Minibot terkait, tanpa mengganggu tugas lain. Mark dapat merevisi langkah yang belum dimulai dengan alasan singkat; langkah aktif dan selesai tetap dipertahankan. Minibot dapat bekerja di latar belakang sementara chat tetap digunakan; laporan melanjutkan workflow yang sesuai. Setelah semua poin selesai, satu jawaban penutup disusun dari hasil tersimpan, terpisah dari ringkasan checkpoint.'
+          'Checkpoint dan sesi asal disimpan. Setelah restart, pekerjaan yang terputus dijeda agar keadaan terakhir dapat diperiksa sebelum dilanjutkan. Gunakan Lanjutkan atau Coba lagi sesuai status pada kartu.',
+          'Hentikan membatalkan workflow pilihan dan penugasan Minibot terkait. Setelah seluruh langkah selesai, Mark menyusun jawaban penutup dari hasil tersimpan, terpisah dari catatan kemajuan setiap langkah.'
         ]
       }
     ],
@@ -394,31 +437,36 @@ export const guideArticles = [
     id: 'neural',
     category: 'personal',
     title: 'Memori dan Neural Core',
-    summary: 'Tinjau karakter, ingatan, arsip percakapan, dan skill yang dipelajari.',
+    summary:
+      'Neural Core adalah halaman untuk meninjau karakter, memori, dan pengetahuan yang disimpan Mark. Informasi tersebut membantu Mark menggunakan konteks yang relevan dalam percakapan berikutnya.',
     keywords:
       'neural core memory vector RAG orama SQLite profile preference notes learn karakter warmth sarcasm trust energy obedience kepatuhan peta node daftar groom backup',
     sections: [
       {
-        title: 'Informasi yang disimpan',
+        title: 'Cara memori digunakan',
         paragraphs: [
-          'Mark menyimpan riwayat sesi, pasangan percakapan, arsip ringkasan, memori pengguna, dan skill yang dipelajari. Pencarian memori menggabungkan informasi teks dan kemiripan makna. Penyimpanan lokal tidak berarti AI selalu mengingat setiap detail; ingatan yang relevan dipilih untuk konteks saat itu.'
+          'Mark menyimpan riwayat sesi, pasangan percakapan, arsip ringkasan, memori pengguna, dan skill yang dipelajari. Pencarian mempertimbangkan teks dan kemiripan makna untuk memilih informasi yang relevan.',
+          'Tidak semua informasi tersimpan dimasukkan ke setiap jawaban. Jika konteks penting belum digunakan, sebutkan kembali informasi tersebut atau arahkan Mark ke berkas sumbernya.'
         ]
       },
       {
         title: 'Menjelajahi Neural Core',
-        bullets: [
-          'Ringkasan memberi pintasan ke karakter, memori, dan skill.',
-          'Karakter menampilkan kehangatan, sarkasme, kepercayaan, energi, dan kepatuhan, beserta data evaluasinya.',
-          'Memori membuka peta node secara default. Gunakan Daftar untuk mencari, memfilter, dan membuka data melalui teks.',
-          'Skill dipelajari berisi panduan yang berhasil disimpan. Ini berbeda dari paket User Skills yang dipanggil dengan slash command.',
-          'Rapikan memori menjalankan pemeriksaan atau penggabungan memori yang relevan. Kelola data menyediakan cadangan, pemulihan, dan reset.'
+        paragraphs: [
+          'Ringkasan memberi akses ke karakter, memori, dan skill. Karakter menampilkan kehangatan, sarkasme, kepercayaan, energi, serta kepatuhan beserta informasi evaluasinya. Bagian Memori menyediakan peta node dan tampilan Daftar untuk pencarian teks.',
+          'Skill dipelajari berisi prosedur yang disimpan Mark dan berbeda dari paket User Skills. Rapikan memori membantu pemeriksaan atau penggabungan informasi terkait. Buka Kelola data untuk cadangan, pemulihan, dan reset.'
         ],
-        links: [{ label: 'Buka Neural Core', to: '/neural-core' }]
+        links: [
+          {
+            label: 'Buka Neural Core',
+            to: '/neural-core'
+          }
+        ]
       },
       {
         title: 'Menghapus ingatan',
         paragraphs: [
-          'Buka data yang dimaksud dan gunakan tindakan penghapusan melalui konfirmasi. Menghapus memori tidak otomatis menghapus teks yang masih ada pada percakapan aktif, arsip lain, atau berkas proyek.'
+          'Buka data yang ingin dihapus dan gunakan tindakan penghapusan. Baca konfirmasi untuk memastikan entri yang dipilih sebelum melanjutkan.',
+          'Menghapus memori tidak otomatis menghapus salinan informasi dalam percakapan aktif, arsip lain, atau berkas proyek. Tinjau lokasi tersebut jika Anda juga ingin membersihkan informasi yang sama.'
         ]
       }
     ],
@@ -428,32 +476,30 @@ export const guideArticles = [
     id: 'awareness',
     category: 'personal',
     title: 'Avatar, karakter, dan Awareness',
-    summary: 'Pahami status avatar dan inisiatif Mark berdasarkan aktivitas komputer.',
+    summary:
+      'Avatar, karakter, dan Awareness mengatur cara Mark menampilkan aktivitas dan memulai interaksi. Avatar menunjukkan status, karakter memengaruhi gaya komunikasi, dan Awareness mengevaluasi aktivitas komputer untuk menentukan inisiatif.',
     keywords:
       'emosi mood neutral joy sadness anger fear disgust anxiety envy embarrassment ennui taktil pet bonk AFK idle proactive awareness',
     sections: [
       {
-        title: 'Status dan ekspresi avatar',
+        title: 'Avatar dan perkembangan karakter',
         paragraphs: [
-          'Avatar menampilkan keadaan seperti mendengarkan, berbicara, memproses, bekerja, dan memutar musik. Label mood mencakup netral serta sembilan kategori ekspresi lain. Interaksi sentuhan pada avatar juga dapat memengaruhi nilai relasi. Ini adalah perilaku yang dimodelkan perangkat lunak, bukan bukti kesadaran atau perasaan manusia.'
+          'Avatar memperlihatkan keadaan seperti mendengarkan, berbicara, memproses, bekerja, atau memutar musik. Mood dan ekspresinya merupakan perilaku yang dimodelkan aplikasi untuk menyampaikan keadaan interaksi.',
+          'Percakapan pada sesi utama dan interaksi avatar dapat dipertimbangkan dalam evaluasi relasi. Atur gaya bicara melalui Pengaturan dan tinjau sifat melalui Neural Core. Nilai kepercayaan karakter berbeda dari izin tool dan tidak memberikan akses tindakan baru.'
         ]
       },
       {
-        title: 'Karakter mengikuti interaksi',
+        title: 'Pengamatan Awareness',
         paragraphs: [
-          'Evaluasi relasi mempertimbangkan percakapan di sesi utama dan interaksi avatar. Anda dapat mengatur gaya bicara di Pengaturan dan meninjau sifat pada Neural Core. Memberi izin akses tool tidak sama dengan mengatur tingkat kepercayaan karakter.'
-        ]
-      },
-      {
-        title: 'Apa yang diperhatikan Awareness?',
-        paragraphs: [
-          'Awareness memeriksa aktivitas aplikasi atau judul jendela dan telemetri seperti keadaan idle, baterai, serta beban perangkat yang tersedia. Hasilnya dapat berupa pengamatan singkat, sapaan, atau inisiatif melalui Minibot. Setelah kembali dari kondisi AFK, Mark dapat mengevaluasi apakah sapaan diperlukan. Awareness berbeda dari permintaan screenshot atau penggunaan webcam.'
+          'Awareness mengevaluasi aktivitas yang tersedia, seperti aplikasi atau judul jendela, kondisi idle, baterai, dan beban perangkat. Mark dapat menggunakan konteks tersebut untuk pengamatan singkat, sapaan, atau inisiatif melalui Minibot.',
+          'Setelah Anda kembali dari kondisi tidak aktif, Mark dapat menilai apakah perlu menyapa. Pengamatan ini mempunyai jalur berbeda dari permintaan screenshot atau kamera.'
         ]
       },
       {
         title: 'Mengatur inisiatif',
         paragraphs: [
-          'Buka Pengaturan > Perilaku untuk mematikan Awareness Engine, lalu Simpan. Fitur itu tidak perlu aktif untuk mengirim chat biasa. Mematikan Awareness tidak otomatis mematikan mikrofon atau mencabut izin kamera browser.'
+          'Buka Pengaturan > Perilaku untuk mengubah status Awareness Engine lalu simpan. Nonaktifkan bila Anda ingin mengurangi inisiatif yang berasal dari pengamatan aktivitas komputer.',
+          'Chat biasa tetap tersedia ketika Awareness dimatikan. Mikrofon dan kamera mempunyai pengaturan serta izin terpisah, sehingga perlu ditinjau tersendiri jika Anda juga ingin mengubah akses perangkat.'
         ]
       }
     ],
@@ -463,40 +509,40 @@ export const guideArticles = [
     id: 'voice-camera',
     category: 'personal',
     title: 'Suara, mikrofon, kamera, dan vision',
-    summary: 'Berbicara dengan Mark dan menganalisis gambar, layar, atau kamera.',
+    summary:
+      'Fitur suara dan vision memungkinkan Anda berbicara dengan Mark serta meminta penjelasan tentang gambar, layar, atau kamera. Penggunaannya mengikuti izin perangkat dan dukungan model AI.',
     keywords:
       'STT speech recognition Web Speech wake word Hey Mark Halo Mark speak TTS Edge Ardi camera-look analyze-screen read-image screenshot microphone webcam',
     sections: [
       {
         title: 'Input dan balasan suara',
         paragraphs: [
-          'Jalur input suara antarmuka memakai Web Speech API pada Edge atau Chrome. Aktifkan mikrofon dan berikan izin ketika diminta. Pengenalan suara mengikuti dukungan browser dan dapat memakai layanan online. Balasan suara memakai jalur TTS Mark; ketersediaan jaringan dan audio perangkat dapat memengaruhi hasilnya.'
+          'Input suara antarmuka menggunakan Web Speech API pada Edge atau Chrome. Aktifkan mikrofon, berikan izin browser, lalu berbicara dengan jelas agar hasil pengenalan sesuai dengan ucapan Anda.',
+          'Balasan suara dibuat melalui layanan TTS Mark. Dukungan browser, jaringan, dan perangkat audio dapat memengaruhi pengenalan atau pemutaran. Periksa volume dan keluaran audio jika balasan tidak terdengar.'
         ]
       },
       {
         title: 'Bahasa dan kata panggilan',
         paragraphs: [
-          'Pengaturan > Suara menyediakan bahasa input dan kata panggilan tambahan. Panggilan bawaan mencakup Hey Mark, Halo Mark, dan Mark. Mikrofon mengikuti perangkat utama Windows; tombol pengaturan suara membantu mengganti perangkat utama.'
+          'Pengaturan > Suara menyediakan bahasa input dan kata panggilan tambahan. Panggilan bawaan mencakup Hey Mark, Halo Mark, dan Mark. Setelah mengubah pengaturan, uji panggilan untuk memeriksa apakah Mark mulai mendengarkan.',
+          'Mikrofon mengikuti perangkat utama Windows. Pilih perangkat yang benar melalui pengaturan suara Windows dan pastikan browser memiliki izin. Bahasa atau perangkat yang tidak sesuai dapat mengurangi ketepatan pengenalan.'
         ]
       },
       {
-        title: 'Kamera dengan pratinjau',
-        steps: [
-          'Buka Pengaturan > Kamera dan pilih perangkat yang digunakan.',
-          'Tekan Mulai pratinjau untuk menyalakan kamera dan memeriksa hasilnya. Berikan izin akses melalui browser bila diminta.',
-          'Hentikan pratinjau atau pindah bagian untuk mematikan aliran pratinjau. Simpan jika Anda mengubah pilihan atau izin penggunaan kamera.'
+        title: 'Menyiapkan kamera',
+        paragraphs: [
+          'Buka Pengaturan > Kamera, pilih perangkat, lalu mulai pratinjau untuk memastikan sumber gambar benar. Berikan izin browser ketika diminta.',
+          'Hentikan pratinjau atau pindah bagian untuk mematikan aliran pratinjau. Simpan jika Anda mengubah perangkat atau izin penggunaan kamera.'
         ]
       },
       {
-        title: 'Sumber gambar',
-        bullets: [
-          'read-image membaca berkas gambar.',
-          'analyze-screen mengambil dan menganalisis tampilan desktop.',
-          'camera-look memakai kamera untuk permintaan pengamatan fisik.',
-          'Screenshot browser berasal dari halaman atau tab yang dikendalikan. Semua analisis gambar tetap bergantung pada provider vision yang digunakan.'
+        title: 'Sumber gambar dan vision',
+        paragraphs: [
+          'Gunakan lampiran untuk berkas gambar, analyze-screen untuk desktop, atau camera-look untuk kamera. Screenshot browser berasal dari halaman atau tab yang dikendalikan.',
+          'Analisis memerlukan model dan provider yang mendukung vision. Berikan pertanyaan spesifik mengenai gambar agar Mark mengetahui teks, objek, atau kondisi yang perlu diperiksa.'
         ],
         example:
-          'Lihat screenshot yang saya lampirkan dan jelaskan pesan errornya. Jangan mengubah berkas dulu.'
+          'Jelaskan pesan error pada screenshot ini dan berikan langkah pemeriksaannya tanpa mengubah berkas.'
       }
     ],
     related: ['getting-started', 'computer', 'settings', 'privacy']
@@ -505,29 +551,33 @@ export const guideArticles = [
     id: 'media',
     category: 'personal',
     title: 'YouTube dan pemutar musik',
-    summary: 'Cari video, rangkum transkrip, dan atur pemutaran musik.',
+    summary:
+      'Fitur YouTube dan musik membantu Mark mencari video, merangkum transkrip, dan mengatur pemutaran lagu melalui chat serta kontrol pemutar.',
     keywords:
       'yt-search yt-summary youtube music-play music-toggle music-next music-prev playlist queue antrean pause volume',
     sections: [
       {
-        title: 'Mencari dan merangkum video',
+        title: 'Pencarian dan ringkasan video',
         paragraphs: [
-          'yt-search mencari video, sedangkan yt-summary memproses isi transkrip yang tersedia. Tidak semua video menyediakan transkrip yang dapat diambil. Jika gagal, berikan transkrip sendiri atau minta Mark memakai sumber lain; jangan menganggap video sudah ditonton penuh.'
+          'Berikan judul, kata kunci, atau tautan video. yt-search membantu menemukan video dan yt-summary memproses transkrip yang tersedia. Anda dapat meminta poin utama atau penjelasan bagian tertentu.',
+          'Jika transkrip tidak tersedia, berikan teksnya sendiri atau gunakan sumber lain. Ringkasan transkrip tidak memastikan seluruh informasi visual video sudah diperiksa.'
         ],
         example:
-          'Ringkas video YouTube ini berdasarkan transkripnya. Pisahkan poin utama dan hal yang perlu diperiksa lagi.'
+          'Ringkas video ini berdasarkan transkripnya dan jelaskan pertanyaan yang belum terjawab.'
       },
       {
-        title: 'Mengendalikan musik',
+        title: 'Mengatur musik',
         paragraphs: [
-          'Minta judul atau nama artis untuk memutar musik. Tool musik menyediakan putar, jeda atau lanjutkan, berikutnya, dan sebelumnya. Pemutar pada antarmuka memberi kontrol pemutaran serta antrean sesuai lagu yang tersedia. Pemutaran YouTube memerlukan internet dan mengikuti ketersediaan kontennya.'
+          'Sebutkan judul, artis, atau jenis musik untuk memulai pemutaran. Mark menyediakan kontrol putar, jeda atau lanjutkan, lagu berikutnya, dan sebelumnya. Pemutar antarmuka juga menampilkan kontrol dan antrean.',
+          'Pemutaran YouTube memerlukan internet dan mengikuti ketersediaan konten. Jika hasil tidak sesuai, berikan judul atau artis yang lebih spesifik.'
         ],
-        example: 'Putarkan musik instrumental untuk bekerja, lalu jeda setelah saya minta.'
+        example: 'Putarkan musik instrumental untuk bekerja, lalu jeda ketika saya meminta.'
       },
       {
-        title: 'Pengiriman media',
+        title: 'Mengirim hasil media',
         paragraphs: [
-          'Pengiriman berkas atau hasil media melalui Telegram memerlukan bot yang terhubung dan penerima yang diizinkan. Kemampuan unduhan mengikuti tool yang tersedia serta respons layanan; pemutar musik tidak otomatis membuat semua video dapat diunduh.'
+          'Pengiriman berkas atau hasil media melalui Telegram memerlukan bot yang terhubung dan penerima yang diizinkan. Jelaskan berkas dan tujuan agar Mark memilih hasil yang benar.',
+          'Kemampuan unduhan mengikuti tool serta respons layanan. Berhasil memutar video tidak selalu berarti berkasnya tersedia untuk diunduh atau dikirim.'
         ]
       }
     ],
@@ -537,31 +587,35 @@ export const guideArticles = [
     id: 'addons',
     category: 'extend',
     title: 'Memilih dan memasang add-on',
-    summary: 'Hubungkan Chrome Bridge, Google Workspace, dan Telegram.',
+    summary:
+      'Add-ons adalah integrasi bawaan yang menghubungkan Mark dengan layanan tertentu. Halaman ini menyediakan penjelasan kemampuan, status, dan langkah penyiapan Chrome Bridge, Google Workspace, serta Telegram.',
     keywords: 'addons add-ons install uninstall connect connected status layanan katalog',
     sections: [
       {
-        title: 'Add-on menghubungkan layanan',
+        title: 'Memilih dan menyiapkan integrasi',
         paragraphs: [
-          'Katalog Add-ons menampilkan integrasi bawaan, penjelasan kemampuan, status, contoh permintaan, serta tindakan pemasangan atau pengelolaan. Memilih contoh permintaan menyiapkan pesan; contoh itu tidak langsung dikirim atau dijalankan.'
+          'Buka Add-ons untuk melihat layanan yang tersedia, lalu pilih integrasi yang ingin digunakan. Halaman detail menjelaskan kemampuan, langkah penyiapan, dan tindakan untuk memasang atau menghubungkan layanan.',
+          'Contoh permintaan pada halaman detail dapat dipilih untuk menyiapkan pesan chat. Pesan tersebut belum dikirim secara otomatis, sehingga Anda dapat menyesuaikannya sebelum meminta Mark bekerja.'
         ],
-        links: [{ label: 'Buka Add-ons', to: '/addons' }]
-      },
-      {
-        title: 'Status setiap integrasi berbeda',
-        bullets: [
-          'Chrome Bridge memerlukan engine terpasang, ekstensi tersambung, dan satu tab yang dipilih.',
-          'Google Workspace memerlukan kredensial OAuth dan pemberian akses untuk API yang digunakan.',
-          'Telegram memerlukan bot token, proses bot aktif, dan konfigurasi admin.'
-        ],
-        paragraphs: [
-          'Status terpasang tidak selalu berarti layanan siap dipakai. Buka detail add-on untuk melihat langkah koneksi atau kendala yang dilaporkan.'
+        links: [
+          {
+            label: 'Buka Add-ons',
+            to: '/addons'
+          }
         ]
       },
       {
-        title: 'Add-on, plugin, dan skill',
+        title: 'Membaca status layanan',
         paragraphs: [
-          'Add-on menyediakan integrasi dan alur pengelolaannya. Plugin menyediakan tool berupa kode yang dijalankan Mark. Skill berisi petunjuk kerja untuk AI. Sebuah add-on dapat membawa plugin, seperti Chrome Bridge yang menggunakan engine chrome-use.'
+          'Setiap integrasi mempunyai kebutuhan berbeda. Chrome Bridge memerlukan engine, ekstensi, dan tab pilihan; Google Workspace memerlukan pemberian akses akun; Telegram memerlukan token bot dan admin yang diizinkan.',
+          'Status terpasang belum selalu berarti layanan siap digunakan. Buka detail untuk memeriksa koneksi atau kendala. Setelah penyiapan selesai, uji dengan permintaan sederhana yang sesuai dengan layanan.'
+        ]
+      },
+      {
+        title: 'Hubungan add-on, plugin, dan skill',
+        paragraphs: [
+          'Add-on menyediakan alur penyiapan integrasi bawaan. Plugin Hub mengelola plugin lokal dan server MCP yang menyediakan tool tambahan. Skill berisi petunjuk tentang cara Mark menangani suatu jenis pekerjaan.',
+          'Sebuah add-on dapat membawa plugin sebagai engine, seperti Chrome Bridge dengan chrome-use. Karena itu, plugin engine dapat terlihat di Plugin Hub meskipun pemasangan dan pengelolaannya dilakukan melalui add-on terkait.'
         ]
       }
     ],
@@ -572,36 +626,48 @@ export const guideArticles = [
     category: 'extend',
     title: 'Chrome Bridge dan Mark Agent Bridge',
     summary:
-      'Gunakan satu tab Chrome pribadi yang Anda pilih, termasuk sesi login yang sudah aktif.',
+      'Chrome Bridge adalah add-on untuk menghubungkan Mark ke tab Google Chrome yang Anda pilih. Ekstensi Mark Agent Bridge menyediakan koneksi tersebut sehingga Mark dapat bekerja pada halaman dengan sesi login Chrome Anda.',
     keywords:
       'chrome-use extension ekstensi Load unpacked Developer mode tab bridge chrome-navigate chrome-read chrome-click chrome-type chrome-extract chrome-script chrome-scroll chrome-screenshot chrome-ask-user chrome-close',
     sections: [
       {
-        title: 'Nama dan perannya',
+        title: 'Memilih Chrome Bridge',
         paragraphs: [
-          'Chrome Bridge adalah nama add-on di Mark. Mark Agent Bridge adalah nama ekstensi Google Chrome. Engine dan grup tool tetap bernama chrome-use. Untuk permintaan browser umum, Mark memakai browser bawaan; sebutkan Chrome saya jika Anda ingin memakai integrasi ini.'
+          'Gunakan Chrome Bridge ketika ingin Mark mengoperasikan tab Chrome pribadi, termasuk halaman yang sudah login. Sebutkan Chrome saya dalam permintaan agar tujuannya jelas. Untuk permintaan browser umum, Mark menggunakan browser bawaannya.',
+          'Chrome Bridge merupakan nama add-on, sedangkan Mark Agent Bridge adalah ekstensi Chrome. Engine plugin dan grup tool tetap bernama chrome-use. Nama tersebut dapat muncul ketika Anda melihat daftar tool atau plugin.'
         ]
       },
       {
-        title: 'Pemasangan',
-        steps: [
-          'Buka Add-ons > Chrome Bridge, lalu pilih Install. Jika ada plugin lama yang perlu diganti, periksa konfirmasi penggantian.',
-          'Gunakan Buka folder ekstensi atau Salin lokasi pada detail add-on.',
-          'Di Chrome, buka chrome://extensions, aktifkan Developer mode, pilih Load unpacked, lalu pilih folder ekstensi tersebut.',
-          'Buka halaman target, buka popup Mark Agent Bridge, lalu pilih Hubungkan tab ini.'
+        title: 'Memasang dan memilih tab',
+        paragraphs: [
+          'Pasang add-on dari halaman detail, lalu ikuti penyiapan ekstensi di Chrome. Folder ekstensi disediakan oleh Mark; Anda dapat membuka folder atau menyalin lokasinya dari halaman yang sama.',
+          'Setelah ekstensi dimuat, buka halaman yang ingin dikendalikan dan pilih Hubungkan tab ini melalui popup Mark Agent Bridge. Periksa status koneksi sebelum meminta Mark melakukan tindakan.'
         ],
-        links: [{ label: 'Buka Chrome Bridge', to: '/addons/chrome-bridge' }]
-      },
-      {
-        title: 'Satu tab yang dikunci',
-        paragraphs: [
-          'Berpindah fokus ke tab lain tidak memindahkan kendali. Popup menunjukkan tab pilihan dan menyediakan Jeda atau Lanjutkan, Putuskan, serta Hubungkan ulang. Setelah Chrome dimulai ulang, pilih tab kembali. Menutup tab pilihan melepas kendalinya.'
+        steps: [
+          'Buka Add-ons > Chrome Bridge dan pilih Install. Tinjau konfirmasi jika plugin lama perlu diganti.',
+          'Buka chrome://extensions di Chrome dan aktifkan Developer mode.',
+          'Pilih Load unpacked dan arahkan ke folder ekstensi yang disediakan Mark.',
+          'Buka tab target, lalu gunakan Hubungkan tab ini di popup ekstensi.'
+        ],
+        links: [
+          {
+            label: 'Buka Chrome Bridge',
+            to: '/addons/chrome-bridge'
+          }
         ]
       },
       {
-        title: 'Kemampuan dan pemeliharaan',
+        title: 'Mengatur kendali tab',
         paragraphs: [
-          'Sepuluh tool chrome-* mendukung navigasi, pembacaan, klik, pengetikan, ekstraksi, JavaScript, scroll, screenshot, bantuan pengguna, dan penutupan tab. Screenshot dikembalikan sebagai artifact chat. Setelah pembaruan paket ekstensi, muat ulang ekstensi melalui Chrome. Melepas add-on di Mark perlu dilengkapi dengan menghapus ekstensi dari Chrome. Konflik port lokal ditampilkan sebagai kendala; gunakan Hubungkan ulang setelah penyebabnya selesai.'
+          'Kendali tetap terikat pada tab pilihan meskipun Anda berpindah fokus ke tab lain. Popup memperlihatkan tab tersebut dan menyediakan Jeda atau Lanjutkan, Putuskan, serta Hubungkan ulang. Menutup tab pilihan melepas kendalinya.',
+          'Setelah Chrome dimulai ulang, pilih tab kembali melalui ekstensi. Mark dapat menggunakan sepuluh tool chrome-* untuk navigasi, pembacaan, interaksi, pengambilan data, JavaScript, screenshot, bantuan pengguna, dan penutupan tab.'
+        ]
+      },
+      {
+        title: 'Pembaruan dan penghapusan',
+        paragraphs: [
+          'Muat ulang ekstensi melalui halaman ekstensi Chrome setelah paketnya diperbarui. Jika koneksi gagal karena konflik port lokal, selesaikan penyebabnya lalu gunakan Hubungkan ulang.',
+          'Menghapus add-on melalui Mark tidak menggantikan penghapusan ekstensi melalui Chrome. Hapus ekstensi dari Chrome jika Anda tidak lagi ingin menggunakannya.'
         ]
       }
     ],
@@ -611,83 +677,149 @@ export const guideArticles = [
     id: 'plugins',
     category: 'extend',
     title: 'Plugin Hub dan editor plugin',
-    summary: 'Kelola tool tambahan dan buat plugin lokal melalui Mark atau editor.',
+    summary:
+      'Plugin Hub adalah tempat mengelola kemampuan tambahan Mark yang berbentuk tool. Daftarnya mencakup plugin lokal dan MCP server, dengan pengaturan yang mengikuti jenis masing-masing.',
     keywords:
       'plugin.json index.js editable false true managed addon chrome-use Monaco actions dependencies NPM triggerHint',
     sections: [
       {
-        title: 'Mengelola plugin',
+        title: 'Melihat dan menggunakan plugin',
         paragraphs: [
-          'Plugin Hub menyediakan daftar dan pencarian plugin, detail aksi, status aktif, muat ulang, serta akses folder. Plugin aktif dapat ditandai dengan @nama-plugin dan dimuat sebagai grup tool. Plugin nonaktif tidak disediakan sebagai kemampuan aktif kepada agen.'
+          'Gunakan pencarian pada Plugin Hub untuk menemukan plugin berdasarkan nama atau kemampuan. Buka detail untuk melihat deskripsi, daftar aksi atau tool, dan pengaturan yang tersedia. MCP ditandai sebagai jenis tersendiri dengan status koneksi.',
+          'Ketik @ pada chat untuk memilih plugin atau grup tool aktif. Mark dapat memuat definisinya saat diperlukan. Plugin yang dinonaktifkan tidak disediakan sebagai kemampuan aktif kepada agen.'
         ],
-        links: [{ label: 'Buka Plugin Hub', to: '/plugins' }]
+        links: [
+          {
+            label: 'Buka Plugin Hub',
+            to: '/plugins'
+          }
+        ]
       },
       {
-        title: 'Membuat plugin',
+        title: 'Menambahkan kemampuan baru',
+        paragraphs: [
+          'Tombol Tambah plugin menyediakan tiga pilihan: Buat plugin manual, Buat plugin dengan Mark, dan Tambahkan custom MCP server. Pilih berdasarkan bahan yang Anda miliki: kode lokal, kebutuhan yang ingin dibahas dengan Mark, atau konfigurasi server MCP.',
+          'Plugin lokal disimpan di Documents/Mark Plugins dan menggunakan plugin.json serta handler index.js. Editor menyediakan definisi aksi dan kode handler. Setelah menyimpan, uji pada data yang sesuai agar hasilnya dapat diperiksa.'
+        ],
         steps: [
-          'Pilih Buat dengan Mark untuk meminta bantuan menyusun plugin, atau Buat Manual untuk mengisi definisinya sendiri.',
-          'Tentukan nama, deskripsi, versi, dependency bila diperlukan, dan daftar aksi.',
-          'Pada editor, lengkapi nama aksi, deskripsi, petunjuk pemicu, serta kode handler. Simpan, lalu minta Mark menguji aksi pada data percobaan yang sesuai.'
-        ],
-        paragraphs: [
-          'Paket plugin lokal berada di Documents/Mark Plugins. Plugin memakai plugin.json dan handler index.js. Dependency npm dapat membutuhkan internet dan pemasangan kode tambahan; plugin bukan sekadar teks instruksi.'
+          'Pilih Tambah plugin lalu tentukan cara pembuatan.',
+          'Untuk plugin lokal, lengkapi identitas, deskripsi, dependensi bila diperlukan, dan daftar aksi.',
+          'Lengkapi handler melalui editor atau bantuan Mark, simpan, lalu uji fungsi yang dibuat.'
         ]
       },
       {
-        title: 'MCP server di Plugin Hub',
+        title: 'Plugin yang dikelola dan tidak dapat diedit',
         paragraphs: [
-          'Pada Plugin Hub, pilih Tambah plugin lalu Tambahkan custom MCP server untuk membuat koneksi MCP lokal atau remote. Anda dapat mengisi formulir atau menempel konfigurasi mcpServers dalam JSON. Periksa server dan command sebelum menghubungkan. Semua server MCP memakai ikon yang sama; formulir tidak menyediakan unggahan ikon.',
-          'Tool yang ditemukan aktif secara default dan dapat dinonaktifkan satu per satu pada halaman detail. Pemanggilan mengikuti pengaturan persetujuan tool dan Auto Mode. Kredensial disimpan terpisah dan perlu dimasukkan kembali setelah memulihkan backup.'
+          'Properti editable: false pada plugin.json menonaktifkan penyuntingan definisi melalui editor. Jika tidak dicantumkan, editable dianggap true. Plugin yang dibawa add-on mengikuti pengelolaan add-on terkait.',
+          'Engine chrome-use tetap dapat terlihat, dipakai, dan ditandai, sementara penyiapannya dilakukan melalui Chrome Bridge. Buka pengelola yang ditunjukkan di detail plugin untuk mengubah konfigurasi integrasinya.'
         ]
       },
       {
-        title: 'Plugin yang tidak dapat diedit',
+        title: 'Akses plugin lokal',
         paragraphs: [
-          'editable: false pada plugin.json menonaktifkan perubahan definisi melalui editor. Jika properti editable tidak ada, nilainya dianggap true. Plugin yang dikelola add-on mengikuti kontrol add-on tersebut. chrome-use tetap terlihat dan dapat dipakai atau ditandai, sementara pengelolaannya melalui Chrome Bridge.'
-        ]
-      },
-      {
-        title: 'Kode plugin memiliki akses nyata',
-        paragraphs: [
-          'Pasang plugin dari sumber yang Anda percayai dan periksa tindakan yang disediakannya. Deskripsi atau status aktif tidak menjamin semua aksi plugin aman. Jangan menyimpan token atau password dalam contoh kode maupun pesan chat.'
+          'Plugin lokal berisi kode yang dapat dijalankan Mark. Tinjau sumber, dependensi, dan tindakan yang disediakan sebelum memasangnya. Dependensi npm dapat membutuhkan internet dan pemasangan kode tambahan.',
+          'Jangan memasukkan token atau kata sandi dalam contoh kode maupun pesan chat. Untuk menggunakan layanan yang memiliki server MCP, baca artikel MCP agar konfigurasi koneksi dan autentikasi disiapkan melalui alur yang sesuai.'
         ]
       }
     ],
-    related: ['addons', 'skills', 'tools', 'permissions']
+    related: ['mcp', 'addons', 'skills', 'tools', 'permissions']
+  },
+  {
+    id: 'mcp',
+    category: 'extend',
+    title: 'MCP server',
+    summary:
+      'MCP adalah protokol yang menghubungkan Mark dengan server penyedia tool. Melalui Plugin Hub, Anda dapat menambahkan server lokal atau remote lalu memilih kemampuan yang boleh digunakan Mark dan Minibot.',
+    keywords:
+      'MCP server stdio Streamable HTTP OAuth token npx mcpServers JSON plugin tools koneksi',
+    sections: [
+      {
+        title: 'Memahami MCP dalam Mark',
+        paragraphs: [
+          'Satu MCP server tampil sebagai satu entri pada Plugin Hub dan menyediakan satu grup tool. Server dapat menawarkan fungsi untuk dokumen, data, atau layanan lain sesuai implementasinya. Mark mempelajari nama, deskripsi, dan parameter tool dari server tersebut.',
+          'Pilih MCP jika layanan yang ingin digunakan sudah menyediakan server yang sesuai. Anda tidak perlu membuat ulang fungsi tersebut sebagai plugin lokal, tetapi tetap perlu menyiapkan command atau alamat server dan autentikasi yang diminta.'
+        ]
+      },
+      {
+        title: 'Menambahkan server lokal atau remote',
+        paragraphs: [
+          'Buka Plugin Hub > Tambah plugin > Tambahkan custom MCP server. Isi nama dan deskripsi agar koneksi mudah dikenali. Untuk lokal, pilih stdio lalu isi command, argumen berbentuk array JSON, dan environment bila diperlukan. Untuk remote, pilih Streamable HTTP dan isi URL server.',
+          'Jika penyedia memberikan konfigurasi mcpServers, buka Tempel JSON konfigurasi, tinjau isinya, dan pilih server yang ingin ditambahkan. Semua server menggunakan ikon MCP yang sama. Mark tidak menjalankan instalasi paket otomatis; command seperti npx yang Anda masukkan dapat mengunduh paket ketika dijalankan, sehingga perlu ditinjau sebelum disetujui.'
+        ],
+        links: [
+          {
+            label: 'Buka Plugin Hub',
+            to: '/plugins'
+          }
+        ]
+      },
+      {
+        title: 'Autentikasi dan menghubungkan server',
+        paragraphs: [
+          'Server remote dapat menggunakan tanpa autentikasi, token manual, atau OAuth. Masukkan token pada formulir bila diminta, atau lanjutkan login OAuth melalui tautan pada detail. Kebutuhan login mengikuti server dan discovery yang didukung; token manual dapat dipakai jika penyedia menyediakannya.',
+          'Setelah menyimpan, buka detail dan pilih Hubungkan. Tinjau tujuan atau command pada konfirmasi kepercayaan. Selama proses berlangsung, status Menghubungkan menunjukkan bahwa Mark menunggu respons dan daftar tool. Jika gagal, periksa konfigurasi dan kredensial sebelum mencoba lagi.'
+        ]
+      },
+      {
+        title: 'Memilih tool dan menggunakannya',
+        paragraphs: [
+          'Tool yang ditemukan aktif secara default. Buka detail MCP untuk membaca deskripsi dan menonaktifkan tool satu per satu. Ketik @ dan pilih nama server pada chat untuk menunjukkan grup yang ingin dipakai. Jika ada nama yang sama, gunakan pilihan unik pada saran.',
+          'Pemanggilan mengikuti izin tool dan Auto Mode. Status aktif membuat tool tersedia tetapi tidak mengubah aturan persetujuan. Minibot juga mengikuti batas akses tool yang diberikan kepadanya. Hasil teks dan gambar dapat ditampilkan; jenis hasil lain akan diberi keterangan jika belum didukung.'
+        ]
+      },
+      {
+        title: 'Mengelola koneksi dan kredensial',
+        paragraphs: [
+          'Gunakan Hubungkan ulang untuk memperbarui koneksi, Edit untuk mengubah konfigurasi, dan Hapus jika server tidak lagi diperlukan. Setelah Mark dimulai ulang, buka detail dan hubungkan server kembali. Saat add-on MCP dinonaktifkan atau dihapus, koneksinya dihentikan.',
+          'Token dan nilai environment rahasia disimpan terpisah dengan perlindungan kredensial Windows. Backup Mark memuat metadata konfigurasi tanpa kredensial MCP; setelah restore, masukkan ulang rahasia atau login kembali. Resources dan prompts MCP belum mempunyai antarmuka tersendiri pada versi ini.'
+        ]
+      }
+    ],
+    related: ['plugins', 'tools', 'permissions', 'privacy']
   },
   {
     id: 'skills',
     category: 'extend',
     title: 'User Skills dan skill yang dipelajari',
-    summary: 'Simpan petunjuk kerja yang dapat dipanggil kembali dengan slash command.',
+    summary:
+      'Skill adalah panduan kerja yang dibaca Mark untuk menangani suatu jenis tugas. Skill menyimpan instruksi, tahapan, dan bahan pendukung agar pendekatan yang sama dapat digunakan kembali melalui percakapan.',
     keywords:
       'skill SKILL.md markdown upload zip export editor create-plugin setup-google-workspace task learn',
     sections: [
       {
-        title: 'User Skills',
+        title: 'Membuat dan memasang User Skills',
         paragraphs: [
-          'Halaman User Skills digunakan untuk membuat, membuka, memperbarui daftar, dan memasang paket skill ZIP. Edit petunjuk serta berkas pendukung melalui editor skill, termasuk penambahan folder, penggantian nama, dan penghapusan item. Skill memakai petunjuk Markdown, biasanya melalui SKILL.md dalam ~/.agents/skills. Gunakan tombol Migrasi skill lama di halaman Skills untuk memindahkan skill dari Documents/Mark Skills. Folder beserta file pendukung dipindahkan tanpa menimpa nama yang sudah ada. Perubahan di folder bersama juga terlihat oleh agent lain yang membacanya. Isi nama, deskripsi, tahapan, serta batasan yang jelas agar Mark memahami kapan dan bagaimana menggunakannya.'
+          'Halaman User Skills menyediakan pembuatan, pembukaan, penyegaran daftar, dan pemasangan paket ZIP. Editor memungkinkan Anda mengubah instruksi serta mengelola berkas dan folder pendukung.',
+          'Skill umumnya memiliki SKILL.md pada folder ~/.agents/skills. Tulis nama, deskripsi, langkah kerja, dan batas penggunaan yang jelas agar Mark memahami kapan panduan perlu diterapkan.'
         ],
-        links: [{ label: 'Buka User Skills', to: '/skills' }]
+        links: [
+          {
+            label: 'Buka User Skills',
+            to: '/skills'
+          }
+        ]
       },
       {
-        title: 'Memanggil skill',
+        title: 'Menggunakan skill dalam chat',
         paragraphs: [
-          'Ketik / pada pesan, pilih skill yang tersedia, lalu tambahkan permintaan. Skill bawaan saat ini mencakup /task, /setup-google-workspace, dan /create-plugin. Skill dipilih dari katalog yang memuat nama, deskripsi, sumber, serta lokasi SKILL.md. Isi lengkap dimuat ketika skill digunakan; Mark memperoleh direktori dasarnya untuk membaca references, scripts, atau assets sesuai kebutuhan. Penanda Menggunakan pada jawaban menampilkan sumber dan file referensi. Skill dengan kebijakan hanya eksplisit tidak dipilih otomatis. Instruksi skill tetap mengikuti izin dan batas tugas yang berlaku. Slash command yang hanya disebut dokumentasi lama belum tentu tersedia; ikuti daftar yang muncul pada aplikasi.'
+          'Ketik / dan pilih skill dari saran, lalu tulis kebutuhan Anda. Skill bawaan yang tersedia mencakup /task, /setup-google-workspace, dan /create-plugin. Daftar pada aplikasi menjadi acuan skill yang dapat dipilih.',
+          'Mark memperoleh nama, deskripsi, sumber, dan lokasi skill dari katalog. Isi lengkap dibaca ketika digunakan, beserta direktori dasar untuk mencari referensi atau skrip pendukung. Penanda Menggunakan pada jawaban menunjukkan sumber dan referensi yang dipakai. Skill yang hanya mengizinkan pemanggilan eksplisit tidak dipilih otomatis.'
         ],
         example:
           '/create-plugin Buat plugin untuk membaca ringkasan penggunaan penyimpanan pada folder yang saya tentukan.'
       },
       {
-        title: 'Skill yang dipelajari Mark',
+        title: 'Migrasi dan skill yang dipelajari',
         paragraphs: [
-          'Tool learn dapat menyimpan prosedur atau solusi yang sudah dipelajari. Panduan tersebut ditampilkan pada Neural Core > Skill dipelajari. Tidak setiap jawaban atau percobaan otomatis menjadi skill, dan skill tersimpan tetap memerlukan tool serta akses yang sesuai ketika digunakan lagi.'
+          'Gunakan Migrasi skill lama untuk memindahkan paket dari Documents/Mark Skills ke ~/.agents/skills. Folder dan bahan pendukung dipindahkan tanpa menimpa nama yang sudah ada. Perubahan pada folder bersama juga dapat terlihat oleh agen lain yang membacanya.',
+          'Mark dapat menyimpan prosedur yang dipelajari melalui tool learn. Hasilnya tersedia di Neural Core > Skill dipelajari dan dikelola terpisah dari paket User Skills. Tidak setiap percakapan atau percobaan otomatis disimpan sebagai skill.'
         ]
       },
       {
-        title: 'Perbedaan dengan plugin',
+        title: 'Hubungan skill dan tool',
         paragraphs: [
-          'Skill memberi instruksi; plugin menambah fungsi eksekusi. Mengimpor skill tidak otomatis memasang aplikasi, memberi kredensial layanan, atau mengizinkan tindakan di luar permintaan Anda.'
+          'Skill memberi petunjuk cara bekerja, sedangkan tool menjalankan tindakan. Panduan membuat dokumen, misalnya, tetap memerlukan tool yang mampu membaca atau membuat berkas terkait.',
+          'Mengimpor skill tidak otomatis memasang aplikasi, menghubungkan akun, atau memberi izin tindakan. Instruksi skill tetap mengikuti permintaan Anda serta akses yang tersedia.'
         ]
       }
     ],
@@ -697,38 +829,45 @@ export const guideArticles = [
     id: 'google',
     category: 'extend',
     title: 'Google Workspace',
-    summary: 'Hubungkan Drive, Calendar, dan Gmail melalui OAuth.',
+    summary:
+      'Google Workspace adalah integrasi akun Google untuk mengakses Drive, Calendar, dan Gmail dari Mark. Koneksi menggunakan OAuth, sehingga akun perlu memberikan akses pada layanan yang akan dipakai.',
     keywords:
       'google OAuth client id secret consent Drive Calendar Gmail gdrive gcalendar gmail email agenda dokumen login install',
     sections: [
       {
-        title: 'Menyiapkan koneksi',
-        steps: [
-          'Buka Add-ons > Google Workspace dan gunakan tindakan pemasangan atau penyiapan yang tersedia.',
-          'Ikuti panduan /setup-google-workspace untuk menyiapkan proyek OAuth, mengaktifkan API yang diperlukan, dan memberi akses melalui akun Google.',
-          'Periksa status koneksi. Uji dengan aksi baca, misalnya melihat agenda, sebelum melakukan perubahan.'
+        title: 'Menghubungkan akun',
+        paragraphs: [
+          'Buka Add-ons > Google Workspace untuk memulai penyiapan. Panduan /setup-google-workspace membantu menyiapkan proyek OAuth, mengaktifkan API, dan memberikan akses melalui akun Google.',
+          'Setelah penyiapan, periksa status koneksi dan coba tindakan baca seperti melihat agenda. Jika gagal, periksa pesan kendala sebelum mengulang login atau mengubah konfigurasi.'
         ],
-        links: [{ label: 'Buka Google Workspace', to: '/addons/google-workspace' }]
+        links: [
+          {
+            label: 'Buka Google Workspace',
+            to: '/addons/google-workspace'
+          }
+        ]
       },
       {
-        title: 'Google Drive',
+        title: 'Bekerja dengan Drive',
         paragraphs: [
-          'Cari dan lihat daftar berkas, baca konten yang didukung, unggah atau buat berkas, pindahkan, salin, periksa metadata, serta atur pembagian akses. Isi Google Docs atau Sheets mengikuti format yang dapat dibaca oleh tool; jangan menganggap Mark memiliki editor visual penuh semua aplikasi Google.'
+          'Mark dapat mencari dan menampilkan daftar berkas, membaca konten yang didukung, mengunggah atau membuat berkas, memindahkan, menyalin, melihat metadata, dan mengatur pembagian akses. Sebutkan nama, lokasi, atau tujuan agar berkas yang dipilih sesuai.',
+          'Pembacaan Google Docs atau Sheets mengikuti format yang tersedia melalui tool. Integrasi ini tidak menyediakan seluruh kemampuan editor visual aplikasi Google. Jelaskan jenis perubahan atau keluaran yang Anda butuhkan sebelum meminta pekerjaan.'
         ]
       },
       {
         title: 'Calendar dan Gmail',
-        bullets: [
-          'Calendar menyediakan daftar agenda serta pembuatan dan penghapusan event.',
-          'Gmail menyediakan pencarian, daftar, pembacaan, pengiriman, dan penandaan email sebagai telah dibaca.'
+        paragraphs: [
+          'Calendar menyediakan pembacaan agenda serta pembuatan dan penghapusan event. Gmail menyediakan pencarian, daftar pesan, pembacaan, pengiriman, dan penandaan email sebagai telah dibaca.',
+          'Sebutkan tanggal, penerima, atau topik yang dimaksud. Jika hanya ingin pemeriksaan, tulis bahwa Mark belum perlu membuat event atau mengirim email.'
         ],
         example:
-          'Lihat agenda besok dan ringkas email terbaru yang berkaitan dengan rapat. Jangan membuat event atau mengirim email dulu.'
+          'Ringkas agenda besok dan email terkait rapat. Jangan membuat event atau mengirim email dulu.'
       },
       {
-        title: 'Kendala akses',
+        title: 'Memeriksa masalah akses',
         paragraphs: [
-          'Akses dapat gagal karena consent dibatalkan, API belum aktif, scope tidak sesuai, atau kebijakan akun organisasi. Periksa pesan kegagalan sebelum mengulang. Token tersedia atau status terhubung tidak menjamin setiap API sudah dapat digunakan.'
+          'Koneksi dapat gagal karena akses dibatalkan, API belum aktif, izin akun tidak sesuai, atau kebijakan organisasi. Status terhubung tidak memastikan seluruh API sudah diberi akses.',
+          'Gunakan pesan kegagalan untuk menentukan layanan yang perlu diperiksa. Bila koneksi memerlukan login kembali, lakukan melalui alur Google Workspace dan hindari membagikan token melalui chat.'
         ]
       }
     ],
@@ -738,38 +877,40 @@ export const guideArticles = [
     id: 'telegram',
     category: 'extend',
     title: 'Bot Telegram',
-    summary: 'Terima instruksi dan kirim hasil melalui bot yang Anda hubungkan.',
+    summary:
+      'Bot Telegram adalah penghubung untuk mengirim instruksi dan menerima hasil Mark melalui Telegram. Komputer yang menjalankan Mark tetap memproses pekerjaan, sementara bot menjadi jalur percakapannya.',
     keywords:
       'telegram bot BotFather token admin id accept reject session always screenshot-to-tg tg-send log disconnect',
     sections: [
       {
-        title: 'Menghubungkan bot',
-        steps: [
-          'Buat bot melalui BotFather di Telegram dan simpan tokennya secara pribadi.',
-          'Buka Add-ons > Telegram. Isi Bot Token serta ID admin yang diizinkan, lalu gunakan tindakan koneksi.',
-          'Periksa status, kirim pesan ke bot, dan gunakan halaman log untuk melihat percakapannya.'
+        title: 'Menyiapkan bot',
+        paragraphs: [
+          'Buat bot melalui BotFather, lalu simpan tokennya secara pribadi. Buka Add-ons > Telegram untuk memasukkan token dan ID admin yang boleh mengakses Mark.',
+          'Setelah tersambung, kirim pesan percobaan ke bot dan periksa balasannya. Halaman log membantu mengikuti percakapan yang masuk melalui jalur Telegram.'
         ],
         links: [
-          { label: 'Atur add-on Telegram', to: '/addons/telegram' },
-          { label: 'Buka log bot', to: '/telegram-bot' }
+          {
+            label: 'Atur Telegram',
+            to: '/addons/telegram'
+          },
+          {
+            label: 'Buka log bot',
+            to: '/telegram-bot'
+          }
         ]
       },
       {
-        title: 'Penggunaan jarak jauh',
+        title: 'Menggunakan Mark dari jarak jauh',
         paragraphs: [
-          'Bot dapat meneruskan permintaan ke Mark, mengirim balasan atau notifikasi, serta mengirim tangkapan layar dan hasil yang didukung tool. Komputer dan proses Mark harus tetap berjalan serta terhubung ke internet. Bot bukan layanan yang berjalan sendiri setelah komputer dimatikan.'
+          'Bot dapat meneruskan permintaan kepada Mark dan mengirim balasan, notifikasi, screenshot, atau hasil yang didukung tool. Gunakan instruksi yang jelas mengenai pekerjaan dan berkas yang ingin dikirim.',
+          'Komputer, proses Mark, dan koneksi internet harus tetap aktif. Menutup Telegram tidak menghentikan server Mark, tetapi mematikan komputer membuat layanan tidak dapat melanjutkan pekerjaan.'
         ]
       },
       {
-        title: 'Persetujuan dan admin',
+        title: 'Persetujuan dan pengelolaan koneksi',
         paragraphs: [
-          'Konfigurasikan ID admin agar akses sesuai pengguna yang Anda izinkan. Jika permintaan tool memerlukan persetujuan, bot dapat meneruskan informasi dan pilihan /accept, /session, /always, atau /reject. Periksa target dan dampak aksi sebelum memberi izin yang berlaku lebih lama.'
-        ]
-      },
-      {
-        title: 'Memutus koneksi',
-        paragraphs: [
-          'Kelola koneksi melalui detail add-on. Halaman log berfungsi untuk pemantauan pesan, bukan tempat utama memasukkan token. Jangan membagikan bot token melalui percakapan atau screenshot.'
+          'ID admin menentukan pengguna yang boleh memberi instruksi melalui bot. Saat tindakan memerlukan persetujuan, bot dapat menampilkan pilihan /accept, /session, /always, atau /reject sesuai alur yang tersedia.',
+          'Kelola atau putuskan koneksi melalui detail add-on. Gunakan halaman log untuk pemantauan pesan dan jangan membagikan token bot dalam chat atau screenshot.'
         ]
       }
     ],
@@ -779,32 +920,36 @@ export const guideArticles = [
     id: 'settings',
     category: 'manage',
     title: 'Pengaturan Mark',
-    summary: 'Atur AI, perilaku, suara, kamera, pintasan, dan izin akses.',
+    summary:
+      'Pengaturan Mark adalah halaman untuk menyesuaikan model AI, perilaku, perangkat, pintasan, dan izin tersimpan. Perubahan diterapkan melalui tombol Simpan perubahan setelah Anda selesai mengisi konfigurasi.',
     keywords:
       'configuration simpan batalkan provider model temperature kepribadian awareness super effort microphone kamera shortcut permission',
     sections: [
       {
-        title: 'Enam bagian pengaturan',
-        bullets: [
-          'AI: provider, model, endpoint, dan kredensial yang diperlukan.',
-          'Perilaku: gaya bicara, kreativitas jawaban, Awareness Engine, dan Super Effort.',
-          'Suara: kata panggilan tambahan, bahasa input, dan akses pengaturan mikrofon Windows.',
-          'Kamera: izin penggunaan, pilihan perangkat, dan pratinjau yang diaktifkan lewat tombol.',
-          'Pintasan: kombinasi tombol untuk memanggil Mark dan pilihan kombinasi yang disediakan.',
-          'Izin akses: daftar folder atau perintah yang telah diizinkan secara permanen.'
+        title: 'Menemukan pengaturan yang diperlukan',
+        paragraphs: [
+          'Bagian AI mengatur provider, model, endpoint, dan kredensial. Bagian Perilaku mengatur gaya bicara, kreativitas jawaban, Awareness Engine, serta Super Effort. Gunakan kedua bagian ini untuk menyesuaikan cara Mark memahami dan mengerjakan permintaan.',
+          'Suara mengatur bahasa input dan kata panggilan, sedangkan Kamera menyediakan pilihan perangkat dan pratinjau. Pintasan mengatur kombinasi tombol untuk memanggil Mark. Izin akses menampilkan folder atau perintah yang sudah diizinkan secara permanen.'
         ],
-        links: [{ label: 'Buka Pengaturan', to: '/config' }]
+        links: [
+          {
+            label: 'Buka Pengaturan',
+            to: '/config'
+          }
+        ]
       },
       {
-        title: 'Simpan setelah selesai',
+        title: 'Menyimpan atau membatalkan perubahan',
         paragraphs: [
-          'Perubahan formulir tetap ada saat Anda berpindah bagian. Tombol Simpan perubahan berada di bagian bawah halaman. Batalkan mengembalikan perubahan yang belum disimpan. Penghapusan izin dan perubahan pintasan di halaman ini juga diterapkan setelah disimpan.'
+          'Isian yang belum disimpan tetap tersedia ketika Anda berpindah bagian dalam formulir. Setelah selesai, pilih Simpan perubahan pada bagian bawah halaman agar konfigurasi diterapkan.',
+          'Pilih Batalkan untuk mengembalikan perubahan yang belum disimpan. Penghapusan izin dan perubahan pintasan juga perlu disimpan sebelum berlaku.'
         ]
       },
       {
         title: 'Pintasan dan izin perangkat',
         paragraphs: [
-          'Fokuskan kolom pintasan dan tekan kombinasi tombol, atau pilih salah satu pilihan yang disediakan. Esc membatalkan perekaman tombol. Ketersediaan pintasan lintas aplikasi mengikuti mode launcher dan dukungan sistem. Izin mikrofon atau kamera dari browser tetap perlu diberikan terpisah.'
+          'Fokuskan kolom pintasan lalu tekan kombinasi tombol, atau gunakan pilihan yang disediakan. Tekan Esc jika ingin membatalkan perekaman tombol. Pintasan lintas aplikasi mengikuti dukungan sistem dan mode launcher.',
+          'Izin mikrofon atau kamera browser perlu diberikan selain pengaturan aplikasi. Jika perangkat tidak dapat digunakan, periksa pilihan perangkat Windows dan izin pada browser yang membuka Mark.'
         ]
       }
     ],
@@ -814,35 +959,30 @@ export const guideArticles = [
     id: 'permissions',
     category: 'manage',
     title: 'Persetujuan dan akses tool',
-    summary: 'Pahami izin sekali, sesi, permanen, serta mode otomatis.',
+    summary:
+      'Persetujuan tool adalah mekanisme untuk menentukan apakah Mark boleh menjalankan suatu tindakan. Anda dapat memberi izin sekali, selama sesi, atau secara permanen, serta mengatur Auto Mode sesuai pekerjaan yang dipercayakan.',
     keywords:
       'approval keamanan izin whitelist auto mode bypass sandbox shell hapus file delete risk',
     sections: [
       {
-        title: 'Pilihan persetujuan',
-        bullets: [
-          'Izinkan sekali berlaku untuk permintaan tersebut.',
-          'Izinkan untuk sesi mengingat pilihan pada sesi yang sesuai.',
-          'Izinkan Selamanya menyimpan izin menurut folder atau perintah yang dikenali.',
-          'Tolak mencegah permintaan yang sedang menunggu persetujuan dilanjutkan.'
+        title: 'Memilih durasi izin',
+        paragraphs: [
+          'Baca tindakan, target, dan input yang ditampilkan sebelum memberi persetujuan. Izinkan Sekali berlaku untuk permintaan tersebut. Izinkan Sesi Ini mengingat pilihan pada sesi yang sesuai, sedangkan Izinkan Selamanya menyimpan izin untuk target atau perintah yang dikenali.',
+          'Tolak mencegah permintaan yang sedang menunggu dilanjutkan. Setelah menolak, Anda dapat memberi arahan lain, misalnya mengganti target atau meminta Mark menjelaskan tindakan terlebih dahulu.'
         ]
       },
       {
-        title: 'Kapan dialog tidak muncul?',
+        title: 'Auto Mode dan izin yang sudah diberikan',
         paragraphs: [
-          'Mode otomatis sesi, izin untuk sesi, atau izin permanen dapat membuat permintaan yang cocok berjalan tanpa dialog baru. Tidak semua jalur tool memakai mekanisme persetujuan yang sama. Karena itu Guidebook tidak memberi label bebas atau aman berdasarkan nama tool saja.'
+          'Auto Mode, izin sesi, dan izin permanen dapat membuat permintaan yang cocok berjalan tanpa dialog baru. MCP mengikuti pengaturan persetujuan tool yang sama, sehingga izin aktif dapat berlaku pada pemanggilannya.',
+          'Beberapa fitur mempunyai aturan khusus. Membuka sesi Computer Use tetap memerlukan persetujuan baru. Pilih durasi izin berdasarkan jenis pekerjaan serta akses yang ingin Anda berikan.'
         ]
       },
       {
-        title: 'Mengubah izin tersimpan',
+        title: 'Meninjau dan mencabut izin',
         paragraphs: [
-          'Buka Pengaturan > Izin akses, hapus entri yang tidak diperlukan, lalu Simpan. Mencabut izin tidak mengurungkan pekerjaan sebelumnya. Periksa isi instruksi, perintah shell, penerima pesan, dan target berkas ketika mempercayakan pekerjaan pada agen.'
-        ]
-      },
-      {
-        title: 'Batas perlindungan',
-        paragraphs: [
-          'Mark adalah layanan lokal dengan akses berkas dan otomasi komputer. Pemilihan workspace dan dialog client bukan sandbox OS. Jalankan pada komputer serta jaringan yang Anda percayai; kode plugin juga harus diperlakukan sebagai kode yang memiliki akses nyata.'
+          'Buka Pengaturan > Izin akses, hapus entri yang tidak diperlukan, lalu simpan perubahan. Tindakan berikutnya yang membutuhkan izin tersebut dapat kembali meminta persetujuan.',
+          'Pencabutan tidak mengurungkan pekerjaan sebelumnya. Mark tetap merupakan layanan lokal dengan akses berkas dan otomasi komputer; pemilihan workspace serta dialog persetujuan tidak membentuk sandbox sistem operasi.'
         ]
       }
     ],
@@ -852,37 +992,43 @@ export const guideArticles = [
     id: 'privacy',
     category: 'manage',
     title: 'Data lokal, cadangan, dan pemulihan',
-    summary: 'Ketahui tempat penyimpanan dan kapan data dikirim ke layanan lain.',
+    summary:
+      'Data Mark disimpan pada komputer pengguna, sementara pemrosesan AI dan layanan tertentu mengikuti konfigurasi yang dipilih. Artikel ini menjelaskan lokasi data, penggunaan layanan eksternal, serta cara membuat cadangan dan memulihkannya.',
     keywords:
       'privasi privacy local cloud backup JSON restore reset export SQLite database config Documents Mark Workspace Mark Plugins Mark Skills',
     sections: [
       {
-        title: 'Lokasi penyimpanan',
-        bullets: [
-          'Data utama dan konfigurasi berada di folder pengguna .config/mark-agent. Database utama menggunakan mark.db.',
-          'Folder umum untuk pekerjaan adalah Documents/Mark Workspace. Plugin berada di Documents/Mark Plugins dan skill di ~/.agents/skills. Skill dari Documents/Mark Skills dapat dipindahkan melalui tombol migrasi di halaman Skills.',
-          'Artifact tugas serta unggahan sementara dapat memiliki lokasi tersendiri. Gunakan tautan atau folder hasil yang ditampilkan oleh pekerjaan tersebut.'
-        ]
-      },
-      {
-        title: 'Konteks yang dikirim ke provider',
+        title: 'Lokasi data dan berkas',
         paragraphs: [
-          'Riwayat dan memori disimpan lokal, tetapi bagian konteks yang diperlukan dikirim ke provider AI yang Anda pilih. Provider online, layanan pengenalan suara, Google, Telegram, pencarian web, dan YouTube melibatkan layanan eksternal. Memakai model lokal tidak membuat semua fitur jaringan menjadi offline. Jangan memasukkan rahasia yang tidak diperlukan dalam pesan atau lampiran.'
+          'Database utama mark.db dan konfigurasi berada pada folder pengguna .config/mark-agent. Workspace umum menggunakan Documents/Mark Workspace, plugin lokal berada pada Documents/Mark Plugins, dan User Skills berada pada ~/.agents/skills.',
+          'Keluaran tugas dan unggahan dapat mempunyai lokasi tersendiri. Gunakan tautan atau tombol folder hasil untuk menemukan berkasnya. Paket skill lama dari Documents/Mark Skills dapat dipindahkan melalui migrasi pada halaman Skills.'
         ]
       },
       {
-        title: 'Membuat dan memulihkan cadangan',
-        steps: [
-          'Buka Neural Core > Kelola data, lalu Unduh JSON untuk menyimpan cadangan.',
-          'Simpan cadangan di tempat yang Anda percayai karena dapat berisi percakapan, konfigurasi, dan kredensial.',
-          'Untuk pemulihan, pilih berkas JSON yang sesuai dan baca konfirmasi penggantian database sebelum melanjutkan.'
+        title: 'Pemrosesan lokal dan layanan eksternal',
+        paragraphs: [
+          'Riwayat serta memori disimpan lokal, tetapi konteks yang diperlukan dikirim ke provider AI yang Anda gunakan. Memilih provider online dapat melibatkan isi pesan, bahan yang dibaca, atau konteks lain yang diperlukan untuk jawaban.',
+          'Model lokal membantu pemrosesan AI berlangsung lokal. Fitur jaringan seperti Google, Telegram, pencarian web, YouTube, dan layanan pengenalan suara tetap dapat menggunakan layanan eksternal. Periksa layanan yang diperlukan ketika memilih cara kerja sesuai kebutuhan data Anda.'
+        ]
+      },
+      {
+        title: 'Cadangan dan pemulihan',
+        paragraphs: [
+          'Buka Neural Core > Kelola data lalu pilih Unduh JSON untuk membuat salinan data. Simpan cadangan di tempat yang Anda percayai karena isinya dapat mencakup percakapan dan konfigurasi sensitif.',
+          'Untuk memulihkan, pilih berkas JSON dan baca konfirmasi penggantian data. Kredensial MCP disimpan terpisah dan tidak disertakan dalam backup; setelah restore, masukkan kembali kredensial atau login untuk menghubungkannya.'
         ],
-        links: [{ label: 'Kelola data Mark', to: '/neural-core?tab=data' }]
+        links: [
+          {
+            label: 'Kelola data Mark',
+            to: '/neural-core?tab=data'
+          }
+        ]
       },
       {
-        title: 'Reset data',
+        title: 'Reset data Mark',
         paragraphs: [
-          'Reset memerlukan dua tahap konfirmasi dan teks RESET MARK. Operasi itu menghapus data AI yang tercantum pada dialog, termasuk riwayat, memori, skill dipelajari, serta perkembangan karakter dan tugas. Konfigurasi sistem dipertahankan. Reset database tidak sama dengan menghapus seluruh berkas workspace atau paket plugin di disk.'
+          'Reset memerlukan dua tahap konfirmasi dan teks RESET MARK. Dialog menjelaskan data AI yang akan dihapus, termasuk riwayat, memori, skill dipelajari, perkembangan karakter, dan tugas. Konfigurasi sistem dipertahankan.',
+          'Reset database tidak menghapus seluruh berkas workspace atau paket plugin pada disk. Buat cadangan terlebih dahulu jika masih ada data yang ingin digunakan kembali.'
         ]
       }
     ],
@@ -892,32 +1038,30 @@ export const guideArticles = [
     id: 'runtime',
     category: 'manage',
     title: 'Menjalankan Mark dan pembaruan',
-    summary: 'Pahami server lokal, antarmuka browser, monitor CLI, dan kebutuhan runtime.',
+    summary:
+      'Mark berjalan melalui server lokal Node.js dan antarmuka web. Launcher menghubungkan keduanya, sementara monitor terminal menyediakan informasi layanan dan kontrol selama aplikasi berjalan.',
     keywords:
       'Windows Node Edge Chrome app mode CLI launcher monitor update npm start dev no-launch headless no-ui version port localhost restart',
     sections: [
       {
-        title: 'Aplikasi dan server lokal',
+        title: 'Memahami proses aplikasi',
         paragraphs: [
-          'Mark menggunakan server Node.js dan antarmuka web. Di Windows, launcher dapat membuka Edge App Mode; antarmuka juga dapat berjalan di browser. Menutup sebuah halaman antarmuka belum tentu menghentikan server atau proses latar belakang. Perhatikan launcher atau terminal yang menjalankan Mark.'
+          'Pada Windows, launcher dapat membuka antarmuka melalui Edge App Mode. Anda juga dapat menggunakan browser untuk membuka layanan Mark. Server menangani penyimpanan, tool, dan pekerjaan latar belakang.',
+          'Menutup halaman antarmuka belum tentu menghentikan server. Periksa terminal atau launcher ketika ingin mengetahui apakah Mark masih berjalan. Jika tidak merespons, lihat pesan startup dan alamat layanan yang digunakan.'
         ]
       },
       {
-        title: 'Monitor terminal',
+        title: 'Menggunakan monitor terminal',
         paragraphs: [
-          'Monitor CLI menampilkan kondisi layanan dan aktivitas. Saat dijalankan melalui terminal interaktif, pintasan u membuka UI, p menampilkan informasi pembaruan, c membersihkan tampilan, dan q keluar. Ikuti informasi launcher jika port layanan berubah karena port sebelumnya sudah digunakan.'
+          'Monitor CLI menampilkan kondisi layanan dan aktivitas. Dalam terminal interaktif, u membuka antarmuka, p menampilkan informasi pembaruan, c membersihkan tampilan, dan q keluar.',
+          'Jika port awal sedang digunakan, layanan dapat memilih port berikutnya. Ikuti alamat yang ditampilkan launcher agar antarmuka terhubung ke proses yang benar.'
         ]
       },
       {
-        title: 'Pembaruan',
+        title: 'Memperbarui dan memeriksa kebutuhan fitur',
         paragraphs: [
-          'Periksa informasi versi atau notifikasi pembaruan yang tersedia. Ikuti perintah pembaruan yang ditampilkan untuk cara instalasi Anda, lalu mulai ulang Mark. Berkas ekstensi Chrome Bridge juga perlu dimuat ulang di Chrome setelah paketnya diperbarui. Cadangkan data sebelum mengganti instalasi.'
-        ]
-      },
-      {
-        title: 'Kebutuhan fitur tambahan',
-        paragraphs: [
-          'Model lokal memerlukan server model dan sumber daya komputer yang memadai. Fitur Windows, browser automation, kamera, mikrofon, atau integrasi akun memerlukan perangkat, aplikasi, dan izin yang sesuai. Paket tambahan tidak otomatis menjadi kemampuan aktif hanya karena tercantum sebagai dependency proyek.'
+          'Ikuti informasi versi serta petunjuk pembaruan yang tersedia untuk metode instalasi Anda, kemudian mulai ulang Mark. Cadangkan data sebelum mengganti instalasi. Ekstensi Chrome Bridge juga perlu dimuat ulang di Chrome setelah paketnya diperbarui.',
+          'Model lokal memerlukan server model dan sumber daya komputer. Browser, Computer Use, kamera, mikrofon, serta integrasi akun memerlukan aplikasi, perangkat, atau izin pendukung. Jika fitur gagal, periksa kebutuhan tersebut melalui pesan kendala dan panduan fitur terkait.'
         ]
       }
     ],
@@ -927,9 +1071,18 @@ export const guideArticles = [
     id: 'faq',
     category: 'manage',
     title: 'Kendala dan pertanyaan umum',
-    summary: 'Langkah pemeriksaan untuk koneksi AI, perangkat, integrasi, dan hasil pekerjaan.',
+    summary:
+      'Bagian bantuan mengumpulkan pertanyaan umum dan langkah pemeriksaan ketika fitur Mark tidak berjalan sesuai harapan. Gunakan gejala dan pesan kesalahan untuk menentukan konfigurasi atau layanan yang perlu ditinjau.',
     keywords: 'FAQ bantuan troubleshoot error gagal lambat kosong tersambung stop token login',
-    sections: []
+    sections: [
+      {
+        title: 'Menentukan titik pemeriksaan',
+        paragraphs: [
+          'Catat pekerjaan yang diminta, fitur yang digunakan, dan pesan kesalahan yang muncul. Periksa koneksi provider untuk kegagalan jawaban AI, izin perangkat untuk suara atau kamera, serta status layanan untuk masalah integrasi.',
+          'Pertanyaan umum di bagian ini melengkapi artikel fitur. Jika masalah muncul setelah perubahan konfigurasi, bandingkan pengaturan terbaru dan uji dengan permintaan sederhana sebelum melanjutkan pekerjaan yang lebih besar.'
+        ]
+      }
+    ]
   }
 ]
 

@@ -39,8 +39,7 @@ export default function Guidebook() {
     })
     requestAnimationFrame(() => {
       contentRef.current?.focus({ preventScroll: true })
-      const top = contentRef.current?.offsetTop || 0
-      rootRef.current?.scrollTo({ top: Math.max(0, top - 24), behavior: 'instant' })
+      rootRef.current?.scrollTo({ top: 0, behavior: 'instant' })
     })
   }
   const copyExample = async (text) => {
