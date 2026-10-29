@@ -5,6 +5,8 @@ import { initOramaIndices } from '../memory/orama-store.js'
 import { wsHub } from '../ws-hub.js'
 import { sessionForClient, isInvalidMainWorkspace } from '../workspace-policy.js'
 import { recoverTaskWorkflows } from '../services/task-workflow.js'
+import { mcpRuntime } from '../services/mcp-service.js'
+import { mcpVault } from '../services/mcp-vault.js'
 
 export const memoryRouter = Router()
 
@@ -228,7 +230,11 @@ memoryRouter.post('/db/restore', async (req, res) => {
   }
   try {
     await subagentRuntime.stop()
+    await mcpRuntime.shutdown()
     const result = dbStore.restoreFullDatabase(dumpData, { overwrite })
+    if (Array.isArray((dumpData.tables || dumpData).mcpAddons)) {
+      await Promise.all((dumpData.tables || dumpData).mcpAddons.map(addon => mcpVault.remove(addon.id)))
+    }
     recoverTaskWorkflows(dbStore)
     subagentRuntime.start()
     initOramaIndices().catch(() => {})

@@ -14,6 +14,7 @@ import { aiRouter } from './ai.routes.js'
 import { workspaceRouter } from './workspace.routes.js'
 import { browserRouter } from './browser.routes.js'
 import { chromeBridgeRouter } from './chrome-bridge.routes.js'
+import { mcpRouter } from './mcp.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -32,6 +33,7 @@ export function registerRoutes(app) {
   app.use('/api', workspaceRouter)
   app.use('/api', browserRouter)
   app.use('/api', chromeBridgeRouter)
+  app.use('/api', mcpRouter)
 
   // Direct route for HUD Overlay
   app.get('/overlay-hud.html', (_req, res) => {

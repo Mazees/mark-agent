@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
+  ChevronDown,
   ChevronRight,
+  Cable,
+  FilePlus2,
   FolderOpen,
   LockKeyhole,
   Pencil,
@@ -15,6 +18,9 @@ import {
   Sparkles
 } from 'lucide-react'
 import { webApi } from '../api/web-bridge'
+import { mcpRequest } from '../api/mcp'
+import { addonStatusLabels } from '../api/addonStatus'
+import { AddMcpDialog } from './McpAddonDetail'
 import { getAddon } from '../api/addonRegistry'
 import AddonDetail from './AddonDetail'
 import PluginEditor from '../components/plugins/PluginEditor'
@@ -23,6 +29,9 @@ export default function Plugins() {
   const navigate = useNavigate()
   const { pluginName } = useParams()
   const [plugins, setPlugins] = useState([])
+  const [mcps, setMcps] = useState([])
+  const [mcpOpen, setMcpOpen] = useState(false)
+  const closeMcp = useCallback(() => setMcpOpen(false), [])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -33,6 +42,8 @@ export default function Plugins() {
     try {
       const data = await webApi.getPlugins()
       setPlugins(Array.isArray(data) ? data : [])
+      const result = await mcpRequest()
+      setMcps(result.data || [])
     } catch (failure) {
       setError(failure.message || 'Daftar plugin belum dapat dimuat.')
     } finally {
@@ -68,6 +79,17 @@ export default function Plugins() {
         (left.displayName || left.name).localeCompare(right.displayName || right.name)
       )
   }, [plugins, query])
+  const visibleMcps = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    return mcps
+      .filter((item) =>
+        [item.name, item.description, ...(item.knownTools || [])]
+          .join(' ')
+          .toLowerCase()
+          .includes(term)
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [mcps, query])
   const plugin = plugins.find((item) => (item.folderName || item.name) === pluginName)
   const managedAddon = plugin?.managedByAddon ? getAddon(plugin.managedByAddon) : null
   const editable = plugin?.editable !== false && !plugin?.managedByAddon
@@ -272,22 +294,60 @@ export default function Plugins() {
             </label>
           </header>
           <div className="mt-6 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="btn rounded-full border-white bg-white px-5 text-neutral-900 hover:bg-white/90"
-              onClick={() => navigate('/chat', { state: { composerDraft: '/create-plugin ' } })}
+            <details
+              className="dropdown dropdown-bottom"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.currentTarget.open = false
+                  event.currentTarget.querySelector('summary')?.focus()
+                }
+              }}
             >
-              <Sparkles size={16} />
-              Buat dengan Mark
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost rounded-full px-4"
-              onClick={() => openEditor()}
-            >
-              <Plus size={16} />
-              Buat manual
-            </button>
+              <summary
+                data-add-plugin-trigger
+                className="btn list-none rounded-full border-white bg-white px-5 text-neutral-900 hover:bg-white/90"
+              >
+                <Plus size={16} /> Tambah plugin <ChevronDown size={16} />
+              </summary>
+              <ul
+                className="menu dropdown-content z-20 mt-2 w-72 max-w-[calc(100vw-2.5rem)] rounded-xl border border-white/10 bg-base-200 p-2 shadow-xl [&_button]:flex [&_button]:min-h-10 [&_button]:w-full [&_button]:items-center [&_button]:gap-3 [&_button]:px-3 [&_button]:text-left [&_button]:text-xs [&_svg]:shrink-0"
+                aria-label="Tambah plugin"
+              >
+                <li>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.currentTarget.closest('details').open = false
+                      openEditor()
+                    }}
+                  >
+                    <FilePlus2 size={16} aria-hidden="true" /> Buat plugin manual
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.currentTarget.closest('details').open = false
+                      navigate('/chat', { state: { composerDraft: '/create-plugin ' } })
+                    }}
+                  >
+                    <Sparkles size={16} aria-hidden="true" /> Buat plugin dengan Mark
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.currentTarget.closest('details').open = false
+                      setMcpOpen(true)
+                    }}
+                  >
+                    <Cable size={16} aria-hidden="true" /> Tambahkan custom MCP server
+                  </button>
+                </li>
+              </ul>
+            </details>
             <button
               type="button"
               className="btn btn-ghost rounded-full px-4"
@@ -324,14 +384,50 @@ export default function Plugins() {
           ) : (
             <section aria-labelledby="installed-plugins" className="mt-12">
               <h2 id="installed-plugins" className="mb-5 text-sm font-medium text-white/75">
-                Terpasang {!loading && <span className="ml-1 text-white/40">{plugins.length}</span>}
+                Terpasang{' '}
+                {!loading && (
+                  <span className="ml-1 text-white/40">{plugins.length + mcps.length}</span>
+                )}
               </h2>
               {loading ? (
                 <p role="status" className="py-8 text-sm text-white/45">
                   Memuat plugin...
                 </p>
-              ) : visiblePlugins.length ? (
+              ) : visiblePlugins.length || visibleMcps.length ? (
                 <div className="grid grid-cols-1 gap-x-12 md:grid-cols-2">
+                  {visibleMcps.map((item) => (
+                    <Link
+                      key={item.id}
+                      to={`/plugins/mcp/${encodeURIComponent(item.id)}`}
+                      className="flex min-w-0 items-start gap-4 rounded-lg px-5 py-5 hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                    >
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10">
+                        <Puzzle size={25} className="text-primary" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-sm font-semibold text-white">
+                          {item.name}
+                        </span>
+                        <span className="mt-1.5 line-clamp-2 break-words text-sm leading-relaxed text-white/50">
+                          {item.description || 'Belum ada deskripsi.'}
+                        </span>
+                        <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/45">
+                          <span>MCP</span>
+                          <span>·</span>
+                          <span
+                            className={
+                              item.status === 'connected' && item.enabled ? 'text-primary' : ''
+                            }
+                          >
+                            {addonStatusLabels[item.enabled ? item.status : 'inactive'] ||
+                              addonStatusLabels.error}
+                          </span>
+                          <span>·</span>
+                          <span>{item.knownTools?.length || 0} tool</span>
+                        </span>
+                      </span>
+                    </Link>
+                  ))}
                   {visiblePlugins.map((item) => {
                     const owner = getAddon(item.managedByAddon)
                     return (
@@ -388,7 +484,7 @@ export default function Plugins() {
                 <p role="status" className="py-8 text-sm text-white/45">
                   {query.trim()
                     ? `Tidak ada plugin yang cocok dengan “${query}”.`
-                    : 'Belum ada plugin terpasang. Pilih Buat dengan Mark atau Buat manual untuk mulai.'}
+                    : 'Belum ada plugin terpasang. Pilih Tambah plugin untuk mulai.'}
                 </p>
               )}
             </section>
@@ -396,6 +492,7 @@ export default function Plugins() {
         </div>
       </main>
       {editorDialog}
+      <AddMcpDialog open={mcpOpen} onClose={closeMcp} onAdded={loadData} />
     </>
   )
 }

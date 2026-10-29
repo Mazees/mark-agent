@@ -1,3 +1,4 @@
+import { McpToolName } from '../components/Chat/McpToolName'
 import React, { createContext, useState, useContext, useCallback, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ShieldAlert, Terminal, FileCode } from 'lucide-react'
@@ -371,7 +372,7 @@ export const ApprovalProvider = ({ children }) => {
               </h3>
               {approvalData.tool && (
                 <span className="badge badge-sm font-mono bg-warning/15 text-warning border-warning/30 font-semibold">
-                  {approvalData.tool}
+                  <McpToolName name={approvalData.tool} />
                 </span>
               )}
             </div>

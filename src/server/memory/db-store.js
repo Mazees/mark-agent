@@ -3,6 +3,7 @@ import os from 'os'
 import fs from 'fs'
 import Database from 'better-sqlite3'
 import { createSubagentSchema } from '../services/subagents/storage.js'
+import { createMcpStore } from '../services/mcp-store.js'
 import { getCurrentVersion } from '../services/updater.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
@@ -14,6 +15,7 @@ const DB_PATH = process.env.MARK_DB_PATH || path.join(CONFIG_DIR, 'mark.db')
 
 // Inisialisasi Database SQLite
 export const sqlite = new Database(DB_PATH)
+export const mcpStore = createMcpStore(sqlite)
 
 // Optimasi performa SQLite (WAL mode, memory temp store, normal sync)
 sqlite.pragma('journal_mode = WAL')
@@ -672,7 +674,8 @@ export function exportFullDatabase() {
     subagentMessages: dbStore.subagentMessages.getAll(),
     learnedSkills: dbStore.learnedSkills.getAll(),
     agentTasks: dbStore.agentTasks.getAll(),
-    agentTaskSteps: dbStore.agentTaskSteps.getAll()
+    agentTaskSteps: dbStore.agentTaskSteps.getAll(),
+    mcpAddons: mcpStore.list()
   }
 
   return {
@@ -729,6 +732,10 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
   }
 
   const restoreTransaction = sqlite.transaction(() => {
+    if (Array.isArray(rawTables.mcpAddons)) {
+      mcpStore.replaceAll(rawTables.mcpAddons, overwrite)
+      results.mcpAddons = rawTables.mcpAddons.length
+    }
     if (overwrite) {
       for (const name of ['subagentJobs', 'subagentRuns', 'subagentInbox', 'subagentReports'])
         dbStore[name].clear()
@@ -826,6 +833,7 @@ export function resetAllExceptConfig() {
 
 export const dbStore = {
   sqlite,
+  mcpAddons: mcpStore,
   config: new SqliteTable('config'),
   memories: new SqliteTable('memories'),
   sessions: new SqliteTable('sessions'),

@@ -23,12 +23,14 @@ import { canMarkReviewAction, createMarkReviewer } from './reviewer.js'
 import { isComputerUseSessionOpen } from '../../../shared/computer-use.js'
 import { grantComputerUsePermission } from '../../tools/computer-use-permissions.js'
 import { closeComputerUseSession } from '../../tools/pc-agent.js'
+import { mcpGroups, executeMcpTool } from '../mcp-service.js'
 
 async function toolGroups() {
   let plugins = getLoadedPlugins()
   if (!plugins.length) plugins = await loadAllPlugins()
   return {
     ...GROUP_TOOLS_SCHEMA,
+    ...mcpGroups(),
     ...buildPluginToolGroups(
       plugins,
       Object.values(GROUP_TOOLS_SCHEMA).flatMap((g) => g.tools.map((t) => t.function.name)),
@@ -101,8 +103,8 @@ async function dispatch(name, args, ctx, call) {
     args = { action: 'screenshot' }
   }
   const tool = NATIVE_TOOLS[name]
-  const needsApproval =
-    typeof tool?.needsApproval === 'function' ? tool.needsApproval(args) : tool?.needsApproval
+  const isMcp = name.startsWith('mcp_')
+  const needsApproval = isMcp || (typeof tool?.needsApproval === 'function' ? tool.needsApproval(args) : tool?.needsApproval)
   const job = ctx.runtime.job(ctx.job.id)
   const session = dbStore.sessions.getById(job.parentSessionId)
   const configRow = dbStore.config.getAll()[0] || {}
@@ -118,12 +120,12 @@ async function dispatch(name, args, ctx, call) {
     job.approvedToolId === call.id &&
     (job.markApprovedToolId !== call.id || canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT))
   const opensComputerUse = isComputerUseSessionOpen(name, args)
-  if (needsApproval && !approved && (opensComputerUse || !storedPermission))
+  if (needsApproval && (!approved || (isMcp && job.markApprovedToolId === call.id)) && (isMcp || opensComputerUse || !storedPermission))
     return {
       wait: {
         status: 'waiting_user',
         approval: call,
-        error: tool.approvalMessage?.(args) || `Persetujuan diperlukan untuk ${name}.`
+        error: tool?.approvalMessage?.(args) || `Persetujuan diperlukan untuk ${name}.`
       }
     }
   ctx.update({ approvedToolId: null, markApprovedToolId: null })
@@ -142,7 +144,7 @@ async function dispatch(name, args, ctx, call) {
   const run = async () => {
     ctx.check()
     ctx.pending(call)
-    const result = tool ? await tool.handler(args, config) : await executePluginAction(name, args)
+    const result = isMcp ? await executeMcpTool(name, args, ctx.signal) : tool ? await tool.handler(args, config) : await executePluginAction(name, args)
     ctx.check()
     return result && typeof result === 'object' && 'success' in result
       ? result

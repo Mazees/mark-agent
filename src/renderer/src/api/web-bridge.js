@@ -529,6 +529,15 @@ export const webApi = {
       throw new Error(result.error || 'Izin sesi Computer Use tidak dapat diproses.')
     return result.token
   },
+  decideMcpPermission: async (requestId, owner, approved) => {
+    const response = await fetch(`${API_BASE}/api/mcp/permission`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId, sessionId: owner.sessionId, runId: owner.computerUseRunId, approved })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success) throw new Error(result.error || 'Izin MCP tidak dapat diproses.')
+    return result.token
+  },
 
   selectDirectory: async (description = 'Pilih Folder Workspace Proyek') => {
     try {

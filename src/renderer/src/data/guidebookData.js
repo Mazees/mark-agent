@@ -634,6 +634,13 @@ export const guideArticles = [
         ]
       },
       {
+        title: 'MCP server di Plugin Hub',
+        paragraphs: [
+          'Pada Plugin Hub, pilih Tambah plugin lalu Tambahkan custom MCP server untuk membuat koneksi MCP lokal atau remote. Anda dapat mengisi formulir atau menempel konfigurasi mcpServers dalam JSON. Periksa server dan command sebelum menghubungkan. Semua server MCP memakai ikon yang sama; formulir tidak menyediakan unggahan ikon.',
+          'Tool yang ditemukan aktif secara default dan dapat dinonaktifkan satu per satu pada halaman detail. Pemanggilan mengikuti pengaturan persetujuan tool dan Auto Mode. Kredensial disimpan terpisah dan perlu dimasukkan kembali setelah memulihkan backup.'
+        ]
+      },
+      {
         title: 'Plugin yang tidak dapat diedit',
         paragraphs: [
           'editable: false pada plugin.json menonaktifkan perubahan definisi melalui editor. Jika properti editable tidak ada, nilainya dianggap true. Plugin yang dikelola add-on mengikuti kontrol add-on tersebut. chrome-use tetap terlihat dan dapat dipakai atau ditandai, sementara pengelolaannya melalui Chrome Bridge.'

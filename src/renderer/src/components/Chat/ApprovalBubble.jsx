@@ -1,3 +1,4 @@
+import { McpToolName } from './McpToolName'
 /* eslint-disable react/prop-types */
 import { useState, useRef, useEffect } from 'react'
 import { useApproval, extractToolTarget } from '../../contexts/ApprovalContext'
@@ -60,7 +61,7 @@ export const ApprovalBubble = ({
           </span>
           {tool && (
             <span className="bg-warning/10 text-warning px-2 py-0.5 rounded text-[11px] font-mono font-medium">
-              {tool}
+              <McpToolName name={tool} />
             </span>
           )}
         </div>

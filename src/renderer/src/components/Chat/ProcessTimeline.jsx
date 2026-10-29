@@ -1,3 +1,4 @@
+import { McpToolName } from './McpToolName'
 /* eslint-disable react/prop-types */
 import { useState } from 'react'
 import Markdown from 'react-markdown'
@@ -142,7 +143,7 @@ export const ProcessTimeline = ({
                     : isFailed
                       ? 'text-error'
                       : 'text-success/80'
-              const label = displayReason || toolLabel
+              const label = displayReason || <McpToolName name={toolLabel} />
 
               if (!hasQuery && !hasResult) {
                 return (

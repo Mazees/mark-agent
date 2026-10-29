@@ -60,7 +60,7 @@ export default function AddonDetail({
         <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10">
-              <Icon
+              {addon.iconData ? <img src={addon.iconData} alt="" className="h-10 w-10 object-contain" /> : <Icon
                 size={34}
                 className={
                   addon.icon === 'google'
@@ -70,7 +70,7 @@ export default function AddonDetail({
                       : 'text-[#2aabee]'
                 }
                 aria-hidden="true"
-              />
+              />}
             </span>
             <div className="min-w-0">
               <h1 className="break-words text-2xl font-semibold text-white">{addon.name}</h1>
@@ -168,6 +168,7 @@ AddonDetail.propTypes = {
     name: PropTypes.string.isRequired,
     developer: PropTypes.string,
     icon: PropTypes.oneOf(['google', 'telegram', 'chrome', 'plugin']).isRequired,
+    iconData: PropTypes.string,
     logRoute: PropTypes.string,
     examples: PropTypes.arrayOf(PropTypes.string)
   }).isRequired,

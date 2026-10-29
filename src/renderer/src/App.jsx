@@ -3,6 +3,7 @@ import MarkHome from './pages/MarkHome'
 import Configuration from './pages/Configuration'
 import TelegramBot from './pages/TelegramBot'
 import Plugins from './pages/Plugins'
+import McpAddonDetail from './pages/McpAddonDetail'
 import Skills from './pages/Skills'
 import SkillEditor from './pages/SkillEditor'
 import Guidebook from './pages/Guidebook'
@@ -143,6 +144,7 @@ const MainLayout = () => {
               <Route path="/config" element={<Configuration />} />
               <Route path="/plugins" element={<Plugins />} />
               <Route path="/plugins/:pluginName" element={<Plugins />} />
+              <Route path="/plugins/mcp/:id" element={<McpAddonDetail />} />
               <Route path="/skills" element={<Skills />} />
               <Route path="/skill-editor/:id" element={<SkillEditor />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />

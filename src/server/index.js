@@ -16,6 +16,7 @@ import { registerRoutes } from './routes/index.js'
 import { setServerPort } from './tools/overlay-manager.js'
 import { subagentRuntime } from './services/subagents/service.js'
 import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
+import { mcpRuntime } from './services/mcp-service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -87,11 +88,12 @@ chromeBridge.start().catch((error) => console.warn('[Chrome Bridge]', error.mess
 server.on('close', () => {
   subagentRuntime.stop().catch(() => {})
   chromeBridge.stop().catch(() => {})
+  mcpRuntime.shutdown().catch(() => {})
 })
 const shutdownServices = () => {
   const timeout = setTimeout(() => process.exit(0), 1500)
   timeout.unref()
-  Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop()]).finally(() => {
+  Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop(), mcpRuntime.shutdown()]).finally(() => {
     for (const client of wsHub.clients) client.terminate()
     server.close(() => {
       clearTimeout(timeout)

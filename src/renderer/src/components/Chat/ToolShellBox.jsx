@@ -1,3 +1,4 @@
+import { McpToolName } from './McpToolName'
 /* eslint-disable react/prop-types */
 import { useState } from 'react'
 import { Copy, Check, ChevronDown } from 'lucide-react'
@@ -59,7 +60,7 @@ export const ToolShellBox = ({ tool, query, result, preview }) => {
     <div className="mt-1.5 mb-2 min-w-0 overflow-hidden rounded-lg border border-white/10 bg-base-300/45 text-xs select-text">
       <div className="flex min-h-9 items-center justify-between gap-3 border-b border-white/8 bg-white/3 px-3">
         <span className="min-w-0 truncate font-mono text-[11px] font-semibold text-white/80">
-          {title}
+          <McpToolName name={title} />
         </span>
         <button
           type="button"

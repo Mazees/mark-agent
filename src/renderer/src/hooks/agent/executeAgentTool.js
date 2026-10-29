@@ -15,6 +15,7 @@ export async function executeAgentTool({
   tool,
   rawArgs: incomingArgs,
   computerUseApprovalToken,
+  mcpApprovalToken,
   config,
   context,
   activeSessionNum,
@@ -190,7 +191,8 @@ export async function executeAgentTool({
       workspaceRoot: context?.workspaceRoot,
       sessionId: String(context?.sessionId || activeSessionNum || 1),
       computerUseRunId: agenticProcessId,
-      computerUseApprovalToken
+      computerUseApprovalToken,
+      mcpApprovalToken
     }
     if (tool.startsWith('browser-')) {
       const sessionId = String(context?.sessionId || activeSessionNum || 1)

@@ -1,5 +1,6 @@
 import { ADDONS } from './addonRegistry'
 import { webApi } from './web-bridge'
+import { mcpRequest } from './mcp'
 
 const readConnectionStatus = async (provider) => {
   if (provider === 'chrome-bridge') return (await webApi.chromeBridgeRequest()).status
@@ -27,6 +28,7 @@ export const addonStatusLabels = {
   connected: 'Terhubung',
   connecting: 'Menghubungkan',
   disconnected: 'Belum terhubung',
+  'needs-login': 'Perlu login',
   error: 'Gagal',
   'not-installed': 'Belum dipasang',
   'waiting-extension': 'Menunggu ekstensi',
@@ -48,13 +50,30 @@ export const getAddonStatuses = async () => {
 }
 
 export const formatAddonStatusesForPrompt = async () => {
-  const statuses = await getAddonStatuses()
-  return ADDONS.map((addon) => ({
-    id: addon.id,
-    name: addon.name,
-    description: addon.description,
-    capabilities: addon.capabilities,
-    detailRoute: `/addons/${addon.id}`,
-    status: statuses[addon.id] || 'unavailable'
-  }))
+  const [statuses, custom] = await Promise.all([
+    getAddonStatuses(),
+    mcpRequest()
+      .then((result) => result.data || [])
+      .catch(() => [])
+  ])
+  return [
+    ...ADDONS.map((addon) => ({
+      id: addon.id,
+      name: addon.name,
+      description: addon.description,
+      capabilities: addon.capabilities,
+      detailRoute: `/addons/${addon.id}`,
+      status: statuses[addon.id] || 'unavailable'
+    })),
+    ...custom.map((addon) => ({
+      id: addon.id,
+      name: `MCP ${addon.name}`,
+      description: addon.description,
+      capabilities: (addon.tools || [])
+        .filter((tool) => tool.enabled)
+        .map((tool) => tool.title || tool.name),
+      detailRoute: `/plugins/mcp/${addon.id}`,
+      status: addon.enabled ? addon.status : 'inactive'
+    }))
+  ]
 }

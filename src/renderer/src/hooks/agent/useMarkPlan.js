@@ -853,7 +853,11 @@ export const useMarkPlan = ({
         }
         const approvalCheck = await window.api.checkToolApproval(tool, rawArgs, approvalOwner)
         let computerUseApprovalToken
+        let mcpApprovalToken
 
+        if (approvalCheck.needsApproval && !requestApproval && tool.startsWith('mcp_')) {
+          return { resultString: '[DITOLAK] Persetujuan untuk tool MCP tidak tersedia.', rejected: true }
+        }
         if (approvalCheck.needsApproval && requestApproval) {
           const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs, {
             sessionId: activeSessionNum,
@@ -866,8 +870,10 @@ export const useMarkPlan = ({
               approvalOwner,
               userApproved
             )
+          if (approvalCheck.mcpPermissionRequestId)
+            mcpApprovalToken = await webApi.decideMcpPermission(approvalCheck.mcpPermissionRequestId, approvalOwner, userApproved)
           if (!userApproved) {
-            resultString = approvalCheck.requiresFreshApproval
+            resultString = approvalCheck.permissionRequestId
               ? '[DITOLAK] Pengguna menolak membuka sesi Computer Use. Jangan mengendalikan desktop atau mencari jalur pengganti; tunggu instruksi baru.'
               : `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
             return {
@@ -882,6 +888,7 @@ export const useMarkPlan = ({
           tool,
           rawArgs,
           computerUseApprovalToken,
+          mcpApprovalToken,
           config,
           context,
           activeSessionNum,
@@ -1910,7 +1917,9 @@ export const useMarkPlan = ({
           const mentionMatches = userInput.match(/@([a-zA-Z0-9_-]+)/g) || []
           const taggedGroups = []
           for (const rawMatch of mentionMatches) {
-            const groupName = rawMatch.slice(1).toLowerCase()
+            const alias = rawMatch.slice(1).toLowerCase()
+            const matches = Object.entries(groupToolsData?.schema || {}).filter(([, group]) => group.kind === 'mcp' && group.mention === alias)
+            const groupName = validGroupNames.has(alias) ? alias : matches.length === 1 ? matches[0][0] : alias
             if (validGroupNames.has(groupName)) {
               dynamicallyLoadedToolGroups.add(groupName)
               taggedGroups.push(groupName)

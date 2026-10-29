@@ -131,10 +131,11 @@ const InputBar = ({
           .filter((key) => schema[key] && schema[key].kind !== 'plugin')
           .map((key) => {
             const desc = schema[key]?.description || ''
-            const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+            const label = schema[key]?.displayName || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
             return {
               name: key,
               label,
+              mention: schema[key]?.mention || key,
               description: desc,
               kind: 'group'
             }
@@ -641,6 +642,7 @@ const InputBar = ({
           type: 'tool',
           name: group.name,
           label: group.label,
+          mention: group.mention,
           description: group.description,
           kind: group.kind
         }))
@@ -664,6 +666,7 @@ const InputBar = ({
           type: 'tool',
           name: t.name,
           label: t.label,
+          mention: t.mention,
           description: t.description,
           kind: t.kind
         }))
@@ -741,7 +744,7 @@ const InputBar = ({
     }
 
     if (item.type === 'tool') {
-      const insertTag = `@${item.name} `
+      const insertTag = `@${item.mention || item.name} `
       const nextText = `${beforeAt}${insertTag}${afterMention}`
       setInputText(nextText)
 
