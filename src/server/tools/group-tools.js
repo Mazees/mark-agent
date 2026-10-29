@@ -4,7 +4,7 @@
  */
 
 export const GROUP_TOOLS_SCHEMA = {
-  advanced_browser: {
+  browser_use: {
     description:
       'Browser bawaan MARK berbasis Puppeteer yang tampil di panel Browser dalam aplikasi. Pilihan default untuk permintaan "buka di browser", membuka website/localhost, serta interaksi halaman; bukan Chrome desktop atau computer-use.',
     tools: [

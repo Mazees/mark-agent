@@ -3,7 +3,7 @@ import { GROUP_TOOLS_SCHEMA } from '../../../../server/tools/group-tools.js'
 
 const titles = {
   core: 'Tool inti',
-  advanced_browser: 'Browser bawaan',
+  browser_use: 'Browser bawaan',
   youtube_music: 'YouTube dan musik',
   google_drive: 'Google Drive',
   google_calendar: 'Google Calendar',

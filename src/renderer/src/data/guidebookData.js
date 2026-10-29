@@ -208,7 +208,7 @@ export const guideArticles = [
     title: 'Pencarian web dan browser bawaan',
     summary: 'Cari sumber, baca artikel, dan operasikan halaman di panel Browser.',
     keywords:
-      'advanced_browser browser-search browser-fetch browser-navigate read click type scroll extract script screenshot download localhost login',
+      'browser_use browser-search browser-fetch browser-navigate read click type scroll extract script screenshot download localhost login',
     sections: [
       {
         title: 'Pencarian dan pembacaan cepat',

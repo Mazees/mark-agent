@@ -4,12 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
 import { ChevronRight, Folder, PanelRight } from 'lucide-react'
 import BrowserPanel from '../components/BrowserPanel.jsx'
-import {
-  browserSessionId,
-  browserCommand,
-  getBrowserState,
-  subscribeBrowserState
-} from '../api/browser-panel.js'
+import { browserSessionId } from '../api/browser-panel.js'
 import {
   db,
   getSessionSummaries,
@@ -196,22 +191,15 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const [sidebarMinimized, setSidebarMinimized] = useState(false)
   const [narrow, setNarrow] = useState(() => window.innerWidth < 1200)
   const browserId = browserSessionId(activeSessionId)
-  const browserRevisions = useRef(new Map())
   useEffect(() => {
     if (browserOpen) setSidebarMinimized(true)
   }, [browserOpen])
   useEffect(() => {
     const resize = () => setNarrow(window.innerWidth < 1200)
     window.addEventListener('resize', resize)
-    const check = () => {
-      const state = getBrowserState(browserId)
-      if (!state) return
-      const previous = browserRevisions.current.get(browserId) || 0
-      browserRevisions.current.set(browserId, state.panelRevision || 0)
-      if ((state.panelRevision || 0) > previous) setBrowserOpen(true)
-    }
-    check()
-    const off = subscribeBrowserState(check)
+    const off = webApi.onBrowserPanel('open-request', (event) => {
+      if (event?.sessionId === browserId) setBrowserOpen(true)
+    })
     return () => {
       off()
       window.removeEventListener('resize', resize)

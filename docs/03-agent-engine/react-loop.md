@@ -101,7 +101,7 @@ Hasil observasi ini menjadi masukan langsung bagi model pada iterasi berikutnya 
 Memasukkan seluruh definisi alat ke dalam system prompt pada setiap turn akan menghabiskan jendela konteks (_context window_) dan meningkatkan latensi inferensi. MARK menerapkan strategi pemuatan bertingkat (_tiered tool loading_):
 
 1. **Core Tools (Selalu Tersedia):** Alat fundamental seperti manipulasi berkas (`read-file`, `write-file`, `replace-content`, `list-directory`), pencarian web dasar, pembaca memori, dan delegasi sub-agen selalu dimuat dalam `core_tools_schema`.
-2. **Tool Groups Khusus (Pemuatan Sesuai Permintaan):** Alat tingkat lanjut seperti kendali visual OS dan mouse/keyboard Win32 (`computer_use`), automasi peramban interaktif (`advanced_browser`), dan Google Workspace (`google_workspace`) diisolasi dalam modul terpisah.
+2. **Tool Groups Khusus (Pemuatan Sesuai Permintaan):** Alat tingkat lanjut seperti kendali visual OS dan mouse/keyboard Win32 (`computer_use`), automasi peramban interaktif (`browser_use`), dan Google Workspace (`google_workspace`) diisolasi dalam modul terpisah.
 3. **Lazy Discovery via `read-tools`:** Model dapat memanggil `read-tools({ group: "computer_use" })`. Ketika dipanggil, sistem menandai kelompok tersebut ke dalam `dynamicallyLoadedToolGroups`. Pada langkah loop berikutnya, `getActiveToolsSchema` secara dinamis memasukkan skema OpenAPI kelompok tersebut ke dalam payload inferensi.
 4. **Custom Plugin Schema:** Plugin pihak ketiga di direktori plugin lokal diinjeksi secara otomatis sebagai fungsi OpenAPI berformat `plugin-<namaPlugin>-<namaAksi>`.
 
@@ -316,7 +316,7 @@ Untuk meningkatkan efisiensi dan kecepatan otomasi, MARK V5 mendukung eksekusi m
 1. **Computer Use & Otomasi Desktop (`computer_use`)**:
    - Rangkaian interaksi input sekuensial yang dikirim dalam satu giliran: `computer_use` dengan action `batch` (atau kombinasi `computer_use` + `os-*`).
    - Menghilangkan latensi multi-turn terpisah (~9-12 detik) menjadi 1 turn instan (~1-2 detik).
-2. **Otomasi Peramban Web (`advanced_browser`)**:
+2. **Otomasi Peramban Web (`browser_use`)**:
    - Pengisian form dan navigasi fisik: `browser-click` + `browser-type` dieksekusi secara berurutan dalam satu giliran.
 3. **Riset Web Multi-Link (`browser-fetch`)**:
    - Setelah `browser-search` mengembalikan daftar URL relevan, agen memanggil 2-4 `browser-fetch` secara serentak untuk membaca seluruh artikel sekaligus.

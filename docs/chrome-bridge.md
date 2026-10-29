@@ -1,6 +1,6 @@
 # Chrome Bridge
 
-Chrome Bridge is a bundled MARK add-on for controlling one user-selected tab in Google Chrome on Windows. The Chrome extension is named **Mark Agent Bridge** and uses MARK's existing icon. The engine plugin and tool group remain **`chrome-use`**. General browser requests continue to use `advanced_browser`.
+Chrome Bridge is a bundled MARK add-on for controlling one user-selected tab in Google Chrome on Windows. The Chrome extension is named **Mark Agent Bridge** and uses MARK's existing icon. The engine plugin and tool group remain **`chrome-use`**. General browser requests continue to use `browser_use`.
 
 ## Installation
 

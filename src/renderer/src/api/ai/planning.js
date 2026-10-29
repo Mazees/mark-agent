@@ -42,9 +42,11 @@ export const buildPlanningSystemPrompt = async (
   const userId = options.waContext ? options.waContext.senderJid : 'owner'
 
   const groupToolsGuide = Object.entries(groupToolsData?.schema || {})
-    .map(([groupKey, groupData]) => groupData.kind === 'mcp'
-      ? `   - MCP "${groupData.displayName}" (grup '${groupKey}', mention @${groupData.mention}): ${groupData.description || '-'}. Gunakan read-tools untuk memuat tool MCP ini.`
-      : `   - '${groupKey}': ${groupData.description || '-'}`)
+    .map(([groupKey, groupData]) =>
+      groupData.kind === 'mcp'
+        ? `   - MCP "${groupData.displayName}" (grup '${groupKey}', mention @${groupData.mention}): ${groupData.description || '-'}. Gunakan read-tools untuk memuat tool MCP ini.`
+        : `   - '${groupKey}': ${groupData.description || '-'}`
+    )
     .join('\n')
 
   const activePluginsGuide = activePlugins
@@ -170,9 +172,9 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
    - Gunakan tool 'computer_use' untuk mengendalikan aplikasi desktop Windows, mengklik tombol UI, mengetik teks, shortcut keyboard, drag file/jendela, mengamati posisi elemen via screenshot kanvas 1280x720, dan mengelola window aplikasi secara fisik.
    - Fokuskan pada otomasi tugas desktop nyata, navigasi aplikasi OS, dan interaksi formulir/dialog. Jangan berasumsi atau memprioritaskan manipulasi grafis kompleks/3D jika tidak diminta secara spesifik oleh pengguna.
    - DILARANG KERAS menggunakan 'run-powershell' (seperti Start-Process, SendKeys, script GUI) untuk menggantikan fungsi otomasi desktop jika tugas dapat diselesaikan dengan tool 'computer_use'!
-5. **BROWSER & RISET WEB (advanced_browser)**:
+5. **BROWSER & RISET WEB (browser_use)**:
    - Chrome Bridge adalah add-on untuk Chrome milik pengguna. Hanya gunakan jika pengguna meminta Chrome miliknya secara eksplisit. Grup tool engine tetap 'chrome-use' dengan sepuluh tool 'chrome-*'; muat melalui 'read-tools'. Jika status bukan 'connected', arahkan pengguna ke /addons/chrome-bridge dan popup ekstensi untuk memilih tab atau melanjutkan kendali. Jangan membaca token/connection.json, menjalankan launcher/VBS, atau memindahkan target lewat urlPattern. Setelah timeout, periksa hasil; jangan mengulang aksi mutasi otomatis. Screenshot Chrome dikembalikan sebagai artifact Markdown yang dapat ditampilkan di chat.
-   - Kamu memiliki browser Puppeteer sendiri yang tampil di panel Browser dalam aplikasi MARK. Permintaan "buka di browser", "buka website", "browser kamu", atau "buka localhost" secara default merujuk ke browser bawaan ini: gunakan 'browser-navigate'. Jika tool belum dimuat, panggil 'read-tools' untuk grup 'advanced_browser' terlebih dahulu.
+   - Kamu memiliki browser Puppeteer sendiri yang tampil di panel Browser dalam aplikasi MARK. Permintaan "buka di browser", "buka website", "browser kamu", atau "buka localhost" secara default merujuk ke browser bawaan ini: gunakan 'browser-navigate'. Jika tool belum dimuat, panggil 'read-tools' untuk grup 'browser_use' terlebih dahulu.
    - Jangan meluncurkan Chrome/Edge terpisah, memakai tool 'open', 'computer_use', PowerShell, atau plugin chrome-use untuk permintaan browser umum. Browser desktop, tab Chrome yang sudah terbuka, computer-use, atau plugin tertentu dipakai jika pengguna secara eksplisit meminta target/metode tersebut. Jika browser bawaan gagal, laporkan kendalanya; jangan diam-diam memindahkan pekerjaan ke browser desktop.
    - 'browser-search': HANYA untuk mencari dan menemukan daftar URL / link sumber berdasarkan kata kunci (BUKAN untuk membaca isi artikel/konten lengkap).
    - 'browser-fetch': Gunakan untuk membaca/mengambil (curl/fetch) isi teks lengkap dari URL yang ditemukan secara instan dan cepat tanpa membuka panel Browser. Panggil beberapa 'browser-fetch' sekaligus dalam 1 turn jika membaca banyak link.

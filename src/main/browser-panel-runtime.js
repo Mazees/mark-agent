@@ -48,6 +48,7 @@ export function browserState(id) {
 export function requestBrowserPanel(id) {
   const c = browserControl(id)
   c.panelRevision = (c.panelRevision || 0) + 1
+  wsHub.broadcast('browser-panel:open-request', { sessionId: id })
   publishBrowserState(id)
 }
 export const browserStates = () =>

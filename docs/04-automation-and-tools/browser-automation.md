@@ -4,7 +4,7 @@ Browser memakai Puppeteer headless dan tampil di panel kanan Chat Studio. Penggu
 
 Tautan yang meminta tab baru (`target="_blank"` atau nama jendela lain), form dengan target baru, dan `window.open(url)` diarahkan ke halaman Browser yang sama. Tautan dan form tetap memakai navigasi bawaan situs agar handler klik serta metode POST tetap berjalan. Popup yang lolos pengalihan ditutup dan URL HTTP/HTTPS-nya dibuka pada halaman sesi asal melalui antrean browser. Alur yang membutuhkan objek jendela terpisah, misalnya `window.open('')` lalu mengubah isi popup atau komunikasi antarpopup, belum didukung.
 
-Permintaan umum seperti "buka di browser", "buka website", atau "buka localhost" memakai `advanced_browser` → `browser-navigate`. Tool membuka panel otomatis; Mark tidak perlu meluncurkan Chrome/Edge desktop atau memakai computer-use untuk menampilkannya. Browser desktop, tab Chrome pengguna, atau plugin seperti chrome-use dipilih jika diminta secara eksplisit. Jika browser bawaan gagal, Mark melaporkan kendala tanpa otomatis beralih ke browser desktop. Minibot memakai browser Puppeteer sesinya sendiri, bukan browser percakapan utama.
+Permintaan umum seperti "buka di browser", "buka website", atau "buka localhost" memakai `browser_use` → `browser-navigate`. Tool membuka panel otomatis; Mark tidak perlu meluncurkan Chrome/Edge desktop atau memakai computer-use untuk menampilkannya. Browser desktop, tab Chrome pengguna, atau plugin seperti chrome-use dipilih jika diminta secara eksplisit. Jika browser bawaan gagal, Mark melaporkan kendala tanpa otomatis beralih ke browser desktop. Minibot memakai browser Puppeteer sesinya sendiri, bukan browser percakapan utama.
 
 ## Sesi dan profil
 
