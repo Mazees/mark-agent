@@ -3,6 +3,7 @@ import { normalizeBrowserUrl } from './tools/browser-url.js'
 
 const controls = new Map()
 const FRAME_INTERVAL_MS = 1000 / 30
+const FRAME_ACK_TIMEOUT_MS = 2000
 let factory
 export const setBrowserFactory = (value) => {
   factory = value
@@ -110,7 +111,6 @@ export async function attachBrowserSession(session) {
     if (frame === session.page.mainFrame()) publishBrowserState(session.id)
   })
   session.page.on('domcontentloaded', () => {
-    void refreshFrames(c).catch(() => {})
     session.page
       .title()
       .then((title) => {
@@ -230,7 +230,7 @@ async function ensureBrowserSession(c) {
   }
   return c.launching
 }
-export async function publishBrowserCursor(id, x, y, phase) {
+export function publishBrowserCursor(id, x, y, phase) {
   const c = browserControl(id),
     event = {
       sessionId: id,
@@ -244,24 +244,51 @@ export async function publishBrowserCursor(id, x, y, phase) {
     }
   c.cursor = { x, y, sequence: event.sequence }
   for (const client of c.subscribers) wsHub.send(client, 'browser-panel:cursor', event)
-  if (phase === 'move' && c.subscribers.size)
-    await new Promise((resolve) => setTimeout(resolve, 180))
+}
+function scheduleFrame(c, delay = 0) {
+  if (c.frameTimer || !c.subscribers.size) return
+  c.frameTimer = setTimeout(() => {
+    c.frameTimer = null
+    flushFrame(c)
+  }, delay)
+  c.frameTimer.unref?.()
+}
+function flushFrame(c) {
+  if (!c.latestFrame || !c.subscribers.size) return
+  const now = Date.now()
+  const delay = FRAME_INTERVAL_MS - (now - (c.lastFrame || 0))
+  if (delay > 0) return scheduleFrame(c, delay)
+  c.frameClients ||= new Map()
+  let sent = false
+  for (const client of c.subscribers) {
+    const state = c.frameClients.get(client) || { sequence: 0 }
+    c.frameClients.set(client, state)
+    if (state.sequence >= c.latestFrame.sequence) continue
+    if (state.inFlight && now - state.sentAt < FRAME_ACK_TIMEOUT_MS) continue
+    if (client.bufferedAmount >= 128000) {
+      scheduleFrame(c, FRAME_INTERVAL_MS)
+      continue
+    }
+    state.sequence = c.latestFrame.sequence
+    state.inFlight = state.sequence
+    state.sentAt = now
+    wsHub.send(client, 'browser-panel:frame', c.latestFrame)
+    sent = true
+  }
+  if (sent) c.lastFrame = now
 }
 function deliverFrame(c, data) {
-  const now = Date.now()
-  const next = c.nextFrameAt || now
-  if (!c.subscribers.size || now < next) return
-  c.nextFrameAt = (now - next > FRAME_INTERVAL_MS ? now : next) + FRAME_INTERVAL_MS
-  c.lastFrame = now
-  const frame = {
+  if (!c.subscribers.size) return
+  c.lastSourceFrameAt = Date.now()
+  c.latestFrame = {
     sessionId: c.id,
     data,
     width: c.width || 1280,
     height: c.height || 720,
     sequence: ++c.sequence
   }
-  for (const client of c.subscribers)
-    if (client.bufferedAmount < 512000) wsHub.send(client, 'browser-panel:frame', frame)
+  // Retain the newest frame even when the FPS limit or a slow viewer delays delivery.
+  flushFrame(c)
 }
 export async function captureBrowserImage(id, quality = 80, fresh = false) {
   const c = browserControl(id)
@@ -309,6 +336,11 @@ async function stopFrames(c) {
   c.fallback = null
   clearInterval(c.watchdog)
   c.watchdog = null
+  clearTimeout(c.frameTimer)
+  c.frameTimer = null
+  c.latestFrame = null
+  c.frameClients?.clear()
+  c.lastFrame = 0
   const cdp = c.cdp
   c.cdp = null
   if (cdp) {
@@ -337,17 +369,19 @@ async function startFrames(c) {
       {
         format: 'jpeg',
         quality: 65,
-        maxWidth: Math.max(1920, c.width || 1280),
-        maxHeight: Math.max(1080, c.height || 720),
+        maxWidth: c.width || 1280,
+        maxHeight: c.height || 720,
         everyNthFrame: 1
       },
       { timeout: 3000 }
     )
     const first = await captureBrowserImage(c.id, 65)
     if (c.cdp !== cdp || generation !== (c.streamGeneration || 0)) return
-    deliverFrame(c, first)
+    if (!c.latestFrame) deliverFrame(c, first)
     c.watchdog = setInterval(async () => {
-      if (c.cdp !== cdp || c.capturing || Date.now() - (c.lastFrame || 0) < 2000) return
+      if (c.cdp !== cdp) return
+      flushFrame(c)
+      if (c.capturing || Date.now() - (c.lastSourceFrameAt || 0) < 2000) return
       c.capturing = true
       try {
         const data = await captureBrowserImage(c.id, 65)
@@ -375,7 +409,7 @@ async function startFrames(c) {
           c.capturing = false
         }
       }
-      c.fallback = setInterval(capture, 1000)
+      c.fallback = setInterval(capture, 100)
       c.fallback.unref?.()
       capture()
     }
@@ -405,6 +439,14 @@ export async function browserPanelCommand(payload, client) {
   const { sessionId, action } = payload || {},
     c = browserControl(sessionId)
   const receivedAt = Date.now()
+  if (action === 'frame-ack') {
+    const state = c.frameClients?.get(client)
+    if (state && Number.isSafeInteger(payload.sequence) && state.inFlight === payload.sequence) {
+      state.inFlight = null
+      flushFrame(c)
+    }
+    return
+  }
   if (action === 'job-start' || action === 'job-stop') {
     c.jobs ||= new Set()
     if (action === 'job-start') c.jobs.add(client)
@@ -413,14 +455,21 @@ export async function browserPanelCommand(payload, client) {
   }
   if (action === 'subscribe') {
     c.subscribers.add(client)
+    c.frameClients?.delete(client)
     if (!c.session && factory) await ensureBrowserSession(c)
     await startFrames(c)
+    flushFrame(c)
     wsHub.send(client, 'browser-panel:state', browserState(sessionId, client))
     return browserState(sessionId, client)
   }
   if (action === 'unsubscribe') {
     c.subscribers.delete(client)
-    if (!c.subscribers.size) await stopFrames(c)
+    c.frameClients?.delete(client)
+    if (!c.subscribers.size) {
+      await stopFrames(c)
+      await c.queue
+      await releaseInput(c)
+    }
     return browserState(sessionId, client)
   }
   if (action === 'state') return browserState(sessionId, client)
@@ -557,6 +606,7 @@ export async function browserPanelCommand(payload, client) {
 export async function disconnectBrowserClient(client) {
   for (const c of controls.values()) {
     c.subscribers.delete(client)
+    c.frameClients?.delete(client)
     c.jobs?.delete(client)
     if (!c.subscribers.size) {
       await stopFrames(c)

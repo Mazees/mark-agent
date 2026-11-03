@@ -107,12 +107,13 @@ async function createBrowserSession(sessionId) {
     fs.mkdirSync(userDataDir, { recursive: true })
   }
 
+  const audioEnabled = sessionId === 'main' || sessionId.startsWith('workspace-')
   const browser = await puppeteer.launch({
     executablePath: edgePath,
     headless: true,
     protocolTimeout: 15000,
     userDataDir,
-    ignoreDefaultArgs: ['--enable-automation'],
+    ignoreDefaultArgs: ['--enable-automation', ...(audioEnabled ? ['--mute-audio'] : [])],
     defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
     args: [
       '--force-high-performance-gpu',

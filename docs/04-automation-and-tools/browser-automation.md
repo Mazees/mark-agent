@@ -53,13 +53,27 @@ Kursor AI adalah overlay di panel React. Kursor muncul sejak browser terbuka di 
 
 Perpindahan target memakai transisi sekitar 180 ms; efek klik sekitar 250 ms. Reduced motion mengurangi animasi. Overlay tidak menerima input dan tidak masuk screenshot model. Eksekusi script dengan target klik yang tidak diketahui tidak menghasilkan animasi target buatan.
 
-CDP screencast mengirim JPEG hanya kepada pelanggan sesi terkait. Streaming berhenti ketika panel ditutup, halaman Mark tersembunyi, atau client terputus. Jika screencast tidak tersedia, engine memakai screenshot berkala. Frame yang akan menambah antrean koneksi lambat dilewati.
+CDP screencast mengirim JPEG hanya kepada pelanggan sesi terkait. Streaming berhenti ketika panel ditutup, halaman Mark tersembunyi, atau client terputus. Jika screencast tidak tersedia, engine memakai screenshot berkala dengan interval 100 ms, tanpa pengambilan tumpang tindih.
 
-Pengiriman ditargetkan maksimum 30 FPS, JPEG kualitas 65, dengan viewport 1280×720. Ini adalah batas pengiriman, bukan jaminan FPS minimum pada setiap situs atau perangkat. Setelah navigasi, screencast dimulai ulang. Jika tidak ada frame baru selama dua detik, watchdog mengambil frame melalui CDP dengan batas waktu tiga detik; kegagalan memulai ulang stream. Pengambilan frame tidak memakai antrean screenshot Puppeteer. Timer pemulihan berhenti bersama subscription terakhir.
+Pengiriman ditargetkan maksimum 30 FPS, JPEG kualitas 65, dengan viewport 1280×720. Ini adalah batas pengiriman, bukan jaminan FPS minimum pada setiap situs atau perangkat. Pembatas FPS menyimpan frame terbaru untuk dikirim pada slot berikutnya, sehingga frame penutup perubahan halaman tidak ikut terbuang. Ukuran maksimum screencast mengikuti viewport aktif.
+
+Panel mendecode satu gambar dalam satu waktu dan menggambarnya ke canvas melalui `requestAnimationFrame`. JPEG berikutnya tidak membatalkan decode yang masih berlangsung. Setelah frame digambar, WebUI mengirim `frame-ack` tanpa membuat request/response baru. Server membatasi satu frame yang belum diakui per pelanggan dan hanya menyimpan frame terbaru berikutnya. Pelanggan lambat tidak menahan pelanggan lain; buffer WebSocket di atas 128 KB menunda pengiriman, dan ACK yang tidak kembali diberi batas dua detik sebelum pemulihan pada pemeriksaan berikutnya. Frame tidak disimpan dalam state React per gambar.
+
+Navigasi mempertahankan koneksi screencast yang sedang berjalan. Jika tidak ada frame baru selama dua detik, watchdog mengambil frame melalui CDP dengan batas waktu tiga detik; kegagalan memulai ulang stream. Pengambilan frame tidak memakai antrean screenshot Puppeteer. Timer pemulihan, frame tertunda, dan status ACK dibersihkan bersama subscription terakhir. Setelah memperbarui server, muat ulang WebUI agar protokol ACK dan penampil frame memakai versi yang sama.
 
 Browser headless diluncurkan dengan preferensi Chromium `--force-high-performance-gpu` agar memprioritaskan GPU performa tinggi jika tersedia. Tidak ada pemilihan indeks GPU atau pemaksaan backend grafis; pemilihan adapter dan fallback tetap ditangani Chromium, Windows, dan driver. Preferensi ini bukan jaminan dGPU akan dipakai pada semua konfigurasi. Kompresi JPEG dan pengiriman frame tetap dapat memakai CPU.
 
-Perintah protokol browser dibatasi 15 detik; pembacaan DOM memakai batas tiga detik. Timeout aksi mengembalikan hasil yang belum pasti, bukan mengulangi klik otomatis. Gerakan mouse manual yang masih mengantre digabungkan menjadi posisi terbaru. Input yang tertahan lebih dari tiga detik dilewati agar tidak memicu klik lama setelah browser pulih; pelepasan mouse dan keyboard tetap diteruskan.
+Perintah protokol browser dibatasi 15 detik; pembacaan DOM memakai batas tiga detik. Timeout aksi mengembalikan hasil yang belum pasti, bukan mengulangi klik otomatis. Gerakan mouse manual yang masih mengantre digabungkan menjadi posisi terbaru. Scroll berurutan dengan viewport yang sama digabungkan sampai batas delta yang diterima server; urutan klik, drag, dan keyboard tetap dipertahankan. Input yang tertahan lebih dari tiga detik dilewati agar tidak memicu klik lama setelah browser pulih; pelepasan mouse dan keyboard tetap diteruskan. Penutupan pelanggan terakhir melepas tombol manual yang masih tertahan setelah antrean selesai.
+
+Animasi kursor 180 ms hanya mengatur tampilannya. Pengiriman posisi kursor Mark tidak lagi menunda eksekusi aksi selama durasi animasi tersebut. Waktu penyelesaian aksi AI, navigasi situs, dan antrean sesi tetap terpisah dari kelancaran frame; streaming ini bukan jendela browser lokal maupun video 60 FPS.
+
+## Audio halaman
+
+Browser chat (`main` dan `workspace-<id>`) tidak memakai argumen bawaan Puppeteer `--mute-audio`. Video atau audio yang dimainkan pada halaman, misalnya YouTube, dapat mengeluarkan suara melalui perangkat audio Windows pada komputer yang menjalankan server Mark. Volume dan mute pada pemutar situs maupun mixer Windows tetap berlaku. Kebijakan autoplay tidak dilewati; pengguna mungkin perlu mengeklik Play atau mengaktifkan suara pada pemutar.
+
+Suara berasal langsung dari proses browser, bukan dari stream JPEG atau canvas WebUI. Membuka WebUI dari komputer/ponsel lain belum meneruskan audio ke perangkat tersebut. Jalur gambar dan audio ini juga tidak menyediakan sinkronisasi audiovisual khusus untuk koneksi jarak jauh.
+
+Browser Minibot dan sesi otomasi lain tetap memakai mute bawaan Puppeteer agar pekerjaan latar belakang tidak menghasilkan suara. Perubahan pengaturan launch berlaku setelah proses browser sesi lama ditutup dan dibuka kembali; menyembunyikan panel saja tidak membuat proses baru. Media yang masih dimainkan dapat tetap bersuara saat panel disembunyikan sampai dijeda atau browser ditutup.
 
 ## Lokasi implementasi
 
@@ -67,6 +81,7 @@ Perintah protokol browser dibatasi 15 detik; pembacaan DOM memakai batas tiga de
 - Antrean, streaming, dan kontrol panel: src/main/browser-panel-runtime.js
 - Route serta perintah WebSocket: src/server/routes/browser.routes.js
 - Tampilan panel dan kursor: src/renderer/src/components/BrowserPanel.jsx
+- Decode frame dan penggabungan input: src/renderer/src/api/browser-stream.js
 - Integrasi observasi ke loop AI: src/renderer/src/hooks/agent/useMarkPlan.js
 
 Browser mendukung HTTP/HTTPS termasuk localhost. Browser memakai sandbox bawaan Chromium; nama fitur ini tidak berarti filesystem, plugin, atau seluruh tool Mark berada di dalam sandbox.

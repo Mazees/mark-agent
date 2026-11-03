@@ -184,6 +184,16 @@ export const webApi = {
     addWebListener('core:ready', callback)
     return () => removeWebListener('core:ready', callback)
   },
+  acknowledgeBrowserFrame: (sessionId, sequence) => {
+    const socket = getWebSocket()
+    if (socket?.readyState !== WebSocket.OPEN) return
+    socket.send(
+      JSON.stringify({
+        event: 'browser-panel:command',
+        payload: { sessionId, action: 'frame-ack', sequence }
+      })
+    )
+  },
   browserPanelRequest: async (sessionId, action, values = {}) => {
     const socket = getWebSocket()
     if (!socket) throw new Error('WebSocket browser tidak tersedia.')
@@ -531,11 +541,18 @@ export const webApi = {
   },
   decideMcpPermission: async (requestId, owner, approved) => {
     const response = await fetch(`${API_BASE}/api/mcp/permission`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requestId, sessionId: owner.sessionId, runId: owner.computerUseRunId, approved })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId,
+        sessionId: owner.sessionId,
+        runId: owner.computerUseRunId,
+        approved
+      })
     })
     const result = await response.json()
-    if (!response.ok || !result.success) throw new Error(result.error || 'Izin MCP tidak dapat diproses.')
+    if (!response.ok || !result.success)
+      throw new Error(result.error || 'Izin MCP tidak dapat diproses.')
     return result.token
   },
 

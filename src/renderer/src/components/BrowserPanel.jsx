@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ArrowLeft, ArrowRight, RotateCw, X, Maximize2, Minimize2 } from 'lucide-react'
 import { webApi } from '../api/web-bridge.js'
 import { browserCommand, getBrowserState, subscribeBrowserState } from '../api/browser-panel.js'
+import { createBrowserFrameRenderer, createBrowserInputQueue } from '../api/browser-stream.js'
 
 export default function BrowserPanel({ sessionId, onClose, onResume, expanded, onExpand }) {
   void onResume
@@ -13,23 +14,23 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [hasReceivedFrame, setHasReceivedFrame] = useState(false)
-  const imageRef = useRef(null),
+  const canvasRef = useRef(null),
     surfaceRef = useRef(null),
     cursorRef = useRef(null),
     rippleRef = useRef(null),
     cursorPosition = useRef(null),
     keyboardRef = useRef(null),
     frameDimRef = useRef({ width: 1280, height: 720 })
-  const commandQueue = useRef(Promise.resolve()),
-    pendingMove = useRef(null),
-    lastMove = useRef(0),
+  const inputQueue = useRef(null),
+    frameRenderer = useRef(null),
+    receivedFrame = useRef(false),
     subscribed = useRef(false)
 
   const imageGeometry = () => {
     if (!surfaceRef.current) return null
     const box = surfaceRef.current.getBoundingClientRect()
-    const imageWidth = imageRef.current?.naturalWidth || frameDimRef.current.width
-    const imageHeight = imageRef.current?.naturalHeight || frameDimRef.current.height
+    const imageWidth = canvasRef.current?.width || frameDimRef.current.width
+    const imageHeight = canvasRef.current?.height || frameDimRef.current.height
     const scale = Math.min(box.width / imageWidth, box.height / imageHeight)
     const width = imageWidth * scale,
       height = imageHeight * scale
@@ -78,6 +79,30 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
 
   useEffect(() => {
     let disposed = false
+    receivedFrame.current = false
+    lastCursor.current = 0
+    setHasReceivedFrame(false)
+    const renderer = createBrowserFrameRenderer(canvasRef.current, {
+      onFrame: (frame) => {
+        if (frame.width && frame.height)
+          frameDimRef.current = { width: frame.width, height: frame.height }
+        if (!receivedFrame.current) {
+          receivedFrame.current = true
+          setHasReceivedFrame(true)
+        }
+        drawCursor(cursorPosition.current)
+      },
+      onAck: (sequence) => webApi.acknowledgeBrowserFrame(sessionId, sequence),
+      onError: (error) => setError(error.message)
+    })
+    frameRenderer.current = renderer
+    const inputs = createBrowserInputQueue(
+      (event) => webApi.browserPanelRequest(sessionId, 'input', { input: event }),
+      (response) =>
+        setError(response.inputIgnored ? 'Browser sedang sibuk. Coba input kembali.' : ''),
+      (error) => setError(error.message)
+    )
+    inputQueue.current = inputs
     const subscription = async () => {
       const visible = !disposed && document.visibilityState === 'visible'
       subscribed.current = visible
@@ -88,13 +113,7 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
       }
     }
     const offFrame = webApi.onBrowserPanel('frame', (frame) => {
-      if (frame.sessionId === sessionId && subscribed.current && imageRef.current) {
-        imageRef.current.src = `data:image/jpeg;base64,${frame.data}`
-        setHasReceivedFrame(true)
-        if (frame.width && frame.height) {
-          frameDimRef.current = { width: frame.width, height: frame.height }
-        }
-      }
+      if (frame.sessionId === sessionId && subscribed.current) renderer.push(frame)
     })
     const offCursor = webApi.onBrowserPanel('cursor', (event) => {
       if (
@@ -106,7 +125,7 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
         return
       lastCursor.current = event.sequence
       cursorPosition.current = event
-      const { x, y } = drawCursor(event)
+      const { x, y } = drawCursor(event) || {}
       if (event.phase === 'click' && rippleRef.current) {
         const ripple = rippleRef.current
         ripple.style.left = `${x}px`
@@ -121,12 +140,22 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
           )
       }
     })
-    const offReady = webApi.onBrowserReconnect(subscription)
+    const offReady = webApi.onBrowserReconnect(() => {
+      renderer.reset()
+      lastCursor.current = 0
+      receivedFrame.current = false
+      setHasReceivedFrame(false)
+      subscription()
+    })
     document.addEventListener('visibilitychange', subscription)
     subscription()
     return () => {
       disposed = true
       subscribed.current = false
+      renderer.dispose()
+      inputs.dispose()
+      frameRenderer.current = null
+      inputQueue.current = null
       offFrame()
       offCursor()
       offReady()
@@ -137,10 +166,9 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
 
   useEffect(() => {
     if (!state?.open) {
+      receivedFrame.current = false
       setHasReceivedFrame(false)
-      if (imageRef.current) {
-        imageRef.current.removeAttribute('src')
-      }
+      frameRenderer.current?.reset()
     }
   }, [state?.open])
 
@@ -148,7 +176,7 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
     setBusy(true)
     setError('')
     try {
-      await commandQueue.current
+      await inputQueue.current?.flush()
       return await browserCommand(sessionId, action, values)
     } catch (e) {
       setError(e.message)
@@ -157,41 +185,9 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
       setBusy(false)
     }
   }
-  const input = (event) => {
-    if (event.kind === 'move') {
-      if (pendingMove.current) {
-        pendingMove.current.event = event
-        return
-      }
-      const batch = { event, queuedAt: Date.now() }
-      pendingMove.current = batch
-      commandQueue.current = commandQueue.current
-        .catch(() => {})
-        .then(async () => {
-          if (pendingMove.current === batch) pendingMove.current = null
-          if (Date.now() - batch.queuedAt > 3000) return
-          try {
-            await webApi.browserPanelRequest(sessionId, 'input', { input: batch.event })
-          } catch (e) {
-            setError(e.message)
-          }
-        })
-      return
-    }
-    pendingMove.current = null
-    const queuedAt = Date.now()
-    commandQueue.current = commandQueue.current
-      .catch(() => {})
-      .then(async () => {
-        if (Date.now() - queuedAt > 3000 && !['up', 'keyUp'].includes(event.kind)) return
-        const response = await webApi.browserPanelRequest(sessionId, 'input', { input: event })
-        if (response.inputIgnored) setError('Browser sedang sibuk. Coba input kembali.')
-        else setError('')
-      })
-      .catch((e) => setError(e.message))
-  }
+  const input = (event) => inputQueue.current?.push(event)
   const point = (event, clamp = false) => {
-    if (!imageRef.current?.naturalWidth) return null
+    if (!receivedFrame.current) return null
     const geometry = imageGeometry()
     if (!geometry?.width || !geometry.height) return null
     const browserW = frameDimRef.current.width
@@ -323,10 +319,8 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
           input({ kind: 'down', ...p, button: button(e.button), clickCount })
         }}
         onPointerMove={(e) => {
-          if (point(e) && Date.now() - lastMove.current > 40) {
-            lastMove.current = Date.now()
-            input({ kind: 'move', ...point(e) })
-          }
+          const p = point(e)
+          if (p) input({ kind: 'move', ...p })
         }}
         onPointerUp={(e) => {
           const p = point(e, true)
@@ -345,14 +339,13 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
           if (point(e)) input({ kind: 'wheel', ...point(e), deltaX: e.deltaX, deltaY: e.deltaY })
         }}
       >
-        <img
-          ref={imageRef}
+        <canvas
+          ref={canvasRef}
+          width={1280}
+          height={720}
           role="presentation"
-          alt=""
-          draggable={false}
-          onLoad={() => drawCursor(cursorPosition.current)}
           style={{ visibility: state?.open && hasReceivedFrame ? 'visible' : 'hidden' }}
-          className="absolute inset-0 h-full w-full object-contain pointer-events-none transition-opacity duration-150"
+          className="absolute inset-0 h-full w-full object-contain pointer-events-none"
         />
         {(!state?.open || !hasReceivedFrame) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-center text-xs text-white/40 select-none">
