@@ -1,6 +1,7 @@
 /* eslint-disable react/prop-types */
 import { memo, useState } from 'react'
 import SkillUsage from './Chat/SkillUsage'
+import CodingSummary from './Chat/CodingSummary.jsx'
 import { Copy, Check, Bot, User, ChevronRight } from 'lucide-react'
 import { FaTelegramPlane } from 'react-icons/fa'
 import {
@@ -24,6 +25,8 @@ const ChatList = ({
   content = '',
   reasoning = null,
   skills = [],
+  codingRunId = null,
+  codingSessionId = null,
   compactActivity = false,
   followsProcess = false,
   isActivityActive = false,
@@ -352,6 +355,9 @@ const ChatList = ({
           </div>
 
           {!compactActivity && <SkillUsage skills={skills} />}
+          {!compactActivity && codingRunId && (
+            <CodingSummary runId={codingRunId} sessionId={codingSessionId} />
+          )}
           {hasReasoning && (
             <details className="group/reasoning mb-3 rounded-lg border border-transparent open:border-white/10 open:bg-white/[0.03]">
               <summary className="flex list-none items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-normal text-white/55 hover:text-white/80 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">

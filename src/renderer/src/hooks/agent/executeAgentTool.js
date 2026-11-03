@@ -65,6 +65,7 @@ export async function executeAgentTool({
       workspaceRoot: context?.workspaceRoot,
       signal: currentSignal,
       processId: agenticProcessId,
+      codingRunId: agenticProcessId,
       taskId: durableTask?.id,
       stepId: durableActiveStep?.id,
       skillRefs: context?.skillRefs || []
@@ -191,6 +192,12 @@ export async function executeAgentTool({
       workspaceRoot: context?.workspaceRoot,
       sessionId: String(context?.sessionId || activeSessionNum || 1),
       computerUseRunId: agenticProcessId,
+      codingSessionId: String(context?.sessionId || activeSessionNum || 1),
+      codingRunId: agenticProcessId,
+      codingObjective: userInput,
+      toolCallId: context?.toolCallId,
+      taskId: durableTask?.id,
+      stepId: incomingDurableActiveStep?.id,
       computerUseApprovalToken,
       mcpApprovalToken
     }

@@ -2,7 +2,9 @@ import { skillService } from '../../../main/skills/skill-service.js'
 import { skillSummary } from '../../../shared/skill-context.js'
 import path from 'node:path'
 import fs from 'node:fs'
-import { dbStore } from '../../memory/db-store.js'
+import { codingStore, dbStore } from '../../memory/db-store.js'
+import { workspaceFor, saveProjectMemory } from '../coding-workspace.js'
+import { notifyCoding } from '../coding-execution.js'
 import { wsHub } from '../../ws-hub.js'
 import { fetchAI } from '../ai-bridge.js'
 import { getActiveConfig } from '../../config-manager.js'
@@ -61,6 +63,14 @@ async function dispatch(name, args, ctx, call) {
     ])
     return { success: true, data: { memories, chatTurns } }
   }
+  if (name === 'update-working-memory') {
+    if (typeof args.notes !== 'string' || !args.notes.trim())
+      throw new Error('Isi catatan progres wajib tersedia.')
+    return {
+      success: true,
+      data: saveProjectMemory(ctx.job.parentSessionId || '1', { notes: args.notes })
+    }
+  }
   if (name === 'read-skill') {
     const skill = await skillService.read(args.skill_id || args.skill_name, args.relative_path)
     const refs = ctx.runtime.job(ctx.job.id).skillRefs || []
@@ -104,15 +114,18 @@ async function dispatch(name, args, ctx, call) {
   }
   const tool = NATIVE_TOOLS[name]
   const isMcp = name.startsWith('mcp_')
-  const needsApproval = isMcp || (typeof tool?.needsApproval === 'function' ? tool.needsApproval(args) : tool?.needsApproval)
+  const needsApproval =
+    isMcp ||
+    (typeof tool?.needsApproval === 'function' ? tool.needsApproval(args) : tool?.needsApproval)
   const job = ctx.runtime.job(ctx.job.id)
+  const workspaceRoot = workspaceFor(job.parentSessionId || '1').root
   const session = dbStore.sessions.getById(job.parentSessionId)
   const configRow = dbStore.config.getAll()[0] || {}
   const permissionConfig = { ...getActiveConfig(), ...(configRow.data || configRow) }
   const storedPermission = hasStoredToolPermission(
     name,
     args,
-    job.workspaceRoot || DEFAULT_WORKSPACE_ROOT,
+    workspaceRoot,
     session,
     permissionConfig
   )
@@ -120,7 +133,11 @@ async function dispatch(name, args, ctx, call) {
     job.approvedToolId === call.id &&
     (job.markApprovedToolId !== call.id || canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT))
   const opensComputerUse = isComputerUseSessionOpen(name, args)
-  if (needsApproval && (!approved || (isMcp && job.markApprovedToolId === call.id)) && (isMcp || opensComputerUse || !storedPermission))
+  if (
+    needsApproval &&
+    (!approved || (isMcp && job.markApprovedToolId === call.id)) &&
+    (isMcp || opensComputerUse || !storedPermission)
+  )
     return {
       wait: {
         status: 'waiting_user',
@@ -131,7 +148,15 @@ async function dispatch(name, args, ctx, call) {
   ctx.update({ approvedToolId: null, markApprovedToolId: null })
   const config = {
     ...getActiveConfig(),
-    workspaceRoot: job.workspaceRoot || DEFAULT_WORKSPACE_ROOT,
+    workspaceRoot,
+    codingSessionId: String(job.parentSessionId || '1'),
+    codingRunId: `minibot-${job.id}`,
+    codingObjective: job.goal,
+    parentCodingRunId: job.codingRunId || null,
+    ownedFiles: job.ownedFiles || [],
+    toolCallId: `${ctx.runId}:${call.id}`,
+    taskId: job.taskId,
+    stepId: job.stepId,
     sessionId: ctx.runId,
     agentName: ctx.agent.name,
     signal: ctx.signal
@@ -144,7 +169,11 @@ async function dispatch(name, args, ctx, call) {
   const run = async () => {
     ctx.check()
     ctx.pending(call)
-    const result = isMcp ? await executeMcpTool(name, args, ctx.signal) : tool ? await tool.handler(args, config) : await executePluginAction(name, args)
+    const result = isMcp
+      ? await executeMcpTool(name, args, ctx.signal)
+      : tool
+        ? await tool.handler(args, config)
+        : await executePluginAction(name, args)
     ctx.check()
     return result && typeof result === 'object' && 'success' in result
       ? result
@@ -197,9 +226,23 @@ const execute = createJobExecutor({
 export const subagentRuntime = new SubagentRuntime({
   db: dbStore.sqlite,
   execute: async (ctx) => {
+    let status = 'completed'
     try {
-      return await execute(ctx)
+      const result = await execute(ctx)
+      if (result?.wait) status = 'waiting'
+      return result
+    } catch (error) {
+      status = ctx.signal.aborted ? 'interrupted' : 'failed'
+      throw error
     } finally {
+      const run = codingStore.get('run', `minibot-${ctx.job.id}`)
+      if (run)
+        notifyCoding(
+          codingStore.put('run', run.id, {
+            ...run,
+            status: ctx.signal.aborted ? 'interrupted' : status
+          })
+        )
       await closeComputerUseSession('Pekerjaan Minibot berakhir.', {
         runKey: ctx.runId + ':' + ctx.runId
       })

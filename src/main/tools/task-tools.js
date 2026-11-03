@@ -11,11 +11,15 @@ import { isDangerousCommand } from './system-tools.js'
 export const taskTools = {
   'run-task': {
     needsApproval: (args) => {
-      const cmd = typeof args === 'object' && args !== null ? args.command : String(args || '').split('||')[1]
+      const cmd =
+        typeof args === 'object' && args !== null ? args.command : String(args || '').split('||')[1]
       return isDangerousCommand(cmd || '')
     },
     approvalMessage: (args) => {
-      const cmd = typeof args === 'object' && args !== null ? `${args.task_id}: ${args.command}` : String(args || '')
+      const cmd =
+        typeof args === 'object' && args !== null
+          ? `${args.task_id}: ${args.command}`
+          : String(args || '')
       return `Mark ingin menjalankan background task:\n${cmd}`
     },
     handler: async (args, config) => {
@@ -32,14 +36,15 @@ export const taskTools = {
         taskId = parts[0].trim()
         command = parts.slice(1).join('||').trim()
       }
-      const activeRoot = config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-      return spawnBackgroundTask(taskId, command, activeRoot)
+      const activeRoot =
+        config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
+      return spawnBackgroundTask(taskId, command, activeRoot, config)
     }
   },
 
   'read-task-output': {
     needsApproval: false,
-    handler: async (args) => {
+    handler: async (args, config) => {
       let taskId = ''
       let lines = 40
       if (typeof args === 'object' && args !== null) {
@@ -51,23 +56,25 @@ export const taskTools = {
         lines = parts[1] ? parseInt(parts[1].trim(), 10) : 40
       }
       if (!taskId) return { success: false, message: 'Wajib menyertakan task_id' }
-      return readBackgroundTaskOutput(taskId, lines)
+      return readBackgroundTaskOutput(taskId, lines, config?.codingSessionId)
     }
   },
 
   'kill-task': {
     needsApproval: false,
-    handler: async (args) => {
-      const taskId = (typeof args === 'object' && args !== null ? (args.task_id || args.taskId) : String(args || '')).trim()
+    handler: async (args, config) => {
+      const taskId = (
+        typeof args === 'object' && args !== null ? args.task_id || args.taskId : String(args || '')
+      ).trim()
       if (!taskId) return { success: false, message: 'Wajib menyertakan task_id' }
-      return killBackgroundTask(taskId)
+      return killBackgroundTask(taskId, config?.codingSessionId)
     }
   },
 
   'list-tasks': {
     needsApproval: false,
-    handler: async () => {
-      return listBackgroundTasks()
+    handler: async (_args, config) => {
+      return listBackgroundTasks(config?.codingSessionId)
     }
   }
 }

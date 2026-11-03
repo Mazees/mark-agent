@@ -5,7 +5,11 @@ import { getStreamDiagnostics } from '../services/ai/stream-diagnostics.js'
 import { launchUI } from '../launcher.js'
 import { buildPluginToolGroups } from '../../shared/plugin-schema.js'
 import { mcpGroups, findMcpTool, executeMcpTool } from '../services/mcp-service.js'
-import { requestMcpPermission, decideMcpPermission, consumeMcpPermission } from '../services/mcp-permissions.js'
+import {
+  requestMcpPermission,
+  decideMcpPermission,
+  consumeMcpPermission
+} from '../services/mcp-permissions.js'
 import { isComputerUseSessionOpen } from '../../shared/computer-use.js'
 import { computerUseSessionStatus } from '../tools/pc-agent.js'
 import {
@@ -237,7 +241,8 @@ aiRouter.post('/tools/execute', async (req, res) => {
   try {
     if (typeof tool === 'string' && tool.startsWith('mcp_')) {
       const owner = { sessionId: config?.sessionId, runId: config?.computerUseRunId }
-      if (!consumeMcpPermission(config?.mcpApprovalToken, tool, query, owner)) return res.status(403).json({ success:false, error:'Persetujuan tool MCP diperlukan.' })
+      if (!consumeMcpPermission(config?.mcpApprovalToken, tool, query, owner))
+        return res.status(403).json({ success: false, error: 'Persetujuan tool MCP diperlukan.' })
       return res.json(await executeMcpTool(tool, query, controller.signal))
     }
     if (typeof tool === 'string' && tool.startsWith('plugin-')) {
@@ -252,6 +257,10 @@ aiRouter.post('/tools/execute', async (req, res) => {
       return res.json(await executePluginAction(tool, query))
     }
     const finalConfig = { ...(config || getActiveConfig()), signal: controller.signal }
+    if (finalConfig.codingSessionId) {
+      const { workspaceFor } = await import('../services/coding-workspace.js')
+      finalConfig.workspaceRoot = workspaceFor(finalConfig.codingSessionId).root
+    }
     const result = await nativeTool.handler(query, finalConfig)
     if (result && typeof result === 'object' && 'success' in result) {
       return res.json(result)
@@ -268,7 +277,13 @@ aiRouter.post('/tools/needs-approval', async (req, res) => {
     if (typeof tool === 'string' && tool.startsWith('mcp_')) {
       const match = findMcpTool(tool)
       const owner = { sessionId: config.sessionId, runId: config.computerUseRunId }
-      return res.json({ needsApproval: true, mcpPermissionRequestId:requestMcpPermission(tool,query,owner), message: match ? `Izinkan ${match.addon.name} menjalankan ${match.item.originalName}?` : 'Tool MCP tidak tersedia.' })
+      return res.json({
+        needsApproval: true,
+        mcpPermissionRequestId: requestMcpPermission(tool, query, owner),
+        message: match
+          ? `Izinkan ${match.addon.name} menjalankan ${match.item.originalName}?`
+          : 'Tool MCP tidak tersedia.'
+      })
     }
     const { NATIVE_TOOLS } = await import('../../main/node-tools.js')
     const nativeTool = NATIVE_TOOLS[tool]
@@ -314,12 +329,10 @@ aiRouter.post('/computer-use/permission', (req, res) => {
         process.argv.includes('--dev')
       )
     )
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: 'Persetujuan sesi harus diberikan melalui antarmuka Mark lokal.'
-        })
+      return res.status(403).json({
+        success: false,
+        error: 'Persetujuan sesi harus diberikan melalui antarmuka Mark lokal.'
+      })
     const { requestId, sessionId, runId, approved } = req.body || {}
     const token = decideComputerUsePermission(
       requestId,
@@ -334,10 +347,24 @@ aiRouter.post('/computer-use/permission', (req, res) => {
 
 aiRouter.post('/mcp/permission', (req, res) => {
   try {
-    if (!isLocalComputerUseOrigin(req.get('origin'), req.socket.localPort, process.argv.includes('--dev'))) return res.status(403).json({ success:false, error:'Persetujuan harus diberikan melalui Mark lokal.' })
+    if (
+      !isLocalComputerUseOrigin(
+        req.get('origin'),
+        req.socket.localPort,
+        process.argv.includes('--dev')
+      )
+    )
+      return res
+        .status(403)
+        .json({ success: false, error: 'Persetujuan harus diberikan melalui Mark lokal.' })
     const { requestId, sessionId, runId, approved } = req.body || {}
-    return res.json({ success:true, token:decideMcpPermission(requestId,{sessionId,runId},approved === true) })
-  } catch (error) { return res.status(400).json({ success:false,error:error.message }) }
+    return res.json({
+      success: true,
+      token: decideMcpPermission(requestId, { sessionId, runId }, approved === true)
+    })
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error.message })
+  }
 })
 
 // 4. Edge-TTS Speech Synthesis API

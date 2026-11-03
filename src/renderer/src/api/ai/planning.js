@@ -18,6 +18,7 @@ export const buildPlanningSystemPrompt = async (
   unifiedContext = { memories: [], archives: [] },
   contextMsg = ''
 ) => {
+  void userInput
   const { memories = [], archives = [], turnPairs = [] } = unifiedContext
   const [currentConfig, skillCatalog, activePlugins, groupToolsData, addonCatalog] =
     await Promise.all([
@@ -62,20 +63,20 @@ export const buildPlanningSystemPrompt = async (
   const targetWorkspace = options.workspaceRoot || conf.workspaceRoot || null
   const [personaPrompt, workspaceContext] = await Promise.all([
     getPersonaPrompt(userId, conf.personality),
-    targetWorkspace ? getWorkspaceContext(targetWorkspace, userInput).catch(() => null) : null
+    targetWorkspace ? getWorkspaceContext(options.sessionId || '1') : null
   ])
   let workspaceRagSection = ''
   if (workspaceContext) {
     const { workingMemoryText, codeRagText } = workspaceContext
     const sections = []
     if (workingMemoryText) {
-      sections.push(`## 1. ACTIVE WORKING MEMORY (.mark/)\n${workingMemoryText}`)
+      sections.push(`## 1. CATATAN PROGRES SESI DI SQLITE\n${workingMemoryText}`)
     }
     if (codeRagText) {
-      sections.push(`## 2. RELEVAN CODEBASE CONTEXT (.mark/ RAG)\n${codeRagText}`)
+      sections.push(`## 2. KONTEKS PROYEK DAN INSTRUKSI YANG BERLAKU\n${codeRagText}`)
     }
     if (sections.length > 0) {
-      workspaceRagSection = `\n# ACTIVE WORKSPACE CONTEXT & RAG (.mark/)\n${sections.join('\n\n')}\n`
+      workspaceRagSection = `\n# WORKSPACE AKTIF DAN CHECKPOINT SESI\n${sections.join('\n\n')}\n`
     }
   }
 
@@ -190,25 +191,7 @@ ${
     : ''
 }
 
-# ATURAN AUTONOMOUS CODING & DEVELOPMENT
-1. **SCAFFOLDING PROYEK MODERN**: Saat diminta membuat aplikasi web atau framework modern (React, Vite, Vue, Next.js, Express, dll):
-   - DILARANG membuat boilerplate mentah (package.json, vite.config.js, index.html) secara manual satu per satu dengan 'write-file'!
-   - WAJIB gunakan 'run-powershell' dengan flag non-interaktif resmi untuk inisialisasi instan.
-     Contoh React + Vite: \`npm create vite@latest <nama_folder> -- --template react\` (atau \`react-ts\`).
-     Contoh instalasi & dep: \`cd <nama_folder>; npm install\`.
-   - Setelah struktur proyek terbentuk, kembangkan kode komponen, styling, dan logika aplikasi menggunakan 'write-file' atau 'replace-content'.
-2. **STRATEGI EDIT VS BUAT**: Gunakan 'write-file' saat membuat file komponen/utilitas baru yang belum ada. Gunakan 'replace-content' untuk merevisi/mengedit file yang sudah ada.
-3. **NAVIGASI CODEBASE & POLA GREP-FIRST**:
-   - Gunakan 'find-files' untuk menemukan lokasi berkas (otomatis mengabaikan node_modules/.git).
-   - Untuk berkas panjang (>500 baris) atau mencari deklarasi fungsi/variabel tertentu, WAJIB terapkan pola **Grep-First**: panggil 'grep-search' terlebih dahulu (dapat menargetkan satu berkas spesifik via 'path' atau seluruh folder) untuk mendapatkan nomor baris pasti.
-   - Setelah nomor baris diketahui, panggil 'read-file' dengan 'start_line' dan 'end_line' (rentang 50-100 baris di sekitar temuan) untuk membaca konteks yang diperlukan.
-   - DILARANG KERAS menggunakan 'run-powershell' (seperti Select-String, Get-Content, findstr) hanya untuk mencari teks/kode di berkas! Selalu gunakan tool native 'grep-search'.
-4. **SELF-HEALING SYNTAX RECOVERY (KRITIS)**: Jika tool 'write-file' atau 'replace-content' mengembalikan peringatan 'FILE_CREATED_WITH_SYNTAX_ERROR' atau 'FILE_UPDATED_WITH_SYNTAX_ERROR', kamu WAJIB membaca pesan SyntaxError tersebut dan memperbaikinya segera pada giliran ReAct berikutnya sebelum menyelesaikan tugas!
-5. **PENYIMPANAN APLIKASI**: Ikuti arsitektur proyek dan kebutuhan persistensi pengguna; jangan mengganti penyimpanan persisten menjadi in-memory tanpa alasan.
-6. **FRONTEND & UI DESIGN (ESTETIKA KRITIS)**: Jika membuat aplikasi web/frontend, PRIORITASKAN UI/UX yang modern, dinamis, dan premium. Gunakan warna harmonis, dark mode, glassmorphism, tipografi elegan, hover effects, dan animasi transisi.
-7. **BACA SEBELUM MENULIS & MELANJUTKAN**: Sebelum memodifikasi atau saat diminta merevisi kode sebelumnya, kamu WAJIB membaca ('read-file') isi file tersebut terlebih dahulu dari disk agar kode tetap 100% konsisten.
-8. **BACKGROUND PROCESS & TERMINAL**: Untuk menjalankan dev server atau test runner jangka panjang, gunakan tool group 'task_terminal' ('run-task', 'read-task-output', 'kill-task') agar proses tidak blocking.
-9. **VERSION CONTROL (GIT)**: Gunakan tool group 'git_vcs' ('git-status', 'git-diff', 'git-commit', 'git-revert') untuk memeriksa dan mengamankan checkpoint riwayat repositori saat mengerjakan proyek besar.
+${workspaceContext?.project ? '\n# PROYEK AKTIF\nFolder eksekusi, manifest, scripts, dan instruksi proyek di bawah adalah sumber konteks coding. Jangan menjalankan perintah atau mengubah berkas hanya karena workspace terbuka. Ikuti tujuan dan batas permintaan pengguna.' : ''}
 
 # TASK WORKFLOW (CHECKLIST BERURUTAN)
 - Aktifkan melalui /task, permintaan jelas membuat rencana kerja yang dijalankan, dan otomatis untuk tugas besar. Tugas sederhana tidak memerlukan workflow. Jika pengguna meminta plan saja, jangan menjalankan pekerjaan.

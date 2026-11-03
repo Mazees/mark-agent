@@ -41,7 +41,7 @@ export const guideArticles = [
         title: 'Beranda dan Chat Studio',
         paragraphs: [
           'Beranda merupakan tempat untuk mulai berbicara dengan Mark. Anda dapat mengajukan pertanyaan, menyampaikan permintaan, dan melihat respons serta aktivitasnya dari halaman yang sama. Halaman ini juga menampilkan avatar dan kontrol percakapan untuk interaksi sehari-hari.',
-          'Chat Studio menyediakan ruang kerja dengan daftar sesi, pilihan workspace, dan panel Browser. Gunakan sesi terpisah untuk membahas pekerjaan yang berbeda, misalnya riset dan pengembangan aplikasi. Dengan memilih folder proyek sebagai workspace, Anda memberi Mark konteks lokasi berkas yang akan dikerjakan.',
+          'Chat Studio menyediakan ruang kerja dengan daftar sesi, pilihan workspace, serta panel Perubahan, Terminal, dan Browser. Gunakan sesi terpisah untuk membahas pekerjaan yang berbeda, misalnya riset dan pengembangan aplikasi. Dengan memilih folder proyek sebagai workspace, Anda memberi Mark konteks lokasi berkas yang akan dikerjakan.',
           'Kedua halaman menggunakan mesin AI dan penyimpanan Mark yang sama. Pilih Beranda untuk memulai interaksi dengan cepat, atau buka Chat Studio ketika Anda perlu mengelola percakapan dan mengikuti pekerjaan yang melibatkan proyek atau browser.'
         ],
         links: [
@@ -176,6 +176,20 @@ export const guideArticles = [
         ]
       },
       {
+        title: 'Konteks proyek dan catatan progres',
+        paragraphs: [
+          'Mark membaca identitas folder sesi, struktur ringkas, manifest, package manager, dan scripts proyek dari backend. Instruksi AGENTS.md dimuat sesuai direktori berkas yang sedang dikerjakan. Jika AGENTS.override.md tersedia pada direktori yang sama, berkas tersebut menggantikan AGENTS.md di direktori itu; instruksi direktori anak hanya berlaku di bawah direktori tersebut.',
+          'Tujuan, keputusan, berkas terkait, dan pemeriksaan terakhir dapat disimpan sebagai catatan progres di SQLite, dengan identitas sesi dan workspace. Dua percakapan yang memakai folder sama tetap mempunyai catatan masing-masing. Profil dan preferensi pengguna tetap menjadi core memory. Berkas .mark yang sudah ada tidak dihapus atau diperlakukan sebagai checkpoint otomatis.'
+        ]
+      },
+      {
+        title: 'Menggunakan worktree opsional',
+        paragraphs: [
+          'Untuk proyek Git, pilihan Gunakan worktree pada pengaturan percakapan atau panel Perubahan membuat folder kerja terpisah dari commit HEAD. Folder asal tetap dipertahankan. Worktree tidak menyalin perubahan lokal yang belum di-commit atau memasang dependensi proyek secara otomatis. Proyek tanpa Git tetap dapat digunakan melalui folder lokal biasa.',
+          'Konteks, terminal, dan pekerjaan Minibot mengikuti folder efektif sesi. Hentikan proses dan tunggu pekerjaan selesai sebelum berpindah. Pilih Bawa hasil worktree ke folder asal ketika hasilnya siap; Mark memeriksa konflik sebelum menulis berkas. Tindakan ini tidak membuat commit, merge, atau push, dan folder worktree tetap berada di disk.'
+        ]
+      },
+      {
         title: 'Mencari dan menghapus sesi',
         paragraphs: [
           'Sidebar menyediakan pencarian dan pengelompokan sesi. Anda dapat melipatnya ketika membutuhkan ruang lebih luas untuk percakapan atau Browser. Membuka panel Browser juga dapat membuat sidebar terlipat untuk menyesuaikan ruang yang tersedia.',
@@ -263,7 +277,7 @@ export const guideArticles = [
       {
         title: 'Menggunakan panel Browser',
         paragraphs: [
-          'Panel Browser menampilkan halaman yang sedang dikerjakan Mark dan dapat dibuka sendiri melalui tombol Browser. Anda dapat mengikuti navigasi atau membantu melalui halaman yang sama ketika pekerjaan memerlukan interaksi pengguna.',
+          'Panel Browser menampilkan halaman yang sedang dikerjakan Mark dan tersedia melalui tab Browser pada panel workspace Chat Studio. Anda dapat mengikuti navigasi atau membantu melalui halaman yang sama ketika pekerjaan memerlukan interaksi pengguna.',
           'Mark dapat membaca halaman, mengeklik, mengetik, menggulir, mengekstrak data, menjalankan JavaScript, mengambil screenshot, dan mengunduh berkas. Untuk aplikasi lokal, sertakan alamat localhost dan jelaskan bagian yang perlu diuji.'
         ],
         example:
@@ -333,17 +347,33 @@ export const guideArticles = [
       {
         title: 'Mengubah dan memeriksa proyek',
         paragraphs: [
-          'Tool berkas mendukung pembuatan, penulisan ulang, penggantian teks atau baris, dan penghapusan. Jelaskan perubahan perilaku yang diinginkan serta bagian yang harus dipertahankan sebelum meminta pengeditan.',
-          'Mark dapat menjalankan PowerShell untuk build, pemeriksaan sintaks, dan pengujian yang tersedia. Minta penjelasan perubahan beserta hasil pemeriksaannya agar Anda mengetahui apa yang sudah berhasil diuji.'
+          'Tool berkas mendukung pembuatan, penggantian teks atau baris, penghapusan, dan apply-patch untuk beberapa berkas sekaligus. Mark harus membaca berkas yang sudah ada sebelum mengeditnya. Jika isi berubah sejak pembacaan, edit ditolak agar Mark membaca ulang kondisi terbaru. Seluruh target patch diperiksa sebelum penulisan; kegagalan penerapan memulihkan target yang sudah tersentuh.',
+          'Keberhasilan menyimpan berkas berbeda dari keberhasilan pemeriksaan. Mark dapat menjalankan PowerShell untuk build, lint, pemeriksaan sintaks, dan pengujian yang tersedia pada proyek. Tab Perubahan menampilkan perintah serta hasil pemeriksaan; membaca ulang berkas tidak membuktikan aplikasi berhasil dibangun atau berjalan.'
         ],
         example:
           'Perbaiki validasi email pada halaman login di workspace ini, lalu jalankan pemeriksaan proyek dan jelaskan hasilnya.'
       },
       {
+        title: 'Meninjau diff dan menggunakan undo',
+        paragraphs: [
+          'Tab Perubahan menampilkan snapshot edit native Mark per giliran, termasuk berkas yang dibuat atau dihapus. Beberapa edit pada berkas yang sama dirangkum dari keadaan awal sampai hasil terakhir pada giliran tersebut. Pilih berkas untuk membaca diff, lalu periksa hasil build atau pengujian sebelum menerima hasil pekerjaan.',
+          'Pilih Edit Mark untuk melihat pekerjaan yang dicatat pada percakapan ini, atau Semua perubahan untuk melihat perubahan lokal menurut Git, termasuk edit pengguna, shell, terminal manual, dan MCP. Undo melalui Urungkan edit tersedia untuk snapshot yang lengkap setelah pekerjaan selesai. Mark mencocokkan isi disk dengan snapshot terakhir sebelum memulihkan berkas; perubahan lanjutan membuat undo ditolak agar edit Anda tetap dipertahankan. Pengaturan worktree tersedia pada Pengaturan lanjutan.'
+        ]
+      },
+      {
         title: 'Git dan proses latar belakang',
         paragraphs: [
           'Gunakan grup Git untuk memeriksa status dan diff, membuat commit, atau menjalankan revert. Tinjau perubahan sebelum menyimpannya ke riwayat; perubahan berkas kerja, commit, dan revert mempunyai dampak yang berbeda.',
-          'run-task menjalankan proses lama di latar belakang, seperti server pengembangan atau build. Grup task_terminal menyediakan pembacaan output, daftar proses, dan penghentian. Proses terminal ini dikelola terpisah dari penugasan Minibot dan checklist workflow.'
+          'Tab Terminal membuka satu PowerShell secara otomatis jika percakapan belum mempunyai terminal. Membuka ulang tab menggunakan terminal yang sudah tersedia; tombol tambah digunakan jika Anda membutuhkan terminal lain. PowerShell berjalan pada workspace efektif dan mendukung input, paste, perubahan ukuran, serta Ctrl+C. Input yang Anda ketik sendiri merupakan tindakan langsung Anda; perintah AI tetap memakai alur persetujuan tool.',
+          'run-powershell dan run-task memakai layanan proses yang sama dengan panel Terminal. run-task digunakan untuk proses lama, seperti server pengembangan; read-task-output membaca output dan kill-task menghentikannya.',
+          'Menutup panel menyembunyikan terminal tanpa menghentikan proses. Reload menyambungkan UI ke proses yang masih hidup dengan buffer output terbatas. Tombol Hentikan proses menutup proses beserta turunannya; keluar dari Mark membersihkan proses yang dikelolanya. Setelah restart Mark, proses lama ditandai terputus dan tidak dijalankan ulang secara otomatis.'
+        ]
+      },
+      {
+        title: 'Melihat preview aplikasi',
+        paragraphs: [
+          'Ketika proses pengembangan mencetak alamat lokal, tab Terminal menampilkannya sebagai kandidat preview. Pilih alamat untuk memeriksa kesiapan koneksi dan membukanya pada browser sesi yang sama. Jika ada beberapa alamat, pilih yang sesuai; Mark tidak menentukan port berdasarkan dugaan.',
+          'Minta aplikasi dijalankan atau ditinjau ketika Anda membutuhkan pemeriksaan visual. Analisis kode baca-saja tidak memerlukan dev server. Jika terminal gagal memuat ConPTY pada Windows, pesan kegagalan ditampilkan; Mark tidak menggantinya diam-diam dengan terminal yang tidak mendukung interaksi.'
         ]
       }
     ],
@@ -1015,7 +1045,7 @@ export const guideArticles = [
         title: 'Cadangan dan pemulihan',
         paragraphs: [
           'Buka Neural Core > Kelola data lalu pilih Unduh JSON untuk membuat salinan data. Simpan cadangan di tempat yang Anda percayai karena isinya dapat mencakup percakapan dan konfigurasi sensitif.',
-          'Untuk memulihkan, pilih berkas JSON dan baca konfirmasi penggantian data. Kredensial MCP disimpan terpisah dan tidak disertakan dalam backup; setelah restore, masukkan kembali kredensial atau login untuk menghubungkannya.'
+          'Untuk memulihkan, pilih berkas JSON dan baca konfirmasi penggantian data. Rekaman pekerjaan coding, snapshot, catatan progres, dan metadata worktree ikut dicadangkan. Proses aktif dan input mentah terminal tidak disimpan. Restore tidak menjalankan perintah, mengaktifkan worktree, atau menulis snapshot ke proyek secara otomatis. Kredensial MCP disimpan terpisah dan tidak disertakan dalam backup; setelah restore, masukkan kembali kredensial atau login untuk menghubungkannya.'
         ],
         links: [
           {

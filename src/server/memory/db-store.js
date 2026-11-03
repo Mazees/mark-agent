@@ -4,6 +4,7 @@ import fs from 'fs'
 import Database from 'better-sqlite3'
 import { createSubagentSchema } from '../services/subagents/storage.js'
 import { createMcpStore } from '../services/mcp-store.js'
+import { createCodingStore } from '../services/coding-store.js'
 import { getCurrentVersion } from '../services/updater.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
@@ -16,6 +17,7 @@ const DB_PATH = process.env.MARK_DB_PATH || path.join(CONFIG_DIR, 'mark.db')
 // Inisialisasi Database SQLite
 export const sqlite = new Database(DB_PATH)
 export const mcpStore = createMcpStore(sqlite)
+export const codingStore = createCodingStore(sqlite)
 
 // Optimasi performa SQLite (WAL mode, memory temp store, normal sync)
 sqlite.pragma('journal_mode = WAL')
@@ -675,7 +677,8 @@ export function exportFullDatabase() {
     learnedSkills: dbStore.learnedSkills.getAll(),
     agentTasks: dbStore.agentTasks.getAll(),
     agentTaskSteps: dbStore.agentTaskSteps.getAll(),
-    mcpAddons: mcpStore.list()
+    mcpAddons: mcpStore.list(),
+    codingRecords: codingStore.export()
   }
 
   return {
@@ -732,6 +735,9 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
   }
 
   const restoreTransaction = sqlite.transaction(() => {
+    if (Array.isArray(rawTables.codingRecords))
+      codingStore.restore(rawTables.codingRecords, overwrite)
+    else if (overwrite) codingStore.restore([], true)
     if (Array.isArray(rawTables.mcpAddons)) {
       mcpStore.replaceAll(rawTables.mcpAddons, overwrite)
       results.mcpAddons = rawTables.mcpAddons.length
@@ -796,6 +802,7 @@ export function resetAllExceptConfig() {
     dbStore.learnedSkills.clear()
     dbStore.agentTasks.clear()
     dbStore.agentTaskSteps.clear()
+    codingStore.restore([], true)
 
     // 2. Reset hubungan / sifat relasional ke nilai default awal
     dbStore.relationships.clear()

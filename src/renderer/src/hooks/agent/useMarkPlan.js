@@ -1,4 +1,5 @@
 import { pendingVerification, createProgressGuard } from '@shared/agent/execution-quality.js'
+import { CODING_INSTRUCTIONS } from '@shared/agent/coding-prompt.js'
 import {
   parseSkillRequest,
   skillSummary,
@@ -634,10 +635,13 @@ export const useMarkPlan = ({
       else if (tool === 'update-working-memory') {
         const notes = typeof rawArgs === 'object' && rawArgs?.notes ? rawArgs.notes : stringQuery
         if (context?.workspaceRoot && notes) {
-          await saveWorkspaceWorkingMemory(context.workspaceRoot, { notes })
-          resultString = `Catatan progres koding berhasil disimpan ke .mark/working-memory.json.`
+          await saveWorkspaceWorkingMemory(context.sessionId || activeSessionNum, { notes })
+          resultString =
+            'Catatan progres coding berhasil disimpan untuk percakapan dan workspace aktif.'
         } else {
-          resultString = `Working memory dicatat untuk sesi ini: ${notes}`
+          throw new Error(
+            'Catatan progres belum disimpan: workspace dan isi catatan wajib tersedia.'
+          )
         }
       }
       // 7. Speak (TTS)
@@ -1027,6 +1031,12 @@ export const useMarkPlan = ({
         }
 
         const toolImageUrls = extractedImageUrl ? [extractedImageUrl] : null
+        if (res?.projectInstructions?.length)
+          resultString +=
+            '\n[Instruksi proyek yang berlaku]:\n' + JSON.stringify(res.projectInstructions)
+        if (res?.validation)
+          resultString +=
+            '\n[Status pemeriksaan, terpisah dari penulisan]:\n' + JSON.stringify(res.validation)
         const toolPreviewUrl = extractedImageUrl || null
 
         return {
@@ -1448,7 +1458,7 @@ export const useMarkPlan = ({
       ])
     }
 
-    const agenticProcessId = `agentic-${Date.now()}`
+    const agenticProcessId = `agentic-${activeSessionNum}-${Date.now()}`
     sessionRecord.computerUseRunId = agenticProcessId
     let durableTaskForRecovery = null
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
@@ -1470,6 +1480,13 @@ export const useMarkPlan = ({
         { id: activeSessionNum, workspaceRoot: opts.workspaceRoot },
         workspaceInfo.defaultWorkspaceRoot
       )
+      const codingWorkspace = await webApi.codingRequest(
+        '/workspace/context',
+        activeSessionNum,
+        {},
+        'POST'
+      )
+      opts.workspaceRoot = codingWorkspace.root
       let durableTask = opts.taskId ? await getAgentTaskWithSteps(opts.taskId) : null
       if (
         opts.taskId &&
@@ -1614,6 +1631,7 @@ export const useMarkPlan = ({
           userInput,
           {
             ...opts,
+            sessionId: String(activeSessionNum || 1),
             tgContext,
             currentMusicTrack,
             systemTelemetry,
@@ -2689,6 +2707,23 @@ export const useMarkPlan = ({
               continue
             }
 
+            if (
+              [
+                'read-file',
+                'write-file',
+                'replace-content',
+                'replace-lines',
+                'apply-patch',
+                'run-powershell',
+                'run-task'
+              ].includes(toolName) &&
+              !loopMessages.some((m) => m.role === 'system' && m.content === CODING_INSTRUCTIONS)
+            ) {
+              loopMessages.push({
+                role: 'system',
+                content: CODING_INSTRUCTIONS
+              })
+            }
             const execResult = await executeSingleTool(toolName, parsedArgs, {
               tgContext,
               toolCallId: `${agenticProcessId}:${stepCount}:${tc.id}`,
@@ -3317,6 +3352,8 @@ export const useMarkPlan = ({
             skills: [...sessionRecord.skills.values()].map(skillSummary),
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             toolGroups: [...dynamicallyLoadedToolGroups],
+            codingRunId: agenticProcessId,
+            codingSessionId: String(activeSessionNum),
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',
@@ -3369,6 +3406,14 @@ export const useMarkPlan = ({
         throw new Error('AbortError')
       }
 
+      await webApi
+        .codingRequest(
+          `/coding/runs/${encodeURIComponent(agenticProcessId)}/finish`,
+          activeSessionNum,
+          { status: 'completed' },
+          'POST'
+        )
+        .catch(() => {})
       // Pastikan sisa thinking indicator selalu dibersihkan jika loop selesai
       targetSetChatData((prev) => {
         const hasThinking = prev.some((item) => item.isThinking)
@@ -3469,6 +3514,14 @@ export const useMarkPlan = ({
         /* ignore */
       }
     } catch (error) {
+      webApi
+        .codingRequest(
+          `/coding/runs/${encodeURIComponent(agenticProcessId)}/finish`,
+          activeSessionNum,
+          { status: 'interrupted' },
+          'POST'
+        )
+        .catch(() => {})
       const isAbort =
         Boolean(sessionAbortController?.signal?.aborted) ||
         error.name === 'AbortError' ||

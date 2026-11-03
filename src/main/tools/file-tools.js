@@ -12,6 +12,14 @@ const __dirname = path.dirname(__filename)
 const execPromise = util.promisify(exec)
 
 export const fileTools = {
+  'apply-patch': {
+    needsApproval: true,
+    approvalMessage: () => 'Mark ingin menerapkan patch pada berkas workspace.',
+    handler: async () => ({
+      success: false,
+      error: 'apply-patch memerlukan konteks pekerjaan coding dari sesi aktif.'
+    })
+  },
   'read-skill': {
     needsApproval: false,
     handler: async (args) => {

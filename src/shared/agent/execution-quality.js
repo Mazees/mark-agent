@@ -4,7 +4,8 @@ const fileMutations = new Set([
   'replace-lines',
   'edit-file',
   'append-file',
-  'delete-file'
+  'delete-file',
+  'apply-patch'
 ])
 const browserMutations = new Set([
   'browser-click',
@@ -26,6 +27,11 @@ const pathOf = (query) => {
   return String(args.path || args.filePath || args.file_path || '')
     .replaceAll('\\', '/')
     .toLowerCase()
+}
+export function isVerificationCommand(command) {
+  return /(?:^|[;\r\n]|&&|\|\|)\s*(?:&\s*)?(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build|lint|typecheck|check)\b|node\s+(?:--check|-c)\b|(?:npx\s+)?(?:eslint|tsc|vitest|jest|pytest)\b)/i.test(
+    String(command || '')
+  )
 }
 export function pendingVerification(steps = []) {
   const tools = steps.filter((step) => step.tool)
@@ -52,13 +58,10 @@ export function pendingVerification(steps = []) {
       const target = pathOf(mutation.query)
       if (
         later.some((step) => {
-          if (['read-file', 'grep-search'].includes(step.tool))
-            return target && pathOf(step.query) === target
+          if (['read-file', 'grep-search'].includes(step.tool)) return false
           if (step.tool === 'run-powershell') {
             const args = argsOf(step.query)
-            return /(?:\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build|lint|typecheck|check)\b|\bnode\s+(?:--check|-c)\b|\b(?:npx\s+)?(?:eslint|tsc|vitest|jest|pytest)\b)/i.test(
-              args.command || args.query || ''
-            )
+            return isVerificationCommand(args.command || args.query || '')
           }
           if (name === 'delete-file' && step.tool === 'list-dir')
             return target && target.startsWith(pathOf(step.query) + '/')
@@ -69,7 +72,7 @@ export function pendingVerification(steps = []) {
       return {
         tool: name,
         instruction:
-          'Periksa berkas yang diubah atau jalankan pemeriksaan proyek yang relevan. Hasil pada berkas lain tidak membuktikan perubahan ini.'
+          'Jalankan pemeriksaan proyek yang relevan jika tersedia. Membaca ulang berkas hanya memeriksa isi, bukan membuktikan build atau fungsi aplikasi. Jelaskan bila pemeriksaan tidak berlaku atau belum dapat dijalankan.'
       }
     }
     if (name === 'computer_use') {

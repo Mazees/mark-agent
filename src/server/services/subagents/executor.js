@@ -7,6 +7,8 @@ import {
 import { countTokens } from 'gpt-tokenizer'
 import { jsonrepair } from 'jsonrepair'
 import { buildSubagentSystemPrompt } from '../../../shared/agent/subagent-prompt.js'
+import { CODING_INSTRUCTIONS } from '../../../shared/agent/coding-prompt.js'
+import { projectContext } from '../coding-workspace.js'
 
 export const forbiddenTools = new Set([
   'spawn_subagent',
@@ -93,6 +95,7 @@ export async function compactMessages(messages, fetch, options) {
 
 export function createJobExecutor({ fetch, schemas, dispatch, config, skills = null }) {
   return async function executeJob(ctx) {
+    const project = await projectContext(ctx.job.parentSessionId || '1')
     const available = await schemas()
     const agentTools = ctx.agent.allowedTools || ['*']
     const jobTools = ctx.job.allowedTools || agentTools
@@ -118,8 +121,12 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
       buildSubagentSystemPrompt({ role: ctx.agent.role, goal: ctx.job.goal }) +
       '\n' +
       buildSkillCatalog(catalog) +
-      `\nID agent: ${ctx.agent.id}; job_id: ${ctx.job.id}. Workspace: ${ctx.job.workspaceRoot || 'default'}.\n` +
-      `Checkpoint masukan: ${ctx.job.contextSummary || '(tidak ada)'}`
+      `\nID agent: ${ctx.agent.id}; job_id: ${ctx.job.id}. Workspace: ${project.root}.\n` +
+      `Kepemilikan berkas: ${JSON.stringify(ctx.job.ownedFiles || [])}. Checkpoint masukan: ${ctx.job.contextSummary || '(tidak ada)'}` +
+      '\n' +
+      CODING_INSTRUCTIONS +
+      '\n' +
+      JSON.stringify(project)
 
     while (true) {
       ctx.check()

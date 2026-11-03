@@ -3,7 +3,6 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
 import { ChevronRight, Folder, PanelRight } from 'lucide-react'
-import BrowserPanel from '../components/BrowserPanel.jsx'
 import { browserSessionId } from '../api/browser-panel.js'
 import {
   db,
@@ -20,6 +19,7 @@ import {
 import ChatList from '../components/ChatList'
 import InputBar from '../components/core/InputBar'
 import WorkspaceSidebar from '../components/Chat/WorkspaceSidebar.jsx'
+import CodingPanel from '../components/Chat/CodingPanel.jsx'
 import { webApi } from '../api/web-bridge.js'
 import { isMainSession, resolveSessionWorkspace } from '@shared/workspaces.js'
 import { useApproval } from '../contexts/ApprovalContext'
@@ -186,6 +186,37 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
   const [browserOpen, setBrowserOpen] = useState(!!location.state?.openBrowser)
+  const [workspaceTab, setWorkspaceTab] = useState('changes')
+  const [selectedCodingRun, setSelectedCodingRun] = useState(null)
+  useEffect(() => {
+    const open = (event) => {
+      if (String(event.detail?.sessionId) === String(activeSessionId)) {
+        setSelectedCodingRun(event.detail.runId || null)
+        setWorkspaceTab(event.detail.tab || 'changes')
+        setBrowserOpen(true)
+      }
+    }
+    window.addEventListener('coding-panel-open', open)
+    return () => window.removeEventListener('coding-panel-open', open)
+  }, [activeSessionId])
+  const [effectiveCodingRoot, setEffectiveCodingRoot] = useState(null)
+  useEffect(() => {
+    let disposed = false
+    setEffectiveCodingRoot(null)
+    const update = () =>
+      webApi
+        .codingRequest('/workspace/context', activeSessionId, {}, 'POST')
+        .then((project) => {
+          if (!disposed) setEffectiveCodingRoot(project.root)
+        })
+        .catch(() => {})
+    update()
+    window.addEventListener('coding-workspace-changed', update)
+    return () => {
+      disposed = true
+      window.removeEventListener('coding-workspace-changed', update)
+    }
+  }, [activeSessionId])
   const [browserExpanded, setBrowserExpanded] = useState(false)
   const [chatWidth, setChatWidth] = useState(380)
   const [sidebarMinimized, setSidebarMinimized] = useState(false)
@@ -198,7 +229,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     const resize = () => setNarrow(window.innerWidth < 1200)
     window.addEventListener('resize', resize)
     const off = webApi.onBrowserPanel('open-request', (event) => {
-      if (event?.sessionId === browserId) setBrowserOpen(true)
+      if (event?.sessionId === browserId) {
+        setWorkspaceTab('browser')
+        setBrowserOpen(true)
+      }
     })
     return () => {
       off()
@@ -409,6 +443,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     handlePlanningCommand(prompt, false, false, commandOpts)
   }
+  const sendMessageRef = useRef(handleSendMessage)
+  sendMessageRef.current = handleSendMessage
 
   // Real-time live background sync across sessions & trigger quick prompt
   useEffect(() => {
@@ -420,7 +456,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     const handleQuickPrompt = (e) => {
       if (e.detail?.prompt) {
-        handleSendMessage(e.detail.prompt)
+        sendMessageRef.current(e.detail.prompt)
       }
     }
 
@@ -431,7 +467,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       window.removeEventListener('session-updated', handleSessionUpdate)
       window.removeEventListener('trigger-quick-prompt', handleQuickPrompt)
     }
-  }, [activeSessionId, handleSendMessage])
+  }, [activeSessionId])
 
   const lastMessage = currentDisplayMessages[currentDisplayMessages.length - 1]
   const lastMessageContent = lastMessage?.content || ''
@@ -524,6 +560,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     if (sessionIsRunning && Object.hasOwn(updates, 'workspaceRoot'))
       throw new Error('Tunggu proses percakapan selesai sebelum mengubah workspace.')
     const saved = await updateSessionMetadata(id, updates)
+    if (Object.hasOwn(updates, 'workspaceRoot'))
+      window.dispatchEvent(
+        new CustomEvent('coding-workspace-changed', { detail: { sessionId: String(id) } })
+      )
     setSessions((prev) =>
       prev.map((session) =>
         String(session.id) === String(id) ? { ...session, ...saved } : session
@@ -660,7 +700,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     id: '1',
     title: 'Main Thread'
   }
-  const activeSessionWorkspace = resolveSessionWorkspace(activeSessionObj, defaultRoot)
+  const activeSessionWorkspace =
+    effectiveCodingRoot || resolveSessionWorkspace(activeSessionObj, defaultRoot)
 
   return (
     <>
@@ -724,11 +765,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
               type="button"
               onClick={() => setBrowserOpen(true)}
               className="flex shrink-0 items-center gap-2 text-xs text-white/60 hover:text-white"
-              title="Buka browser percakapan"
-              aria-label="Buka browser percakapan"
+              title="Buka panel workspace"
+              aria-label="Buka panel workspace"
             >
               <PanelRight size={16} />
-              {!browserOpen && 'Browser'}
+              {!browserOpen && 'Workspace'}
             </button>
           </div>
 
@@ -879,6 +920,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                           followsProcess={item.hideProcessDetails}
                           reasoning={msg.reasoning}
                           skills={msg.skills}
+                          codingRunId={msg.codingRunId}
+                          codingSessionId={msg.codingSessionId}
                           isThinking={msg.isThinking}
                           isSearching={msg.isSearching}
                           isSummarizing={msg.isSummarizing}
@@ -991,9 +1034,21 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
               />
             )}
             <div className="min-w-0 h-full flex-1 overflow-hidden">
-              <BrowserPanel
+              <CodingPanel
                 key={browserId}
-                sessionId={browserId}
+                sessionId={activeSessionId}
+                sessionBusy={isCurrentLoading}
+                selectedRunId={selectedCodingRun}
+                tab={workspaceTab}
+                onTab={setWorkspaceTab}
+                narrow={narrow}
+                onWorkspaceChange={() =>
+                  window.dispatchEvent(
+                    new CustomEvent('coding-workspace-changed', {
+                      detail: { sessionId: String(activeSessionId) }
+                    })
+                  )
+                }
                 onClose={() => setBrowserOpen(false)}
                 onResume={resumeBrowser}
                 expanded={browserExpanded || narrow}

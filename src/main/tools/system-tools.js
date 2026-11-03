@@ -45,51 +45,17 @@ export const isDangerousCommand = (cmd) => {
 export const systemTools = {
   'run-powershell': {
     needsApproval: (args) => isDangerousCommand(args),
-    approvalMessage: (args) => {
-      const cmd = typeof args === 'object' && args !== null ? args.command : String(args || '')
-      return `Mark ingin mengeksekusi perintah PowerShell yang berpotensi BERBAHAYA:\n\n${cmd}`
-    },
+    approvalMessage: (args) =>
+      `Mark ingin menjalankan PowerShell:\n${typeof args === 'object' ? args.command : String(args)}`,
     handler: async (args, config) => {
-      const command = (
-        typeof args === 'object' && args !== null ? args.command : String(args || '')
-      ).trim()
-      if (!command) return { success: false, message: 'Tidak ada perintah yang diberikan.' }
-      try {
-        const activeRoot =
+      const command = String(typeof args === 'object' ? args.command : args || '').trim()
+      if (!command) return { success: false, error: 'Perintah kosong.' }
+      const { runCommand } = await import('../../server/services/terminal-service.js')
+      return runCommand(command, {
+        ...config,
+        workspaceRoot:
           config?.workspaceRoot || path.join(os.homedir(), 'Documents', 'Mark Workspace')
-
-        // Gunakan Base64 EncodedCommand (UTF-16LE) agar karakter khusus ($_, quotes, pipe, regex) 100% aman
-        const encodedCmd = Buffer.from(command, 'utf16le').toString('base64')
-        const { stdout, stderr } = await execPromise(
-          `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCmd}`,
-          {
-            cwd: activeRoot,
-            maxBuffer: 10 * 1024 * 1024, // 10MB buffer agar output besar tidak melempar MaxBuffer exceeded
-            timeout: 60000 // 60 detik timeout
-          }
-        )
-        const outputText =
-          stdout.trim() ||
-          (stderr.trim()
-            ? `[STDERR]: ${stderr.trim()}`
-            : 'Perintah berhasil dieksekusi tanpa output teks.')
-        return {
-          success: true,
-          data: outputText,
-          output: outputText,
-          error: stderr.trim() || null
-        }
-      } catch (error) {
-        // Tangani jika error membawa stdout parsial
-        const partialOutput = error.stdout ? error.stdout.trim() : ''
-        const errorMsg = error.stderr ? error.stderr.trim() : error.message
-        return {
-          success: false,
-          message: 'Gagal mengeksekusi perintah.',
-          output: partialOutput || null,
-          error: errorMsg
-        }
-      }
+      })
     }
   },
 

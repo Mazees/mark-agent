@@ -13,6 +13,7 @@ import { integrationsRouter } from './integrations.routes.js'
 import { aiRouter } from './ai.routes.js'
 import { workspaceRouter } from './workspace.routes.js'
 import { browserRouter } from './browser.routes.js'
+import { codingRouter } from './coding.routes.js'
 import { chromeBridgeRouter } from './chrome-bridge.routes.js'
 import { mcpRouter } from './mcp.routes.js'
 
@@ -31,6 +32,7 @@ export function registerRoutes(app) {
   app.use('/api', integrationsRouter)
   app.use('/api', aiRouter)
   app.use('/api', workspaceRouter)
+  app.use('/api', codingRouter)
   app.use('/api', browserRouter)
   app.use('/api', chromeBridgeRouter)
   app.use('/api', mcpRouter)

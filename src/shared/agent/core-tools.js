@@ -104,7 +104,7 @@ export const core_tools_schema = [
     function: {
       name: 'update-working-memory',
       description:
-        'Menyimpan atau memperbarui catatan ringkas progres koding, lokasi baris/fungsi yang telah dipetakan ke .mark/working-memory.json.',
+        'Menyimpan catatan progres coding, tujuan, keputusan, berkas terkait, dan pemeriksaan terakhir di SQLite untuk percakapan serta workspace aktif. Tidak menulis berkas .mark.',
       parameters: {
         type: 'object',
         properties: {
@@ -722,6 +722,11 @@ export const core_tools_schema = [
             type: 'string',
             description: 'Pesan instruksi awal tugas yang didelegasikan'
           },
+          owned_files: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Daftar path relatif berkas yang menjadi tanggung jawab edit Minibot.'
+          },
           tools: {
             type: 'string',
             description: 'Daftar tool yang diizinkan (dipisah koma, atau "*")'
@@ -1038,6 +1043,20 @@ core_tools_schema.push({
         limit: { type: 'integer', minimum: 1, maximum: 50 }
       },
       required: ['query'],
+      additionalProperties: false
+    }
+  }
+})
+core_tools_schema.push({
+  type: 'function',
+  function: {
+    name: 'apply-patch',
+    description:
+      'Menerapkan patch kontekstual beberapa berkas secara transaksional di workspace aktif. Baca berkas lama terlebih dahulu. Mendukung *** Begin Patch, *** Add File:, *** Update File: dengan @@ dan baris spasi/+/-, *** Delete File:, *** End Patch.',
+    parameters: {
+      type: 'object',
+      properties: { patch: { type: 'string' } },
+      required: ['patch'],
       additionalProperties: false
     }
   }

@@ -13,6 +13,7 @@ import { startOsActivityTracking } from './tools/awareness-tracker.js'
 import { startTelegramBot } from '../main/telegram/telegram-service.js'
 import { getActiveConfig } from './config-manager.js'
 import { registerRoutes } from './routes/index.js'
+import { shutdownTerminals } from './services/terminal-service.js'
 import { setServerPort } from './tools/overlay-manager.js'
 import { subagentRuntime } from './services/subagents/service.js'
 import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
@@ -86,6 +87,7 @@ chromeBridge.events.on('status', (status) =>
 )
 chromeBridge.start().catch((error) => console.warn('[Chrome Bridge]', error.message))
 server.on('close', () => {
+  shutdownTerminals().catch(() => {})
   subagentRuntime.stop().catch(() => {})
   chromeBridge.stop().catch(() => {})
   mcpRuntime.shutdown().catch(() => {})
@@ -93,7 +95,12 @@ server.on('close', () => {
 const shutdownServices = () => {
   const timeout = setTimeout(() => process.exit(0), 1500)
   timeout.unref()
-  Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop(), mcpRuntime.shutdown()]).finally(() => {
+  Promise.allSettled([
+    subagentRuntime.stop(),
+    chromeBridge.stop(),
+    mcpRuntime.shutdown(),
+    shutdownTerminals()
+  ]).finally(() => {
     for (const client of wsHub.clients) client.terminate()
     server.close(() => {
       clearTimeout(timeout)

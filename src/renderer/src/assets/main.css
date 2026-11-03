@@ -70,6 +70,14 @@ html {
   font-family: var(--font-sans);
 }
 
+/* xterm measures glyphs with its configured font; descendants must use the same font. */
+.mark-terminal .xterm,
+.mark-terminal .xterm * {
+  font-family: var(--mark-terminal-font);
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+
 html,
 body,
 #root {

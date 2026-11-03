@@ -59,7 +59,10 @@ function getWebSocket() {
       try {
         const data = JSON.parse(event.data)
         const { event: evtName, payload } = data
-        if (evtName === 'browser-panel:command:response') {
+        if (
+          evtName === 'browser-panel:command:response' ||
+          evtName === 'terminal:command:response'
+        ) {
           const request = browserRequests.get(payload?.id)
           if (request) {
             browserRequests.delete(payload.id)
@@ -145,6 +148,53 @@ export function resolveAbortSignal(sig) {
 }
 
 export const webApi = {
+  codingRequest: async (operation, sessionId, values = {}, method = 'GET') => {
+    const query =
+      method === 'GET' ? '?' + new URLSearchParams({ sessionId: String(sessionId), ...values }) : ''
+    const response = await fetch(API_BASE + '/api' + operation + query, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(method === 'GET'
+        ? {}
+        : { body: JSON.stringify({ sessionId: String(sessionId), ...values }) })
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success) throw new Error(result.error || 'Operasi workspace gagal.')
+    return result.data
+  },
+  terminalRequest: async (terminalId, sessionId, action, values = {}) => {
+    const socket = getWebSocket()
+    if (socket?.readyState !== WebSocket.OPEN) throw new Error('Koneksi terminal belum siap.')
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID(),
+        timer = setTimeout(() => {
+          browserRequests.delete(id)
+          reject(new Error('Terminal tidak merespons.'))
+        }, 10000)
+      browserRequests.set(id, { resolve, reject, timer })
+      try {
+        socket.send(
+          JSON.stringify({
+            event: 'terminal:command',
+            id,
+            payload: { terminalId, sessionId: String(sessionId), action, ...values }
+          })
+        )
+      } catch (error) {
+        clearTimeout(timer)
+        browserRequests.delete(id)
+        reject(error)
+      }
+    })
+  },
+  onCodingUpdate: (callback) => {
+    addWebListener('coding:updated', callback)
+    return () => removeWebListener('coding:updated', callback)
+  },
+  onTerminal: (event, callback) => {
+    addWebListener('terminal:' + event, callback)
+    return () => removeWebListener('terminal:' + event, callback)
+  },
   chromeBridgeRequest: async (operation = 'status', values = {}) => {
     const response = await fetch(
       `${API_BASE}/api/addons/chrome-bridge/${operation}`,

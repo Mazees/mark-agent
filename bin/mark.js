@@ -38,10 +38,11 @@ process.stderr?.on('error', (err) => {
 })
 
 process.on('SIGINT', async () => {
+  const { shutdownTerminals } = await import('../src/server/services/terminal-service.js')
   console.log('\n\x1b[33m● Mematikan MARK Core Engine...\x1b[0m')
   closeUI()
   stopDaemon()
-  await Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop()])
+  await Promise.allSettled([subagentRuntime.stop(), chromeBridge.stop(), shutdownTerminals()])
   if (server) {
     server.close(() => {
       process.exit(0)

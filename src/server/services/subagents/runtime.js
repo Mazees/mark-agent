@@ -262,6 +262,10 @@ export class SubagentRuntime {
         parentSessionTitle: input.parentSessionTitle || session?.title || 'Main Thread',
         workspaceRoot: session?.workspace_root || input.workspaceRoot || null,
         taskId: input.taskId || null,
+        codingRunId: input.codingRunId || null,
+        ownedFiles: Array.isArray(input.ownedFiles)
+          ? input.ownedFiles.filter((file) => typeof file === 'string')
+          : [],
         stepId: input.stepId || null,
         contextSummary: input.contextSummary || '',
         skillRefs: Array.isArray(input.skillRefs)

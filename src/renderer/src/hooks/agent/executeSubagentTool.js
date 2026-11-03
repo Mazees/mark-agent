@@ -33,6 +33,8 @@ export async function executeSubagentTool(tool, rawArgs, context) {
       const result = await runSubagentTurn(agent.id, args.goal || args.initial_message, 'mark', {
         newJob: true,
         taskId: context.taskId,
+        codingRunId: context.codingRunId,
+        ownedFiles: Array.isArray(args.owned_files) ? args.owned_files : [],
         stepId: context.stepId,
         initialMessage: args.initial_message,
         skillRefs: context.skillRefs || [],

@@ -7,8 +7,9 @@ import { googleTools, parsePagination, getGoogleCredentials } from './google-too
 import { telegramTools } from './telegram-tools.js'
 import { mediaTools } from './media-tools.js'
 import { learnTools } from './learn-tools.js'
+import { wrapCodingTool } from '../../server/services/coding-execution.js'
 
-export const NATIVE_TOOLS = {
+const tools = {
   ...fileTools,
   ...browserTools,
   ...systemTools,
@@ -19,6 +20,10 @@ export const NATIVE_TOOLS = {
   ...mediaTools,
   ...learnTools
 }
+
+export const NATIVE_TOOLS = Object.fromEntries(
+  Object.entries(tools).map(([name, tool]) => [name, wrapCodingTool(name, tool)])
+)
 
 export const getNativeToolsDefinition = () => NATIVE_TOOLS
 

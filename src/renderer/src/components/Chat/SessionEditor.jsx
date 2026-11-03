@@ -20,6 +20,19 @@ export default function SessionEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [worktree, setWorktree] = useState(null)
+  useEffect(() => {
+    let disposed = false
+    webApi
+      .codingRequest('/workspace/context', session.id, {}, 'POST')
+      .then((project) => {
+        if (!disposed) setWorktree(project.worktree)
+      })
+      .catch(() => {})
+    return () => {
+      disposed = true
+    }
+  }, [session.id])
   const busyRef = useRef(false)
   const dialogRef = useRef(null)
   const effectiveRoot = root || defaultRoot
@@ -75,7 +88,10 @@ export default function SessionEditor({
           e.preventDefault()
           if (!locked && !confirmDelete && title.trim())
             perform(async () => {
-              await onSave({ title: title.trim(), ...(isRunning ? {} : { workspaceRoot: root }) })
+              await onSave({
+                title: title.trim(),
+                ...(isRunning || worktree?.active ? {} : { workspaceRoot: root })
+              })
               onClose()
             })
         }}
@@ -111,7 +127,7 @@ export default function SessionEditor({
           {!locked && (
             <button
               type="button"
-              disabled={busy || isRunning || !defaultRoot}
+              disabled={busy || isRunning || worktree?.active || !defaultRoot}
               onClick={() => setShowWorkspaces(!showWorkspaces)}
               className="btn btn-ghost btn-xs text-primary"
               aria-expanded={showWorkspaces}
@@ -143,7 +159,13 @@ export default function SessionEditor({
             Workspace dapat diubah setelah proses percakapan selesai.
           </p>
         )}
-        {showWorkspaces && !locked && !isRunning && (
+        {worktree?.active && (
+          <p className="text-xs text-white/50 mt-2 break-all">
+            Worktree aktif: {worktree.root}. Bawa hasil ke folder asal sebelum memilih workspace
+            lain.
+          </p>
+        )}
+        {showWorkspaces && !locked && !isRunning && !worktree?.active && (
           <div className="mt-2 border border-white/10 rounded-xl overflow-hidden">
             <div className="max-h-52 overflow-y-auto p-1" role="group" aria-label="Pilih workspace">
               {[{ root: null, name: 'Percakapan Umum', key: 'general' }, ...workspaces].map(
@@ -189,6 +211,41 @@ export default function SessionEditor({
             {error}
           </p>
         )}
+        <section className="mt-4 border-t border-white/10 pt-3 text-xs text-white/55">
+          <p>
+            Worktree memisahkan pekerjaan dari folder asal dan dimulai dari commit HEAD. Terminal
+            sesi harus dihentikan sebelum berpindah.
+          </p>
+          <button
+            type="button"
+            disabled={busy || isRunning}
+            className="btn btn-ghost btn-sm text-xs mt-2"
+            onClick={() =>
+              perform(async () => {
+                const project = await webApi.codingRequest(
+                  '/workspace/context',
+                  session.id,
+                  {},
+                  'POST'
+                )
+                await webApi.codingRequest(
+                  project.worktree?.active ? '/coding/worktree/return' : '/coding/worktree',
+                  session.id,
+                  {},
+                  'POST'
+                )
+                window.dispatchEvent(
+                  new CustomEvent('coding-workspace-changed', {
+                    detail: { sessionId: String(session.id) }
+                  })
+                )
+                onClose()
+              })
+            }
+          >
+            {worktree?.active ? 'Bawa hasil worktree ke folder asal' : 'Gunakan worktree'}
+          </button>
+        </section>
         {confirmDelete && (
           <div className="mt-4 text-sm text-white/75" role="status">
             <p>Hapus percakapan ini? Folder dan berkasnya tetap tersimpan.</p>
