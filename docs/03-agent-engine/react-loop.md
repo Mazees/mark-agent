@@ -207,16 +207,23 @@ Pengguna dapat menghentikan eksekusi agen kapan saja melalui tombol Stop di UI a
 
 ---
 
-## 7. Manajemen Konteks In-Loop (Hermes Compressor Guard)
+## 7. Konteks, observasi, dan pemeriksaan hasil
 
-Untuk mendukung siklus ReAct yang berjalan puluhan hingga ratusan langkah tanpa batas turn (`maxTurns: unconstrained`), MARK mengadopsi arsitektur **In-Loop Context Compressor** dari **Hermes Agent (Nous Research)**:
+Sebelum inferensi, `checkAndCompressInLoop` memeriksa kapasitas pesan, schema tool, dan reminder. Pada ambang 90% dari batas internal 256.000 token, bagian tengah dirangkum dengan mempertahankan hasil tool sebagai bahan ringkasan. Rekaman lama tidak dibuang sebelum peringkas membacanya. Lihat [manajemen konteks](../02-architecture/search-and-memory.md) untuk batas dan persistensinya.
 
-Indikator konteks diperbarui sebelum kompaksi dan diberi kesempatan tampil sebelum banner proses muncul. Auto-compact baru dimulai pada 90%; jumlah pesan saja tidak memicu pruning. Hitungan in-loop mencakup schema tool dan reminder selain pesan.
+Lead Agent menyimpan hasil tool lengkap pada `fullResult`; `resultSummary` yang pendek hanya untuk tampilan ringkas. Grup yang berhasil dimuat disimpan pada pesan sehingga giliran selanjutnya dalam sesi yang sama dapat memulihkan schema tool.
 
-1. **Evaluasi Per-Iterasi**: Pada setiap putaran siklus `while (!isDone)` tepat sebelum `fetchAI` dipanggil, sistem menjalankan `checkAndCompressInLoop`.
-2. **Fase 1 Tool Pruning**: Output dari pemanggilan tool sebelumnya yang berumur > 6 langkah dan berukuran > 200 karakter secara otomatis diganti menjadi stub `[Old tool output cleared to save context space]`. Ini memangkas 70–80% bobot memori secara instan tanpa biaya token LLM.
-3. **Fase 2–4 In-Place Compaction**: Jika setelah pemangkasan output tool ukuran konteks masih melampaui 90% kapasitas (230.400 token dari batas 256.000 token), bagian tengah percakapan dirangkum ke dalam format dokumen serah-terima teknis (_Structured Handover Document_) dan dirakit kembali secara _in-place_ pada ID sesi yang sama.
-4. **Pencegahan Context Ballooning**: Mekanisme ini menjamin bahwa model tidak akan mengalami kegagalan akibat batas konteks terlampaui (_context length exceeded_) meskipun menjalankan 500+ iterasi dalam satu tugas otonom.
+Dalam Super Effort, pemeriksaan mengikuti jenis tindakan melalui `src/shared/agent/execution-quality.js`:
+
+- Browser memakai observasi DOM yang dikembalikan aksi, atau pembacaan/screenshot berikutnya. Membaca berkas proyek tidak membuktikan klik browser.
+- Perubahan berkas diperiksa pada berkas yang sama atau dengan perintah pemeriksaan proyek. Keberhasilan dispatch tidak berarti seluruh tugas telah teruji.
+- Computer Use memakai observasi desktop. Jika bukti belum cukup setelah dua kesempatan pemeriksaan, jawaban menyebutkan batas verifikasinya.
+
+ID elemen browser tetap melekat pada elemen yang sama selama dokumen hidup dan tidak digunakan ulang untuk elemen baru setelah navigasi. Pembacaan atau aksi pada sesi browser yang sudah berakhir mengembalikan error; hanya navigasi yang membuka kembali browser. Ini mencegah pembacaan diam-diam membuka Google dan mengganti konteks halaman.
+
+Lead Agent membatasi error berturut-turut menjadi delapan. Pengulangan tool dengan argumen dan hasil identik dipantau pada dua belas eksekusi terakhir: pengulangan kedua memberi arahan evaluasi, keempat menghentikan loop yang tidak maju. Ini pemeriksaan repetisi, bukan batas umum jumlah turn.
+
+Synthesis learned skill memakai status dan hasil tool yang tercatat. Tindakan gagal, penolakan, atau klaim jawaban akhir tidak diperlakukan sebagai bukti prosedur berhasil.
 
 ---
 
@@ -268,13 +275,13 @@ stateDiagram-v2
 
 ---
 
-## 9. Rotasi Sesi & Dynamic State Anchor (DeepSeek Web)
+## 9. Rotasi sesi DeepSeek Web
 
-Pada model DeepSeek Web RPC, sesi peramban web memiliki batas kenyamanan obrolan sebelum mengalami degradasi respons atau penolakan server. MARK mengimplementasikan **Dynamic State Anchor & Auto Session Rotation**:
+Transport DeepSeek Web membuat sesi baru setelah sepuluh panggilan berhasil atau ketika sesi idle lebih dari dua jam. Satu panggilan di dalam loop tool juga dihitung, sehingga rotasi dapat terjadi di tengah pekerjaan pengguna.
 
-1. **Threshold Rotasi**: Dibatasi maksimal 10 giliran turn aktif (`DEEPSEEK_WEB_MAX_TURNS_PER_SESSION = 10`).
-2. **Anchor Injection**: Tepat sebelum sesi dirotasi, sistem merangkum ringkasan status tugas yang sedang berjalan (_Dynamic State Anchor_) dan menyuntikkannya ke awal sesi baru sebagai konteks dasar.
-3. **Transparansi Pengguna**: Rotasi sesi berjalan di latar belakang tanpa memutus kelangsungan obrolan atau membatalkan ReAct loop yang sedang berjalan.
+Adapter `src/server/services/ai/web-provider.js` menyusun setiap request dari seluruh konteks yang diberikan caller: instruksi, riwayat atau ringkasan Mark, hasil tool, dan permintaan terbaru. Adapter tidak memangkas riwayat berdasarkan `lastMessageId` upstream. Transport dapat merotasi sesi setelah prompt disusun, atau membuat sesi baru saat retry; kedua keadaan tetap menerima konteks yang sama.
+
+ID percakapan Mark tetap dipertahankan ketika ID chat upstream berubah. Ini menutup celah pengiriman konteks, tetapi tidak menjamin model selalu mengingat atau menafsirkan seluruh isi dengan benar. Hasil penting tetap perlu diperiksa dari observasi.
 
 ---
 

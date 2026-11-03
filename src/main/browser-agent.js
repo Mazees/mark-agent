@@ -76,6 +76,17 @@ async function getOrCreateSession(sessionId = 'default') {
   return pending
 }
 
+function requireBrowserSession(sessionId) {
+  const session = sessions.get(sessionId)
+  if (!session || session.page.isClosed()) {
+    throw new Error(
+      'Sesi browser tidak aktif atau telah berakhir. Gunakan browser-navigate untuk membuka URL yang diminta dalam percakapan aktif. Jangan menebak situs dari memori percakapan lain.'
+    )
+  }
+  resetSessionIdleTimeout(session)
+  return session
+}
+
 async function createBrowserSession(sessionId) {
   browserControl(sessionId)
   let session = sessions.get(sessionId)
@@ -143,7 +154,7 @@ async function createBrowserSession(sessionId) {
       idleTimeout: null,
       isForeground: true
     }
-    session.readDom = () => evaluateObservation(session, DOM_PARSER_SCRIPT)
+    session.readDom = () => evaluateDOMObservation(session)
 
     // Buka beranda Google secara default agar peramban langsung siap pakai
     try {
@@ -177,7 +188,10 @@ async function createBrowserSession(sessionId) {
 }
 
 const DOM_PARSER_SCRIPT = `
-(() => {
+((initialId) => {
+  const registryKey = Symbol.for("mark.browser.elements");
+  const registry = window[registryKey] ||= { ids: new WeakMap(), nextId: initialId };
+  registry.nextId = Math.max(registry.nextId, initialId);
   // 3. Parser Elemen Interaktif
   document.querySelectorAll('[data-mark-id]').forEach(el => el.removeAttribute('data-mark-id'));
 
@@ -189,7 +203,7 @@ const DOM_PARSER_SCRIPT = `
 
   const allElements = document.querySelectorAll(INTERACTIVE_SELECTORS);
   const results = [];
-  let markId = 1;
+
   const MAX_ELEMENTS = 80;
   const MAX_TEXT_LENGTH = 80;
 
@@ -216,9 +230,14 @@ const DOM_PARSER_SCRIPT = `
     let label = el.innerText?.trim() || el.value || el.placeholder || el.getAttribute('aria-label') || el.title || '';
     label = label.replace(/\\n/g, ' ').substring(0, MAX_TEXT_LENGTH);
 
+    let markId = registry.ids.get(el);
+    if (!markId) {
+      markId = registry.nextId++;
+      registry.ids.set(el, markId);
+    }
     el.setAttribute('data-mark-id', markId);
     results.push('[' + markId + '] ' + type + ': "' + label + '"');
-    markId++;
+
   }
 
   const getVisibleText = () => {
@@ -262,8 +281,8 @@ const DOM_PARSER_SCRIPT = `
   output += '== TEKS UTAMA HALAMAN (Ringkasan) ==\\n';
   output += bodyText.substring(0, 4000);
 
-  return output;
-})()
+  return { text: output, nextId: registry.nextId };
+})
 `
 
 async function broadcastPreview(session) {
@@ -440,12 +459,21 @@ async function navigateToInternal(url, sessionId = 'default') {
   return `Berhasil membuka ${session.url} (Judul: "${session.title}").`
 }
 
+async function evaluateDOMObservation(session) {
+  const observation = await evaluateObservation(
+    session,
+    `${DOM_PARSER_SCRIPT}(${browserControl(session.id).nextElementId || 1})`
+  )
+  browserControl(session.id).nextElementId = observation.nextId
+  return observation.text
+}
+
 async function readDOMInternal(sessionId = 'default') {
-  const session = await getOrCreateSession(sessionId)
+  const session = requireBrowserSession(sessionId)
   let result
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      result = await evaluateObservation(session, DOM_PARSER_SCRIPT)
+      result = await evaluateDOMObservation(session)
       break
     } catch (error) {
       if (attempt === 2 || !/context|navigation|frame.*detach/i.test(error.message)) throw error
@@ -516,7 +544,7 @@ async function withPageObservation(sessionId, action) {
 }
 
 async function executeActionInternal(data, sessionId = 'default') {
-  const session = await getOrCreateSession(sessionId)
+  const session = requireBrowserSession(sessionId)
   const { action, id, value, direction } = data
 
   if (action === 'click') {
@@ -563,14 +591,14 @@ async function executeActionInternal(data, sessionId = 'default') {
 }
 
 async function executeScriptInternal(code, sessionId = 'default') {
-  const session = await getOrCreateSession(sessionId)
+  const session = requireBrowserSession(sessionId)
   const res = await session.page.evaluate(code)
   await broadcastPreview(session)
   return typeof res === 'string' ? res : JSON.stringify(res)
 }
 
 async function extractDataInternal(selector, sessionId = 'default') {
-  const session = await getOrCreateSession(sessionId)
+  const session = requireBrowserSession(sessionId)
   const text = await session.page.$$eval(selector, (els) =>
     els.map((e) => e.innerText.trim()).filter(Boolean)
   )
@@ -578,7 +606,7 @@ async function extractDataInternal(selector, sessionId = 'default') {
 }
 
 async function takeScreenshotInternal(filename = 'screenshot.png', sessionId = 'default') {
-  const session = await getOrCreateSession(sessionId)
+  const session = requireBrowserSession(sessionId)
   const outPath = path.isAbsolute(filename)
     ? filename
     : path.join(os.homedir(), 'Desktop', filename)
@@ -594,7 +622,7 @@ async function takeScreenshotInternal(filename = 'screenshot.png', sessionId = '
 }
 
 async function downloadFileInternal(url, filename, sessionId = 'default') {
-  const session = await getOrCreateSession(sessionId)
+  const session = requireBrowserSession(sessionId)
   const outPath = path.join(os.homedir(), 'Downloads', filename)
   const viewSource = await session.page.goto(url)
   fs.writeFileSync(outPath, await viewSource.buffer())

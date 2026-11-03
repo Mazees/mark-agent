@@ -1,3 +1,4 @@
+import { pendingVerification, createProgressGuard } from '@shared/agent/execution-quality.js'
 import {
   parseSkillRequest,
   skillSummary,
@@ -41,7 +42,6 @@ import {
   calculateSessionChars,
   executeSessionCompaction,
   assembleCompactedPayload,
-  pruneInFlightMessages,
   checkAndCompressInLoop
 } from '../../api/ai/contextManager'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
@@ -227,39 +227,6 @@ const convertFilePathToBase64 = async (filePath) => {
     return null
   }
 }
-
-const MUTATION_TOOLS = new Set([
-  'write-file',
-  'replace-content',
-  'edit-file',
-  'append-file',
-  'delete-file',
-  'computer_use',
-  'os-click',
-  'os-type',
-  'os-key',
-  'os-scroll',
-  'open-app',
-  'browser-click',
-  'browser-type',
-  'browser-select',
-  'gitCommit',
-  'gitRevert'
-])
-
-const VERIFICATION_TOOLS = new Set([
-  'run-powershell',
-  'read-file',
-  'grep-search',
-  'file-outline',
-  'list-directory',
-  'get-git-diff',
-  'get-git-status',
-  'browser-fetch',
-  'browser-screenshot',
-  'readDesktop',
-  'takeScreenshot'
-])
 
 const awaitWithTimeout = async (promise, timeoutMs, stage, signal) => {
   let timeoutId
@@ -634,6 +601,7 @@ export const useMarkPlan = ({
                 await updateMemory(memoryData)
                 resultString = `Memori yang mirip ditemukan (ID: ${memoryData.id}). Berhasil diperbarui.`
                 return {
+                  success: true,
                   resultString,
                   rejected: false,
                   toolExecution: { action: tool, query: stringQuery, result: resultString }
@@ -656,8 +624,10 @@ export const useMarkPlan = ({
             await deleteMemory(memArgs.id)
             resultString = `Memori ID ${memArgs.id} berhasil dihapus.`
           } else {
-            resultString = `Gagal menghapus memori: ID memori tidak disertakan.`
+            throw new Error('ID memori tidak disertakan untuk penghapusan.')
           }
+        } else {
+          throw new Error(`Aksi memori tidak dikenali: ${action}`)
         }
       }
       // 6. Working Memory Update Tool
@@ -685,7 +655,7 @@ export const useMarkPlan = ({
           await playVoice(textToSpeak)
           resultString = `Berhasil berbicara secara lisan: "${textToSpeak}"`
         } else {
-          resultString = 'Gagal: teks yang mau diucapkan kosong.'
+          throw new Error('Teks yang mau diucapkan kosong.')
         }
       }
       // 8. Screenshot ke Telegram
@@ -695,16 +665,16 @@ export const useMarkPlan = ({
           try {
             const ssRes = await window.api.tgTakeScreenshot(targetChatId)
             if (ssRes && ssRes.success === false) {
-              resultString = `Gagal mengirim screenshot ke Telegram: ${ssRes.error || 'Terjadi kesalahan'}`
+              throw new Error(ssRes.error || 'Gagal mengirim screenshot ke Telegram.')
             } else {
               resultString =
                 'Screenshot layar PC berhasil diambil dan dikirimkan ke Telegram Admin.'
             }
           } catch (e) {
-            resultString = `Gagal mengirim screenshot ke Telegram: ${e.message}`
+            throw new Error(`Gagal mengirim screenshot ke Telegram: ${e.message}`)
           }
         } else {
-          resultString = 'Gagal: Fitur Telegram Bot belum tersedia.'
+          throw new Error('Fitur Telegram Bot belum tersedia.')
         }
       }
       // 9. Vision: Analyze Screen
@@ -768,10 +738,10 @@ export const useMarkPlan = ({
               toolExecution: { action: tool, query: stringQuery, result: resultString }
             }
           } else {
-            resultString = 'Gagal mengambil screenshot layar untuk analisis.'
+            throw new Error('Gagal mengambil screenshot layar untuk analisis.')
           }
         } catch (e) {
-          resultString = `Gagal memproses analisis layar: ${e.message}`
+          throw new Error(`Gagal memproses analisis layar: ${e.message}`)
         }
       }
       // 10. Vision: Camera Look
@@ -838,11 +808,11 @@ export const useMarkPlan = ({
                 toolExecution: { action: tool, query: stringQuery, result: resultString }
               }
             } else {
-              resultString = 'Gagal mengambil gambar dari kamera.'
+              throw new Error('Gagal mengambil gambar dari kamera.')
             }
           }
         } catch (e) {
-          resultString = `Gagal memproses kamera: ${e.message}`
+          throw new Error(`Gagal memproses kamera: ${e.message}`)
         }
       }
       // 11. Built-in Native Tools & Minibot Orchestration
@@ -856,7 +826,10 @@ export const useMarkPlan = ({
         let mcpApprovalToken
 
         if (approvalCheck.needsApproval && !requestApproval && tool.startsWith('mcp_')) {
-          return { resultString: '[DITOLAK] Persetujuan untuk tool MCP tidak tersedia.', rejected: true }
+          return {
+            resultString: '[DITOLAK] Persetujuan untuk tool MCP tidak tersedia.',
+            rejected: true
+          }
         }
         if (approvalCheck.needsApproval && requestApproval) {
           const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs, {
@@ -871,7 +844,11 @@ export const useMarkPlan = ({
               userApproved
             )
           if (approvalCheck.mcpPermissionRequestId)
-            mcpApprovalToken = await webApi.decideMcpPermission(approvalCheck.mcpPermissionRequestId, approvalOwner, userApproved)
+            mcpApprovalToken = await webApi.decideMcpPermission(
+              approvalCheck.mcpPermissionRequestId,
+              approvalOwner,
+              userApproved
+            )
           if (!userApproved) {
             resultString = approvalCheck.permissionRequestId
               ? '[DITOLAK] Pengguna menolak membuka sesi Computer Use. Jangan mengendalikan desktop atau mencari jalur pengganti; tunggu instruksi baru.'
@@ -964,7 +941,7 @@ export const useMarkPlan = ({
                 ? res.data.content || ''
                 : String(res.data || resultString || '')
             if (fullText && fullText.length > 2500) {
-              resultString = `${fullText.slice(0, 2500)}\n\n[DOKUMEN DIPOTONG (Total: ${fullText.length} karakter). Gunakan read-document dengan keyword untuk pencarian spesifik]`
+              resultString = fullText
             }
           }
 
@@ -1905,7 +1882,14 @@ export const useMarkPlan = ({
       }
 
       execSteps = [{ task: 'Menganalisis Konteks...' }]
-      const dynamicallyLoadedToolGroups = new Set()
+      const dynamicallyLoadedToolGroups = new Set(
+        sourceChatData.flatMap((message) => [
+          ...(message.toolGroups || []),
+          ...(message.executedTools || [])
+            .filter((step) => step.status === 'done' && step.loadedGroup)
+            .map((step) => step.loadedGroup)
+        ])
+      )
 
       // Deteksi Tool Groups yang di-mention (@group_name) di input pengguna
       if (typeof userInput === 'string' && userInput.includes('@')) {
@@ -1918,8 +1902,14 @@ export const useMarkPlan = ({
           const taggedGroups = []
           for (const rawMatch of mentionMatches) {
             const alias = rawMatch.slice(1).toLowerCase()
-            const matches = Object.entries(groupToolsData?.schema || {}).filter(([, group]) => group.kind === 'mcp' && group.mention === alias)
-            const groupName = validGroupNames.has(alias) ? alias : matches.length === 1 ? matches[0][0] : alias
+            const matches = Object.entries(groupToolsData?.schema || {}).filter(
+              ([, group]) => group.kind === 'mcp' && group.mention === alias
+            )
+            const groupName = validGroupNames.has(alias)
+              ? alias
+              : matches.length === 1
+                ? matches[0][0]
+                : alias
             if (validGroupNames.has(groupName)) {
               dynamicallyLoadedToolGroups.add(groupName)
               taggedGroups.push(groupName)
@@ -1939,7 +1929,8 @@ export const useMarkPlan = ({
       let consecutiveErrors = 0
       let consecutiveEmptyTurns = 0
       let consecutiveNoToolTurns = 0
-      const maxConsecutiveErrorRetries = 50
+      const maxConsecutiveErrorRetries = 8
+      const checkProgress = createProgressGuard()
       let verificationGateCount = 0
 
       const panelSessionId = browserSessionId(activeSessionNum)
@@ -2187,8 +2178,6 @@ export const useMarkPlan = ({
           }
         }
 
-        // Safety Net Pruning
-        loopMessages = pruneInFlightMessages(loopMessages, MAX_CONTEXT_TOKENS)
         loopMessages = restoreSkillContext(loopMessages, sessionRecord.skills.values())
         const requestMessages = progressReminder
           ? [...loopMessages, { role: 'system', content: progressReminder }]
@@ -2747,27 +2736,25 @@ export const useMarkPlan = ({
             }
 
             lastToolExecution = execResult.toolExecution
-            if (execResult.loadedGroup) {
-              dynamicallyLoadedToolGroups.add(execResult.loadedGroup)
-            }
             const resStr = String(execResult.resultString || '')
             const executionSucceeded =
-              execResult.success === true ||
-              execResult.res?.success === true ||
-              (!resStr.startsWith('[ERROR]') &&
-                !resStr.includes(' crash:') &&
-                !resStr.toLowerCase().includes(' gagal:'))
+              !execResult.rejected &&
+              (execResult.success === true ||
+                (execResult.success == null && execResult.res?.success === true))
+            if (executionSucceeded && execResult.loadedGroup) {
+              dynamicallyLoadedToolGroups.add(execResult.loadedGroup)
+            }
+            const progress = checkProgress(toolName, parsedArgs, resStr, executionSucceeded)
+            if (progress.warn)
+              loopMessages.push({
+                role: 'system',
+                content:
+                  'Tindakan dengan argumen dan hasil yang sama sudah berulang. Gunakan bukti yang ada untuk melanjutkan tujuan; jangan mengulang pemeriksaan tanpa informasi baru. Jika terhambat, jelaskan kendalanya.'
+              })
             if (executionSucceeded) {
               consecutiveErrors = 0
             } else {
               consecutiveErrors++
-              if (consecutiveErrors >= maxConsecutiveErrorRetries) {
-                const error = new Error(
-                  `Batas retry error berturut-turut tercapai (${maxConsecutiveErrorRetries}).`
-                )
-                error.code = 'LOOP_GUARD'
-                throw error
-              }
             }
 
             sessionRecord.lastActivityTime = Date.now()
@@ -2775,18 +2762,25 @@ export const useMarkPlan = ({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
               reason: toolReason,
+              loadedGroup: executionSucceeded ? execResult.loadedGroup : null,
               status: executionSucceeded ? 'done' : 'failed',
               preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
-              fullResult:
-                typeof execResult.resultString === 'string'
-                  ? execResult.resultString.slice(0, 4000)
-                  : execResult.resultString,
+              fullResult: execResult.resultString,
               resultSummary:
                 typeof execResult.resultString === 'string' && execResult.resultString.length > 250
                   ? execResult.resultString.slice(0, 250) + '...'
                   : execResult.resultString
             })
             currentInFlightTool = null
+            if (progress.stalled || consecutiveErrors >= maxConsecutiveErrorRetries) {
+              const error = new Error(
+                progress.stalled
+                  ? 'Pekerjaan dihentikan karena tindakan dan hasil yang sama berulang tanpa kemajuan. Periksa keadaan terakhir sebelum mencoba kembali.'
+                  : `Pekerjaan dihentikan setelah ${maxConsecutiveErrorRetries} error berturut-turut. Periksa hasil terakhir sebelum mencoba kembali.`
+              )
+              error.code = 'LOOP_GUARD'
+              throw error
+            }
 
             targetSetChatData((prev) => {
               const filtered = prev.filter((item) => !item.isThinking)
@@ -2816,14 +2810,6 @@ export const useMarkPlan = ({
             }
 
             let obsStr = execResult.resultString
-            const observationLimit = toolName.startsWith('browser-') ? 20000 : 3000
-            if (
-              typeof execResult.resultString === 'string' &&
-              execResult.resultString.length > observationLimit
-            ) {
-              obsStr = `${execResult.resultString.slice(0, observationLimit)}\n\n[SISA OUTPUT DIPOTONG (Total: ${execResult.resultString.length} karakter). ${toolName.startsWith('browser-') ? 'Gunakan browser-extract untuk bagian tertentu.' : 'Gunakan start_line/end_line atau grep-search untuk mencari bagian spesifik.'}]`
-            }
-
             const toolObservation = {
               type: 'tool_result',
               tool_call_id: tc.id,
@@ -3221,9 +3207,7 @@ export const useMarkPlan = ({
           }
         }
 
-        // ======================================================================
-        // SUPER EFFORT VERIFICATION GATEKEEPER (Autonomous Deep-Persistence)
-        // ======================================================================
+        let verificationBoundary = ''
         if (
           !awaitingBrowserUser &&
           !pausedWorkflowMessage &&
@@ -3231,104 +3215,28 @@ export const useMarkPlan = ({
           !opts.disableTools &&
           !isSystem
         ) {
-          // 1. Cari index tool mutasi terakhir yang dieksekusi
-          let lastMutationIndex = -1
-          for (let i = executedToolsList.length - 1; i >= 0; i--) {
-            const item = executedToolsList[i]
-            const toolName = item.tool || item.action
-            if (toolName && MUTATION_TOOLS.has(toolName)) {
-              lastMutationIndex = i
-              break
-            }
-          }
-
-          // 2. Cek apakah ada tool verifikasi yang berhasil dijalankan setelah mutasi terakhir
-          let hasVerificationAfterMutation = false
-          if (lastMutationIndex !== -1) {
-            for (let i = lastMutationIndex + 1; i < executedToolsList.length; i++) {
-              const item = executedToolsList[i]
-              const toolName = item.tool || item.action
-              const isError =
-                item.status === 'failed' ||
-                (typeof item.result === 'string' && item.result.startsWith('[ERROR]'))
-              if (toolName && VERIFICATION_TOOLS.has(toolName) && !isError) {
-                hasVerificationAfterMutation = true
-                break
-              }
-            }
-          }
-
-          // 3. Cek apakah ini coding/task intent tapi model berhenti di turn awal tanpa tool sama sekali
-          const ACTIONABLE_KEYWORDS =
-            /\b(buat|bikin|tulis|edit|perbaiki|fix|refactor|test|implement|uji|jalankan|run|build|coding|proyek|file|berkas|komponen|bug|error)\b/i
-          const isActionableIntent =
-            typeof userInput === 'string' &&
-            (ACTIONABLE_KEYWORDS.test(userInput) || isSlashSuperEffort)
-          const isZeroTurnComplacency =
-            executedToolsList.length === 0 && isActionableIntent && verificationGateCount === 0
-
-          const needsVerification =
-            (lastMutationIndex !== -1 && !hasVerificationAfterMutation) || isZeroTurnComplacency
-
-          if (needsVerification && verificationGateCount < 3) {
+          const missing = pendingVerification(executedToolsList)
+          if (missing && verificationGateCount < 2) {
             verificationGateCount++
-            console.log(
-              `[useMarkPlan] Verification Gatekeeper aktif (Iterasi ${verificationGateCount}/3). Mencegah isDone = true.`
-            )
-
-            if (rawTurnAnswer && rawTurnAnswer.trim()) {
-              loopMessages.push({ role: 'assistant', content: rawTurnAnswer })
-            }
-
             loopMessages.push({
-              role: 'user',
-              content: `[SUPER EFFORT VERIFICATION GATE]:
-Kamu bermaksud mengakhiri tugas dan memberikan laporan penyelesaian.
-Sebagai Super Effort Agent, kamu DILARANG berasumsi bahwa pekerjaanmu sudah berfungsi tanpa pembuktian nyata.
-
-Lakukan pemeriksaan mandiri sekarang:
-1. Uji pekerjaanmu menggunakan tool yang relevan (jalankan test runner, compile/build check dengan 'run-powershell', linter, atau periksa isi berkas dengan 'read-file').
-2. Jika ditemukan kegagalan atau galat baru, analisis dan perbaiki langsung hingga tuntas.
-3. HANYA jika seluruhnya telah terbukti bekerja 100% berdasarkan output tool nyata (atau jika instruksi pengguna murni pertanyaan konseptual yang tidak membutuhkan eksekusi tool), barulah kamu memberikan teks jawaban final beserta ringkasan bukti verifikasi tersebut.`
+              role: 'system',
+              content:
+                '[PEMERIKSAAN HASIL]: ' +
+                missing.instruction +
+                ' Bedakan aksi berhasil dijalankan dengan tujuan pengguna tercapai. Jika observasi sudah cukup, gunakan hasil tersebut; jika belum dapat diperiksa, laporkan keterbatasan tanpa klaim keberhasilan.'
             })
-
-            execSteps.push({ task: 'Verifikasi Hasil (Super Effort)...' })
-            targetPushProcess({
-              id: agenticProcessId,
-              type: 'planning',
-              status: 'active',
-              data: {
-                steps: [...execSteps],
-                currentStep: execSteps.length - 1,
-                reasoning:
-                  'Super Effort: Memvalidasi & menguji hasil pekerjaan sebelum penyelesaian...'
-              }
-            })
-
-            targetSetChatData((prev) => {
-              const filtered = prev.filter((item) => !item.isThinking)
-              return [
-                ...filtered,
-                {
-                  id: sessionRecord.thinkingId,
-                  role: 'ai',
-                  content: 'Memvalidasi & Menguji Hasil Pekerjaan...',
-                  isThinking: true,
-                  executedTools: executedToolsList.length > 0 ? [...executedToolsList] : null
-                }
-              ]
-            })
-
             continue
-          } else if (verificationGateCount >= 3) {
-            console.warn(
-              '[useMarkPlan] Super Effort Circuit Breaker tercapai (3x percobaan verifikasi). Mengizinkan penyelesaian tugas.'
-            )
           }
+          if (missing)
+            verificationBoundary =
+              'Tindakan ' +
+              missing.tool +
+              ' telah dijalankan, tetapi pemeriksaan hasil yang relevan belum tersedia. Pekerjaan belum dapat dinyatakan terverifikasi; periksa detail proses untuk hasil tindakan terakhir.'
         }
 
         isDone = true
         finalContentAccumulator =
+          verificationBoundary ||
           pausedWorkflowMessage ||
           turnAnswer.trim() ||
           (executedToolsList.length > 0
@@ -3408,6 +3316,7 @@ Lakukan pemeriksaan mandiri sekarang:
               : finalOutput,
             skills: [...sessionRecord.skills.values()].map(skillSummary),
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
+            toolGroups: [...dynamicallyLoadedToolGroups],
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
             mood: currentActiveMood || 'neutral',

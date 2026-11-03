@@ -1,3 +1,4 @@
+import { pendingVerification } from '@shared/agent/execution-quality.js'
 import { fetchAI, cleanAndParse } from './core'
 import { saveLearnedSkill, getAllLearnedSkills } from '../db'
 
@@ -9,7 +10,7 @@ function isWorthLearning(executedTools = []) {
   if (!executedTools || executedTools.length === 0) return false
 
   const toolNames = executedTools
-    .filter((t) => t && !t.type && (t.tool || t.task))
+    .filter((t) => t && !t.type && t.status === 'done' && (t.tool || t.task))
     .map((t) => t.tool || t.task || '')
 
   // Abaikan jika hanya memanggil read-skill atau hanya 1 tool sepele
@@ -49,80 +50,46 @@ function isWorthLearning(executedTools = []) {
 export async function synthesizeSkillAndSave({
   userPrompt = '',
   executedTools = [],
-  finalAnswer = '',
-  thought = ''
+  finalAnswer = ''
 }) {
   try {
-    if (!isWorthLearning(executedTools)) {
+    if (
+      !isWorthLearning(executedTools) ||
+      pendingVerification(executedTools) ||
+      executedTools.filter((t) => t.tool).at(-1)?.status !== 'done'
+    ) {
       return null
     }
 
     const existingSkills = await getAllLearnedSkills()
     const existingListStr =
       existingSkills.length > 0
-        ? existingSkills.map((s) => `- ${s.name}: ${s.description}`).join('\n')
+        ? existingSkills.map((s) => `- ${s.name}: ${s.description}\n${s.content || ''}`).join('\n')
         : '(Belum ada skill terdaftar)'
 
-    // Susun ringkasan riwayat aksi & tool yang berhasil
     const toolsTrajectory = executedTools
-      .filter((t) => t && !t.type && (t.tool || t.task))
-      .slice(0, 12)
-      .map((t, idx) => {
-        const toolName = t.tool || t.task || 'unknown_tool'
-        const queryStr = t.query ? `\n   Query: ${JSON.stringify(t.query).slice(0, 200)}` : ''
-        return `${idx + 1}. [Tool: ${toolName}]${queryStr}`
-      })
-      .join('\n')
-
-    const promptText = `Berikut adalah sesi kerja Mark yang berhasil:
-
-[PERMINTAAN USER]:
-${userPrompt ? userPrompt.slice(0, 500) : '(Tidak ada teks permintaan)'}
-
-[ANALISIS & LOGIKA (THOUGHT)]:
-${thought ? thought.slice(0, 500) : '(Tidak ada thought)'}
-
-[LANGKAH ALAT YANG SUKSES DIEKSEKUSI]:
-${toolsTrajectory}
-
-[HASIL / JAWABAN AKHIR]:
-${finalAnswer ? finalAnswer.slice(0, 600) : '(Tidak ada jawaban akhir)'}
-
-[DAFTAR SKILL YANG SUDAH ADA SEBELUMNYA]:
-${existingListStr}
-
-Tugasmu: Evaluasi apakah alur kerja di atas memiliki nilai prosedur yang berharga untuk dipelajari. Jika ya, buatkan atau perbarui panduan skill yang tepat.`
-
-    const systemPrompt = `Kamu adalah MARK Meta-Learning Synthesizer Engine — Inti Metakognitif & Pusat Pembelajaran Otonom MARK.
-Sebagai otak pembelajar, kamu memiliki dorongan kuat untuk SELALU BELAJAR, mengekstraksi kebijaksanaan teknis, dan mengabadikan setiap alur kerja sukses menjadi aset keahlian (Skill Prosedural) yang permanen, rapi, dan siap dieksekusi ulang secara otomatis di masa depan.
-
-# FILOSOFI & JIWA PEMBELAJAR (CONTINUOUS META-LEARNING):
-1. **HAUS PENGETAHUAN & AKUMULASI PENGALAMAN:**
-   - Tugas sucimu adalah memastikan Mark tidak pernah "membuang pengalaman". Setiap kali Mark memecahkan masalah kompleks, mengeksekusi serangkaian perintah terminal, memodifikasi file, atau mengorkestrasi tools, kamu bertindak sebagai analis metakognitif yang merumuskan "resep sukses" tersebut menjadi Standard Operating Procedure (SOP).
-2. **KUALITAS TINGGI VS ANTI-SAMPAH (SELEKTIF & BERBOBOT):**
-   - **Haus belajar BUKAN berarti mencatat hal sepele.** Jika sesi hanya berisi obrolan kasual, sapaan, lelucon, atau tindakan satu langkah yang tidak memiliki nilai prosedur teknis berulang, dengan tegas set \`"should_save": false\`.
-   - Simpan HANYA alur kerja yang mengandung nilai taktis: otomasi PowerShell/Bash, manipulasi berkas presisi, scraping/navigasi browser mendalam, konfigurasi lingkungan kerja, perbaikan bug (self-healing), atau pipeline multi-tool.
-3. **PENGEMBANGAN SKILL BERKELANJUTAN & UPDATE DUPLIKAT (CONTINUAL MASTERY):**
-   - Periksa daftar [DAFTAR SKILL YANG SUDAH ADA SEBELUMNYA].
-   - Jika alur kerja ini melengkapi, menyempurnakan, atau merupakan variasi baru dari skill yang sudah ada, GUNAKAN \`"name"\` yang SAMA persis dengan skill tersebut!
-   - Gabungkan wawasan baru ke dalam konten Markdown agar skill tersebut berevolusi menjadi lebih komprehensif dan matang.
-4. **FORMAT NAMA SKILL:**
-   - Gunakan format \`kebab-case\` ringkas dan deskriptif (huruf kecil, pisahkan dengan strip '-', contoh: \`setup-wsl-node\`, \`fix-powershell-policy\`, \`scrape-dynamic-table\`, \`debug-vite-build\`, \`git-sync-workflow\`).
-5. **STRUKTUR DESKRIPSI & KONTEN MARKDOWN YANG ACTIONABLE:**
-   - \`"description"\`: 1-2 kalimat padat yang menjelaskan tujuan skill dan kata kunci pemicu kapan Mark harus memanggilnya via 'read-skill'.
-   - \`"content"\`: Tulis panduan teknis Markdown yang sangat terstruktur, jelas, dan siap pakai:
-     * \`## Gambaran Umum & Tujuan\`: Apa yang dicapai oleh prosedur ini.
-     * \`## Prasyarat & Alat yang Digunakan\`: Daftar tool terkait (misal: \`run-powershell\`, \`replace-content\`, dsb).
-     * \`## Langkah Kerja Teruji (SOP)\`: Urutan aksi presisi beserta contoh parameter/query yang benar.
-     * \`## Tips, Pencegahan Error & Edge Cases\`: Hambatan apa yang sempat terjadi dan bagaimana cara menghindarinya.
-
-# FORMAT OUTPUT JSON WAJIB:
-{
-  "should_save": true,
-  "name": "nama-skill-kebab-case",
-  "description": "Deskripsi singkat fungsi dan kondisi pemanggilan",
-  "content": "# Judul Panduan Prosedur\\n\\n## Gambaran Umum & Tujuan\\n...\\n\\n## Prasyarat & Alat yang Digunakan\\n- ...\\n\\n## Langkah Kerja Teruji (SOP)\\n1. ...\\n2. ...\\n\\n## Tips, Pencegahan Error & Edge Cases\\n- ..."
-}`
+      .filter((t) => t?.tool)
+      .map((t, index) => ({
+        step: index + 1,
+        tool: t.tool,
+        status: t.status,
+        query: t.query,
+        result: t.fullResult || t.resultSummary || ''
+      }))
+    const promptText = JSON.stringify({
+      request: userPrompt,
+      observations: toolsTrajectory,
+      answer: finalAnswer,
+      existingSkills: existingListStr
+    })
+    const systemPrompt = `Evaluasi apakah rekaman pekerjaan mempunyai prosedur yang layak disimpan.
+Gunakan hasil tool dan statusnya sebagai bukti. Jawaban akhir bukan bukti mandiri keberhasilan.
+Aksi berhasil dijalankan belum membuktikan tujuan tercapai. Jangan menyebut prosedur teruji jika observasi tidak membuktikannya.
+Kegagalan dan penolakan tidak boleh diajarkan sebagai langkah sukses. Jika hasil tidak jelas, tugas terhambat, atau bukti kurang, set should_save=false.
+Simpan hanya prosedur yang berguna untuk pekerjaan berulang. Jangan mengabadikan koordinat, ID elemen sementara, token, atau kondisi halaman tertentu.
+Nama kebab-case. Konten berisi tujuan, prasyarat, langkah berdasarkan bukti, pemeriksaan hasil, dan batas penerapan.
+Jika memperbarui nama yang sudah ada, pertahankan informasi lama yang masih benar dan ubah hanya berdasarkan bukti baru.
+Kembalikan JSON {should_save:boolean,name:string,description:string,content:string}, tanpa teks lain.`
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -144,20 +111,18 @@ Sebagai otak pembelajar, kamu memiliki dorongan kuat untuk SELALU BELAJAR, menge
     })
 
     const parsed = cleanAndParse(response)
-    if (!parsed || parsed.should_save === false || !parsed.name || !parsed.content) {
+    if (!parsed || parsed.should_save !== true || !parsed.name || !parsed.content) {
       return null
     }
 
     const savedSkill = await saveLearnedSkill({
       name: parsed.name.toLowerCase().trim(),
-      description: parsed.description || 'Prosedur teknis teruji buatan Mark',
+      description: parsed.description || 'Prosedur kerja yang dipelajari Mark',
       content: parsed.content
     })
 
     if (savedSkill) {
-      console.log(
-        `[Meta-Learner] ✨ Keahlian berhasil disintesis/diupdate di Database: /${savedSkill.name}`
-      )
+      console.log(`[Meta-Learner] Keahlian disimpan di database: /${savedSkill.name}`)
     }
 
     return savedSkill

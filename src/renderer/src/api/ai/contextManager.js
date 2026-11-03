@@ -3,8 +3,7 @@
  * Mengelola siklus context management per-session:
  * - Batas global konstanta 256.000 tokens (MAX_CONTEXT_TOKENS) via gpt-tokenizer BPE
  * - Penghitungan token presisi in-memory per sesi (system prompt + multimodal + messages)
- * - Tahap 1: Pruning output tool lama di memori (0ms delay, tanpa AI)
- * - Tahap 2: AI Summarization inkremental (Gemini Web -> fallback active provider)
+ * - Ringkasan inkremental dari pesan dan bukti tool tanpa menghapus riwayat tersimpan
  * - Pembersihan orphan tool pairs
  * - Perakitan payload prompt berformat [ COMPACTED MESSAGE SUMMARY ]
  */
@@ -462,7 +461,14 @@ export async function summarizeMiddle(
       continue
     }
 
-    const sender = msg.role === 'user' ? 'User' : 'Mark'
+    const sender =
+      msg.role === 'user'
+        ? 'User'
+        : msg.role === 'tool'
+          ? 'Hasil tool'
+          : msg.role === 'system'
+            ? 'Instruksi sistem'
+            : 'Mark'
     let text = ''
     if (typeof msg.content === 'string') {
       text = msg.content
@@ -483,11 +489,10 @@ export async function summarizeMiddle(
       text = JSON.stringify(msg.content || '')
     }
 
-    // Ringkas teks jika per giliran terlalu panjang agar tidak overload summarizer
-    if (text.length > 2500) {
-      text =
-        text.substring(0, 1200) + '\n... [potongan teks panjang diringkas] ...\n' + text.slice(-800)
-    }
+    const toolSteps = msg.executionSteps || msg.executedTools
+    if (Array.isArray(toolSteps) && toolSteps.length)
+      text += '\n[HASIL EKSEKUSI]:\n' + JSON.stringify(toolSteps)
+    if (msg.tool_calls?.length) text += '\n[PEMANGGILAN TOOL]:\n' + JSON.stringify(msg.tool_calls)
 
     formattedLines.push(`[Turn ${i + 1}] ${sender}: ${text}`)
   }
@@ -495,11 +500,14 @@ export async function summarizeMiddle(
   const chunks = []
   let chunk = ''
   for (const line of formattedLines) {
-    if (chunk && chunk.length + line.length + 2 > 90000) {
-      chunks.push(chunk)
-      chunk = ''
+    for (let offset = 0; offset < line.length; offset += 60000) {
+      const part = line.slice(offset, offset + 60000)
+      if (chunk && chunk.length + part.length + 2 > 90000) {
+        chunks.push(chunk)
+        chunk = ''
+      }
+      chunk += (chunk ? '\n\n' : '') + (offset ? '[Lanjutan rekaman]\n' : '') + part
     }
-    chunk += `${chunk ? '\n\n' : ''}${line}`
   }
   if (chunk) chunks.push(chunk)
 
@@ -658,55 +666,24 @@ export async function executeSessionCompaction({
     }
   }
 
-  // -------------------------------------------------------------
-  // TAHAP 1: Pruning Tool Output di Memori
-  // -------------------------------------------------------------
-  if (typeof onProgress === 'function') {
-    onProgress({ stage: 'pruning', text: 'Memangkas log tool di memori...' })
-  }
+  const historyMessages = messages
 
-  const prunedMessages = pruneOldToolResultsInMemory(messages, 4)
-  const prunedTokens = calculateSessionTokens(
-    prunedMessages,
-    existingSummaryBlock,
-    existingLastCompactedId,
-    systemPrompt
-  )
-
-  // Jika pruning saja memberi ruang aman untuk giliran berikutnya.
-  if (!force && prunedTokens < triggerTokens) {
-    // Simpan hasil prune ke tabel sessions
-    if (!(await saveSession(sessionId, prunedMessages))) {
-      throw new Error('Gagal menyimpan hasil pemangkasan konteks sesi.')
-    }
-
-    return {
-      success: true,
-      isCompacted: true,
-      prunedOnly: true,
-      compactedMessages: prunedMessages,
-      currentTokens: prunedTokens,
-      currentChars: prunedTokens
-    }
-  }
-
-  // -------------------------------------------------------------
-  // TAHAP 2: AI Summarization (Sliding Window & Delta)
-  // -------------------------------------------------------------
   if (typeof onProgress === 'function') {
     onProgress({ stage: 'summarizing', text: 'Merangkum konteks percakapan lama...' })
   }
 
-  // Hanya pertahankan 1 pesan terakhir (prompt user yang baru dikirim pada index N)
-  // Seluruh riwayat pesan sebelumnya (0 s/d N-1) dirangkum ke dalam summary block.
-  const tailStartIndex = Math.max(0, prunedMessages.length - 1)
+  // Keep recent messages and summarize older evidence without altering stored history.
+  const tailStartIndex = alignBoundaryBackward(
+    historyMessages,
+    Math.max(0, historyMessages.length - 8)
+  )
 
   // Cari posisi batas pemadatan sebelumnya jika ada
   let startIndexToSummarize = 0
   if (existingLastCompactedId) {
     const targetId = String(existingLastCompactedId)
-    for (let i = 0; i < prunedMessages.length; i++) {
-      const msg = prunedMessages[i]
+    for (let i = 0; i < historyMessages.length; i++) {
+      const msg = historyMessages[i]
       if (
         getMessageId(msg, i) === targetId ||
         String(msg?.id) === targetId ||
@@ -719,8 +696,8 @@ export async function executeSessionCompaction({
   }
 
   const effectiveTailIndex = Math.max(tailStartIndex, startIndexToSummarize)
-  const messagesToSummarize = prunedMessages.slice(startIndexToSummarize, effectiveTailIndex)
-  const tailMessages = prunedMessages.slice(effectiveTailIndex)
+  const messagesToSummarize = historyMessages.slice(startIndexToSummarize, effectiveTailIndex)
+  const tailMessages = historyMessages.slice(effectiveTailIndex)
 
   let newSummaryBlock = existingSummaryBlock
   let lastCompactedMessageId = existingLastCompactedId
@@ -743,7 +720,7 @@ export async function executeSessionCompaction({
   }
 
   // Simpan pesan sebelum pointer ringkasan agar pointer selalu merujuk riwayat persisten.
-  if (!(await saveSession(sessionId, prunedMessages))) {
+  if (!(await saveSession(sessionId, historyMessages))) {
     throw new Error('Gagal menyimpan riwayat sesi setelah kompaksi.')
   }
   if (
@@ -757,7 +734,7 @@ export async function executeSessionCompaction({
   }
 
   const finalTokens = calculateSessionTokens(
-    prunedMessages,
+    historyMessages,
     newSummaryBlock,
     lastCompactedMessageId,
     systemPrompt
@@ -767,7 +744,7 @@ export async function executeSessionCompaction({
     success: true,
     isCompacted: true,
     prunedOnly: false,
-    compactedMessages: prunedMessages,
+    compactedMessages: historyMessages,
     tailMessages,
     lastCompactedMessageId,
     newSummaryBlock,
@@ -793,7 +770,10 @@ export function formatMessageWithToolLogs(msg) {
           if (t.type === 'narration' || (!t.tool && t.text)) {
             return `  * [Catatan Narasi AI]: "${t.text || ''}"`
           }
-          const res = t.fullResult || t.resultSummary || 'OK'
+          const res =
+            t.fullResult ||
+            t.resultSummary ||
+            '[Hasil tidak tersimpan; keberhasilan belum diketahui]'
           const reasonStr = t.reason ? ` (${t.reason})` : ''
           return `  * [Tool: ${t.tool || t.task || 'tool'}]${reasonStr} query: "${t.query || ''}"\n    Hasil:\n${res}`
         })
@@ -832,7 +812,8 @@ export function formatMessageWithToolLogs(msg) {
         if (t.type === 'narration' || (!t.tool && t.text)) {
           return `  * [Catatan Narasi AI]: "${t.text || ''}"`
         }
-        const res = t.fullResult || t.resultSummary || 'OK'
+        const res =
+          t.fullResult || t.resultSummary || '[Hasil tidak tersimpan; keberhasilan belum diketahui]'
         const reasonStr = t.reason ? ` (${t.reason})` : ''
         return `  * [Tool: ${t.tool || t.task || 'tool'}]${reasonStr} query: "${t.query || ''}"\n    Hasil:\n${res}`
       })
@@ -1031,25 +1012,8 @@ export async function checkAndCompressInLoop({
     }
   }
 
-  if (typeof onProgress === 'function') {
-    onProgress({ stage: 'pruning', text: 'In-loop: Memangkas log tool lama...' })
-  }
-
-  // FASE 1: Zero-cost O(n) Tool Pruning
-  const prunedMessages = pruneOldToolResultsInLoop(loopMessages, protectLastN)
-  const prunedTokens = systemTokens + calculatePayloadTokens(prunedMessages)
-
-  // Pruning yang cukup mengembalikan ruang aman tidak perlu panggilan summarizer.
-  if (prunedTokens < triggerLimit) {
-    const didPrune = prunedTokens < totalTokens
-    return {
-      compressed: didPrune,
-      prunedOnly: true,
-      loopMessages: prunedMessages,
-      totalTokens: prunedTokens,
-      totalChars: prunedTokens
-    }
-  }
+  const prunedMessages = loopMessages
+  const prunedTokens = totalTokens
 
   // FASE 2: Tentukan Batas Head, Middle, dan Tail dengan Backward Alignment
   if (typeof onProgress === 'function') {

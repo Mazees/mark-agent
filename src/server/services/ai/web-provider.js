@@ -6,17 +6,9 @@ import {
   generateDeepSeekResponse,
   uploadImageFile,
   waitForFileReady,
-  getSessionState,
   withDeepSeekSignal
 } from '../deepseek-web.js'
-import {
-  cleanAndParse,
-  checkCloudThrottle,
-  getSystemSignature,
-  createMoodStreamFilter,
-  parseMarkTag,
-  stripMarkTags
-} from './ai-utils.js'
+import { cleanAndParse, checkCloudThrottle, getSystemSignature, stripMarkTags } from './ai-utils.js'
 import { getActiveConfig, loadConfig } from '../../config-manager.js'
 import { GROUP_TOOLS_SCHEMA } from '../../tools/group-tools.js'
 import { loadAllPlugins } from '../../../main/plugins/plugin-loader.js'
@@ -105,70 +97,8 @@ function extractImageSources(messages) {
   return [...new Set(sources)]
 }
 
-/**
- * Membangun Dynamic State Anchor ringkas untuk turn sela sesi aktif DeepSeek Web.
- * Memangkas persona dan background statis (~15.000 char -> ~400-800 char),
- * namun tetap membawa waktu real-time, status PC, status musik, relational traits,
- * mood continuity anchor, serta skema tools jika hasTools aktif.
- */
-function buildDynamicStateAnchor(sysMsgs, lastAssistant, hasTools = false) {
-  const fullContent = (sysMsgs || [])
-    .map((m) => (typeof m.content === 'string' ? m.content : ''))
-    .join('\n\n')
-
-  const extractedSections = []
-
-  // 1. Konteks Waktu & Riwayat
-  const timeMatch = fullContent.match(/\[KONTEKS WAKTU & RIWAYAT\][\s\S]*?(?=\n#|\n\n\[|$)/i)
-  if (timeMatch) extractedSections.push(timeMatch[0].trim())
-
-  // 2. Relational Growth (warmth, trust, sarcasm)
-  const relMatch = fullContent.match(/# RELATIONAL GROWTH[\s\S]*?(?=\n#|\n\n\[|$)/i)
-  if (relMatch) extractedSections.push(relMatch[0].trim())
-
-  // 3. Telemetri Fisik PC
-  const telemMatch = fullContent.match(/# TELEMETRI FISIK PC[\s\S]*?(?=\n#|\n\n\[|$)/i)
-  if (telemMatch) extractedSections.push(telemMatch[0].trim())
-
-  // 4. Status Player Musik
-  const musicMatch = fullContent.match(/# STATUS PLAYER MUSIK[\s\S]*?(?=\n#|\n\n\[|$)/i)
-  if (musicMatch) extractedSections.push(musicMatch[0].trim())
-
-  // 5. Gumaman Batin Terakhir
-  const thoughtMatch = fullContent.match(/# GUMAMAN BATIN TERAKHIR[\s\S]*?(?=\n#|\n\n\[|$)/i)
-  if (thoughtMatch) extractedSections.push(thoughtMatch[0].trim())
-
-  const lastMood = lastAssistant?.mood || 'neutral'
-  const dynamicBody = extractedSections.length > 0 ? `\n\n${extractedSections.join('\n\n')}` : ''
-
-  let toolSection = ''
-  if (hasTools) {
-    const toolMatch = fullContent.match(/# TOOLS & CAPABILITY REGISTRY[\s\S]*$/i)
-    if (toolMatch) {
-      toolSection = `\n\n${toolMatch[0].trim()}`
-    }
-  }
-
-  return `[DYNAMIC STATE ANCHOR - MARK AI OS]
-Kamu adalah MARK (Metacognitive Artificial Relational Knowledge). Tetap konsisten dengan kepribadian santai/cerdas tongkrongan, bukan robot kaku.
-ATURAN FORMAT OUTPUT WAJIB (FULL JSON UTUH):
-Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali '{' dan diakhiri '}'):
-{
-  "thought": "Penalaran ringkas atau rencana tindakan",
-  "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
-  "message": "Update progres opsional 1-4 kalimat, atau null",
-  "await_user": false,
-  "answer": "Teks balasan langsung ke pengguna (isi jika selesai/tidak memanggil tool, atau null jika memanggil tool)",
-  "tool_calls": [ { "name": "nama_tool", "arguments": { ... } } ]
-}
-- Jika memanggil aksi/tool: isi array "tool_calls", dan isi "answer": null.
-- "message" opsional: isi 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala pada pekerjaan panjang; tidak perlu setiap loop dan jangan mengulang update sebelumnya. Jika tidak ada kabar berarti, isi null.
-- Jika perlu bantuan pengguna pada browser: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyatakan tugas selesai. Browser tetap terbuka. Balasan pengguna harus diperiksa bersama observasi halaman terbaru.
-- Jika obrolan santai/selesai: isi "answer" dengan jawaban teks lengkap, dan isi "tool_calls": null.
-Status emosi giliran sebelumnya: ${lastMood || 'neutral'}. Pertahankan kontinuitas transisi emosi secara natural!${dynamicBody}${toolSection}`
-}
-
-export const executeWebProvider = (options) => withDeepSeekSignal(options.signal, () => executeWebProviderInternal(options))
+export const executeWebProvider = (options) =>
+  withDeepSeekSignal(options.signal, () => executeWebProviderInternal(options))
 
 async function executeWebProviderInternal({
   messages,
@@ -189,7 +119,6 @@ async function executeWebProviderInternal({
   const activeConf = getActiveConfig() || {}
   const conf = { ...activeConf, ...(config || {}) }
   const isGemini = conf.aiProvider === 'gemini-web'
-  const hasTools = Array.isArray(tools) && tools.length > 0
   const shouldStreamContent = false
   const moodFilter = null
 
@@ -285,7 +214,7 @@ ${toolSections.join('\n\n')}
    - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
    - "tool_calls" WAJIB bernilai null.
 6. ATURAN BATCH & PARALLEL ACTIONS (EFISIENSI MAKSIMAL):
-   - Kamu SANGAT DIANJURKAN menyertakan beberapa tool sekaligus di dalam array "tool_calls" dalam satu giliran jika aksi-aksi tersebut sekuensial dan sudah pasti (misal otomasi PC: klik + ketik + key combo, riset web: multi-fetch beberapa URL, atau membaca beberapa berkas sekaligus).
+   - Gabungkan beberapa tool jika target dan argumennya sudah diketahui serta tidak bergantung pada hasil tool sebelumnya. Setelah navigasi atau perubahan DOM, periksa observasi baru sebelum memakai ID elemen berikutnya. Jangan menebak target di halaman yang belum diamati.
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
 7. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
 8. DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
@@ -300,54 +229,12 @@ ${toolSections.join('\n\n')}
     }
   }
 
-  // 3. Susun Full Prompt Tunggal
-  // Untuk DeepSeek Web yang sudah memiliki sesi bersambung (chained session aktif),
-  // hanya kirim turn pesan aktif terbaru (setelah pesan assistant terakhir).
-  // Untuk turn pertama sesi atau Gemini, kirim semua pesan (full context).
-  const userToken =
-    conf.deepseekUserToken?.trim() ||
-    getActiveConfig()?.deepseekUserToken?.trim() ||
-    loadConfig()?.deepseekUserToken?.trim() ||
-    ''
-
-  const dsSessionState =
-    !isGemini && !!userToken ? getSessionState(userToken, isSmallTask, sessionId) : null
-  const isDeepSeekActiveSession = !isGemini && !!userToken && !!dsSessionState?.lastMessageId
-  const currentTurnCount = dsSessionState?.turnCount || 0
-
-  let messagesToPrompt = workMessages
-  if (isDeepSeekActiveSession) {
-    let lastAssistantIdx = -1
-    for (let i = workMessages.length - 1; i >= 0; i--) {
-      const role = (workMessages[i]?.role || '').toLowerCase()
-      if (role === 'assistant' || role === 'ai' || role === 'model') {
-        lastAssistantIdx = i
-        break
-      }
-    }
-    if (lastAssistantIdx >= 0 && lastAssistantIdx < workMessages.length - 1) {
-      const sysMsgs = workMessages.filter((m) => m.role === 'system')
-      const activeTurn = workMessages.slice(lastAssistantIdx + 1).filter((m) => m.role !== 'system')
-      const lastAssistant = workMessages[lastAssistantIdx]
-
-      // Injeksi periodik: Turn 1 (currentTurnCount = 0) dan kelipatan 5 (currentTurnCount % 5 === 0)
-      // mendapatkan Full System Prompt untuk me-refresh instruksi dan mengatasi lost-in-the-middle.
-      // Turn sela (2-5, 7-10) mendapatkan Dynamic State Anchor ringkas.
-      const isRefreshTurn = currentTurnCount % 5 === 0
-
-      let effectiveSysMsgs = sysMsgs
-      if (!isRefreshTurn) {
-        const anchorText = buildDynamicStateAnchor(sysMsgs, lastAssistant, hasTools)
-        effectiveSysMsgs = [{ role: 'system', content: anchorText }]
-      }
-
-      // Sertakan pesan asisten terakhir beserta mood-nya agar riwayat emosi tetap kontinu di sesi DeepSeek aktif
-      messagesToPrompt = [...effectiveSysMsgs, lastAssistant, ...activeTurn]
-    }
-  }
+  // The DeepSeek transport may rotate or retry with a new chat after this point.
+  // Every request must therefore be self-contained, including its original user goal.
+  const messagesToPrompt = workMessages
 
   // Seluruh riwayat percakapan (system prompt, riwayat obrolan terdahulu, observasi tool, dan prompt aktif)
-  // disusun utuh ke dalam fullPrompt agar model menerima 100% konteks obrolan.
+  // disusun sesuai konteks dari caller, termasuk ringkasan bila sudah dikompaksi.
   let fullPrompt = isGemini
     ? '[CRITICAL INSTRUCTION: DO NOT USE GOOGLE SEARCH. DO NOT USE ANY EXTENSIONS. ANSWER IMMEDIATELY FROM YOUR KNOWLEDGE BASE TO SAVE TIME.]\n\n'
     : ''
@@ -407,13 +294,25 @@ ${toolSections.join('\n\n')}
       'gemini-3.6-flash'
     const pld = getSystemSignature()
     try {
-      answer = await generateGeminiResponse(fullPrompt, modelName + pld.substring(999, 1000), undefined, undefined, { signal })
+      answer = await generateGeminiResponse(
+        fullPrompt,
+        modelName + pld.substring(999, 1000),
+        undefined,
+        undefined,
+        { signal }
+      )
     } catch (err) {
       if (signal?.aborted) throw err
       if (err.message?.includes('Session') || err.message?.includes('BardErrorInfo')) {
         onStatus?.('Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
         try {
-          answer = await generateGeminiResponse(fullPrompt, 'gemini-flash-lite', undefined, undefined, { signal })
+          answer = await generateGeminiResponse(
+            fullPrompt,
+            'gemini-flash-lite',
+            undefined,
+            undefined,
+            { signal }
+          )
         } catch {
           // ignore fallback error
         }
@@ -483,7 +382,6 @@ ${toolSections.join('\n\n')}
             if (moodFilter) {
               moodFilter(delta)
             } else {
-              streamedAnyToken = true
               onToken?.(delta)
             }
           }
