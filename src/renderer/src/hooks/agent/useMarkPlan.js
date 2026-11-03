@@ -211,19 +211,45 @@ export const useMarkPlan = ({
         ? Number(targetSessionId)
         : activeRunningSessionIdRef.current || 1
 
-    const interventionItem = {
-      type: 'intervention',
-      text: displayMsg,
-      timestamp: Date.now()
+    const isInterruptAction = Boolean(opts?.skipAbort)
+
+    if (isInterruptAction && activeSessionsRef.current.has(sId)) {
+      const session = activeSessionsRef.current.get(sId)
+      if (session?.abortController) {
+        try {
+          session.abortController.abort(new Error('User interrupt (inputbar)'))
+        } catch (_) {}
+      }
+
+      if (abortControllerRef?.current) {
+        try {
+          abortControllerRef.current.abort(new Error('User interrupt (inputbar)'))
+        } catch (_) {}
+      }
+
+      if (window.api?.abortFetchAI) {
+        try {
+          window.api.abortFetchAI()
+        } catch (_) {}
+      }
     }
 
-    const session = activeSessionsRef.current.get(sId)
-    if (session) {
-      session.lastActivityTime = Date.now()
-      if (!session.interventions) session.interventions = []
-      session.interventions.push(textMsg)
-      if (session.executedToolsList) {
-        session.executedToolsList.push(interventionItem)
+    const interventionItem = {
+      type: isInterruptAction ? 'interrupt' : 'intervention',
+      text: displayMsg,
+      timestamp: Date.now(),
+      interrupt: isInterruptAction
+    }
+
+    if (!isInterruptAction) {
+      const sessionForLog = activeSessionsRef.current.get(sId)
+      if (sessionForLog) {
+        sessionForLog.lastActivityTime = Date.now()
+        if (!sessionForLog.interventions) sessionForLog.interventions = []
+        sessionForLog.interventions.push(textMsg)
+        if (sessionForLog.executedToolsList) {
+          sessionForLog.executedToolsList.push(interventionItem)
+        }
       }
     }
 
@@ -932,7 +958,7 @@ export const useMarkPlan = ({
         } catch (_) {}
         activeSessionsRef.current.delete(activeSessionNum)
         activeSessionUpdatersRef.current.delete(activeSessionNum)
-      } else {
+      } else if (!opts.skipAbort) {
         handleIntervention(userInput, activeSessionNum, { displayPrompt: opts.displayPrompt })
         return
       }
@@ -2856,7 +2882,8 @@ Lakukan pemeriksaan mandiri sekarang:
         error.message?.includes('AbortError') ||
         error.message?.includes('aborted') ||
         error.message?.includes('Aborted') ||
-        error.message?.includes('The user aborted')
+        error.message?.includes('The user aborted') ||
+        error.message?.includes('User interrupt (inputbar)')
 
       if (!isAbort) {
         console.error('[useMarkPlan] Critical ReAct Loop Error:', error)

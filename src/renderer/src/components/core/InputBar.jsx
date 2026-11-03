@@ -1372,12 +1372,23 @@ const InputBar = ({
 
           {isLoading ? (
             <button
-              type="button"
-              onClick={() => setShowAbortConfirm(true)}
+              type="submit"
+              disabled={isSendDisabled}
+              onClick={() => {
+                lastPromptRef.current = inputText
+                if (typeof onSubmit === 'function') {
+                  onSubmit(inputText, {
+                    text: inputText,
+                    attachedFiles,
+                    rawUserText: inputText.trim(),
+                    skipAbort: true
+                  })
+                }
+              }}
               className="p-3 rounded-full bg-error/20 text-error hover:bg-error hover:text-white hover:scale-105 active:scale-95 transition-all shadow-lg"
-              title="Stop Generation (Hard Abort)"
+              title="Send (interrupt Mark)"
             >
-              <FaStop size={16} />
+              <FaArrowUp size={16} />
             </button>
           ) : (
             <button

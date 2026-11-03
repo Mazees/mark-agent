@@ -272,6 +272,16 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       await loadAllSessions()
     }
 
+    const isInterventionRequest =
+      Boolean(sendOptions?.skipAbort) &&
+      Boolean(isCurrentLoading) &&
+      typeof handleIntervention === 'function'
+
+    if (isInterventionRequest) {
+      handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
+      return
+    }
+
     if (isCurrentLoading && typeof handleIntervention === 'function') {
       handleIntervention(prompt, activeSessionId, { displayPrompt: rawDisplay })
       return
