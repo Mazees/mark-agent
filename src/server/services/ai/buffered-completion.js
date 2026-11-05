@@ -1,5 +1,6 @@
 import { activeAbortControllers, parseMarkTag } from './ai-utils.js'
 import { randomUUID } from 'node:crypto'
+import { fetchProviderResponse, getProviderTimeouts } from './provider-transport.js'
 
 export function buildBufferedPayload(body) {
   const images = []
@@ -52,25 +53,37 @@ AVAILABLE TOOL SCHEMAS:\n${JSON.stringify(body.tools || [])}`
 }
 
 // Hanya memulihkan inferensi; tidak ada tool yang dieksekusi oleh layanan ini.
-export async function requestBufferedCompletion({ endpoint, headers, body, signal }) {
+export async function requestBufferedCompletion({
+  endpoint,
+  headers,
+  body,
+  signal,
+  scope = 'lead'
+}) {
   const controller = new AbortController()
+  controller.markScope = scope
   activeAbortControllers.add(controller)
   const abort = () => controller.abort(signal.reason || new Error('User Aborted'))
   signal?.addEventListener('abort', abort, { once: true })
   if (signal?.aborted) abort()
+  const { bufferedMs } = getProviderTimeouts('custom')
   const timer = setTimeout(() => {
-    const error = new Error('Pemulihan respons AI tidak selesai dalam 120 detik.')
+    const error = new Error(`Pemulihan respons AI tidak selesai dalam ${bufferedMs / 1000} detik.`)
     error.code = 'AI_RECOVERY_TIMEOUT'
     controller.abort(error)
-  }, 120000)
+  }, bufferedMs)
   try {
     const payload = buildBufferedPayload(body)
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    })
+    const response = await fetchProviderResponse(
+      endpoint,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      },
+      'custom'
+    )
     const raw = await response.text()
     if (!response.ok) {
       const error = new Error(`Pemulihan respons AI gagal (HTTP ${response.status}).`)

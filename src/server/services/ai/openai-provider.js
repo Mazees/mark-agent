@@ -1,6 +1,7 @@
 import { jsonrepair } from 'jsonrepair'
 import { beginStreamTrace, finishStreamTrace } from './stream-diagnostics.js'
 import { requestBufferedCompletion } from './buffered-completion.js'
+import { fetchProviderResponse, getProviderTimeouts } from './provider-transport.js'
 import {
   getSystemSignature,
   activeAbortControllers,
@@ -32,6 +33,7 @@ export async function executeOpenAIProvider({
   onStatus = null
 }) {
   const conf = config || {}
+  const timeouts = getProviderTimeouts(conf.aiProvider)
   const latestUserMessageIndex = (messages || []).findLastIndex((m) => m.role === 'user')
 
   let formattedMessages = (messages || []).map((m, index) => {
@@ -138,7 +140,9 @@ export async function executeOpenAIProvider({
     }
 
     const abortController = new AbortController()
-    abortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
+    abortController.markScope = String(sessionId || '').startsWith('subagent_')
+      ? 'subagent'
+      : 'lead'
     activeAbortControllers.add(abortController)
 
     const abortStream = () => abortController.abort(signal.reason || new Error('User Aborted'))
@@ -147,14 +151,43 @@ export async function executeOpenAIProvider({
 
     let isStreamDone = false
 
-    const CONNECT_TIMEOUT_MS = 120000 // 2 menit untuk handshaking / HTTP response headers awal
-    let connectTimeoutTimer = setTimeout(() => {
-      abortController.abort(
-        new Error(
-          `Connection Timeout: Server API (${endpoint}) tidak merespons dalam ${CONNECT_TIMEOUT_MS / 1000} detik.`
+    trace.timeouts = timeouts
+    let connectTimeoutTimer = null
+    const fetchStreamResponse = async (payload) => {
+      trace.phase = 'connecting'
+      connectTimeoutTimer = setTimeout(() => {
+        trace.timeoutKind = 'connect'
+        trace.timeoutMs = timeouts.connectMs
+        const error = new Error(
+          `Server API belum mengirim header respons selama ${timeouts.connectMs / 1000} detik.`
         )
-      )
-    }, CONNECT_TIMEOUT_MS)
+        error.code = 'AI_CONNECT_TIMEOUT'
+        abortController.abort(error)
+      }, timeouts.connectMs)
+      try {
+        return await fetchProviderResponse(
+          endpoint,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: abortController.signal
+          },
+          conf.aiProvider
+        )
+      } finally {
+        clearTimeout(connectTimeoutTimer)
+        connectTimeoutTimer = null
+      }
+    }
+    const bufferedRequest = () =>
+      requestBufferedCompletion({
+        endpoint,
+        headers,
+        body,
+        signal,
+        scope: abortController.markScope
+      })
 
     let moodExtracted = false
     const extractMood = (text) => {
@@ -201,16 +234,9 @@ export async function executeOpenAIProvider({
         trace.phase = 'compatibility'
         trace.compatibilityReused = true
         trace.recoveryMode = 'json-actions'
-        return deliverBufferedResult(
-          await requestBufferedCompletion({ endpoint, headers, body, signal })
-        )
+        return deliverBufferedResult(await bufferedRequest())
       }
-      let response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: abortController.signal
-      })
+      let response = await fetchStreamResponse(body)
       trace.phase = 'waiting-for-token'
       trace.httpStatus = response.status
       trace.contentType = (response.headers?.get('content-type') || '').split(';')[0].slice(0, 80)
@@ -228,17 +254,16 @@ export async function executeOpenAIProvider({
         ) {
           const fallbackBody = { ...body }
           delete fallbackBody.stream_options
-          const retryRes = await fetch(endpoint, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(fallbackBody),
-            signal: abortController.signal
-          })
+          const retryRes = await fetchStreamResponse(fallbackBody)
           if (retryRes.ok) {
             response = retryRes
           }
         }
       }
+
+      trace.httpStatus = response.status
+      trace.contentType = (response.headers?.get('content-type') || '').split(';')[0].slice(0, 80)
+      trace.phase = 'waiting-for-token'
 
       if (!response.ok) {
         const textData = await response.text()
@@ -356,9 +381,9 @@ export async function executeOpenAIProvider({
         let inactivityTimer = null
         let progressTimer = null
 
-        const TTFT_TIMEOUT_MS = 180000 // 3 menit batas koneksi awal sebelum token pertama
-        const INACTIVITY_TIMEOUT_MS = conf.aiProvider === 'custom' ? 90000 : 180000
-        const PROGRESS_TIMEOUT_MS = 300000
+        const TTFT_TIMEOUT_MS = timeouts.firstTokenMs
+        const INACTIVITY_TIMEOUT_MS = timeouts.idleMs
+        const PROGRESS_TIMEOUT_MS = timeouts.progressMs
 
         const resetInactivityTimer = () => {
           if (inactivityTimer) {
@@ -368,6 +393,8 @@ export async function executeOpenAIProvider({
           if (isStreamDone) return
           inactivityTimer = setTimeout(() => {
             if (!isStreamDone) {
+              trace.timeoutKind = 'idle'
+              trace.timeoutMs = INACTIVITY_TIMEOUT_MS
               const error = new Error(
                 `Koneksi stream AI tidak mengirim data selama ${INACTIVITY_TIMEOUT_MS / 1000} detik. Permintaan dihentikan; tool yang belum lengkap tidak dijalankan.`
               )
@@ -388,6 +415,8 @@ export async function executeOpenAIProvider({
           if (progressTimer) clearTimeout(progressTimer)
           progressTimer = setTimeout(() => {
             if (isStreamDone) return
+            trace.timeoutKind = 'progress'
+            trace.timeoutMs = PROGRESS_TIMEOUT_MS
             const error = new Error(
               `AI tidak mengirim token atau tool baru selama ${PROGRESS_TIMEOUT_MS / 1000} detik meski koneksi masih terbuka. Permintaan dihentikan; tool yang belum lengkap tidak dijalankan.`
             )
@@ -399,11 +428,13 @@ export async function executeOpenAIProvider({
         // Watchdog hanya untuk koneksi awal / token pertama (Time-To-First-Token)
         ttftTimer = setTimeout(() => {
           if (!receivedAnyData && !isStreamDone) {
-            abortController.abort(
-              new Error(
-                `Connection Timeout: Server API (${endpoint}) tidak mengirim data awal selama ${TTFT_TIMEOUT_MS / 1000} detik.`
-              )
+            trace.timeoutKind = 'first-token'
+            trace.timeoutMs = TTFT_TIMEOUT_MS
+            const error = new Error(
+              `Server API belum mengirim token pertama selama ${TTFT_TIMEOUT_MS / 1000} detik.`
             )
+            error.code = 'AI_STREAM_STALLED'
+            abortController.abort(error)
           }
         }, TTFT_TIMEOUT_MS)
 
@@ -588,10 +619,12 @@ export async function executeOpenAIProvider({
         try {
           onMeta?.({
             streamRecovery: true,
-            message: 'Koneksi stream terhenti. Mark sedang meminta ulang respons lengkap.'
+            message: trace.timeoutKind
+              ? `API melewati batas tunggu ${trace.timeoutMs / 1000} detik. Mark sedang meminta ulang respons lengkap.`
+              : 'Koneksi stream terhenti. Mark sedang meminta ulang respons lengkap.'
           })
           onStatus?.('Memulihkan respons AI (1/1)...')
-          const recovered = await requestBufferedCompletion({ endpoint, headers, body, signal })
+          const recovered = await bufferedRequest()
           if (signal?.aborted) throw signal.reason || new Error('User Aborted')
           if (compatibilityKey) {
             if (compatibleSessions.size >= 64) {
@@ -654,7 +687,9 @@ export async function executeOpenAIProvider({
   }
 
   const parentAbortController = new AbortController()
-  parentAbortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
+  parentAbortController.markScope = String(sessionId || '').startsWith('subagent_')
+    ? 'subagent'
+    : 'lead'
   activeAbortControllers.add(parentAbortController)
 
   if (signal) {
@@ -670,9 +705,11 @@ export async function executeOpenAIProvider({
       throw new Error('AbortError')
     }
 
-    const timeoutMs = 300000
+    const timeoutMs = timeouts.bufferedMs
     const abortController = new AbortController()
-    abortController.markScope = String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'
+    abortController.markScope = String(sessionId || '').startsWith('subagent_')
+      ? 'subagent'
+      : 'lead'
     activeAbortControllers.add(abortController)
     const timeoutId = setTimeout(
       () => abortController.abort(new Error('Request Timeout (Tidak ada respon dari server)')),
@@ -685,12 +722,16 @@ export async function executeOpenAIProvider({
     let response
     let rawText
     try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(currentBody),
-        signal: abortController.signal
-      })
+      response = await fetchProviderResponse(
+        endpoint,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(currentBody),
+          signal: abortController.signal
+        },
+        conf.aiProvider
+      )
       rawText = await response.text()
     } catch (err) {
       clearTimeout(timeoutId)
@@ -703,7 +744,9 @@ export async function executeOpenAIProvider({
         throw new Error('Request Timeout: AI memakan waktu terlalu lama untuk membalas.')
       }
       if (err.name === 'AbortError' || (err.message && err.message.includes('Timeout'))) {
-        throw new Error(`Koneksi Timeout: Server API (${endpoint}) nge-gantung lebih dari 5 menit.`)
+        throw new Error(
+          `Koneksi Timeout: Server API tidak selesai dalam ${timeoutMs / 1000} detik.`
+        )
       }
       const causeStr = err.cause ? ` (${err.cause.message || err.cause.code || err.cause})` : ''
       const enrichedError = new Error(

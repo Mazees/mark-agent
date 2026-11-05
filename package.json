@@ -92,6 +92,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "telegraf": "^4.16.3",
+    "undici": "^6.29.1",
     "ws": "^8.18.0",
     "youtube-dl-exec": "^3.1.7",
     "youtube-transcript-plus": "^1.1.2",
