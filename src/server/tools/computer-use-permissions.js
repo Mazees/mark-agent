@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 
-const requests = new Map()
 const grants = new Map()
 const key = ({ sessionId = 'default', runId }) =>
   String(sessionId) + ':' + String(runId || sessionId)
@@ -21,15 +20,7 @@ export function isLocalComputerUseOrigin(value, port, development = false) {
 
 function prune() {
   const now = Date.now()
-  for (const map of [requests, grants])
-    for (const [id, value] of map) if (value.expires <= now) map.delete(id)
-}
-
-export function requestComputerUsePermission(owner) {
-  prune()
-  const requestId = randomUUID()
-  requests.set(requestId, { owner: key(owner), expires: Date.now() + expiresIn })
-  return requestId
+  for (const [id, value] of grants) if (value.expires <= now) grants.delete(id)
 }
 
 export function grantComputerUsePermission(owner) {
@@ -37,15 +28,6 @@ export function grantComputerUsePermission(owner) {
   const token = randomUUID()
   grants.set(token, { owner: key(owner), expires: Date.now() + expiresIn })
   return token
-}
-
-export function decideComputerUsePermission(requestId, owner, approved) {
-  prune()
-  const request = requests.get(requestId)
-  requests.delete(requestId)
-  if (!request || request.owner !== key(owner))
-    throw new Error('Permintaan izin sesi tidak berlaku atau sudah kedaluwarsa.')
-  return approved === true ? grantComputerUsePermission(owner) : null
 }
 
 export function consumeComputerUsePermission(token, owner) {

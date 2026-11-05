@@ -567,6 +567,7 @@ async function _executeSingleDeepSeekCall(
   await requestDelay(jitterMs)
 
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
+  if (options.strictText && !DEEPSEEK_WEB_MODELS[reqModel]) throw new Error('Model peninjau tidak dikenal. Periksa konfigurasi model aktif.')
   let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
   const powHeader = await generatePowHeader(token, '/api/v0/chat/completion', wasmBuffer)
 
@@ -575,8 +576,8 @@ async function _executeSingleDeepSeekCall(
     parent_message_id: parentMessageId,
     prompt: prompt,
     ref_file_ids: Array.isArray(refFileIds) ? refFileIds : [],
-    thinking_enabled: selected.thinking,
-    search_enabled: selected.search,
+    thinking_enabled: options.disableThinking ? false : selected.thinking,
+    search_enabled: options.disableSearch ? false : selected.search,
     action: null,
     preempt: false
   }
@@ -635,6 +636,7 @@ async function _executeSingleDeepSeekCall(
       let activePath = null
       let lastReceivedPayload = ''
       let responseMessageId = null
+      let responseCompleted = false
 
       const processLine = (line) => {
         const trimmed = line.trim()
@@ -647,11 +649,13 @@ async function _executeSingleDeepSeekCall(
         if (trimmed.startsWith('data:')) {
           payload = trimmed.slice(5).trim()
         }
-        if (!payload || payload === '[DONE]') return
+        if (!payload) return
+        if (payload === '[DONE]') { responseCompleted = true; return }
         lastReceivedPayload = payload
 
         try {
           const obj = JSON.parse(payload)
+          if (obj.v === 'FINISHED' || obj.v?.response?.status === 'FINISHED') responseCompleted = true
 
           // Tangkap message_id respon assistant
           if (obj.v?.response?.message_id) {
@@ -732,6 +736,7 @@ async function _executeSingleDeepSeekCall(
               for (const frag of v.response.fragments || []) {
                 if (frag.content) {
                   if (frag.type === 'THINKING') {
+                    if (options.strictText) activePath = 'thinking'
                     reasoningContent = frag.content
                     onDelta?.({ type: 'thinking', delta: frag.content, full: reasoningContent })
                   } else {
@@ -806,17 +811,18 @@ async function _executeSingleDeepSeekCall(
         }
 
         // Sanitasi trailing status jika ada yang lolos
-        if (fullContent) {
+        if (fullContent && !options.strictText) {
           fullContent = fullContent.replace(/\s*(?:FINISHED|FINISH|DONE)\b.*$/i, '').trim()
         }
 
         // Fallback: Jika content kosong tapi thinking terisi, gunakan thinking sebagai jawaban
-        if (!fullContent && reasoningContent) {
+        if (!fullContent && reasoningContent && !options.strictText) {
           fullContent = reasoningContent
           reasoningContent = null
         }
 
         if (!fullContent) {
+          if (options.strictText) { reject(new Error('Peninjau tidak mengembalikan jawaban teks.')); return }
           console.warn(
             `[DeepSeek-Web] Empty response on end. Last payload:`,
             lastReceivedPayload,
@@ -830,6 +836,7 @@ async function _executeSingleDeepSeekCall(
           )
           return
         }
+        if (options.strictText && !responseCompleted) { reject(new Error('Respons peninjau belum selesai.')); return }
 
         // Simpan progress chaining sesi jika berhasil
         if (sessionId && sessionStateMap.has(sessionId)) {

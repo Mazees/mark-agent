@@ -14,7 +14,8 @@ import {
   FaFileImage,
   FaLock
 } from 'react-icons/fa'
-import { Zap, Sparkles, Folder, Wrench, FileText } from 'lucide-react'
+import { Sparkles, Folder, Wrench, FileText } from 'lucide-react'
+import ApprovalModePicker from './ApprovalModePicker'
 import ConfirmModal from './ConfirmModal'
 import SkillComposer from './SkillComposer'
 import { NATIVE_SKILLS } from './native-skills'
@@ -22,9 +23,7 @@ import { webApi } from '../../api/web-bridge.js'
 import { calculateSessionTokens, MAX_CONTEXT_TOKENS } from '../../api/ai/contextManager'
 import {
   getChatData,
-  getSessionCompact,
-  getSessionAutoMode,
-  setSessionAutoMode
+  getSessionCompact
 } from '../../api/db'
 
 const EMOJIS = [
@@ -183,14 +182,10 @@ const InputBar = ({
     lastCompactedAt: null
   })
 
-  const [isAutoMode, setIsAutoMode] = useState(false)
   const [isSuperEffort, setIsSuperEffort] = useState(false)
 
   useEffect(() => {
     let isMounted = true
-    getSessionAutoMode(sessionId).then((val) => {
-      if (isMounted) setIsAutoMode(Boolean(val))
-    })
 
     // Cek konfigurasi default global dari database
     import('../../api/db').then(({ getAllConfig }) => {
@@ -204,32 +199,18 @@ const InputBar = ({
         .catch(() => {})
     })
 
-    const handleAutoModeUpdate = (e) => {
-      if (String(e.detail?.sessionId) === String(sessionId)) {
-        setIsAutoMode(Boolean(e.detail?.isAutoMode))
-      }
-    }
-
     const handleConfigUpdate = (e) => {
       if (e.detail?.superEffortEnabled !== undefined) {
         setIsSuperEffort(Boolean(e.detail.superEffortEnabled))
       }
     }
 
-    window.addEventListener('session-auto-mode-updated', handleAutoModeUpdate)
     window.addEventListener('config-updated', handleConfigUpdate)
     return () => {
       isMounted = false
-      window.removeEventListener('session-auto-mode-updated', handleAutoModeUpdate)
       window.removeEventListener('config-updated', handleConfigUpdate)
     }
   }, [sessionId])
-
-  const handleToggleAutoMode = async () => {
-    const next = !isAutoMode
-    setIsAutoMode(next)
-    await setSessionAutoMode(sessionId, next)
-  }
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -1013,7 +994,7 @@ const InputBar = ({
           className="w-full min-h-9 max-h-48 overflow-y-auto bg-transparent border-none outline-none text-white px-2 py-1.5 text-sm leading-normal no-scrollbar"
         />
 
-        <div className="flex w-full items-center justify-between gap-2">
+        <div className="@container flex w-full flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1">
             {/* Paperclip File Upload Button */}
             <button
@@ -1211,7 +1192,7 @@ const InputBar = ({
           )}
 
           {/* Action Buttons */}
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             {/* Super Effort Toggle Button */}
             <button
               type="button"
@@ -1232,23 +1213,7 @@ const InputBar = ({
               />
             </button>
 
-            {/* Auto Mode Toggle Button */}
-            <button
-              type="button"
-              onClick={handleToggleAutoMode}
-              className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
-                isAutoMode
-                  ? 'bg-warning/20 text-warning border border-warning/40 font-semibold'
-                  : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
-              }`}
-              title={
-                isAutoMode
-                  ? 'Auto Mode: AKTIF. Semua persetujuan tool otomatis diizinkan untuk sesi ini.'
-                  : 'Auto Mode: NONAKTIF. Klik untuk otomatis menyetujui semua tool di sesi ini.'
-              }
-            >
-              <Zap className={`w-3 h-3 ${isAutoMode ? 'fill-white text-white' : ''}`} />
-            </button>
+            <ApprovalModePicker sessionId={sessionId} />
 
             {/* Ring Gauge Context Indicator (~30px) */}
             {(() => {
@@ -1281,7 +1246,7 @@ const InputBar = ({
                       if (e.key === 'Enter' || e.key === ' ') setShowContextPopover((prev) => !prev)
                     }}
                     className="relative w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition-transform duration-200 hover:scale-110 group/gauge outline-none"
-                    title="Context Window Info (Dual-Layer Hermes Compressor)"
+                    title="Context Window Info"
                   >
                     <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                       <circle

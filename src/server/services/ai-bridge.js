@@ -34,6 +34,11 @@ export async function fetchAI(messages, stream = false, options = {}) {
   const conf = { ...disk, ...active, ...globalConfig, ...(opts.config || {}) }
   opts.config = conf
 
+  if (opts.purpose === 'approval') {
+    const { executeApprovalCompletion } = await import('./ai/approval-completion.js')
+    return executeApprovalCompletion(opts)
+  }
+
   const provider = conf.aiProvider || 'gemini-web'
 
   if (provider === 'gemini-web' || provider === 'deepseek-web') {

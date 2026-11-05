@@ -185,7 +185,7 @@ export function normalizePluginQuery(rawQuery) {
   return String(rawQuery)
 }
 
-function findRegisteredAction(actionName) {
+export function findRegisteredAction(actionName) {
   if (typeof actionName !== 'string') return null
   const name = actionName.toLowerCase()
   const matches = [...pluginActionHandlers.values()].filter((action) => {

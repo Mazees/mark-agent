@@ -1,448 +1,300 @@
-import { McpToolName } from '../components/Chat/McpToolName'
-import React, { createContext, useState, useContext, useCallback, useRef, useEffect } from 'react'
+/* eslint-disable react/prop-types, react-refresh/only-export-components */
+import { createContext, useState, useContext, useCallback, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { ShieldAlert, Terminal, FileCode } from 'lucide-react'
-import { getAlwaysAllowedPaths, addAlwaysAllowedPath, getSessionAutoMode } from '../api/db'
-import { isComputerUseSessionOpen } from '../../../shared/computer-use.js'
+import { ShieldAlert } from 'lucide-react'
+import { webApi } from '../api/web-bridge.js'
+import { McpToolName } from '../components/Chat/McpToolName'
 
 const ApprovalContext = createContext()
 
 export function extractToolTarget(tool, query) {
-  if (!query) return { type: 'unknown', value: '' }
-
-  if (tool === 'run-powershell') {
-    const cmd =
-      typeof query === 'object' && query !== null
-        ? query.command || query.cmd || ''
-        : String(query || '')
-    return { type: 'command', value: String(cmd).trim() }
-  }
-
-  let rawPath = ''
-  if (typeof query === 'object' && query !== null) {
-    rawPath = query.path || query.filePath || query.cwd || query.target || ''
-  } else if (typeof query === 'string') {
-    rawPath = query.split('||')[0].trim()
-  }
-
+  if (['run-powershell', 'run-task'].includes(tool))
+    return {
+      type: 'command',
+      value: typeof query === 'object' ? query?.command || '' : String(query || '')
+    }
   return {
     type: 'path',
-    value: String(rawPath)
-      .replace(/^["']|["']$/g, '')
-      .trim()
+    value:
+      typeof query === 'object'
+        ? query?.path || query?.filePath || query?.file_path || ''
+        : String(query || '').split('||')[0]
   }
 }
-
-export function getFolderFromPath(filePath) {
-  if (!filePath) return ''
-  const normalized = filePath.replace(/[\\/]+/g, '/')
-  const lastSlash = normalized.lastIndexOf('/')
-  if (lastSlash !== -1) {
-    return normalized.substring(0, lastSlash)
-  }
-  return normalized
+export function getFolderFromPath(value) {
+  return value?.replace(/[\\/][^\\/]*$/, '') || ''
 }
 
-export const ApprovalProvider = ({ children }) => {
+export function ApprovalProvider({ children }) {
   const [approvalData, setApprovalData] = useState(null)
-  const approvalRef = useRef(null)
-  const [alwaysAllowedPaths, setAlwaysAllowedPaths] = useState([])
-  const sessionAllowedMapRef = useRef(new Map())
-  const autoModeSessionsRef = useRef(new Set())
-
+  const queue = useRef([])
+  const dialog = useRef(null)
   const location = useLocation()
-  const isChatStudio =
-    location?.pathname === '/chat' ||
-    (typeof window !== 'undefined' && window.location.hash.includes('/chat'))
-
-  const alwaysAllowedPathsRef = useRef(alwaysAllowedPaths)
-  useEffect(() => {
-    alwaysAllowedPathsRef.current = alwaysAllowedPaths
-  }, [alwaysAllowedPaths])
-
-  // Muat data alwaysAllowedPaths dari SQLite database saat startup
-  useEffect(() => {
-    getAlwaysAllowedPaths().then((paths) => {
-      if (Array.isArray(paths)) {
-        setAlwaysAllowedPaths(paths)
-      }
-    })
-
-    const handleConfigUpdated = (e) => {
-      if (Array.isArray(e.detail?.alwaysAllowedPaths)) {
-        setAlwaysAllowedPaths(e.detail.alwaysAllowedPaths)
-      }
-    }
-    window.addEventListener('config-updated', handleConfigUpdated)
-    return () => window.removeEventListener('config-updated', handleConfigUpdated)
-  }, [])
-
-  // Pastikan ref selalu sinkron dengan state
-  useEffect(() => {
-    approvalRef.current = approvalData
-  }, [approvalData])
-
-  const handleApproveAlwaysInternal = useCallback(async (tool, targetQuery) => {
-    const target = extractToolTarget(tool, targetQuery)
-    let identifierToAdd = ''
-
-    if (target.type === 'command') {
-      identifierToAdd = `cmd:${target.value.toLowerCase()}`
-    } else if (target.type === 'path' && target.value) {
-      const normalizedPath = target.value.replace(/[\\/]+/g, '/').toLowerCase()
-      const folder = getFolderFromPath(normalizedPath)
-      identifierToAdd = folder || normalizedPath
-    }
-
-    if (identifierToAdd) {
-      const updated = await addAlwaysAllowedPath(identifierToAdd)
-      if (Array.isArray(updated)) {
-        setAlwaysAllowedPaths(updated)
-      }
-    }
-  }, [])
-
+  const showNext = useCallback(
+    () => setApprovalData(queue.current[0] ? { ...queue.current[0] } : null),
+    []
+  )
   const resolveApproval = useCallback(
-    (approvalId, decisionType) => {
-      // decisionType: 'approve_once' | 'approve_session' | 'approve_always' | 'reject'
-      const current = approvalRef.current
-      if (!current) return
-      if (approvalId && current.id !== approvalId) return
-      if (
-        (current.meta?.forcePrompt || isComputerUseSessionOpen(current.tool, current.query)) &&
-        decisionType !== 'reject'
-      )
-        decisionType = 'approve_once'
-
-      approvalRef.current = null
-      setApprovalData(null)
-
-      const sid = current.meta?.sessionId ? String(current.meta.sessionId) : '1'
-
-      if (decisionType === 'approve_always') {
-        handleApproveAlwaysInternal(current.tool, current.query)
-      } else if (decisionType === 'approve_session') {
-        if (!sessionAllowedMapRef.current.has(sid)) {
-          sessionAllowedMapRef.current.set(sid, new Set())
-        }
-        const target = extractToolTarget(current.tool, current.query)
-        const targetKey =
-          target.type === 'command'
-            ? `cmd:${target.value.toLowerCase()}`
-            : target.value
-              ? target.value.replace(/[\\/]+/g, '/').toLowerCase()
-              : current.tool
-        sessionAllowedMapRef.current.get(sid).add(targetKey)
-        if (target.type === 'path' && target.value) {
-          const folder = getFolderFromPath(target.value.replace(/[\\/]+/g, '/').toLowerCase())
-          if (folder) sessionAllowedMapRef.current.get(sid).add(folder)
-        }
-      }
-
-      const isApproved =
-        decisionType === 'approve_once' ||
-        decisionType === 'approve_session' ||
-        decisionType === 'approve_always'
-
-      // Update bubble state in chat feed if targetSetChatData exists
-      if (typeof current.meta?.targetSetChatData === 'function') {
-        current.meta.targetSetChatData((prev) =>
-          (prev || []).map((msg) =>
-            msg.id === current.id || msg.approvalId === current.id
-              ? { ...msg, status: decisionType }
-              : msg
-          )
+    async (id, choice) => {
+      const current = queue.current.find((item) => item.id === id)
+      if (!current || current.busy) return
+      current.busy = true
+      showNext()
+      try {
+        const result = await webApi.decideToolApproval(current.id, current.meta.owner, choice)
+        current.cleanup?.()
+        queue.current = queue.current.filter((item) => item !== current)
+        current.meta.targetSetChatData?.((items) =>
+          items.map((item) => (item.approvalId === id ? { ...item, status: choice } : item))
         )
+        current.resolve(result.status === 'allowed')
+      } catch (cause) {
+        current.error = cause.message
+        current.busy = false
       }
-
-      if (typeof current.resolve === 'function') {
-        current.resolve(isApproved)
-      }
+      showNext()
     },
-    [handleApproveAlwaysInternal]
+    [showNext]
   )
-
-  const handleRemoteDecision = useCallback(
-    (decisionType, chatId) => {
-      const current = approvalRef.current
-      if (current) {
-        if (
-          (current.meta?.forcePrompt || isComputerUseSessionOpen(current.tool, current.query)) &&
-          decisionType !== 'reject'
-        )
-          decisionType = 'approve_once'
-        resolveApproval(current.id, decisionType)
-
-        if (chatId && window.api?.tgSendMessage) {
-          let msg = '[INFO]: Permintaan persetujuan telah ditolak.'
-          if (decisionType === 'approve_always') {
-            msg = '[INFO]: Permintaan persetujuan diizinkan SELAMANYA.'
-          } else if (decisionType === 'approve_session') {
-            msg = '[INFO]: Permintaan persetujuan telah diizinkan untuk sesi ini.'
-          } else if (decisionType === 'approve_once') {
-            msg = '[INFO]: Permintaan persetujuan telah diizinkan sekali.'
-          }
-          window.api.tgSendMessage(chatId, msg)
-        }
-      } else {
-        if (chatId && window.api?.tgSendMessage) {
-          window.api.tgSendMessage(
-            chatId,
-            '[INFO]: Tidak ada permintaan persetujuan yang sedang menunggu.'
-          )
-        }
-      }
-    },
-    [resolveApproval]
-  )
-
-  useEffect(() => {
-    const unsubAccept = window.api?.onTgCommandAccept
-      ? window.api.onTgCommandAccept((data) => {
-          handleRemoteDecision('approve_once', data?.chatId)
-        })
-      : null
-
-    const unsubSession = window.api?.onTgCommandSession
-      ? window.api.onTgCommandSession((data) => {
-          handleRemoteDecision('approve_session', data?.chatId)
-        })
-      : null
-
-    const unsubAlways = window.api?.onTgCommandAlways
-      ? window.api.onTgCommandAlways((data) => {
-          handleRemoteDecision('approve_always', data?.chatId)
-        })
-      : null
-
-    const unsubReject = window.api?.onTgCommandReject
-      ? window.api.onTgCommandReject((data) => {
-          handleRemoteDecision('reject', data?.chatId)
-        })
-      : null
-
-    return () => {
-      if (typeof unsubAccept === 'function') unsubAccept()
-      if (typeof unsubSession === 'function') unsubSession()
-      if (typeof unsubAlways === 'function') unsubAlways()
-      if (typeof unsubReject === 'function') unsubReject()
-    }
-  }, [handleRemoteDecision])
-
-  useEffect(() => {
-    const handleAutoModeUpdate = (e) => {
-      const sid = String(e.detail?.sessionId || '1')
-      if (e.detail?.isAutoMode) {
-        autoModeSessionsRef.current.add(sid)
-        const current = approvalRef.current
-        if (
-          current &&
-          !current.meta?.forcePrompt &&
-          !isComputerUseSessionOpen(current.tool, current.query) &&
-          String(current.meta?.sessionId || '1') === sid
-        ) {
-          resolveApproval(current.id, 'approve_session')
-        }
-      } else {
-        autoModeSessionsRef.current.delete(sid)
-      }
-    }
-    window.addEventListener('session-auto-mode-updated', handleAutoModeUpdate)
-    return () => window.removeEventListener('session-auto-mode-updated', handleAutoModeUpdate)
-  }, [resolveApproval])
-
-  const checkIsAlwaysAllowed = useCallback((tool, query) => {
-    const target = extractToolTarget(tool, query)
-    const allowedList = alwaysAllowedPathsRef.current || []
-
-    if (target.type === 'command') {
-      const cmdKey = `cmd:${target.value.toLowerCase()}`
-      return allowedList.some((item) => (item || '').toLowerCase() === cmdKey)
-    }
-
-    if (target.type === 'path' && target.value) {
-      const normTarget = target.value.replace(/[\\/]+/g, '/').toLowerCase()
-      const targetFolder = getFolderFromPath(normTarget)
-
-      return allowedList.some((item) => {
-        const normAllowed = (item || '').toLowerCase().replace(/[\\/]+/g, '/')
-        if (!normAllowed || normAllowed.startsWith('cmd:')) return false
-        return (
-          normTarget === normAllowed ||
-          targetFolder === normAllowed ||
-          normTarget.startsWith(normAllowed.endsWith('/') ? normAllowed : normAllowed + '/')
-        )
-      })
-    }
-
-    return false
-  }, [])
-
-  const checkIsSessionAllowed = useCallback((sessionId, tool, query) => {
-    const sid = sessionId ? String(sessionId) : '1'
-    const sessionSet = sessionAllowedMapRef.current.get(sid)
-    if (!sessionSet) return false
-
-    const target = extractToolTarget(tool, query)
-    const targetKey =
-      target.type === 'command'
-        ? `cmd:${target.value.toLowerCase()}`
-        : target.value
-          ? target.value.replace(/[\\/]+/g, '/').toLowerCase()
-          : tool
-    const folder = target.type === 'path' ? getFolderFromPath(targetKey) : ''
-
-    return sessionSet.has(targetKey) || (folder && sessionSet.has(folder))
-  }, [])
-
   const requestApproval = useCallback(
-    async (message, tool, query, meta = {}) => {
-      const sid = meta.sessionId ? String(meta.sessionId) : '1'
-      const forcePrompt = meta.forcePrompt || isComputerUseSessionOpen(tool, query)
-
-      // 1. Bypass otomatis jika is_auto_mode aktif pada sesi ini (in-memory ref ATAU database)
-      if (!forcePrompt && autoModeSessionsRef.current.has(sid)) {
-        return true
-      }
-      const isAuto = !forcePrompt && (await getSessionAutoMode(sid))
-      if (isAuto) {
-        autoModeSessionsRef.current.add(sid)
-        return true
-      }
-
-      // 2. Bypass jika sudah diizinkan selamanya (whitelist permanen)
-      if (!forcePrompt && checkIsAlwaysAllowed(tool, query)) {
-        return true
-      }
-
-      // 3. Bypass jika sudah diizinkan untuk sesi ini (in-memory)
-      if (!forcePrompt && checkIsSessionAllowed(sid, tool, query)) {
-        return true
-      }
-
-      if (window.api?.tgBroadcastToAdmins) {
-        window.api.tgBroadcastToAdmins(
-          `[INFO]: Persetujuan Dibutuhkan\nTool: \`${tool}\`\n\n${message}\n\n${forcePrompt ? 'Ketik /accept untuk mengizinkan sesi Computer Use ini, atau /reject untuk menolak.' : 'Ketik /accept untuk sekali, /session untuk sesi ini, /always untuk selamanya, atau /reject untuk menolak.'}`
-        )
-      }
-
-      const approvalId = `approval_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-
-      return new Promise((resolve) => {
-        const dataObj = {
-          id: approvalId,
+    (message, tool, query, meta = {}) =>
+      new Promise((resolve) => {
+        if (!meta.requestId || meta.signal?.aborted) {
+          resolve(false)
+          return
+        }
+        const existing = queue.current.find((entry) => entry.id === meta.requestId)
+        if (existing) {
+          existing.resolvers.push(resolve)
+          return
+        }
+        const resolvers = [resolve]
+        const item = {
+          id: meta.requestId,
           message,
           tool,
           query,
           meta,
           status: 'pending',
-          resolve
+          resolvers,
+          resolve: (result) => resolvers.forEach((done) => done(result))
         }
-        approvalRef.current = dataObj
-        setApprovalData(dataObj)
-      })
-    },
-    [checkIsAlwaysAllowed, checkIsSessionAllowed]
+        const abort = () => {
+          queue.current = queue.current.filter((entry) => entry !== item)
+          item.cleanup?.()
+          item.resolve(false)
+          showNext()
+        }
+        const timer = setTimeout(
+          abort,
+          Math.max(1, (meta.expiresAt || Date.now() + 300000) - Date.now())
+        )
+        item.cleanup = () => {
+          clearTimeout(timer)
+          meta.signal?.removeEventListener('abort', abort)
+        }
+        meta.signal?.addEventListener('abort', abort, { once: true })
+        queue.current.push(item)
+        showNext()
+      }),
+    [showNext]
   )
 
-  const activeTargetInfo =
-    approvalData && !isComputerUseSessionOpen(approvalData.tool, approvalData.query)
-      ? extractToolTarget(approvalData.tool, approvalData.query)
-      : null
+  useEffect(() => {
+    webApi.requestToolApproval = requestApproval
+    return () => {
+      if (webApi.requestToolApproval === requestApproval) delete webApi.requestToolApproval
+    }
+  }, [requestApproval])
+  useEffect(() => {
+    let alive = true
+    const receive = (packet) => {
+      if (alive)
+        requestApproval(packet.message, packet.tool, packet.query, {
+          ...packet,
+          sessionId: packet.owner.codingSessionId
+        }).catch(() => {})
+    }
+    const unsubscribe = webApi.onToolApprovalRequest(receive)
+    const closed = webApi.onToolApprovalClosed((data) => {
+      const current = queue.current.find((item) => item.id === data.requestId)
+      if (!current) return
+      current.cleanup?.()
+      current.resolve(data.status === 'allowed')
+      queue.current = queue.current.filter((item) => item !== current)
+      showNext()
+    })
+    webApi
+      .getPendingToolApprovals()
+      .then((items) => items.forEach(receive))
+      .catch(() => {})
+    return () => {
+      alive = false
+      unsubscribe()
+      closed()
+    }
+  }, [requestApproval, showNext])
+
+  useEffect(() => {
+    if (!approvalData) return
+    window.api
+      ?.tgBroadcastToAdmins?.(
+        approvalData.message +
+          '\n' +
+          (approvalData.meta.reason || '') +
+          '\n' +
+          (approvalData.meta.scopeLabel || '') +
+          '\n/accept untuk sekali, /reject untuk menolak.' +
+          (approvalData.meta.canRemember
+            ? ' /session atau /always untuk menyimpan cakupan izin ini.'
+            : '')
+      )
+      ?.catch?.(() => {})
+  }, [approvalData?.id])
+  useEffect(() => {
+    const handlers = [
+      ['onTgCommandAccept', 'approve_once'],
+      ['onTgCommandSession', 'approve_session'],
+      ['onTgCommandAlways', 'approve_always'],
+      ['onTgCommandReject', 'reject']
+    ].map(([event, choice]) =>
+      window.api?.[event]?.((data) => {
+        const current = queue.current[0]
+        if (!current) return
+        resolveApproval(
+          current.id,
+          current.meta.canRemember ? choice : choice === 'reject' ? choice : 'approve_once'
+        )
+        if (data?.chatId)
+          window.api?.tgSendMessage?.(data.chatId, 'Keputusan izin sedang diproses.')
+      })
+    )
+    return () => handlers.forEach((unsubscribe) => unsubscribe?.())
+  }, [resolveApproval])
+  useEffect(
+    () => () => {
+      for (const item of queue.current) {
+        item.cleanup?.()
+        item.resolve(false)
+      }
+      queue.current = []
+    },
+    []
+  )
+  useEffect(() => {
+    if (
+      !approvalData ||
+      (location.pathname === '/chat' &&
+        !approvalData.meta.owner?.approvalJobId &&
+        !approvalData.meta.direct)
+    )
+      return
+    const previous = document.activeElement
+    dialog.current?.querySelector('button')?.focus()
+    return () => previous?.focus?.()
+  }, [approvalData?.id, location.pathname])
 
   return (
     <ApprovalContext.Provider
       value={{
         requestApproval,
         resolveApproval,
-        activeApproval: approvalData,
-        alwaysAllowedPaths,
-        setAlwaysAllowedPaths
+        activeApproval:
+          approvalData?.meta.owner?.approvalJobId || approvalData?.meta.direct ? null : approvalData
       }}
     >
       {children}
-
-      {/* Floating Dialog: Hanya ditampilkan di MarkHome atau halaman non-ChatStudio */}
-      {approvalData && !isChatStudio && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-[response-fade-in_0.15s_ease-out_forwards]">
-          <div className="bg-base-200 border border-warning/30 p-6 rounded-2xl shadow-2xl max-w-lg w-full">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <h3 className="text-base font-bold text-warning flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-warning" /> Mark Meminta Izin
+      {approvalData &&
+        (location.pathname !== '/chat' ||
+          approvalData.meta.owner?.approvalJobId ||
+          approvalData.meta.direct) && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
+            role="presentation"
+          >
+            <div
+              ref={dialog}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="approval-title"
+              className="w-full max-w-lg max-h-[calc(100dvh-32px)] overflow-y-auto rounded-xl border border-white/10 bg-base-200 p-5 text-sm shadow-xl custom-scrollbar"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  resolveApproval(approvalData.id, 'reject')
+                }
+                if (event.key === 'Tab') {
+                  const buttons = [...dialog.current.querySelectorAll('button:not(:disabled)')]
+                  const first = buttons[0],
+                    last = buttons.at(-1)
+                  if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault()
+                    last?.focus()
+                  } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault()
+                    first?.focus()
+                  }
+                }
+              }}
+            >
+              <h3 id="approval-title" className="mb-3 flex items-center gap-2 font-semibold">
+                <ShieldAlert size={18} className="text-warning" />
+                Persetujuan tindakan
               </h3>
-              {approvalData.tool && (
-                <span className="badge badge-sm font-mono bg-warning/15 text-warning border-warning/30 font-semibold">
-                  <McpToolName name={approvalData.tool} />
-                </span>
+              <McpToolName name={approvalData.tool} />
+              <p className="mt-3 whitespace-pre-wrap break-words">{approvalData.message}</p>
+              <p className="mt-3 text-xs leading-relaxed text-base-content/70">
+                {approvalData.meta.reason}
+              </p>
+              <p className="mt-2 whitespace-pre-wrap break-words text-xs text-base-content/70">
+                {approvalData.meta.scopeLabel}
+              </p>
+              {approvalData.error && (
+                <p role="alert" className="mt-3 text-error">
+                  {approvalData.error}
+                </p>
               )}
-            </div>
-
-            <p className="mb-3 text-xs text-base-content/70">
-              Mark membutuhkan persetujuan Anda untuk mengeksekusi aksi berikut.
-            </p>
-
-            <div className="bg-base-300 p-3.5 rounded-xl overflow-x-auto max-h-56 overflow-y-auto shadow-inner border border-white/5 mb-4 text-xs font-mono text-base-content/90 custom-scrollbar">
-              {activeTargetInfo?.value ? (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] uppercase font-bold text-warning/80 flex items-center gap-1.5 select-none">
-                    {activeTargetInfo.type === 'command' ? (
-                      <>
-                        <Terminal className="w-3.5 h-3.5" />
-                        <span>Perintah Shell:</span>
-                      </>
-                    ) : (
-                      <>
-                        <FileCode className="w-3.5 h-3.5" />
-                        <span>Target Berkas:</span>
-                      </>
-                    )}
-                  </div>
-                  <div className="text-white whitespace-pre-wrap break-all">
-                    {activeTargetInfo.value}
-                  </div>
-                </div>
-              ) : (
-                <div className="whitespace-pre-wrap break-all">{approvalData.message}</div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
-              <button
-                className="btn btn-ghost btn-sm text-error hover:bg-error/10 border border-error/20 cursor-pointer"
-                onClick={() => resolveApproval(approvalData.id, 'reject')}
-              >
-                Tolak
-              </button>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="mt-5 flex flex-wrap gap-2">
                 <button
-                  className="btn btn-outline btn-sm cursor-pointer"
-                  onClick={() => resolveApproval(approvalData.id, 'approve_once')}
+                  type="button"
+                  disabled={approvalData.busy}
+                  className="btn btn-ghost btn-sm text-error"
+                  onClick={() => resolveApproval(approvalData.id, 'reject')}
                 >
-                  {isComputerUseSessionOpen(approvalData.tool, approvalData.query)
-                    ? 'Izinkan Computer Use'
-                    : 'Izinkan Sekali'}
+                  Tolak
                 </button>
-                {!isComputerUseSessionOpen(approvalData.tool, approvalData.query) && (
+                {approvalData.meta.canRemember && (
                   <>
                     <button
-                      className="btn btn-outline btn-warning btn-sm cursor-pointer"
+                      type="button"
+                      disabled={approvalData.busy}
+                      className="btn btn-ghost btn-sm"
                       onClick={() => resolveApproval(approvalData.id, 'approve_session')}
                     >
-                      Izinkan Sesi Ini
+                      Izinkan sesi ini
                     </button>
                     <button
-                      className="btn btn-error btn-sm shadow-md cursor-pointer font-semibold"
+                      type="button"
+                      disabled={approvalData.busy}
+                      className="btn btn-ghost btn-sm"
                       onClick={() => resolveApproval(approvalData.id, 'approve_always')}
                     >
-                      Izinkan Selamanya
+                      Simpan izin
                     </button>
                   </>
                 )}
+                <button
+                  type="button"
+                  disabled={approvalData.busy}
+                  className="btn btn-primary btn-sm"
+                  onClick={() => resolveApproval(approvalData.id, 'approve_once')}
+                >
+                  Izinkan sekali
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
     </ApprovalContext.Provider>
   )
 }

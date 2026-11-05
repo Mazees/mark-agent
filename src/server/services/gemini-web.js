@@ -87,11 +87,12 @@ export async function generateGeminiResponse(
   modelName = 'gemini-3.6-flash',
   cookie = '',
   bl = DEFAULT_BL,
-  { signal } = {}
+  { signal, strictModel = false } = {}
 ) {
   const reqModel = (modelName || 'gemini-3.6-flash').toLowerCase()
 
   let selected = GEMINI_WEB_MODELS[reqModel]
+  if (strictModel && !selected) throw new Error('Model peninjau tidak dikenal. Periksa konfigurasi model aktif.')
   if (!selected) {
     if (reqModel.includes('thinking-lite'))
       selected = GEMINI_WEB_MODELS['gemini-3.5-flash-thinking-lite']

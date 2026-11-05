@@ -266,3 +266,7 @@ Fitur Knowledge dan pencarian otomatis dokumen telah dihapus. Tabel `documents` 
 Paket Mark menyertakan MinGit, jadi pengguna tidak perlu memasang Git terpisah untuk diff, terminal Git, dan worktree. Pengembang menjalankan `npm run prepare:git` sebelum memakai fitur coding dari source. Persiapan paket memeriksa versi dan checksum distribusi resmi; pemakaian Mark tidak mengunduh Git.
 
 Kartu **Perubahan selama giliran ini** muncul di bawah jawaban setelah turn yang mengubah berkas. Checkpoint Git internal terpisah dari staging dan riwayat repository pengguna. Perubahan yang terjadi bersamaan bisa ikut tercatat. Detail cakupan, backup, dan batas undo tersedia di [panduan coding](docs/coding-workspace.md).
+
+### Perizinan tindakan
+
+Setiap percakapan menyediakan **Tanya pengguna**, **Tinjau Otomatis**, dan **Akses penuh**. Pada Tinjau Otomatis, edit biasa di workspace berjalan tanpa izin per berkas; tindakan lain, termasuk perubahan di luar workspace, ditinjau melalui request terpisah ke model utama. Peninjau mengizinkan atau menolak tanpa meminta persetujuan manual. Penilaian yang tidak jelas atau gagal menghentikan tindakan. Mark, Minibot, plugin, dan MCP memakai layanan perizinan backend yang sama. Lihat [panduan perizinan](docs/permissions.md) untuk cakupan izin, Computer Use, serta pemulihan sesi.

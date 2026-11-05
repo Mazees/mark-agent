@@ -254,38 +254,25 @@ export const startTelegramBot = async (token) => {
       wsHub.broadcast('tg:command-session', { chatId })
     })
 
-    bot.command(['auto', 'automode'], async (ctx) => {
+    bot.command('izin', async (ctx) => {
       const arg = (ctx.message?.text || '')
-        .replace(/^\/(auto|automode)(@\w+)?/i, '')
+        .replace(/^\/izin(@\w+)?/i, '')
         .trim()
         .toLowerCase()
       try {
         const session1 = dbStore.sessions.getById('1') || { id: '1' }
-        if (arg === 'on' || arg === '1' || arg === 'enable') {
-          session1.is_auto_mode = 1
-          session1.updated_at = Date.now()
-          dbStore.sessions.insert(session1)
-          wsHub.broadcast('session-auto-mode-updated', { sessionId: '1', isAutoMode: true })
-          await ctx.reply(
-            '[INFO]: Auto Mode untuk Sesi Utama telah DIAKTIFKAN (ON). Semua persetujuan tool akan disetujui otomatis.'
-          )
-        } else if (arg === 'off' || arg === '0' || arg === 'disable') {
-          session1.is_auto_mode = 0
-          session1.updated_at = Date.now()
-          dbStore.sessions.insert(session1)
-          wsHub.broadcast('session-auto-mode-updated', { sessionId: '1', isAutoMode: false })
-          await ctx.reply(
-            '[INFO]: Auto Mode untuk Sesi Utama telah DINONAKTIFKAN (OFF). Persetujuan tool aktif kembali.'
-          )
-        } else {
-          const current = Boolean(session1.is_auto_mode)
-          await ctx.reply(
-            `[INFO]: Status Auto Mode Sesi Utama saat ini: ${current ? 'AKTIF (ON)' : 'NONAKTIF (OFF)'}.\nKetik \`/auto on\` untuk mengaktifkan atau \`/auto off\` untuk mematikan.`,
-            { parse_mode: 'Markdown' }
-          )
-        }
+        const modes = { manual: 'Tanya pengguna', smart: 'Mode pintar', full: 'Akses penuh' }
+        if (modes[arg]) {
+          dbStore.sessions.insert({ ...session1, approvalMode: arg })
+          if (session1.approvalMode !== arg) {
+            const { toolApprovals } = await import('../../server/services/tool-approvals.js')
+            toolApprovals.modeChanged('1')
+          }
+          wsHub.broadcast('session-approval-mode-updated', { sessionId: '1', mode: arg })
+          await ctx.reply(`Mode izin sesi utama: ${modes[arg]}. Computer Use tetap memerlukan persetujuan awal.`)
+        } else await ctx.reply(`Mode izin: ${modes[session1.approvalMode] || modes.smart}.\nGunakan /izin manual, /izin smart, atau /izin full.`)
       } catch (err) {
-        await ctx.reply(`[ERROR]: Gagal memperbarui Auto Mode: ${err.message}`)
+        await ctx.reply(`[ERROR]: Gagal memperbarui mode izin: ${err.message}`)
       }
     })
 

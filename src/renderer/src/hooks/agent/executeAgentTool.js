@@ -3,6 +3,7 @@ import { executeWorkflowTool } from './executeWorkflowTool.js'
 import { webApi } from '../../api/web-bridge.js'
 import { skillSummary } from '@shared/skill-context.js'
 import { usesWorkspace } from '@shared/agent/coding-tools.js'
+import { authorizeAgentTool } from '../../api/toolAuthorization.js'
 
 /**
  * executeAgentTool
@@ -15,8 +16,7 @@ import { usesWorkspace } from '@shared/agent/coding-tools.js'
 export async function executeAgentTool({
   tool,
   rawArgs: incomingArgs,
-  computerUseApprovalToken,
-  mcpApprovalToken,
+  requestApproval,
   config,
   context,
   activeSessionNum,
@@ -197,16 +197,6 @@ export async function executeAgentTool({
     } catch (error) {
       res = { success: false, error: error.message }
     }
-  } else if (typeof tool === 'string' && tool.startsWith('plugin-')) {
-    const pluginPromise = window.api?.executePlugin
-      ? window.api.executePlugin(tool, rawArgs)
-      : webApi.executePluginAction(tool, rawArgs)
-    const abortPromise = new Promise((_, reject) => {
-      const onAbort = () => reject(new Error('AbortError'))
-      if (currentSignal?.aborted) return onAbort()
-      currentSignal?.addEventListener('abort', onAbort)
-    })
-    res = await Promise.race([pluginPromise, abortPromise])
   } else {
     const activeConfig = {
       ...(Array.isArray(config) ? config[0] : config),
@@ -219,14 +209,43 @@ export async function executeAgentTool({
       toolCallId: context?.toolCallId,
       taskId: durableTask?.id,
       stepId: incomingDurableActiveStep?.id,
-      computerUseApprovalToken,
-      mcpApprovalToken
+      approvalGoal: userInput,
+      approvalInstructions:
+        context?.approvalInstructions ||
+        [...(context?.loopMessages || [])]
+          .reverse()
+          .find((message) => message.role === 'user' && typeof message.content === 'string')
+          ?.content ||
+        '',
+      approvalRequestId: context?.toolCallId,
+      approvalReason: execReason
     }
+    const permission = await authorizeAgentTool(tool, rawArgs, activeConfig, {
+      signal: currentSignal,
+      requestApproval,
+      targetSetChatData,
+      onReview: context?.onApprovalReview
+    })
+    if (permission.denied)
+      return {
+        res: {
+          success: false,
+          denied: true,
+          code: 'APPROVAL_DENIED',
+          error: permission.reason,
+          haltRun: permission.pause || permission.source === 'user'
+        },
+        durableTask,
+        durableActiveStep
+      }
+    activeConfig.approvalRequestId = permission.requestId
     if (tool.startsWith('browser-')) {
       const sessionId = String(context?.sessionId || activeSessionNum || 1)
       activeConfig.sessionId = sessionId === '1' ? 'main' : `workspace-${sessionId}`
     }
-    const nativePromise = window.api.executeNativeTool(tool, rawArgs, activeConfig, currentSignal)
+    const nativePromise = tool.startsWith('plugin-')
+      ? webApi.executePluginAction(tool, rawArgs, activeConfig, currentSignal)
+      : window.api.executeNativeTool(tool, rawArgs, activeConfig, currentSignal)
     const abortPromise = new Promise((_, reject) => {
       const onAbort = () => reject(new Error('AbortError'))
       if (currentSignal?.aborted) return onAbort()

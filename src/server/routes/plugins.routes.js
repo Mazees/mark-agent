@@ -2,11 +2,11 @@ import { Router } from 'express'
 import { wsHub } from '../ws-hub.js'
 import {
   loadAllPlugins,
-  executePluginAction,
   savePluginDefinition,
   togglePluginState,
   deletePlugin
 } from '../../main/plugins/plugin-loader.js'
+import { executeRequestedTool } from './tool-approvals.routes.js'
 
 export const pluginsRouter = Router()
 
@@ -62,11 +62,13 @@ pluginsRouter.delete('/plugins/:name', async (req, res) => {
 })
 
 pluginsRouter.post('/plugins/execute', async (req, res) => {
-  const { action, query } = req.body || {}
+  const { action, query, config = {} } = req.body || {}
   try {
-    const result = await executePluginAction(action, query)
+    const controller = new AbortController()
+    res.once('close', () => { if (!res.writableEnded) controller.abort() })
+    const result = await executeRequestedTool(action, query, config, controller.signal)
     res.json(result)
   } catch (err) {
-    res.status(err.status || 500).json({ success: false, error: err.message })
+    res.status(err.status || 500).json({ success: false, error: err.message, code: err.code })
   }
 })

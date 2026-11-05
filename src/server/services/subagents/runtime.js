@@ -19,7 +19,8 @@ export class SubagentRuntime {
     review = null,
     canReviewAction = () => false,
     emit = () => {},
-    closeBrowser = async () => {}
+    closeBrowser = async () => {},
+    cancelApprovals = () => {}
   }) {
     createSubagentSchema(db)
     this.db = db
@@ -30,6 +31,7 @@ export class SubagentRuntime {
     this.reviews = new Map()
     this.emit = emit
     this.closeBrowser = closeBrowser
+    this.cancelApprovals = cancelApprovals
     this.active = new Map()
     this.stopped = true
     this.locks = new Map()
@@ -232,6 +234,7 @@ export class SubagentRuntime {
         title: input.parentSessionTitle || 'Main Thread',
         data: '[]',
         workspace_root: sessionId === '1' ? null : input.workspaceRoot || null,
+        approval_mode: 'smart',
         created_at: Date.now(),
         updated_at: Date.now(),
         timestamp: Date.now()
@@ -521,6 +524,7 @@ export class SubagentRuntime {
       if (job.status === 'waiting_review') return
       if (
         this.review &&
+        !job.permissionBlocked &&
         !job.clientRequest &&
         (!job.approval || this.canReviewAction(job, job.approval)) &&
         (job.approval || (job.reviewRounds || 0) < 3)
@@ -862,6 +866,7 @@ export class SubagentRuntime {
   cancel(jobId) {
     const job = this.job(jobId)
     if (terminal.has(job.status)) return job
+    this.cancelApprovals(job)
     this.reviews.get(jobId)?.controller.abort()
     this.active.get(job.agentId)?.jobId === jobId && this.active.get(job.agentId).controller.abort()
     if (job.runId && !this.active.has(job.agentId)) this.closeBrowser(job.runId).catch(() => {})
@@ -916,7 +921,8 @@ export class SubagentRuntime {
         sender: 'tool',
         tool_call_id: job.approval.id,
         name: job.approval.function?.name,
-        content: '[DITOLAK] Tindakan tidak disetujui. Ikuti arahan terbaru dan cari cara lain.'
+        content:
+          '[DITOLAK] Pengguna menolak tindakan ini. Jangan mengulangnya melalui variasi command atau tool. Tunggu instruksi baru untuk tindakan terkait.'
       })
     }
     const history = this.store.messages(jobId)
@@ -957,8 +963,10 @@ export class SubagentRuntime {
       markApprovedToolId: approved && reviewedByMark ? job.approval?.id : null,
       pendingInput: instruction || job.pendingInput || null,
       approval: null,
+      permissionBlocked: false,
       clientRequest: null,
-      lastResumeRequestId: requestId || null
+      lastResumeRequestId: requestId || null,
+      approvalEpoch: (job.approvalEpoch || 0) + (retry ? 1 : 0)
     })
     this.schedule()
     return resumed
@@ -1098,8 +1106,10 @@ export class SubagentRuntime {
     clearInterval(this.timer)
     for (const state of this.active.values()) state.controller.abort()
     for (const state of this.reviews.values()) state.controller.abort()
-    for (const job of this.jobs().filter(pending))
+    for (const job of this.jobs().filter(pending)) {
+      this.cancelApprovals(job)
       this.saveJob({ ...job, status: 'interrupted', phase: null })
+    }
     await Promise.allSettled([...this.active.values()].map((s) => s.promise))
     await Promise.allSettled([...this.reviews.values()].map((s) => s.promise))
     await Promise.allSettled(

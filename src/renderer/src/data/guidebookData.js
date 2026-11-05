@@ -204,7 +204,7 @@ export const guideArticles = [
     category: 'work',
     title: 'Cara kerja agen dan Super Effort',
     summary:
-      'Mark bekerja sebagai agen yang dapat memilih tindakan, menjalankan tool, dan menilai hasilnya untuk menyelesaikan permintaan. Super Effort mengatur ketekunan kerja, sedangkan Auto Mode berkaitan dengan persetujuan tindakan.',
+      'Mark bekerja sebagai agen yang memilih tindakan, menjalankan tool, dan memeriksa hasilnya untuk menyelesaikan permintaan. Super Effort mengatur ketekunan kerja, sedangkan mode perizinan menentukan tindakan yang boleh langsung dijalankan dan tindakan yang membutuhkan pemeriksaan atau persetujuan Anda.',
     keywords:
       'ReAct reasoning thought action observation read-tools routing auto mode rencana verifikasi',
     sections: [
@@ -223,10 +223,10 @@ export const guideArticles = [
         ]
       },
       {
-        title: 'Super Effort dan Auto Mode',
+        title: 'Super Effort dan mode perizinan',
         paragraphs: [
           'Super Effort mendorong Mark untuk melanjutkan pekerjaan dan memeriksa hasil sebelum menyatakan selesai. Pengaturannya tersedia melalui Pengaturan dan kontrol pada kolom pesan. Gunakan ketika pekerjaan membutuhkan penelusuran atau pemeriksaan yang lebih tekun.',
-          'Auto Mode mengatur persetujuan tool pada sesi yang digunakan. Mode ini dapat membuat tindakan berjalan tanpa dialog izin baru sesuai aturan fitur. Mengaktifkan Auto Mode tidak sama dengan meningkatkan kemampuan model; pilih mode tersebut berdasarkan pekerjaan dan akses yang Anda percayakan.'
+          'Pilihan perizinan berada pada kolom pesan dan berlaku untuk percakapan tersebut. Tanya pengguna meminta izin untuk perubahan yang belum disetujui. Mode pintar mengizinkan edit biasa di workspace dan memakai model utama untuk menilai tindakan lain. Akses penuh melewati pemeriksaan rutin, sedangkan pembukaan sesi Computer Use tetap meminta izin manusia. Pemilihan mode tidak mengubah kemampuan model.'
         ]
       },
       {
@@ -796,7 +796,7 @@ export const guideArticles = [
         title: 'Memilih tool dan menggunakannya',
         paragraphs: [
           'Tool yang ditemukan aktif secara default. Buka detail MCP untuk membaca deskripsi dan menonaktifkan tool satu per satu. Ketik @ dan pilih nama server pada chat untuk menunjukkan grup yang ingin dipakai. Jika ada nama yang sama, gunakan pilihan unik pada saran.',
-          'Pemanggilan mengikuti izin tool dan Auto Mode. Status aktif membuat tool tersedia tetapi tidak mengubah aturan persetujuan. Minibot juga mengikuti batas akses tool yang diberikan kepadanya. Hasil teks dan gambar dapat ditampilkan; jenis hasil lain akan diberi keterangan jika belum didukung.'
+          'Pemanggilan MCP mengikuti layanan perizinan yang sama dengan tool bawaan, berdasarkan mode percakapan dan izin yang telah diberikan. Mengaktifkan tool membuatnya tersedia tanpa otomatis mengizinkan seluruh tindakannya. Minibot tetap mengikuti batas tool penugasannya. Hasil teks dan gambar dapat ditampilkan; jenis hasil lain diberi keterangan jika belum didukung.'
         ]
       },
       {
@@ -992,7 +992,7 @@ export const guideArticles = [
     category: 'manage',
     title: 'Persetujuan dan akses tool',
     summary:
-      'Persetujuan tool adalah mekanisme untuk menentukan apakah Mark boleh menjalankan suatu tindakan. Anda dapat memberi izin sekali, selama sesi, atau secara permanen, serta mengatur Auto Mode sesuai pekerjaan yang dipercayakan.',
+      'Perizinan tool menentukan apakah suatu tindakan boleh dijalankan oleh Mark atau Minibot. Pilih mode per percakapan melalui kolom pesan: Tanya pengguna, Mode pintar, atau Akses penuh. Ketika keputusan Anda diperlukan, permintaan menampilkan pelaku, tool, target, dan cakupan izin yang akan diberikan.',
     keywords:
       'approval keamanan izin whitelist auto mode bypass sandbox shell hapus file delete risk',
     sections: [
@@ -1004,16 +1004,19 @@ export const guideArticles = [
         ]
       },
       {
-        title: 'Auto Mode dan izin yang sudah diberikan',
+        title: 'Tiga mode perizinan',
         paragraphs: [
-          'Auto Mode, izin sesi, dan izin permanen dapat membuat permintaan yang cocok berjalan tanpa dialog baru. MCP mengikuti pengaturan persetujuan tool yang sama, sehingga izin aktif dapat berlaku pada pemanggilannya.',
-          'Beberapa fitur mempunyai aturan khusus. Membuka sesi Computer Use tetap memerlukan persetujuan baru. Pilih durasi izin berdasarkan jenis pekerjaan serta akses yang ingin Anda berikan.'
+          'Tanya pengguna menjalankan operasi baca biasa dan meminta izin sebelum perubahan atau eksekusi yang belum diizinkan. Mode pintar, default percakapan baru, mengizinkan edit berkas biasa dalam workspace tanpa dialog per berkas. Tindakan yang perlu dinilai dikirim melalui request terpisah ke provider dan model utama; Anda tidak perlu mengisi API key tambahan.',
+          'Pada Tinjau Otomatis, peninjau mengizinkan atau menolak tindakan tanpa meminta persetujuan manual. Ini juga berlaku untuk target di luar workspace: permintaan eksplisit dinilai hanya untuk tindakan dan berkas yang disebutkan, bukan izin umum atas folder tersebut. Respons kosong, kegagalan koneksi, dan penilaian yang belum jelas menghentikan aksi dengan alasan yang ditampilkan di chat.',
+          'Perisai centang hijau pada aktivitas menandai izin dari peninjau AI, sedangkan perisai silang merah menandai penolakan yang tercatat. Izin dan hasil pekerjaan adalah dua hal berbeda: aksi yang diizinkan tetap dapat gagal ketika dijalankan. Aktivitas lama tanpa data izin tidak diberi penanda keputusan baru.',
+          'Akses penuh melewati persetujuan rutin dan peninjau model. Operasi katastrofik yang dikenali tetap diblokir. Pembukaan sesi Computer Use tetap membutuhkan izin awal manusia; Tinjau Otomatis menolak pembukaan sesi baru yang belum diizinkan tanpa membuka dialog manual. Sesi kendali yang sudah diizinkan dapat tetap digunakan oleh pekerjaan yang sama.',
+          'Sesi lama dengan Auto Mode aktif menjadi Akses penuh, sedangkan sesi lama lainnya menjadi Tanya pengguna. Mode tersimpan bersama percakapan. Pada Telegram, gunakan /izin manual, /izin smart, atau /izin full untuk sesi utama.'
         ]
       },
       {
         title: 'Meninjau dan mencabut izin',
         paragraphs: [
-          'Buka Pengaturan > Izin akses, hapus entri yang tidak diperlukan, lalu simpan perubahan. Tindakan berikutnya yang membutuhkan izin tersebut dapat kembali meminta persetujuan.',
+          'Buka Pengaturan > Izin akses untuk mencabut izin terstruktur secara langsung. Cakupan izin dapat berupa tool berkas pada folder tertentu atau tool beserta argumen yang sama persis. Folder absolut lama yang masih valid dipertahankan sebagai izin aktif. Entri lama yang ambigu tetap ditampilkan untuk dibersihkan, tetapi membutuhkan izin baru sebelum digunakan.',
           'Pencabutan tidak mengurungkan pekerjaan sebelumnya. Mark tetap merupakan layanan lokal dengan akses berkas dan otomasi komputer; pemilihan workspace serta dialog persetujuan tidak membentuk sandbox sistem operasi.'
         ]
       }

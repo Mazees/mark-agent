@@ -511,41 +511,6 @@ export async function renameSession(id, title) {
   }
 }
 
-export async function setSessionAutoMode(id, isAutoMode) {
-  try {
-    const cleanId = normalizeDbId(id)
-    const existing = await db.sessions.get(cleanId)
-    const val = isAutoMode ? 1 : 0
-    const updated = {
-      ...(existing || { id: cleanId, title: cleanId === '1' ? 'Main Thread' : 'Percakapan Baru' }),
-      id: cleanId,
-      is_auto_mode: val,
-      isAutoMode: val,
-      timestamp: Date.now()
-    }
-    await db.sessions.put(updated)
-    window.dispatchEvent(
-      new CustomEvent('session-auto-mode-updated', {
-        detail: { sessionId: cleanId, isAutoMode: Boolean(isAutoMode) }
-      })
-    )
-    return updated
-  } catch (error) {
-    console.error(`Error setSessionAutoMode ${id}:`, error)
-    return null
-  }
-}
-
-export async function getSessionAutoMode(id) {
-  try {
-    const cleanId = normalizeDbId(id)
-    const session = await getSessionSummary(cleanId)
-    return Boolean(session?.is_auto_mode || session?.isAutoMode)
-  } catch {
-    return false
-  }
-}
-
 export async function getChatData(sessionId = '1') {
   try {
     const cleanId = normalizeDbId(sessionId)

@@ -14,7 +14,9 @@ export const ApprovalBubble = ({
   query = null,
   status = 'pending'
 }) => {
-  const { resolveApproval } = useApproval()
+  const { resolveApproval, activeApproval } = useApproval()
+  const current = activeApproval?.id === approvalId ? activeApproval : null
+  const canRemember = Boolean(current?.meta.canRemember)
   const [showDiffModal, setShowDiffModal] = useState(false)
   const bubbleRef = useRef(null)
 
@@ -22,7 +24,12 @@ export const ApprovalBubble = ({
   useEffect(() => {
     if (status === 'pending' && bubbleRef.current) {
       const scrollTimer = setTimeout(() => {
-        bubbleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        bubbleRef.current?.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? 'auto'
+            : 'smooth',
+          block: 'nearest'
+        })
       }, 60)
       return () => clearTimeout(scrollTimer)
     }
@@ -78,7 +85,7 @@ export const ApprovalBubble = ({
       </div>
 
       <p className="text-white/60 text-[11px]">
-        Mark meminta izin untuk mengeksekusi operasi berikut:
+        {current?.meta.owner?.agentName || 'Mark'} meminta izin menjalankan tindakan berikut:
       </p>
 
       {/* Parameter / Command Preview */}
@@ -93,6 +100,20 @@ export const ApprovalBubble = ({
         </div>
       </div>
 
+      {current?.meta.reason && (
+        <p className="text-xs leading-relaxed text-base-content/75">{current.meta.reason}</p>
+      )}
+      {current?.meta.scopeLabel && (
+        <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-base-content/75">
+          {current.meta.scopeLabel}
+        </p>
+      )}
+      {current?.error && (
+        <p role="alert" className="text-xs text-error">
+          {current.error}
+        </p>
+      )}
+
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1 pb-1">
         <button
@@ -103,7 +124,7 @@ export const ApprovalBubble = ({
           Tolak
         </button>
         <div className="flex flex-wrap items-center gap-1.5">
-          {!opensComputerUse && (
+          {canRemember && (
             <>
               <button
                 type="button"

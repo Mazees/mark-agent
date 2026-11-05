@@ -5,6 +5,8 @@ import Database from 'better-sqlite3'
 import { createSubagentSchema } from '../services/subagents/storage.js'
 import { createMcpStore } from '../services/mcp-store.js'
 import { createCodingStore } from '../services/coding-store.js'
+import { createApprovalStore } from '../services/approval-store.js'
+import { validApprovalMode } from '../../shared/approval-modes.js'
 import { getCurrentVersion } from '../services/updater.js'
 import { exportCheckpointArchives, restoreCheckpointArchives } from '../services/coding-git.js'
 
@@ -19,6 +21,7 @@ const DB_PATH = process.env.MARK_DB_PATH || path.join(CONFIG_DIR, 'mark.db')
 export const sqlite = new Database(DB_PATH)
 export const mcpStore = createMcpStore(sqlite)
 export const codingStore = createCodingStore(sqlite)
+export const approvalStore = createApprovalStore(sqlite)
 
 // Optimasi performa SQLite (WAL mode, memory temp store, normal sync)
 sqlite.pragma('journal_mode = WAL')
@@ -226,8 +229,10 @@ function ensureTableColumns(tableName, requiredColumns) {
 
 ensureTableColumns('sessions', {
   workspace_root: 'TEXT',
-  is_auto_mode: 'INTEGER DEFAULT 0'
+  is_auto_mode: 'INTEGER DEFAULT 0',
+  approval_mode: 'TEXT'
 })
+sqlite.exec("UPDATE sessions SET approval_mode = CASE WHEN is_auto_mode = 1 THEN 'full' ELSE 'manual' END WHERE approval_mode IS NULL")
 
 // Migrasi satu kali jika ada data di kolom legacy workspace
 try {
@@ -376,6 +381,8 @@ class SqliteTable {
       res.workspaceRoot = res.workspace_root || res.workspaceRoot || null
       delete res.workspace
       delete res.workspace_root
+      delete res.is_auto_mode
+      delete res.isAutoMode
     }
 
     const structuredFields =
@@ -471,6 +478,13 @@ class SqliteTable {
       raw.workspaceRoot = raw.workspaceRoot || null
       delete raw.workspace
       delete raw.workspace_root
+      const existing = this.getById(cleanId)
+      const mode = raw.approvalMode ?? raw.approval_mode ?? existing?.approvalMode ?? 'smart'
+      if (!validApprovalMode(mode)) throw new Error('Mode perizinan tidak valid.')
+      raw.approval_mode = mode
+      raw.approvalMode = mode
+      delete raw.is_auto_mode
+      delete raw.isAutoMode
     }
 
     if (this.tableName === 'sessions' && raw.data != null) {
@@ -679,7 +693,8 @@ export function exportFullDatabase() {
     agentTasks: dbStore.agentTasks.getAll(),
     agentTaskSteps: dbStore.agentTaskSteps.getAll(),
     mcpAddons: mcpStore.list(),
-    codingRecords: codingStore.export()
+    codingRecords: codingStore.export(),
+    toolPermissions: approvalStore.export()
   }
 
   return {
@@ -738,6 +753,7 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
   }
 
   const restoreTransaction = sqlite.transaction(() => {
+    approvalStore.restore(rawTables.toolPermissions, overwrite)
     if (Array.isArray(rawTables.codingRecords))
       codingStore.restore(rawTables.codingRecords, overwrite)
     else if (overwrite) codingStore.restore([], true)
@@ -756,7 +772,9 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
           targetStore.clear()
         }
         for (const item of items) {
-          targetStore.insert(item)
+          targetStore.insert(key === 'sessions' && !item.approvalMode && !item.approval_mode
+            ? { ...item, approvalMode: item.isAutoMode || item.is_auto_mode ? 'full' : 'manual' }
+            : item)
         }
         results[key] = items.length
       }
@@ -806,6 +824,7 @@ export function resetAllExceptConfig() {
     dbStore.agentTasks.clear()
     dbStore.agentTaskSteps.clear()
     codingStore.restore([], true)
+    approvalStore.restore(null, true)
 
     // 2. Reset hubungan / sifat relasional ke nilai default awal
     dbStore.relationships.clear()

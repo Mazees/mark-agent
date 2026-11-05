@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { codingStore, dbStore } from '../memory/db-store.js'
 import { fileHash, rootKey, scopedPath, instructionsFor, workspaceFor } from './coding-workspace.js'
@@ -6,6 +7,7 @@ import { parsePatch, writeBytes } from '../../main/tools/file-patch.js'
 import { validateFileSyntax } from '../../main/syntax-validator.js'
 import { wsHub } from '../ws-hub.js'
 import { isVerificationCommand } from '../../shared/agent/execution-quality.js'
+import { isApprovedFileTarget } from './tool-file-scope.js'
 import {
   captureWorkspace,
   checkpointChanges,
@@ -248,6 +250,17 @@ function recordObserved(run, changes) {
     run.observed[change.path] = fileHash(change.after)
   }
 }
+function workspaceInstructions(root, files) {
+  const inside = files.filter((file) => {
+    try {
+      scopedPath(root, file)
+      return true
+    } catch {
+      return false
+    }
+  })
+  return inside.length ? instructionsFor(root, inside) : []
+}
 export function wrapCodingTool(name, tool) {
   if (
     !mutations.has(name) &&
@@ -264,10 +277,16 @@ export function wrapCodingTool(name, tool) {
       if (run.finishedAt)
         throw new Error('Rekaman coding sudah ditutup; gunakan identitas turn yang baru.')
       const parsed = fileArgs(args)
+      const resolveFile = (value) => {
+        const file = path.resolve(run.root, value)
+        return isApprovedFileTarget(config, name, args, run.root, file)
+          ? file
+          : scopedPath(run.root, value)
+      }
       if (name === 'read-file') {
         let observedFile
         try {
-          observedFile = scopedPath(run.root, parsed.path)
+          observedFile = resolveFile(parsed.path)
         } catch {
           return tool.handler(args, config)
         }
@@ -276,7 +295,7 @@ export function wrapCodingTool(name, tool) {
         if (result.success) {
           let file
           try {
-            file = scopedPath(run.root, parsed.path)
+            file = resolveFile(parsed.path)
           } catch {
             return result
           }
@@ -289,7 +308,7 @@ export function wrapCodingTool(name, tool) {
             }
           const fresh = codingStore.get('run', run.id)
           fresh.observed[file] = afterRead
-          const guidance = instructionsFor(run.root, [file])
+          const guidance = workspaceInstructions(run.root, [file])
           fresh.guidance = [...new Set([...fresh.guidance, ...guidance.map((item) => item.hash)])]
           result.projectInstructions = guidance
           saveResult(fresh)
@@ -325,14 +344,14 @@ export function wrapCodingTool(name, tool) {
       }
       const plans =
         name === 'apply-patch'
-          ? parsePatch(parsed.patch, (file) => scopedPath(run.root, file))
-          : [{ path: scopedPath(run.root, parsed.path) }]
+          ? parsePatch(parsed.patch, resolveFile)
+          : [{ path: resolveFile(parsed.path) }]
       return locked(
         plans.map((p) => p.path),
         async () => {
           const fresh = codingStore.get('run', run.id)
           if (callId && fresh.calls[callId]) return fresh.calls[callId]
-          const guidance = instructionsFor(
+          const guidance = workspaceInstructions(
             run.root,
             plans.map((p) => p.path)
           )
@@ -348,10 +367,12 @@ export function wrapCodingTool(name, tool) {
             }
           }
           for (const plan of plans) {
-            scopedPath(run.root, plan.path)
+            resolveFile(plan.path)
             if (
               config.ownedFiles?.length &&
-              !config.ownedFiles.some((file) => scopedPath(run.root, file) === plan.path)
+              !config.ownedFiles.some(
+                (file) => rootKey(path.resolve(run.root, file)) === rootKey(plan.path)
+              )
             )
               return {
                 success: false,
@@ -360,7 +381,14 @@ export function wrapCodingTool(name, tool) {
               }
             const current = bytes(plan.path),
               hash = fileHash(current)
-            if (current && !(plan.path in fresh.observed))
+            if (
+              current &&
+              !(plan.path in fresh.observed) &&
+              !(
+                name === 'delete-file' &&
+                isApprovedFileTarget(config, name, args, run.root, plan.path)
+              )
+            )
               return {
                 success: false,
                 code: 'FILE_READ_REQUIRED',

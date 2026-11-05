@@ -8,6 +8,7 @@ import { recoverTaskWorkflows } from '../services/task-workflow.js'
 import { mcpRuntime } from '../services/mcp-service.js'
 import { mcpVault } from '../services/mcp-vault.js'
 import { shutdownTerminals } from '../services/terminal-service.js'
+import { toolApprovals } from '../services/tool-approvals.js'
 
 export const memoryRouter = Router()
 
@@ -51,7 +52,7 @@ memoryRouter.get('/sessions', (req, res) => {
     const summaries = dbStore.sqlite
       .prepare(
         `
-      SELECT id, title, workspace_root AS workspaceRoot, is_auto_mode AS isAutoMode, timestamp
+      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, timestamp
       FROM sessions ORDER BY rowid ASC
     `
       )
@@ -67,7 +68,7 @@ memoryRouter.get('/sessions/:id', (req, res) => {
     const summary = dbStore.sqlite
       .prepare(
         `
-      SELECT id, title, workspace_root AS workspaceRoot, is_auto_mode AS isAutoMode, timestamp
+      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, timestamp
       FROM sessions WHERE id = ?
     `
       )
@@ -80,6 +81,8 @@ memoryRouter.get('/sessions/:id', (req, res) => {
 
 memoryRouter.post('/sessions', (req, res) => {
   const item = { ...req.body }
+  item.approvalMode = dbStore.sessions.getById(item.id)?.approvalMode || 'smart'
+  delete item.approval_mode
   if (item.data != null) item.data = subagentRuntime.mergeReports(String(item.id || '1'), item.data)
   if (isInvalidMainWorkspace(item))
     return res
@@ -99,6 +102,8 @@ memoryRouter.post('/sessions/batch', (req, res) => {
     items.map((item) =>
       sessionForClient({
         ...item,
+        approvalMode: dbStore.sessions.getById(item.id)?.approvalMode || 'smart',
+        approval_mode: undefined,
         ...(item.data == null
           ? {}
           : { data: subagentRuntime.mergeReports(String(item.id || '1'), item.data) })
@@ -234,6 +239,7 @@ memoryRouter.post('/db/restore', async (req, res) => {
     await mcpRuntime.shutdown()
     await shutdownTerminals()
     const result = dbStore.restoreFullDatabase(dumpData, { overwrite })
+    toolApprovals.clear()
     if (Array.isArray((dumpData.tables || dumpData).mcpAddons)) {
       await Promise.all(
         (dumpData.tables || dumpData).mcpAddons.map((addon) => mcpVault.remove(addon.id))
@@ -255,6 +261,7 @@ memoryRouter.post('/db/reset-ai', async (_req, res) => {
     await subagentRuntime.stop()
     await shutdownTerminals()
     const result = dbStore.resetAllExceptConfig()
+    toolApprovals.clear()
     subagentRuntime.start()
     initOramaIndices().catch(() => {})
     wsHub.broadcast('db:restored', { timestamp: Date.now(), reset: true })

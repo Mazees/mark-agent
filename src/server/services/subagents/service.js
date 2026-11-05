@@ -22,11 +22,8 @@ import { usesWorkspace } from '../../../shared/agent/coding-tools.js'
 import { beginCodingRun, finishCodingRun } from '../coding-execution.js'
 import { SubagentRuntime } from './runtime.js'
 import { createJobExecutor } from './executor.js'
-import { DEFAULT_WORKSPACE_ROOT } from '../../workspace-policy.js'
-import { hasStoredToolPermission } from './permissions.js'
-import { canMarkReviewAction, createMarkReviewer } from './reviewer.js'
-import { isComputerUseSessionOpen } from '../../../shared/computer-use.js'
-import { grantComputerUsePermission } from '../../tools/computer-use-permissions.js'
+import { createMarkReviewer } from './reviewer.js'
+import { toolApprovals } from '../tool-approvals.js'
 import { closeComputerUseSession } from '../../tools/pc-agent.js'
 import { mcpGroups, executeMcpTool } from '../mcp-service.js'
 
@@ -48,7 +45,11 @@ async function dispatch(name, args, ctx, call) {
   ctx.check()
   const agent = ctx.runtime.profile(ctx.job.agentId)
   const currentTools = agent.allowedTools
-  if (!currentTools.includes('*') && !currentTools.includes(name))
+  const jobTools = ctx.runtime.job(ctx.job.id).allowedTools || currentTools
+  if (
+    (!currentTools.includes('*') && !currentTools.includes(name)) ||
+    (!jobTools.includes('*') && !jobTools.includes(name))
+  )
     throw new Error('Izin tool telah dicabut.')
   if (name === 'read-tools') {
     const group = (await toolGroups())[args.group_name]
@@ -118,38 +119,8 @@ async function dispatch(name, args, ctx, call) {
   }
   const tool = NATIVE_TOOLS[name]
   const isMcp = name.startsWith('mcp_')
-  const needsApproval =
-    isMcp ||
-    (typeof tool?.needsApproval === 'function' ? tool.needsApproval(args) : tool?.needsApproval)
   const job = ctx.runtime.job(ctx.job.id)
   const workspaceRoot = workspaceFor(job.parentSessionId || '1').root
-  const session = dbStore.sessions.getById(job.parentSessionId)
-  const configRow = dbStore.config.getAll()[0] || {}
-  const permissionConfig = { ...getActiveConfig(), ...(configRow.data || configRow) }
-  const storedPermission = hasStoredToolPermission(
-    name,
-    args,
-    workspaceRoot,
-    session,
-    permissionConfig
-  )
-  const approved =
-    job.approvedToolId === call.id &&
-    (job.markApprovedToolId !== call.id || canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT))
-  const opensComputerUse = isComputerUseSessionOpen(name, args)
-  if (
-    needsApproval &&
-    (!approved || (isMcp && job.markApprovedToolId === call.id)) &&
-    (isMcp || opensComputerUse || !storedPermission)
-  )
-    return {
-      wait: {
-        status: 'waiting_user',
-        approval: call,
-        error: toolApprovalMessage(tool, args, agent.name, name)
-      }
-    }
-  ctx.update({ approvedToolId: null, markApprovedToolId: null })
   const config = {
     ...getActiveConfig(),
     workspaceRoot,
@@ -163,13 +134,63 @@ async function dispatch(name, args, ctx, call) {
     stepId: job.stepId,
     sessionId: ctx.runId,
     agentName: ctx.agent.name,
+    approvalRunId: `job:${job.id}:${job.approvalEpoch || 0}`,
+    approvalJobId: job.id,
+    approvalGoal: job.goal,
+    approvalInstructions: job.pendingInput || job.contextSummary || '',
+    approvalRequestId: `${job.id}:${job.approvalEpoch || 0}:${job.approvalRequestEpoch || 0}:${call.id}`,
     signal: ctx.signal
   }
-  if (opensComputerUse && approved && job.markApprovedToolId !== call.id)
-    config.computerUseApprovalToken = grantComputerUsePermission({
-      sessionId: ctx.runId,
-      runId: ctx.runId
-    })
+  ctx.phase('using_tool', 'Meninjau izin tindakan…')
+  let permission
+  let expired = false
+  try {
+    permission = await toolApprovals.evaluate(name, args, config, { signal: ctx.signal })
+  } catch (cause) {
+    if (!['APPROVAL_EXPIRED', 'APPROVAL_STALE'].includes(cause.code)) throw cause
+    expired = true
+    const epoch = (job.approvalRequestEpoch || 0) + 1
+    ctx.update({ approvalRequestEpoch: epoch })
+    config.approvalRequestId = `${job.id}:${job.approvalEpoch || 0}:${epoch}:${call.id}`
+    permission = await toolApprovals.evaluate(name, args, config, { signal: ctx.signal })
+  }
+  if (
+    !expired &&
+    permission.needsApproval &&
+    job.approvedToolId === call.id &&
+    job.markApprovedToolId !== call.id
+  )
+    permission = await toolApprovals.decide(permission.requestId, config, 'approve_once')
+  if (permission.denied) {
+    if (permission.pause)
+      return { wait: { status: 'waiting_user', permissionBlocked: true, error: permission.reason } }
+    return { success: false, code: 'APPROVAL_DENIED', error: permission.reason }
+  }
+  if (permission.needsApproval) {
+    ctx.phase('waiting_user', permission.reason)
+    const packet = toolApprovals
+      .pendingJobs()
+      .find((item) => item.requestId === permission.requestId)
+    if (packet) wsHub.broadcast('tool:approval-request', packet)
+    try {
+      permission = await toolApprovals.waitForDecision(permission.requestId, ctx.signal)
+    } catch (cause) {
+      ctx.check()
+      if (cause.code !== 'APPROVAL_EXPIRED') throw cause
+      return {
+        wait: {
+          status: 'waiting_user',
+          approval: call,
+          error: `${toolApprovalMessage(tool, args, agent.name, name)}\nPermintaan izin kedaluwarsa. Lanjutkan untuk meminta izin baru.`,
+          toolApprovalRequestId: permission.requestId
+        }
+      }
+    }
+    if (permission.denied)
+      return { wait: { status: 'waiting_user', permissionBlocked: true, error: permission.reason } }
+  }
+  ctx.update({ approvedToolId: null, markApprovedToolId: null, toolApprovalRequestId: null })
+  ctx.phase('using_tool', name)
   const run = async () => {
     ctx.check()
     if (usesWorkspace(name)) {
@@ -180,11 +201,18 @@ async function dispatch(name, args, ctx, call) {
       })
     }
     ctx.pending(call)
-    const result = isMcp
-      ? await executeMcpTool(name, args, ctx.signal)
-      : tool
-        ? await tool.handler(args, config)
-        : await executePluginAction(name, args)
+    const result = await toolApprovals.execute(name, args, config, (approvedConfig) => {
+      ctx.check()
+      const profileTools = ctx.runtime.profile(ctx.job.agentId).allowedTools
+      const assignedTools = ctx.runtime.job(ctx.job.id).allowedTools || profileTools
+      if ([profileTools, assignedTools].some((list) => !list.includes('*') && !list.includes(name)))
+        throw new Error('Izin tool telah dicabut.')
+      return isMcp
+        ? executeMcpTool(name, args, ctx.signal)
+        : tool
+          ? tool.handler(args, approvedConfig)
+          : executePluginAction(name, args)
+    })
     ctx.check()
     return result && typeof result === 'object' && 'success' in result
       ? result
@@ -263,7 +291,13 @@ export const subagentRuntime = new SubagentRuntime({
     }
   },
   review: createMarkReviewer({ fetch: fetchAI, config: getActiveConfig }),
-  canReviewAction: (job, call) => canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT),
+  canReviewAction: () => false,
+  cancelApprovals: (job) =>
+    toolApprovals.cancel({
+      codingSessionId: job.parentSessionId || '1',
+      approvalJobId: job.id,
+      approvalRunId: `job:${job.id}:${job.approvalEpoch || 0}`
+    }),
   emit: (event, payload) => {
     if (event === 'subagent:report') {
       for (const id of payload.codingRunIds || []) {

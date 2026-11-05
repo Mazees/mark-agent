@@ -2,6 +2,8 @@
 
 Chat Studio memakai workspace sesi sebagai lokasi efektif untuk konteks proyek, edit native, terminal, dan pekerjaan Minibot. Panel kanan menyediakan Perubahan, Terminal, dan Browser. Provider, persona, dan alur persetujuan tool tetap mengikuti konfigurasi pengguna.
 
+Mutasi berkas di luar workspace yang telah diizinkan backend dapat dijalankan melalui tool native, dengan cakupan persis pada tool, argumen, dan target yang disetujui. Cakupan ini diteruskan dalam memori selama eksekusi, bukan melalui flag izin dari client. Pemeriksaan konflik dan kepemilikan berkas tetap berlaku. Checkpoint, diff, dan undo workspace tetap hanya mencakup berkas dalam workspace; operasi pada berkas di luar folder tersebut tidak memperluas cakupan kartu perubahan.
+
 Panel Perubahan menjelaskan fungsi peninjauan kode sebelum menampilkan daftar berkas. Cakupan Giliran dipilih membuka rekaman yang tepat, sedangkan Seluruh workspace memakai HEAD proyek Git atau baseline awal folder non-Git. Kondisi kosong memberi petunjuk untuk meminta perubahan melalui chat. Hasil pemeriksaan muncul ketika ada pekerjaan atau hasil yang bisa ditinjau; worktree ditempatkan pada Pengaturan lanjutan.
 
 Tab Terminal menyiapkan satu terminal saat pertama dibuka jika daftar terminal sesi kosong. Pembuatan otomatis memakai `POST /terminals` dengan `onlyIfEmpty: true`, sehingga permintaan bersamaan tidak menggandakan terminal awal. Tombol tambah tetap membuat terminal baru secara eksplisit.

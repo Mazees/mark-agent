@@ -1,9 +1,35 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Folder, Search, ShieldCheck, Terminal, X } from 'lucide-react'
 import { configProps, controlClass } from './configStyles'
+import { webApi } from '../../api/web-bridge.js'
 
 export const PermissionsSection = ({ config, setConfig }) => {
   const [search, setSearch] = useState('')
+  const [grants, setGrants] = useState([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      setGrants(await webApi.getToolGrants())
+      setError('')
+    } catch (cause) {
+      setError(cause.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+  const revoke = async (id) => {
+    try {
+      await webApi.removeToolGrant(id)
+      await load()
+    } catch (cause) {
+      setError(cause.message)
+    }
+  }
   const paths = Array.isArray(config.alwaysAllowedPaths)
     ? config.alwaysAllowedPaths.filter((item) => typeof item === 'string')
     : []
@@ -17,9 +43,58 @@ export const PermissionsSection = ({ config, setConfig }) => {
     }))
   return (
     <div className="space-y-5">
+      <div>
+        <h3 className="text-sm font-medium">Izin aktif</h3>
+        <p className="mt-2 text-xs leading-relaxed text-base-content/75">
+          Izin ini diperiksa bersama oleh Mark dan Minibot. Menghapus izin langsung mencabutnya
+          untuk tindakan berikutnya, tanpa mengurungkan pekerjaan sebelumnya.
+        </p>
+        {loading && (
+          <p role="status" className="mt-3 text-xs">
+            Memuat izin…
+          </p>
+        )}
+        {error && (
+          <div role="alert" className="mt-3 text-xs text-error">
+            {error}
+            <button type="button" className="btn btn-ghost btn-xs ml-2" onClick={load}>
+              Coba lagi
+            </button>
+          </div>
+        )}
+        {!loading && !error && grants.length === 0 && (
+          <p className="mt-4 text-sm text-base-content/70">Belum ada izin yang disimpan.</p>
+        )}
+        <ul className="mt-3 divide-y divide-white/10">
+          {grants.map((grant) => (
+            <li key={grant.id} className="flex items-start gap-3 py-3">
+              <ShieldCheck size={17} className="mt-1 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-xs font-medium">{grant.tool}</p>
+                <p className="mt-1 break-all text-xs text-base-content/75">
+                  {grant.kind === 'folder' ? grant.target : 'Tool dan argumen yang telah diizinkan'}
+                </p>
+                <p className="mt-1 text-xs text-base-content/70">
+                  {grant.session_id ? 'Sesi ' + grant.session_id : 'Berlaku permanen'}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label={'Cabut izin ' + grant.tool}
+                onClick={() => revoke(grant.id)}
+                className="btn btn-ghost btn-sm btn-circle text-base-content/70 hover:text-error"
+              >
+                <X size={16} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {paths.length > 0 && <h3 className="text-sm font-medium">Izin versi sebelumnya</h3>}
       <p className="text-xs leading-relaxed text-white/50">
-        Hapus entri dari daftar, lalu simpan pengaturan untuk mencabut izinnya. Mark akan meminta
-        konfirmasi lagi saat akses tersebut diperlukan.
+        Folder absolut yang masih valid dipertahankan sebagai izin aktif. Entri lama yang ambigu
+        memerlukan izin baru melalui chat. Untuk membersihkan daftar lama, hapus entri lalu simpan
+        pengaturan; pencabutan izin aktif dilakukan pada daftar di atas.
       </p>
       {paths.length > 0 ? (
         <>
@@ -73,16 +148,7 @@ export const PermissionsSection = ({ config, setConfig }) => {
             </p>
           )}
         </>
-      ) : (
-        <div className="rounded-xl border border-dashed border-white/15 px-6 py-10 text-center">
-          <ShieldCheck size={25} className="mx-auto mb-4 text-white/35" />
-          <p className="text-sm text-white/75">Belum ada izin tersimpan.</p>
-          <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-white/45">
-            Izin yang Anda berikan melalui pilihan “Izinkan Selamanya” di percakapan akan muncul di
-            sini.
-          </p>
-        </div>
-      )}
+      ) : null}
     </div>
   )
 }

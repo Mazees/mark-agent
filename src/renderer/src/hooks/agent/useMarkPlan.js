@@ -826,55 +826,10 @@ export const useMarkPlan = ({
       }
       // 11. Built-in Native Tools & Minibot Orchestration
       else if (checkTools(tool)) {
-        const approvalOwner = {
-          sessionId: String(context?.sessionId || activeSessionNum || 1),
-          computerUseRunId: agenticProcessId
-        }
-        const approvalCheck = await window.api.checkToolApproval(tool, rawArgs, approvalOwner)
-        let computerUseApprovalToken
-        let mcpApprovalToken
-
-        if (approvalCheck.needsApproval && !requestApproval && tool.startsWith('mcp_')) {
-          return {
-            resultString: '[DITOLAK] Persetujuan untuk tool MCP tidak tersedia.',
-            rejected: true
-          }
-        }
-        if (approvalCheck.needsApproval && requestApproval) {
-          const userApproved = await requestApproval(approvalCheck.message, tool, rawArgs, {
-            sessionId: activeSessionNum,
-            targetSetChatData,
-            forcePrompt: approvalCheck.requiresFreshApproval === true
-          })
-          if (approvalCheck.permissionRequestId)
-            computerUseApprovalToken = await webApi.decideComputerUsePermission(
-              approvalCheck.permissionRequestId,
-              approvalOwner,
-              userApproved
-            )
-          if (approvalCheck.mcpPermissionRequestId)
-            mcpApprovalToken = await webApi.decideMcpPermission(
-              approvalCheck.mcpPermissionRequestId,
-              approvalOwner,
-              userApproved
-            )
-          if (!userApproved) {
-            resultString = approvalCheck.permissionRequestId
-              ? '[DITOLAK] Pengguna menolak membuka sesi Computer Use. Jangan mengendalikan desktop atau mencari jalur pengganti; tunggu instruksi baru.'
-              : `[DITOLAK] User menolak eksekusi "${tool}". Cari cara lain atau tanyakan user.`
-            return {
-              resultString,
-              rejected: true,
-              toolExecution: { action: tool, query: stringQuery, result: resultString }
-            }
-          }
-        }
-
         const executionResult = await executeAgentTool({
           tool,
           rawArgs,
-          computerUseApprovalToken,
-          mcpApprovalToken,
+          requestApproval,
           config,
           context,
           activeSessionNum,
@@ -1048,7 +1003,8 @@ export const useMarkPlan = ({
           res,
           success: Boolean(res?.success),
           resultString,
-          rejected: false,
+          rejected: Boolean(res?.denied),
+          haltRun: res?.haltRun,
           imageUrls: toolImageUrls,
           previewUrl: toolPreviewUrl,
           toolExecution: { action: tool, query: stringQuery, result: resultString },
@@ -1069,7 +1025,11 @@ export const useMarkPlan = ({
           data: { action: tool, query: stringQuery }
         })
 
-        const pluginPromise = window.api.executePlugin(tool, rawArgs)
+        const pluginPromise = executeAgentTool({
+          tool, rawArgs, requestApproval, config, context, activeSessionNum, activeTopic,
+          userInput, durableTask, durableActiveStep, agenticProcessId, targetPushProcess,
+          targetSetChatData, currentSignal, getCurrentTimeInfo
+        }).then((result) => result.res)
         const abortPromise = new Promise((_, reject) => {
           const onAbort = () => reject(new Error('AbortError'))
           if (currentSignal?.aborted) return onAbort()
@@ -1104,7 +1064,8 @@ export const useMarkPlan = ({
           res,
           success: Boolean(res?.success),
           resultString,
-          rejected: false,
+          rejected: Boolean(res?.denied),
+          haltRun: res?.haltRun,
           imageUrls: pluginImage?.modelUrl ? [pluginImage.modelUrl] : null,
           previewUrl: pluginImage?.previewUrl || null,
           toolExecution: { action: tool, query: stringQuery, result: resultString }
@@ -2793,6 +2754,16 @@ export const useMarkPlan = ({
             const execResult = await executeSingleTool(toolName, parsedArgs, {
               tgContext,
               toolCallId: `${agenticProcessId}:${stepCount}:${tc.id}`,
+              onApprovalReview: (reviewing, permission) => {
+                if (currentInFlightTool) currentInFlightTool = {
+                  ...currentInFlightTool,
+                  reason: reviewing ? 'Meninjau izin tindakan…' : toolReason,
+                  ...(permission ? { approval: { source: permission.source, status: permission.status } } : {})
+                }
+                targetSetChatData((items) => items.map((item) => item.id === sessionRecord.thinkingId
+                  ? { ...item, executedTools: [...executedToolsList, ...(currentInFlightTool ? [currentInFlightTool] : [])] }
+                  : item))
+              },
               onSkillLoaded: recordSkill,
               skillRefs: [...sessionRecord.skills.values()].map(skillSummary),
               isAutonomous,
@@ -2849,6 +2820,11 @@ export const useMarkPlan = ({
             }
 
             lastToolExecution = execResult.toolExecution
+            if (execResult.haltRun) {
+              const denied = new Error(execResult.resultString || 'Pekerjaan dijeda karena tindakan tidak diizinkan.')
+              denied.code = 'APPROVAL_DENIED'
+              throw denied
+            }
             const resStr = String(execResult.resultString || '')
             const executionSucceeded =
               !execResult.rejected &&
@@ -2875,6 +2851,7 @@ export const useMarkPlan = ({
               tool: toolName,
               query: JSON.stringify(parsedArgs),
               reason: toolReason,
+              approval: currentInFlightTool?.approval,
               loadedGroup: executionSucceeded ? execResult.loadedGroup : null,
               status: executionSucceeded ? 'done' : 'failed',
               preview: execResult.previewUrl || execResult.imageUrls?.[0] || null,
@@ -3643,8 +3620,8 @@ export const useMarkPlan = ({
         if (durableTaskForRecovery && durableTaskForRecovery.status === 'running') {
           transitionAgentTask(
             durableTaskForRecovery.id,
-            'failed',
-            `Uncaught exception: ${error.message}`
+            error.code === 'APPROVAL_DENIED' ? 'waiting_user' : 'failed',
+            error.code === 'APPROVAL_DENIED' ? error.message : `Uncaught exception: ${error.message}`
           ).catch(() => {})
         }
       } else {
@@ -3781,6 +3758,7 @@ export const useMarkPlan = ({
           AbortSignal.timeout(3000)
         )
         .catch(() => {})
+      await webApi.cancelToolApprovals({ sessionId: String(activeSessionNum), computerUseRunId: agenticProcessId }).catch(() => {})
       browserCommand(browserSessionId(activeSessionNum), 'job-stop').catch(() => {})
       activeSessionsRef.current.delete(activeSessionNum)
       activeSessionUpdatersRef.current.delete(activeSessionNum)

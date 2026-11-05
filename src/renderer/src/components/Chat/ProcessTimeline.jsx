@@ -3,7 +3,7 @@ import { McpToolName } from './McpToolName'
 import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Ban, Check, ChevronRight, Loader2, XCircle } from 'lucide-react'
+import { Ban, Check, ChevronRight, Loader2, ShieldCheck, ShieldX, XCircle } from 'lucide-react'
 import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
 import { splitProcessTimeline } from '../../utils/processSteps'
 import { useApproval } from '../../contexts/ApprovalContext'
@@ -144,6 +144,22 @@ export const ProcessTimeline = ({
                       ? 'text-error'
                       : 'text-success/80'
               const label = displayReason || <McpToolName name={toolLabel} />
+              const permissionDenied = step.approval?.status === 'denied'
+              const aiApproved =
+                step.approval?.source === 'model' && step.approval?.status === 'allowed'
+              const permissionIcon = permissionDenied ? (
+                <ShieldX
+                  role="img"
+                  aria-label="Tindakan tidak diizinkan"
+                  className="h-3.5 w-3.5 shrink-0 text-error"
+                />
+              ) : aiApproved ? (
+                <ShieldCheck
+                  role="img"
+                  aria-label="Diizinkan oleh peninjau AI"
+                  className="h-3.5 w-3.5 shrink-0 text-success"
+                />
+              ) : null
 
               if (!hasQuery && !hasResult) {
                 return (
@@ -151,6 +167,7 @@ export const ProcessTimeline = ({
                     <div className="flex items-center gap-2 text-xs font-sans text-white/60">
                       <StatusIcon className={`w-3 h-3 shrink-0 ${statusClass}`} />
                       <span className="font-medium text-white/65">{label}</span>
+                      {permissionIcon}
                       {isPendingApproval && (
                         <span className="text-[10px] text-warning animate-pulse">
                           (menunggu persetujuan...)
@@ -184,6 +201,7 @@ export const ProcessTimeline = ({
                       <span className="font-medium text-white/65 group-hover/row:text-white/85 group-focus-visible/row:text-white/85">
                         {label}
                       </span>
+                      {permissionIcon}
                       {isPendingApproval && (
                         <span className="text-[10px] text-warning animate-pulse">
                           (menunggu persetujuan...)

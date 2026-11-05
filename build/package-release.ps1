@@ -34,6 +34,9 @@ if ($LASTEXITCODE -ne 0) { throw "Build launcher gagal." }
 
 Write-Host ">>> [4/6] Menyalin aset dan source server..." -ForegroundColor Cyan
 Copy-Item -Path "package.json" -Destination $AppDir
+Copy-Item -LiteralPath "THIRD-PARTY-NOTICES.md" -Destination $AppDir
+Copy-Item -LiteralPath "LICENSE" -Destination $AppDir
+Copy-Item -Recurse -LiteralPath "docs" -Destination $AppDir
 Copy-Item -Recurse -Path "bin" -Destination $AppDir
 Copy-Item -Recurse -Path "src" -Destination $AppDir
 Copy-Item -Recurse -Path "out" -Destination $AppDir

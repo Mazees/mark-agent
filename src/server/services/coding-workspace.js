@@ -44,7 +44,7 @@ export function instructionsFor(root, files = []) {
     const target = scopedPath(root, value)
     let dir =
       fs.existsSync(target) && fs.statSync(target).isDirectory() ? target : path.dirname(target)
-    while (dir !== path.resolve(root)) {
+    while (path.relative(root, dir) !== '') {
       dirs.add(dir)
       dir = path.dirname(dir)
     }

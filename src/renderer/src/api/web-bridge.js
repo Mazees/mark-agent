@@ -479,6 +479,21 @@ export const webApi = {
   // 6. Tools Execution
   executeNativeTool: async (tool, query, config, signal = null) => {
     try {
+      if (!config?.approvalRequestId) {
+        const { authorizeAgentTool } = await import('./toolAuthorization.js')
+        const id = crypto.randomUUID()
+        config = {
+          sessionId: '1',
+          ...config,
+          approvalRunId: config?.computerUseRunId || config?.codingRunId || `ui:${id}`,
+          approvalRequestId: id
+        }
+        const permission = await authorizeAgentTool(tool, query, config, {
+          signal: resolveAbortSignal(signal),
+          requestApproval: webApi.requestToolApproval
+        })
+        if (permission.denied) return { success: false, denied: true, error: permission.reason }
+      }
       const res = await fetch(`${API_BASE}/api/tools/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -557,53 +572,91 @@ export const webApi = {
     }
   },
 
-  checkToolApproval: async (tool, query, config = {}) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/tools/needs-approval`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, query, config })
-      })
-      return await res.json()
-    } catch (_) {
-      return { needsApproval: false }
-    }
+  checkToolApproval: async (tool, query, config = {}, signal = null) => {
+    const response = await fetch(`${API_BASE}/api/tools/needs-approval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, query, config }),
+      signal
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success) throw new Error(result.error || 'Pemeriksaan izin gagal.')
+    return result
   },
 
   needsApproval: async (tool, query) => {
     return webApi.checkToolApproval(tool, query)
   },
-  decideComputerUsePermission: async (requestId, owner, approved) => {
-    const response = await fetch(`${API_BASE}/api/computer-use/permission`, {
+  decideToolApproval: async (requestId, config, choice) => {
+    const response = await fetch(`${API_BASE}/api/tools/approval/decide`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requestId,
-        sessionId: owner.sessionId,
-        runId: owner.computerUseRunId,
-        approved
-      })
+      body: JSON.stringify({ requestId, config, choice })
     })
     const result = await response.json()
     if (!response.ok || !result.success)
-      throw new Error(result.error || 'Izin sesi Computer Use tidak dapat diproses.')
-    return result.token
+      throw new Error(result.error || 'Keputusan izin tidak dapat diproses.')
+    return result
   },
-  decideMcpPermission: async (requestId, owner, approved) => {
-    const response = await fetch(`${API_BASE}/api/mcp/permission`, {
+  cancelToolApprovals: async (config) => {
+    await fetch(`${API_BASE}/api/tools/approval/cancel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requestId,
-        sessionId: owner.sessionId,
-        runId: owner.computerUseRunId,
-        approved
-      })
+      body: JSON.stringify({ config })
     })
+  },
+  getApprovalMode: async (sessionId) => {
+    const response = await fetch(
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/approval-mode`
+    )
+    if (!response.ok) throw new Error('Mode perizinan gagal dimuat.')
+    return (await response.json()).mode
+  },
+  setApprovalMode: async (sessionId, mode) => {
+    const response = await fetch(
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/approval-mode`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      }
+    )
     const result = await response.json()
     if (!response.ok || !result.success)
-      throw new Error(result.error || 'Izin MCP tidak dapat diproses.')
-    return result.token
+      throw new Error(result.error || 'Mode perizinan gagal disimpan.')
+    window.dispatchEvent(
+      new CustomEvent('session-approval-mode-updated', { detail: { sessionId, mode: result.mode } })
+    )
+    return result.mode
+  },
+  onApprovalMode: (callback) => {
+    addWebListener('session-approval-mode-updated', callback)
+    return () => removeWebListener('session-approval-mode-updated', callback)
+  },
+  getToolGrants: async () => {
+    const response = await fetch(`${API_BASE}/api/tools/approval/grants`)
+    if (!response.ok) throw new Error('Izin tersimpan gagal dimuat.')
+    return (await response.json()).data
+  },
+  getPendingToolApprovals: async () => {
+    const response = await fetch(`${API_BASE}/api/tools/approval/pending`)
+    if (!response.ok) throw new Error('Antrean izin gagal dimuat.')
+    return (await response.json()).data
+  },
+  onToolApprovalRequest: (callback) => {
+    addWebListener('tool:approval-request', callback)
+    return () => removeWebListener('tool:approval-request', callback)
+  },
+  onToolApprovalClosed: (callback) => {
+    addWebListener('tool:approval-closed', callback)
+    return () => removeWebListener('tool:approval-closed', callback)
+  },
+  removeToolGrant: async (id) => {
+    const response = await fetch(
+      `${API_BASE}/api/tools/approval/grants/${encodeURIComponent(id)}`,
+      { method: 'DELETE' }
+    )
+    if (!response.ok) throw new Error('Izin gagal dicabut.')
   },
 
   selectDirectory: async (description = 'Pilih Folder Workspace Proyek') => {
@@ -837,17 +890,28 @@ export const webApi = {
     return await res.json()
   },
 
-  executePluginAction: async (action, query) => {
+  executePluginAction: async (action, query, config = {}, signal = null) => {
+    if (!config.approvalRequestId) {
+      const { authorizeAgentTool } = await import('./toolAuthorization.js')
+      const id = crypto.randomUUID()
+      config = { sessionId: '1', ...config, approvalRunId: `ui:${id}`, approvalRequestId: id }
+      const permission = await authorizeAgentTool(action, query, config, {
+        signal,
+        requestApproval: webApi.requestToolApproval
+      })
+      if (permission.denied) return { success: false, denied: true, error: permission.reason }
+    }
     const res = await fetch(`${API_BASE}/api/plugins/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, query })
+      body: JSON.stringify({ action, query, config }),
+      signal
     })
     return await res.json()
   },
 
-  executePlugin: async (action, query) => {
-    return webApi.executePluginAction(action, query)
+  executePlugin: async (action, query, config, signal) => {
+    return webApi.executePluginAction(action, query, config, signal)
   },
 
   openPluginFolder: async () => {
