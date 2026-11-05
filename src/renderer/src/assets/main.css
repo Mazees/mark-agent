@@ -78,6 +78,17 @@ html {
   font-variant-ligatures: none;
 }
 
+/* Monaco positions code using measured monospace glyphs, including inline deleted lines. */
+.mark-code-diff .view-lines,
+.mark-code-diff .view-lines span,
+.mark-code-diff .view-zones,
+.mark-code-diff .view-zones span,
+.mark-code-diff .line-numbers {
+  font-family: Consolas, 'Courier New', monospace;
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+
 html,
 body,
 #root {

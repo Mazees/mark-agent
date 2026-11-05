@@ -18,6 +18,8 @@ import {
 import { buildPluginToolGroups } from '../../../shared/plugin-schema.js'
 import { core_tools_schema } from '../../../shared/agent/core-tools.js'
 import { toolApprovalMessage } from '../../../shared/agent/tool-approval-message.js'
+import { usesWorkspace } from '../../../shared/agent/coding-tools.js'
+import { beginCodingRun, finishCodingRun } from '../coding-execution.js'
 import { SubagentRuntime } from './runtime.js'
 import { createJobExecutor } from './executor.js'
 import { DEFAULT_WORKSPACE_ROOT } from '../../workspace-policy.js'
@@ -152,7 +154,7 @@ async function dispatch(name, args, ctx, call) {
     ...getActiveConfig(),
     workspaceRoot,
     codingSessionId: String(job.parentSessionId || '1'),
-    codingRunId: `minibot-${job.id}`,
+    codingRunId: `minibot-${ctx.runId}`,
     codingObjective: job.goal,
     parentCodingRunId: job.codingRunId || null,
     ownedFiles: job.ownedFiles || [],
@@ -170,6 +172,13 @@ async function dispatch(name, args, ctx, call) {
     })
   const run = async () => {
     ctx.check()
+    if (usesWorkspace(name)) {
+      await beginCodingRun(config)
+      ctx.update({
+        activeCodingRunId: config.codingRunId,
+        codingRunIds: [...new Set([...(ctx.job.codingRunIds || []), config.codingRunId])]
+      })
+    }
     ctx.pending(call)
     const result = isMcp
       ? await executeMcpTool(name, args, ctx.signal)
@@ -237,14 +246,17 @@ export const subagentRuntime = new SubagentRuntime({
       status = ctx.signal.aborted ? 'interrupted' : 'failed'
       throw error
     } finally {
-      const run = codingStore.get('run', `minibot-${ctx.job.id}`)
-      if (run)
-        notifyCoding(
-          codingStore.put('run', run.id, {
-            ...run,
-            status: ctx.signal.aborted ? 'interrupted' : status
-          })
-        )
+      const run = codingStore.get('run', `minibot-${ctx.runId}`)
+      if (run) {
+        await finishCodingRun(run.id, run.sessionId, ctx.signal.aborted ? 'interrupted' : status)
+      }
+      if (status !== 'waiting' || ctx.signal.aborted) {
+        for (const id of ctx.job.codingRunIds || []) {
+          const previous = codingStore.get('run', id)
+          if (previous?.status === 'waiting' && previous.finishedAt)
+            notifyCoding(codingStore.put('run', id, { ...previous, status: 'interrupted' }))
+        }
+      }
       await closeComputerUseSession('Pekerjaan Minibot berakhir.', {
         runKey: ctx.runId + ':' + ctx.runId
       })
@@ -252,7 +264,16 @@ export const subagentRuntime = new SubagentRuntime({
   },
   review: createMarkReviewer({ fetch: fetchAI, config: getActiveConfig }),
   canReviewAction: (job, call) => canMarkReviewAction(job, call, DEFAULT_WORKSPACE_ROOT),
-  emit: (event, payload) => wsHub.broadcast(event, payload),
+  emit: (event, payload) => {
+    if (event === 'subagent:report') {
+      for (const id of payload.codingRunIds || []) {
+        const run = codingStore.get('run', id)
+        if (run?.status === 'waiting' && run.finishedAt)
+          notifyCoding(codingStore.put('run', id, { ...run, status: 'interrupted' }))
+      }
+    }
+    wsHub.broadcast(event, payload)
+  },
   closeBrowser: async (sessionId) => {
     await NATIVE_TOOLS['browser-close']?.handler('', { sessionId })
   }

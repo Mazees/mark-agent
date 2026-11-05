@@ -30,9 +30,14 @@ export function createTaskWorkflow(
 ) {
   const snapshot = (id) => {
     const task = store.agentTasks.getById(id)
+    const messages = task?.finalMessageId ? store.sessions.getById(task.sessionId)?.data : null
+    const finalMessage = Array.isArray(messages)
+      ? messages.find((message) => message.id === task.finalMessageId)
+      : null
     return task
       ? {
           ...task,
+          finalCodingRunIds: finalMessage?.codingRunIds || [],
           dependencies: jobs(id),
           steps: store.agentTaskSteps
             .getAll()
@@ -267,6 +272,16 @@ export function createTaskWorkflow(
           fail('Checklist belum selesai.')
         if (task.finalAnswer) return
         if (!text(input.answer)) fail('Jawaban penutup kosong.')
+        const codingRunIds = [
+          ...new Set(Array.isArray(input.codingRunIds) ? input.codingRunIds : [])
+        ]
+        for (const runId of codingRunIds) {
+          const row = store.sqlite
+            .prepare("SELECT session_id FROM coding_records WHERE kind='run' AND id=?")
+            .get(String(runId))
+          if (!row || String(row.session_id) !== String(task.sessionId))
+            fail('Riwayat coding tidak tersedia dalam sesi workflow ini.')
+        }
         const messageId = `task-final-${id}`
         store.agentTasks.update(id, {
           finalAnswer: text(input.answer),
@@ -283,6 +298,13 @@ export function createTaskWorkflow(
                 {
                   id: messageId,
                   taskId: id,
+                  ...(codingRunIds.length
+                    ? {
+                        codingRunIds,
+                        codingRunId: codingRunIds[0],
+                        codingSessionId: String(task.sessionId)
+                      }
+                    : {}),
                   role: 'ai',
                   content: text(input.answer),
                   isTaskDone: true,

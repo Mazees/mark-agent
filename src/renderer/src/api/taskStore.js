@@ -47,7 +47,8 @@ export const workflowMutation = (task, operation, input = {}) =>
     requestId: input.requestId || taskRequestId()
   })
 export const reviseAgentTask = (task, input) => workflowMutation(task, 'plan', input)
-export const finalizeAgentTask = (task, answer) => workflowMutation(task, 'finalize', { answer })
+export const finalizeAgentTask = (task, answer, coding = {}) =>
+  workflowMutation(task, 'finalize', { answer, ...coding })
 export async function listAgentTasks({ sessionId, status, statuses, limit = 50 } = {}) {
   const tasks = await taskRequest('')
   return tasks

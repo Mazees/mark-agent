@@ -2,7 +2,8 @@ node_modules
 dist
 dist-release
 out
-build
+build/*
+!build/package-release.ps1
 .DS_Store
 .eslintcache
 *.log*
@@ -23,3 +24,5 @@ src/main/pc-agent-scripts/overlay-runtime/MarkOverlay.exe
 src/main/pc-agent-scripts/overlay-runtime/build-id
 docs/computer-use-validation.md
 docs/computer-use-observations.md
+resources/git/win32-x64/
+resources/git/.prepare-*/

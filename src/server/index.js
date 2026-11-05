@@ -14,6 +14,7 @@ import { startTelegramBot } from '../main/telegram/telegram-service.js'
 import { getActiveConfig } from './config-manager.js'
 import { registerRoutes } from './routes/index.js'
 import { shutdownTerminals } from './services/terminal-service.js'
+import { migrateStoredCodingRuns } from './services/coding-execution.js'
 import { setServerPort } from './tools/overlay-manager.js'
 import { subagentRuntime } from './services/subagents/service.js'
 import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
@@ -74,11 +75,13 @@ app.use(
     credentials: true
   })
 )
+app.use('/api/db/restore', express.json({ limit: '512mb' }))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 // Inisialisasi WebSocket Hub, Orama, Plugins & Awareness Tracking
 wsHub.init(server)
+migrateStoredCodingRuns().catch((error) => console.warn('[Coding migration]', error.message))
 subagentRuntime.start()
 initOramaIndices().catch(() => {})
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))

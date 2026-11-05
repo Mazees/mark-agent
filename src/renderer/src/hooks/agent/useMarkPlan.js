@@ -1492,6 +1492,16 @@ export const useMarkPlan = ({
         'POST'
       )
       opts.workspaceRoot = codingWorkspace.root
+      await webApi.codingRequest(
+        '/coding/runs/begin',
+        activeSessionNum,
+        {
+          runId: agenticProcessId,
+          objective: userInput,
+          capture: false
+        },
+        'POST'
+      )
       let durableTask = opts.taskId ? await getAgentTaskWithSteps(opts.taskId) : null
       if (
         opts.taskId &&
@@ -1901,9 +1911,30 @@ export const useMarkPlan = ({
             ),
           sessionAbortController.signal
         )
-        const saved = await finalizeAgentTask(task, answer)
+        const existingMessage = sourceChatData.find((message) => message.id === task.finalMessageId)
+        const coding = existingMessage?.codingRunIds
+          ? {
+              codingRunId: existingMessage.codingRunId,
+              codingRunIds: existingMessage.codingRunIds,
+              codingSessionId: existingMessage.codingSessionId
+            }
+          : {
+              codingRunId: agenticProcessId,
+              codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
+              codingSessionId: String(activeSessionNum)
+            }
+        const saved = await finalizeAgentTask(task, answer, coding)
         const aiMsg = {
           id: saved.finalMessageId,
+          ...(saved.finalCodingRunIds?.length
+            ? {
+                codingRunId: saved.finalCodingRunIds[0],
+                codingRunIds: saved.finalCodingRunIds,
+                codingSessionId: String(activeSessionNum)
+              }
+            : task.finalAnswer
+              ? {}
+              : coding),
           skills: [...sessionRecord.skills.values()].map(skillSummary),
           taskId: task.id,
           role: 'ai',
@@ -2955,7 +2986,14 @@ export const useMarkPlan = ({
                         }
                       : m
                   ),
-                { role: 'ai', content: finalContentAccumulator, created_at: Date.now() }
+                {
+                  role: 'ai',
+                  content: finalContentAccumulator,
+                  created_at: Date.now(),
+                  codingRunId: agenticProcessId,
+                  codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
+                  codingSessionId: String(activeSessionNum)
+                }
               ])
               isDone = true
               break
@@ -3400,6 +3438,7 @@ export const useMarkPlan = ({
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             toolGroups: [...dynamicallyLoadedToolGroups],
             codingRunId: agenticProcessId,
+            codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
             codingSessionId: String(activeSessionNum),
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
@@ -3481,6 +3520,9 @@ export const useMarkPlan = ({
           {
             role: 'ai',
             content: 'Tugas telah selesai diproses.',
+            codingRunId: agenticProcessId,
+            codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
+            codingSessionId: String(activeSessionNum),
             skills: [...sessionRecord.skills.values()].map(skillSummary),
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: !awaitingBrowserUser,
@@ -3561,11 +3603,11 @@ export const useMarkPlan = ({
         /* ignore */
       }
     } catch (error) {
-      webApi
+      await webApi
         .codingRequest(
           `/coding/runs/${encodeURIComponent(agenticProcessId)}/finish`,
           activeSessionNum,
-          { status: 'interrupted' },
+          { status: sessionAbortController.signal.aborted ? 'interrupted' : 'failed' },
           'POST'
         )
         .catch(() => {})
@@ -3711,6 +3753,9 @@ export const useMarkPlan = ({
           {
             role: 'ai',
             content: abortContent,
+            codingRunId: agenticProcessId,
+            codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
+            codingSessionId: String(activeSessionNum),
             reasoning: preservedReasoning,
             executedTools: preservedExecutedTools.length > 0 ? preservedExecutedTools : undefined,
             mood: isAbort ? 'neutral' : 'sadness',

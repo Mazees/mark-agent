@@ -37,13 +37,14 @@ export default function CodingChanges({
   sessionBusy,
   project,
   workspaceDiff,
-  onWorktree
+  onWorktree,
+  selectionMissing
 }) {
   const checks = run?.checks || []
   const failed = checks.filter((check) => check.status === 'failed').length
   const canUndo = scope === 'latest' && files.some((file) => file.undoAvailable && !file.undone)
   const running = ['running', 'waiting'].includes(run?.status)
-  const noGit = scope === 'workspace' && workspaceDiff?.git === false
+  const noGit = scope === 'workspace' && workspaceDiff?.available === false
   const activeWorktree = project?.worktree?.active
   return (
     <div
@@ -57,6 +58,11 @@ export default function CodingChanges({
             Lihat berkas yang diubah, bandingkan isinya, dan periksa hasil pengujiannya.
           </p>
         </header>
+        {selectionMissing && (
+          <p role="alert" className="text-xs text-error">
+            Riwayat giliran yang dipilih tidak tersedia.
+          </p>
+        )}
 
         <div className="space-y-3">
           <div
@@ -65,8 +71,8 @@ export default function CodingChanges({
             aria-label="Cakupan perubahan"
           >
             {[
-              ['latest', 'Edit Mark'],
-              ['workspace', 'Semua perubahan']
+              ['latest', 'Giliran dipilih'],
+              ['workspace', 'Seluruh workspace']
             ].map(([value, label]) => (
               <button
                 key={value}
@@ -81,8 +87,8 @@ export default function CodingChanges({
           </div>
           <p className="text-xs leading-relaxed text-white/55">
             {scope === 'latest'
-              ? 'Edit yang dicatat dari pekerjaan Mark di percakapan ini.'
-              : 'Semua perubahan lokal menurut Git, termasuk edit Anda dan tool lain.'}
+              ? 'Perubahan workspace selama giliran yang dipilih, termasuk edit bersamaan.'
+              : workspaceDiff?.baselineLabel || 'Memuat dasar pembanding workspace...'}
           </p>
           {scope === 'latest' && runs.length > 1 && (
             <label className="flex flex-wrap gap-2 items-center text-xs text-white/60">
@@ -135,11 +141,6 @@ export default function CodingChanges({
                 Urungkan edit
               </button>
             )}
-            {running && (
-              <span role="status" className="text-[11px] text-primary">
-                Mark sedang bekerja
-              </span>
-            )}
           </div>
           {loading ? (
             <p role="status" className="px-5 py-12 text-xs text-white/60">
@@ -151,13 +152,14 @@ export default function CodingChanges({
                 <FileDiff size={23} strokeWidth={1.5} aria-hidden="true" />
               </div>
               <h3 className="text-sm font-medium text-white/85">
-                {noGit ? 'Folder ini belum memakai Git' : 'Belum ada perubahan kode'}
+                {noGit ? 'Diff workspace tidak tersedia' : 'Belum ada perubahan kode'}
               </h3>
               <p className="text-xs text-white/60 leading-6 mt-2 max-w-sm mx-auto">
                 {noGit
-                  ? 'Gunakan Edit Mark untuk meninjau perubahan yang dicatat Mark. Tampilan semua perubahan tersedia setelah proyek memakai Git.'
+                  ? workspaceDiff.notice
                   : scope === 'latest'
-                    ? 'Minta Mark mengubah kode melalui chat. Berkas yang diedit akan muncul di sini untuk Anda tinjau.'
+                    ? run?.captureError ||
+                      'Perubahan bersih akan tersedia setelah giliran berakhir. Pilih berkas untuk meninjau perbedaannya.'
                     : 'Berkas proyek belum memiliki perubahan lokal yang terdeteksi oleh Git.'}
               </p>
               {!noGit && scope === 'latest' && (
@@ -171,7 +173,7 @@ export default function CodingChanges({
                   onClick={() => onScopeChange('latest')}
                   className="mt-4 text-xs text-primary hover:underline"
                 >
-                  Lihat edit Mark
+                  Lihat giliran
                 </button>
               )}
             </div>
@@ -243,28 +245,32 @@ export default function CodingChanges({
                 <X size={15} />
               </button>
             </div>
-            <div className="h-80 sm:h-96">
-              <Suspense
-                fallback={
-                  <p className="p-4 text-xs text-white/60" role="status">
-                    Memuat perbandingan kode...
-                  </p>
-                }
-              >
-                <DiffEditor
-                  original={diff.before}
-                  modified={diff.after}
-                  theme="vs-dark"
-                  options={{
-                    readOnly: true,
-                    minimap: { enabled: false },
-                    fontSize: 12,
-                    renderSideBySide: false,
-                    automaticLayout: true
-                  }}
-                />
-              </Suspense>
-            </div>
+            {diff.notice ? (
+              <p className="p-4 text-xs text-white/65">{diff.notice}</p>
+            ) : (
+              <div className="h-80 sm:h-96">
+                <Suspense
+                  fallback={
+                    <p className="p-4 text-xs text-white/60" role="status">
+                      Memuat perbandingan kode...
+                    </p>
+                  }
+                >
+                  <DiffEditor
+                    original={diff.before}
+                    modified={diff.after}
+                    theme="vs-dark"
+                    options={{
+                      readOnly: true,
+                      minimap: { enabled: false },
+                      fontSize: 12,
+                      renderSideBySide: false,
+                      automaticLayout: true
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
           </section>
         )}
 

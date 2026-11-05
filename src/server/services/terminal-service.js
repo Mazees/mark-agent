@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { execFile, fork } from 'node:child_process'
 import { codingStore } from '../memory/db-store.js'
 import { wsHub } from '../ws-hub.js'
+import { gitEnvironment } from '../../main/git-runtime.js'
 
 const processes = new Map()
 const LIMIT = 256000
@@ -69,6 +70,7 @@ export function startTerminal({
     throw new Error('Terminal interaktif versi ini memerlukan Windows ConPTY.')
   const child = fork(new URL('./terminal-host.js', import.meta.url), [], {
     execArgv: [],
+    env: gitEnvironment({}, root),
     windowsHide: true,
     stdio: ['ignore', 'ignore', 'pipe', 'ipc']
   })

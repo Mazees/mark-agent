@@ -6,6 +6,7 @@ import { createSubagentSchema } from '../services/subagents/storage.js'
 import { createMcpStore } from '../services/mcp-store.js'
 import { createCodingStore } from '../services/coding-store.js'
 import { getCurrentVersion } from '../services/updater.js'
+import { exportCheckpointArchives, restoreCheckpointArchives } from '../services/coding-git.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mark-agent')
 if (!fs.existsSync(CONFIG_DIR)) {
@@ -685,7 +686,8 @@ export function exportFullDatabase() {
     app: 'MARK',
     version: getCurrentVersion(),
     exportedAt: new Date().toISOString(),
-    tables
+    tables,
+    codingGitArchives: exportCheckpointArchives(codingStore.export())
   }
 }
 
@@ -699,6 +701,7 @@ export function restoreFullDatabase(dumpData, { overwrite = true } = {}) {
 
   const rawTables = dumpData.tables || dumpData
   const results = {}
+  restoreCheckpointArchives(dumpData.codingGitArchives)
 
   // Map nama tabel dari Dexie V4 ke skema SQLite V5
   const tableMapping = {

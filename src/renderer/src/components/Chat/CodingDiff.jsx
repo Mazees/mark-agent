@@ -21,7 +21,9 @@ export default function CodingDiff({
     const instance = monaco.editor.createDiffEditor(container.current, {
       theme,
       automaticLayout: true,
-      readOnly: true
+      readOnly: true,
+      fontFamily: 'Consolas, "Courier New", monospace',
+      fontLigatures: false
     })
     const originalModel = monaco.editor.createModel('', 'plaintext')
     const modifiedModel = monaco.editor.createModel('', 'plaintext')
@@ -44,5 +46,11 @@ export default function CodingDiff({
   useEffect(() => {
     editor.current?.updateOptions(options)
   }, [options, theme])
-  return <div ref={container} className="w-full h-full" aria-label="Diff berkas hanya baca" />
+  return (
+    <div
+      ref={container}
+      className="mark-code-diff w-full h-full"
+      aria-label="Diff berkas hanya baca"
+    />
+  )
 }

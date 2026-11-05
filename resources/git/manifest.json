@@ -1,0 +1,10 @@
+{
+  "version": "2.56.0.4",
+  "gitVersion": "2.56.0.windows.4",
+  "platform": "win32",
+  "arch": "x64",
+  "archive": "MinGit-2.56.0.4-64-bit.zip",
+  "url": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.4/MinGit-2.56.0.4-64-bit.zip",
+  "sha256": "e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877",
+  "executable": "cmd/git.exe"
+}

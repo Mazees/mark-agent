@@ -1,12 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { runGit } from '../../main/git-runtime.js'
 import { createHash } from 'node:crypto'
 import { dbStore, codingStore } from '../memory/db-store.js'
 import { DEFAULT_WORKSPACE_ROOT } from '../workspace-policy.js'
 
-export const git = promisify(execFile)
+export const git = runGit
 export const fileHash = (bytes) =>
   bytes == null ? null : createHash('sha256').update(bytes).digest('hex')
 export const rootKey = (root) => path.resolve(root).replaceAll('\\', '/').toLowerCase()
@@ -90,7 +89,7 @@ export async function projectContext(sessionId, paths = []) {
   let branch = null
   try {
     branch = (
-      await git('git', ['branch', '--show-current'], { cwd: root, windowsHide: true })
+      await git(['branch', '--show-current'], { cwd: root, windowsHide: true })
     ).stdout.trim()
   } catch {
     /* Non-Git projects are supported. */

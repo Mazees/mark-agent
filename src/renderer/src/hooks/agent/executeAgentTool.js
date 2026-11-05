@@ -2,6 +2,7 @@ import { executeSubagentTool, SUBAGENT_TOOLS } from './executeSubagentTool.js'
 import { executeWorkflowTool } from './executeWorkflowTool.js'
 import { webApi } from '../../api/web-bridge.js'
 import { skillSummary } from '@shared/skill-context.js'
+import { usesWorkspace } from '@shared/agent/coding-tools.js'
 
 /**
  * executeAgentTool
@@ -57,6 +58,18 @@ export async function executeAgentTool({
   if (currentSignal?.aborted) {
     throw new Error('AbortError')
   }
+  if (agenticProcessId && usesWorkspace(tool))
+    await webApi.codingRequest(
+      '/coding/runs/begin',
+      context?.sessionId || activeSessionNum || '1',
+      {
+        runId: agenticProcessId,
+        objective: userInput,
+        taskId: durableTask?.id,
+        stepId: durableActiveStep?.id
+      },
+      'POST'
+    )
 
   if (SUBAGENT_TOOLS.includes(tool)) {
     const res = await executeSubagentTool(tool, rawArgs, {

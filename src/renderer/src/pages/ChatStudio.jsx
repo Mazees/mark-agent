@@ -921,6 +921,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                           reasoning={msg.reasoning}
                           skills={msg.skills}
                           codingRunId={msg.codingRunId}
+                          codingRunIds={msg.codingRunIds}
                           codingSessionId={msg.codingSessionId}
                           isThinking={msg.isThinking}
                           isSearching={msg.isSearching}

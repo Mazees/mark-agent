@@ -356,13 +356,14 @@ export const guideArticles = [
       {
         title: 'Meninjau diff dan menggunakan undo',
         paragraphs: [
-          'Tab Perubahan menampilkan snapshot edit native Mark per giliran, termasuk berkas yang dibuat atau dihapus. Beberapa edit pada berkas yang sama dirangkum dari keadaan awal sampai hasil terakhir pada giliran tersebut. Pilih berkas untuk membaca diff, lalu periksa hasil build atau pengujian sebelum menerima hasil pekerjaan.',
-          'Pilih Edit Mark untuk melihat pekerjaan yang dicatat pada percakapan ini, atau Semua perubahan untuk melihat perubahan lokal menurut Git, termasuk edit pengguna, shell, terminal manual, dan MCP. Undo melalui Urungkan edit tersedia untuk snapshot yang lengkap setelah pekerjaan selesai. Mark mencocokkan isi disk dengan snapshot terakhir sebelum memulihkan berkas; perubahan lanjutan membuat undo ditolak agar edit Anda tetap dipertahankan. Pengaturan worktree tersedia pada Pengaturan lanjutan.'
+          'Setelah satu giliran selesai, kartu Perubahan selama giliran ini muncul di bawah jawaban jika ada berkas yang berubah. Buka kartu, lalu pilih berkas untuk membaca diff langsung di chat. Perbandingan memakai kondisi sebelum tool workspace pertama dan setelah pekerjaan berhenti, sehingga beberapa edit pada berkas yang sama menjadi satu perubahan kumulatif. Jika seluruh edit dikembalikan ke kondisi awal, kartu tidak ditampilkan. Perubahan dari shell, MCP, plugin, atau edit Anda yang berlangsung bersamaan dapat ikut tercatat; kartu tidak menganggap semuanya dibuat oleh Mark.',
+          'Pada panel Perubahan, Giliran dipilih membuka rekaman pekerjaan tertentu. Seluruh workspace membandingkan proyek Git dengan HEAD, atau folder tanpa Git dengan kondisi awal saat mulai dilacak Mark. Mark menyertakan Git bawaan untuk Windows x64 dan menyimpan checkpoint secara terpisah dari repository proyek Anda; staging, branch, serta commit pengguna tidak dipakai untuk mencatat giliran. Berkas yang diabaikan proyek, dependency, cache, dan output build standar tidak masuk cakupan pencatatan atau undo. Hasil Minibot yang terlambat ditautkan ke jawaban Mark yang meninjau laporannya, tanpa mengubah kartu lama.'
         ]
       },
       {
         title: 'Git dan proses latar belakang',
         paragraphs: [
+          'Tombol Urungkan pada kartu dapat memulihkan satu atau seluruh berkas setelah checkpoint akhir tersedia. Mark memeriksa isi semua target sebelum menulis. Jika ada perubahan lanjutan, permintaan ditolak agar edit Anda tetap aman. Undo tidak menggunakan reset pada repository pengguna. Berkas biner tetap dapat dipulihkan meskipun hanya metadata yang ditampilkan; riwayat lama mempertahankan cakupan berkas yang memang pernah direkam.',
           'Gunakan grup Git untuk memeriksa status dan diff, membuat commit, atau menjalankan revert. Tinjau perubahan sebelum menyimpannya ke riwayat; perubahan berkas kerja, commit, dan revert mempunyai dampak yang berbeda.',
           'Tab Terminal membuka satu PowerShell secara otomatis jika percakapan belum mempunyai terminal. Membuka ulang tab menggunakan terminal yang sudah tersedia; tombol tambah digunakan jika Anda membutuhkan terminal lain. PowerShell berjalan pada workspace efektif dan mendukung input, paste, perubahan ukuran, serta Ctrl+C. Input yang Anda ketik sendiri merupakan tindakan langsung Anda; perintah AI tetap memakai alur persetujuan tool.',
           'run-powershell dan run-task memakai layanan proses yang sama dengan panel Terminal. run-task digunakan untuk proses lama, seperti server pengembangan; read-task-output membaca output dan kill-task menghentikannya.',
@@ -1046,7 +1047,7 @@ export const guideArticles = [
         title: 'Cadangan dan pemulihan',
         paragraphs: [
           'Buka Neural Core > Kelola data lalu pilih Unduh JSON untuk membuat salinan data. Simpan cadangan di tempat yang Anda percayai karena isinya dapat mencakup percakapan dan konfigurasi sensitif.',
-          'Untuk memulihkan, pilih berkas JSON dan baca konfirmasi penggantian data. Rekaman pekerjaan coding, snapshot, catatan progres, dan metadata worktree ikut dicadangkan. Proses aktif dan input mentah terminal tidak disimpan. Restore tidak menjalankan perintah, mengaktifkan worktree, atau menulis snapshot ke proyek secara otomatis. Kredensial MCP disimpan terpisah dan tidak disertakan dalam backup; setelah restore, masukkan kembali kredensial atau login untuk menghubungkannya.'
+          'Untuk memulihkan, pilih berkas JSON dan baca konfirmasi penggantian data. Rekaman pekerjaan coding, arsip Git internal, catatan progres, dan metadata worktree ikut dicadangkan. Checkpoint berkas dari versi lama tetap dapat dibaca dan dimigrasikan tanpa menambahkan perubahan yang tidak pernah direkam. Proses aktif dan input mentah terminal tidak disimpan. Restore tidak menjalankan perintah, mengaktifkan worktree, atau menulis snapshot ke proyek secara otomatis. Kredensial MCP disimpan terpisah dan tidak disertakan dalam backup; setelah restore, masukkan kembali kredensial atau login untuk menghubungkannya.'
         ],
         links: [
           {

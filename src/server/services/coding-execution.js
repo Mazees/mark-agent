@@ -1,5 +1,4 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { codingStore, dbStore } from '../memory/db-store.js'
 import { fileHash, rootKey, scopedPath, instructionsFor, workspaceFor } from './coding-workspace.js'
@@ -7,9 +6,21 @@ import { parsePatch, writeBytes } from '../../main/tools/file-patch.js'
 import { validateFileSyntax } from '../../main/syntax-validator.js'
 import { wsHub } from '../ws-hub.js'
 import { isVerificationCommand } from '../../shared/agent/execution-quality.js'
+import {
+  captureWorkspace,
+  checkpointChanges,
+  checkpointBytes,
+  migrateSnapshotRun,
+  bytesOid,
+  runCheckpointRef,
+  withCheckpointLock
+} from './coding-git.js'
 
 const locks = new Map()
 const activeCalls = new Map()
+const capturing = new Map()
+const finishing = new Map()
+const migrating = new Map()
 const mutations = new Set([
   'write-file',
   'replace-content',
@@ -18,10 +29,19 @@ const mutations = new Set([
   'apply-patch'
 ])
 for (const run of codingStore.list('run'))
-  if (run.status === 'running') codingStore.put('run', run.id, { ...run, status: 'interrupted' })
+  if (run.status === 'running')
+    codingStore.put('run', run.id, {
+      ...run,
+      status: 'interrupted',
+      finishedAt: Date.now(),
+      ...(run.beforeOid && !run.afterOid
+        ? {
+            captureStatus: 'failed',
+            captureError: 'Proses terputus sebelum checkpoint akhir tersedia.'
+          }
+        : {})
+    })
 const bytes = (file) => (fs.existsSync(file) ? fs.readFileSync(file) : null)
-const encode = (value) => (value == null ? null : value.toString('base64'))
-export const decodeSnapshot = (value) => (value == null ? null : Buffer.from(value, 'base64'))
 export function notifyCoding(run) {
   wsHub.broadcast('coding:updated', { sessionId: run.sessionId, runId: run.id })
 }
@@ -34,8 +54,18 @@ export function ensureCodingRun(config) {
   if (previous) {
     if (previous.sessionId !== sessionId || rootKey(previous.root) !== rootKey(root))
       throw new Error('Identitas pekerjaan coding tidak cocok.')
-    if (['waiting', 'interrupted'].includes(previous.status))
+    if (previous.status === 'waiting' && !previous.finishedAt)
       return codingStore.put('run', id, { ...previous, status: 'running' })
+    if (
+      !previous.finishedAt &&
+      ((config.taskId && config.taskId !== previous.taskId) ||
+        (config.stepId && config.stepId !== previous.stepId))
+    )
+      return codingStore.put('run', id, {
+        ...previous,
+        taskId: config.taskId || previous.taskId,
+        stepId: config.stepId || previous.stepId
+      })
     return previous
   }
   return codingStore.put('run', id, {
@@ -47,6 +77,9 @@ export function ensureCodingRun(config) {
     parentRunId: config.parentCodingRunId || null,
     agentName: config.agentName || null,
     objective: String(config.codingObjective || '').slice(0, 4000),
+    checkpointVersion: 1,
+    captureStatus: 'not_started',
+    captureScope: 'workspace-window',
     stepId: config.stepId || null,
     files: [],
     checks: [],
@@ -54,6 +87,102 @@ export function ensureCodingRun(config) {
     observed: {},
     guidance: []
   })
+}
+export async function migrateCodingRun(run) {
+  if (!run || run.checkpointVersion || !run.files?.some((file) => Object.hasOwn(file, 'before')))
+    return run
+  if (migrating.has(run.id)) return migrating.get(run.id)
+  const promise = (async () => {
+    try {
+      const migrated = await migrateSnapshotRun(run)
+      return codingStore.put('run', run.id, migrated)
+    } catch (error) {
+      return codingStore.put('run', run.id, {
+        ...run,
+        captureStatus: 'failed',
+        captureError: `Migrasi diff belum berhasil: ${error.message}`
+      })
+    }
+  })().finally(() => migrating.delete(run.id))
+  migrating.set(run.id, promise)
+  return promise
+}
+export async function migrateStoredCodingRuns() {
+  for (const run of codingStore.list('run')) {
+    const migrated = await migrateCodingRun(run)
+    if (migrated !== run) notifyCoding(migrated)
+  }
+}
+export async function beginCodingRun(config, capture = true) {
+  let run = ensureCodingRun(config)
+  if (
+    !run ||
+    !capture ||
+    run.finishedAt ||
+    ['ready', 'completed', 'failed'].includes(run.captureStatus)
+  )
+    return run
+  if (capturing.has(run.id)) return capturing.get(run.id)
+  const promise = (async () => {
+    try {
+      const before = await captureWorkspace(run.root, runCheckpointRef(run.id, 'before'))
+      run = codingStore.get('run', run.id)
+      const saved = saveResult({
+        ...run,
+        beforeOid: before.oid,
+        gitWorkspaceId: before.workspaceId,
+        captureStatus: 'ready',
+        captureError: null
+      })
+      codingStore.put('git-workspace', before.workspaceId, {
+        sessionId: run.sessionId,
+        root: run.root,
+        gitWorkspaceId: before.workspaceId
+      })
+      return saved
+    } catch (error) {
+      return saveResult({
+        ...codingStore.get('run', run.id),
+        captureStatus: 'failed',
+        captureError: `Diff tidak tersedia: ${error.message}`
+      })
+    }
+  })().finally(() => capturing.delete(run.id))
+  capturing.set(run.id, promise)
+  return promise
+}
+export async function finishCodingRun(id, sessionId, status = 'completed') {
+  let run = codingStore.get('run', id)
+  if (!run || run.sessionId !== String(sessionId))
+    throw new Error('Pekerjaan coding tidak ditemukan dalam sesi ini.')
+  if (finishing.has(id)) return finishing.get(id)
+  if (run.finishedAt) return migrateCodingRun(run)
+  const promise = (async () => {
+    if (capturing.has(id)) await capturing.get(id)
+    const pendingCalls = [...activeCalls.entries()]
+      .filter(([key]) => JSON.parse(key)[1] === id)
+      .map(([, pending]) => pending)
+    await Promise.allSettled(pendingCalls)
+    run = codingStore.get('run', id)
+    let changes = {}
+    if (run.captureStatus === 'ready') {
+      try {
+        const after = await captureWorkspace(run.root, runCheckpointRef(id, 'after'))
+        const files = await checkpointChanges(
+          run.root,
+          run.gitWorkspaceId,
+          run.beforeOid,
+          after.oid
+        )
+        changes = { afterOid: after.oid, files, captureStatus: 'completed', captureError: null }
+      } catch (error) {
+        changes = { captureStatus: 'failed', captureError: `Diff tidak tersedia: ${error.message}` }
+      }
+    }
+    return saveResult({ ...codingStore.get('run', id), ...changes, status, finishedAt: Date.now() })
+  })().finally(() => finishing.delete(id))
+  finishing.set(id, promise)
+  return promise
 }
 async function locked(files, action) {
   const releases = []
@@ -114,24 +243,9 @@ function fileArgs(args) {
       .trim()
   }
 }
-function recordFiles(run, changes) {
+function recordObserved(run, changes) {
   for (const change of changes) {
-    const existing = run.files.find((file) => file.path === change.path)
-    const before = existing ? existing.before : encode(change.before)
-    const beforeHash = existing ? existing.beforeHash : fileHash(change.before)
-    const item = {
-      path: change.path,
-      relativePath: path.relative(run.root, change.path),
-      before,
-      beforeHash,
-      after: encode(change.after),
-      afterHash: fileHash(change.after),
-      undoAvailable: true,
-      undone: false
-    }
-    if (existing) Object.assign(existing, item)
-    else run.files.push(item)
-    run.observed[change.path] = item.afterHash
+    run.observed[change.path] = fileHash(change.after)
   }
 }
 export function wrapCodingTool(name, tool) {
@@ -143,10 +257,12 @@ export function wrapCodingTool(name, tool) {
   const wrapped = {
     ...tool,
     handler: async (args, config = {}) => {
-      const run = ensureCodingRun(config)
+      const run = await beginCodingRun(config)
       if (!run) return tool.handler(args, config)
       const callId = config.toolCallId
       if (callId && run.calls[callId]) return run.calls[callId]
+      if (run.finishedAt)
+        throw new Error('Rekaman coding sudah ditutup; gunakan identitas turn yang baru.')
       const parsed = fileArgs(args)
       if (name === 'read-file') {
         let observedFile
@@ -290,7 +406,7 @@ export function wrapCodingTool(name, tool) {
                 error: result.syntaxError || null
               }
             }
-            recordFiles(fresh, applied)
+            recordObserved(fresh, applied)
             if (result.validation?.status === 'failed')
               fresh.checks.push({
                 id: callId || randomUUID(),
@@ -329,61 +445,90 @@ export function wrapCodingTool(name, tool) {
   }
   return wrapped
 }
-export async function commitSnapshotChanges(run, changes) {
-  return locked(
-    changes.map((c) => c.path),
-    async () => {
-      for (const change of changes) scopedPath(run.root, change.path)
-      for (const change of changes)
-        if (fileHash(bytes(change.path)) !== fileHash(change.before))
-          throw new Error(`Konflik pada ${change.path}`)
-      const applied = []
-      try {
-        for (const change of changes) {
-          writeBytes(change.path, change.after)
-          applied.push(change)
+export async function applyWorkspaceChanges(run, changes) {
+  const config = { codingRunId: run.id, codingSessionId: run.sessionId, workspaceRoot: run.root }
+  await beginCodingRun(config)
+  try {
+    await locked(
+      changes.map((c) => c.path),
+      async () => {
+        for (const change of changes) scopedPath(run.root, change.path)
+        for (const change of changes)
+          if (fileHash(bytes(change.path)) !== fileHash(change.before))
+            throw new Error(`Konflik pada ${change.path}`)
+        const applied = []
+        try {
+          for (const change of changes) {
+            writeBytes(change.path, change.after)
+            applied.push(change)
+          }
+          const fresh = codingStore.get('run', run.id)
+          recordObserved(fresh, changes)
+          return saveResult(fresh)
+        } catch (error) {
+          for (const change of applied.reverse())
+            if (fileHash(bytes(change.path)) === fileHash(change.after))
+              writeBytes(change.path, change.before)
+          throw error
         }
-        recordFiles(run, changes)
-        return saveResult(run)
-      } catch (error) {
-        for (const change of applied.reverse())
-          if (fileHash(bytes(change.path)) === fileHash(change.after))
-            writeBytes(change.path, change.before)
-        throw error
       }
-    }
-  )
+    )
+    return await finishCodingRun(run.id, run.sessionId)
+  } catch (error) {
+    await finishCodingRun(run.id, run.sessionId, 'failed')
+    throw error
+  }
 }
 export async function undoCoding(runId, sessionId, filePath) {
-  const run = codingStore.get('run', runId)
+  const run = await migrateCodingRun(codingStore.get('run', runId))
   const { root } = workspaceFor(sessionId)
   if (!run || run.sessionId !== String(sessionId) || rootKey(run.root) !== rootKey(root))
     throw new Error('Pekerjaan tidak tersedia pada workspace aktif.')
-  if (['running', 'waiting'].includes(run.status))
+  if (
+    ['running', 'waiting'].includes(run.status) ||
+    (!run.finishedAt && run.checkpointVersion && run.captureScope !== 'recorded-files')
+  )
     throw new Error('Tunggu giliran coding selesai sebelum melakukan undo.')
   const changes = run.files.filter((file) => !file.undone && (!filePath || file.path === filePath))
-  if (!changes.length) throw new Error('Tidak ada snapshot yang dapat dipulihkan.')
-  return locked(
-    changes.map((c) => c.path),
-    async () => {
-      for (const change of changes) {
-        scopedPath(root, change.path)
-        if (fileHash(bytes(change.path)) !== change.afterHash)
-          throw new Error(`Konflik pada ${change.relativePath}; perubahan lanjutan dipertahankan.`)
-      }
-      const applied = []
-      try {
+  if (run.captureStatus !== 'completed' || !changes.length)
+    throw new Error('Tidak ada checkpoint lengkap yang dapat dipulihkan.')
+  return withCheckpointLock(`undo:${runId}`, () =>
+    locked(
+      changes.map((c) => c.path),
+      async () => {
+        const recovery = []
         for (const change of changes) {
-          writeBytes(change.path, decodeSnapshot(change.before))
-          applied.push(change)
+          scopedPath(root, change.path)
+          const current = bytes(change.path)
+          if ((await bytesOid(run.gitWorkspaceId, current)) !== change.afterOid)
+            throw new Error(
+              `Konflik pada ${change.relativePath}; perubahan lanjutan dipertahankan.`
+            )
+          recovery.push({
+            ...change,
+            before: current,
+            after: await checkpointBytes(run.gitWorkspaceId, change.beforeOid, change.beforeSize)
+          })
         }
-        for (const change of changes) change.undone = true
-        return saveResult(run)
-      } catch (error) {
-        for (const change of applied.reverse())
-          writeBytes(change.path, decodeSnapshot(change.after))
-        throw error
+        const applied = []
+        try {
+          for (const change of recovery) {
+            if (fileHash(bytes(change.path)) !== fileHash(change.before))
+              throw new Error(`Konflik pada ${change.relativePath}.`)
+            writeBytes(change.path, change.after)
+            applied.push(change)
+          }
+          const fresh = codingStore.get('run', runId)
+          for (const file of fresh.files)
+            if (changes.some((change) => change.path === file.path)) file.undone = true
+          return saveResult(fresh)
+        } catch (error) {
+          for (const change of applied.reverse())
+            if (fileHash(bytes(change.path)) === fileHash(change.after))
+              writeBytes(change.path, change.before)
+          throw error
+        }
       }
-    }
+    )
   )
 }

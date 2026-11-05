@@ -14,10 +14,20 @@ import {
 } from '../services/coding-workspace.js'
 import {
   undoCoding,
-  commitSnapshotChanges,
-  ensureCodingRun,
-  notifyCoding
+  applyWorkspaceChanges,
+  beginCodingRun,
+  finishCodingRun,
+  migrateCodingRun
 } from '../services/coding-execution.js'
+import {
+  checkpointDiff,
+  workspaceChanges,
+  captureWorkspace,
+  checkpointChanges,
+  checkpointBytes,
+  checkpointFileBytes,
+  runCheckpointRef
+} from '../services/coding-git.js'
 import {
   startTerminal,
   listTerminals,
@@ -67,22 +77,32 @@ const summary = (run) => ({
   calls: undefined,
   observed: undefined,
   guidance: undefined,
-  childRuns: codingStore
-    .list('run', run.sessionId)
-    .filter((child) => child.parentRunId === run.id)
-    .map((child) => ({
-      id: child.id,
-      agentName: child.agentName,
-      files: child.files.length,
-      passed: child.checks.filter((check) => check.status === 'passed').length,
-      failed: child.checks.filter((check) => check.status === 'failed').length
-    })),
   files: run.files.map(({ before, after, ...file }) => ({
     ...file,
-    added: before === null,
-    deleted: after === null
+    added: file.added ?? before === null,
+    deleted: file.deleted ?? after === null
   }))
 })
+codingRouter.post(
+  '/coding/runs/begin',
+  route(async (req) => {
+    const workspace = workspaceFor(idOf(req))
+    if (typeof req.body.runId !== 'string' || !req.body.runId || req.body.runId.length > 200)
+      throw new Error('ID pekerjaan coding wajib disertakan.')
+    const run = await beginCodingRun(
+      {
+        codingRunId: req.body.runId,
+        codingSessionId: workspace.sessionId,
+        workspaceRoot: workspace.root,
+        codingObjective: req.body.objective,
+        taskId: req.body.taskId,
+        stepId: req.body.stepId
+      },
+      req.body.capture !== false
+    )
+    return summary(run)
+  })
+)
 codingRouter.post(
   '/workspace/context',
   route((req) => projectContext(idOf(req), req.body.paths || []))
@@ -104,24 +124,23 @@ codingRouter.get(
 )
 codingRouter.get(
   '/coding/runs/:id',
-  route((req) => {
+  route(async (req) => {
     const run = codingStore.get('run', req.params.id)
     if (!run || run.sessionId !== idOf(req)) throw new Error('Pekerjaan coding tidak ditemukan.')
-    return summary(run)
+    return summary(await migrateCodingRun(run))
   })
 )
 codingRouter.get(
   '/coding/runs/:id/diff',
-  route((req) => {
-    const run = codingStore.get('run', req.params.id)
+  route(async (req) => {
+    let run = codingStore.get('run', req.params.id)
     if (!run || run.sessionId !== idOf(req)) throw new Error('Pekerjaan coding tidak ditemukan.')
+    run = await migrateCodingRun(run)
+    if (run.captureStatus !== 'completed')
+      throw new Error(run.captureError || 'Diff belum tersedia untuk giliran ini.')
     const file = run.files.find((file) => file.path === req.query.path)
-    if (!file) throw new Error('Snapshot berkas tidak ditemukan.')
-    return {
-      ...file,
-      before: file.before == null ? '' : Buffer.from(file.before, 'base64').toString('utf8'),
-      after: file.after == null ? '' : Buffer.from(file.after, 'base64').toString('utf8')
-    }
+    if (!file) throw new Error('Berkas tidak ditemukan pada diff giliran ini.')
+    return checkpointDiff(run.gitWorkspaceId, file)
   })
 )
 codingRouter.post(
@@ -130,27 +149,11 @@ codingRouter.post(
 )
 codingRouter.post(
   '/coding/runs/:id/finish',
-  route((req) => {
-    const run = codingStore.get('run', req.params.id)
-    const children = codingStore
-      .list('run', idOf(req))
-      .filter((child) => child.parentRunId === req.params.id)
-    const current =
-      run ||
-      (children.length
-        ? ensureCodingRun({
-            codingRunId: req.params.id,
-            codingSessionId: idOf(req),
-            workspaceRoot: workspaceFor(idOf(req)).root
-          })
-        : null)
-    if (!current || current.sessionId !== idOf(req)) return null
+  route(async (req) => {
     const status = ['completed', 'interrupted', 'failed'].includes(req.body.status)
       ? req.body.status
       : 'completed'
-    const saved = codingStore.put('run', current.id, { ...current, status })
-    notifyCoding(saved)
-    return summary(saved)
+    return summary(await finishCodingRun(req.params.id, idOf(req), status))
   })
 )
 codingRouter.get(
@@ -158,52 +161,19 @@ codingRouter.get(
   route(async (req) => {
     const { root } = workspaceFor(idOf(req))
     try {
-      if (req.query.path) {
-        const file = scopedPath(root, req.query.path),
-          relative = path.relative(root, file).replaceAll('\\', '/')
-        let before = ''
-        try {
-          before = (
-            await git('git', ['show', `HEAD:${relative}`], {
-              cwd: root,
-              encoding: 'utf8',
-              maxBuffer: 10000000
-            })
-          ).stdout
-        } catch {
-          /* New files have no HEAD version. */
-        }
-        return {
-          path: file,
-          before,
-          after: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-        }
-      }
-      const { stdout } = await git(
-        'git',
-        ['status', '--porcelain=v1', '--untracked-files=all', '-z'],
-        {
-          cwd: root,
-          encoding: 'utf8'
-        }
+      const diff = await workspaceChanges(
+        root,
+        req.query.path ? scopedPath(root, req.query.path) : null
       )
-      const entries = stdout.split('\0').filter(Boolean),
-        files = []
-      for (let i = 0; i < entries.length; i++) {
-        const status = entries[i].slice(0, 2),
-          relativePath = entries[i].slice(3)
-        files.push({
-          path: scopedPath(root, relativePath),
-          relativePath,
-          status,
-          external: true,
-          undoAvailable: false
+      if (diff.gitWorkspaceId)
+        codingStore.put('git-workspace', diff.gitWorkspaceId, {
+          sessionId: idOf(req),
+          root,
+          gitWorkspaceId: diff.gitWorkspaceId
         })
-        if (/[RC]/.test(status)) i++
-      }
-      return { git: true, files }
+      return diff
     } catch (error) {
-      return { git: false, files: [], notice: error.message }
+      return { available: false, files: [], notice: error.message }
     }
   })
 )
@@ -252,21 +222,53 @@ codingRouter.post(
     assertWorkspaceIdle(workspace.sessionId)
     if (listTerminals(workspace.sessionId).some((t) => t.status === 'running'))
       throw new Error('Hentikan terminal sesi sebelum mengganti workspace.')
-    const base = (await git('git', ['rev-parse', 'HEAD'], { cwd: workspace.root })).stdout.trim()
+    const base = (await git(['rev-parse', 'HEAD'], { cwd: workspace.root })).stdout.trim()
     const target = path.join(
       process.env.MARK_WORKTREE_ROOT ||
         path.join(os.homedir(), '.config', 'mark-agent', 'worktrees'),
       randomUUID()
     )
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    await git('git', ['worktree', 'add', '--detach', target, base], { cwd: workspace.root })
-    return codingStore.put('worktree', workspace.sessionId, {
+    const sourceBaseline = await captureWorkspace(
+      workspace.root,
+      runCheckpointRef(target, 'source')
+    )
+    await git(['worktree', 'add', '--detach', target, base], { cwd: workspace.root })
+    const worktree = codingStore.put('worktree', workspace.sessionId, {
       sessionId: workspace.sessionId,
       root: target,
       sourceRoot: workspace.root,
       base,
+      sourceBaselineOid: sourceBaseline.oid,
+      sourceGitWorkspaceId: sourceBaseline.workspaceId,
       active: true
     })
+    codingStore.put('git-workspace', sourceBaseline.workspaceId, {
+      sessionId: workspace.sessionId,
+      root: workspace.root,
+      gitWorkspaceId: sourceBaseline.workspaceId
+    })
+    try {
+      const initial = await captureWorkspace(target, runCheckpointRef(target, 'initial'))
+      codingStore.put('git-workspace', initial.workspaceId, {
+        sessionId: workspace.sessionId,
+        root: target,
+        gitWorkspaceId: initial.workspaceId
+      })
+      return codingStore.put('worktree', workspace.sessionId, {
+        ...worktree,
+        initialOid: initial.oid,
+        gitWorkspaceId: initial.workspaceId
+      })
+    } catch (error) {
+      codingStore.put('worktree', workspace.sessionId, {
+        ...worktree,
+        checkpointError: error.message
+      })
+      throw new Error(
+        `Worktree dibuat di ${target}, tetapi checkpoint awal gagal: ${error.message}. Folder dipertahankan.`
+      )
+    }
   })
 )
 codingRouter.post(
@@ -278,35 +280,54 @@ codingRouter.post(
     assertWorkspaceIdle(workspace.sessionId)
     if (listTerminals(workspace.sessionId).some((t) => t.status === 'running'))
       throw new Error('Hentikan terminal sesi sebelum membawa perubahan kembali.')
-    const output = await git('git', ['diff', '--no-renames', '--name-only', '-z', worktree.base], {
-      cwd: worktree.root
-    })
-    const untracked = await git('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
-      cwd: worktree.root
-    })
+    if (!worktree.initialOid || !worktree.sourceBaselineOid)
+      throw new Error(
+        'Worktree ini tidak mempunyai checkpoint awal lengkap. Folder dipertahankan; tinjau dan bawa hasil secara manual.'
+      )
+    const currentTree = await captureWorkspace(
+      worktree.root,
+      runCheckpointRef(worktree.root, 'handoff')
+    )
+    const changedFiles = await checkpointChanges(
+      worktree.root,
+      worktree.gitWorkspaceId,
+      worktree.initialOid,
+      currentTree.oid
+    )
     const changes = []
-    for (const file of new Set((output.stdout + untracked.stdout).split('\0').filter(Boolean))) {
+    for (const changed of changedFiles) {
+      const file = changed.relativePath
       const target = scopedPath(worktree.sourceRoot, file),
         origin = scopedPath(worktree.root, file)
-      let baseline = null
-      try {
-        baseline = (
-          await git('git', ['show', `${worktree.base}:${file.replaceAll('\\', '/')}`], {
-            cwd: worktree.root,
-            encoding: 'buffer',
-            maxBuffer: 20000000
-          })
-        ).stdout
-      } catch {
-        /* Added files have no baseline. */
-      }
+      const baseline = await checkpointBytes(
+        worktree.gitWorkspaceId,
+        changed.beforeOid,
+        changed.beforeSize
+      )
+      const sourceBaseline = await checkpointFileBytes(
+        worktree.sourceGitWorkspaceId,
+        worktree.sourceBaselineOid,
+        file
+      )
       const current = fs.existsSync(target) ? fs.readFileSync(target) : null
-      if (fileHash(current) !== fileHash(baseline))
+      if (
+        fileHash(current) !== fileHash(sourceBaseline) ||
+        fileHash(sourceBaseline) !== fileHash(baseline)
+      )
         throw new Error(`Konflik di folder asal: ${file}. Perubahan lokal dipertahankan.`)
+      const after = await checkpointBytes(
+        worktree.gitWorkspaceId,
+        changed.afterOid,
+        changed.afterSize
+      )
+      if (fileHash(fs.existsSync(origin) ? fs.readFileSync(origin) : null) !== fileHash(after))
+        throw new Error(
+          `Worktree berubah saat ditinjau: ${file}. Baca ulang sebelum membawa hasil.`
+        )
       changes.push({
         path: target,
         before: current,
-        after: fs.existsSync(origin) ? fs.readFileSync(origin) : null
+        after
       })
     }
     const run = {
@@ -321,7 +342,7 @@ codingRouter.post(
       guidance: [],
       createdAt: Date.now()
     }
-    if (changes.length) await commitSnapshotChanges(run, changes)
+    if (changes.length) await applyWorkspaceChanges(run, changes)
     codingStore.put('worktree', workspace.sessionId, { ...worktree, active: false })
     return { sourceRoot: worktree.sourceRoot, files: changes.length, worktreeKept: true }
   })

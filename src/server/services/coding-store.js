@@ -46,8 +46,14 @@ export function createCodingStore(db) {
       db.transaction(() => {
         if (overwrite) db.prepare('DELETE FROM coding_records').run()
         for (const { kind, ...record } of records || []) {
-          if (!['run', 'memory', 'worktree', 'terminal'].includes(kind)) continue
+          if (!['run', 'memory', 'worktree', 'terminal', 'git-workspace'].includes(kind)) continue
           if (['running', 'starting'].includes(record.status)) record.status = 'interrupted'
+          if (kind === 'run' && record.beforeOid && !record.afterOid) {
+            record.captureStatus = 'failed'
+            record.captureError = 'Checkpoint akhir tidak tersedia setelah pemulihan database.'
+            record.status = 'interrupted'
+            record.finishedAt ||= Date.now()
+          }
           if (kind === 'worktree') record.active = false
           this.put(kind, record.id, record)
         }

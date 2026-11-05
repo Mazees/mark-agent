@@ -283,7 +283,7 @@ export default function CodingPanel({
       setBusy(false)
     }
   }
-  const latest = runs.find((run) => run.id === runId) || runs[0],
+  const latest = runId ? runs.find((run) => run.id === runId) : runs[0],
     files = scope === 'latest' ? latest?.files || [] : workspaceDiff?.files || []
   const terminal = terminals.find((t) => t.id === terminalId)
   const openDiff = (file) =>
@@ -498,6 +498,7 @@ export default function CodingPanel({
             </>
           ) : (
             <CodingChanges
+              selectionMissing={!loading && Boolean(runId) && !latest}
               scope={scope}
               onScopeChange={(value) => {
                 setScope(value)

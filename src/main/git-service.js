@@ -1,8 +1,5 @@
-import { exec } from 'child_process'
-import util from 'util'
 import fs from 'fs'
-
-const execPromise = util.promisify(exec)
+import { runGit } from './git-runtime.js'
 
 function validateRepoCwd(cwd) {
   const target = cwd || process.cwd()
@@ -27,7 +24,7 @@ export async function getGitStatus(cwd) {
   const check = validateRepoCwd(cwd)
   if (!check.valid) return { success: false, error: check.error }
   try {
-    const { stdout } = await execPromise('git status --short', { cwd: check.target })
+    const { stdout } = await runGit(['status', '--short'], { cwd: check.target })
     return {
       success: true,
       status: stdout.trim() || 'Working tree clean (tidak ada perubahan berkas).'
@@ -43,8 +40,10 @@ export async function getGitDiff(cwd, filePath = '') {
   const check = validateRepoCwd(cwd)
   if (!check.valid) return { success: false, error: check.error }
   try {
-    const cleanPath = filePath ? ` -- "${filePath.trim()}"` : ''
-    const { stdout } = await execPromise(`git diff${cleanPath}`, { cwd: check.target })
+    const { stdout } = await runGit(
+      ['diff', '--no-ext-diff', '--no-textconv', ...(filePath ? ['--', filePath.trim()] : [])],
+      { cwd: check.target }
+    )
     return {
       success: true,
       diff: stdout.trim() || 'Tidak ada perbedaan baris kode yang belum di-commit.'
@@ -61,9 +60,8 @@ export async function gitCommit(cwd, message = 'Mark Agent Checkpoint') {
   const check = validateRepoCwd(cwd)
   if (!check.valid) return { success: false, error: check.error }
   try {
-    await execPromise('git add -A', { cwd: check.target })
-    const safeMsg = message.replace(/"/g, '\\"')
-    const { stdout } = await execPromise(`git commit -m "${safeMsg}"`, { cwd: check.target })
+    await runGit(['add', '-A'], { cwd: check.target })
+    const { stdout } = await runGit(['commit', '-m', message], { cwd: check.target })
     return { success: true, message: stdout.trim() }
   } catch (err) {
     return { success: false, error: formatGitError(err, check.target) }
@@ -78,10 +76,10 @@ export async function gitRevert(cwd, filePath = '') {
   if (!check.valid) return { success: false, error: check.error }
   try {
     if (filePath && filePath.trim()) {
-      await execPromise(`git checkout -- "${filePath.trim()}"`, { cwd: check.target })
+      await runGit(['checkout', '--', filePath.trim()], { cwd: check.target })
       return { success: true, message: `Berhasil me-rollback perubahan pada berkas ${filePath}.` }
     } else {
-      await execPromise('git reset --hard HEAD', { cwd: check.target })
+      await runGit(['reset', '--hard', 'HEAD'], { cwd: check.target })
       return { success: true, message: 'Berhasil me-rollback seluruh repositori ke HEAD.' }
     }
   } catch (err) {
