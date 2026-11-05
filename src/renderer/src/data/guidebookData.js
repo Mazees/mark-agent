@@ -183,10 +183,10 @@ export const guideArticles = [
         ]
       },
       {
-        title: 'Menggunakan worktree opsional',
+        title: 'Membuka panel workspace',
         paragraphs: [
-          'Untuk proyek Git, pilihan Gunakan worktree pada pengaturan percakapan atau panel Perubahan membuat folder kerja terpisah dari commit HEAD. Folder asal tetap dipertahankan. Worktree tidak menyalin perubahan lokal yang belum di-commit atau memasang dependensi proyek secara otomatis. Proyek tanpa Git tetap dapat digunakan melalui folder lokal biasa.',
-          'Konteks, terminal, dan pekerjaan Minibot mengikuti folder efektif sesi. Hentikan proses dan tunggu pekerjaan selesai sebelum berpindah. Pilih Bawa hasil worktree ke folder asal ketika hasilnya siap; Mark memeriksa konflik sebelum menulis berkas. Tindakan ini tidak membuat commit, merge, atau push, dan folder worktree tetap berada di disk.'
+          'Panel kanan Chat Studio berisi tab Browser dan tab berkas, diff, dokumen, atau terminal yang Anda buka. Browser tetap satu untuk setiap percakapan. Tombol + menyediakan Buka berkas, Buka dokumen, dan Terminal baru; pemilih berkas menampilkan isi workspace secara bertahap dan menyediakan pencarian nama atau lokasi.',
+          'Tab dan pilihan aktif disimpan untuk setiap sesi. Berpindah percakapan tidak membawa tab dari sesi sebelumnya. Pada layar sempit, panel dan percakapan dibuka bergantian. Memulihkan tab setelah reload tidak menjalankan terminal atau membuka alamat browser secara otomatis. Mark bekerja langsung pada folder workspace; folder worktree yang pernah digunakan tetap dipertahankan sebagai folder kerja sesi biasa.'
         ]
       },
       {
@@ -348,33 +348,39 @@ export const guideArticles = [
         title: 'Mengubah dan memeriksa proyek',
         paragraphs: [
           'Tool berkas mendukung pembuatan, penggantian teks atau baris, penghapusan, dan apply-patch untuk beberapa berkas sekaligus. Mark harus membaca berkas yang sudah ada sebelum mengeditnya. Jika isi berubah sejak pembacaan, edit ditolak agar Mark membaca ulang kondisi terbaru. Seluruh target patch diperiksa sebelum penulisan; kegagalan penerapan memulihkan target yang sudah tersentuh.',
-          'Keberhasilan menyimpan berkas berbeda dari keberhasilan pemeriksaan. Mark dapat menjalankan PowerShell untuk build, lint, pemeriksaan sintaks, dan pengujian yang tersedia pada proyek. Tab Perubahan menampilkan perintah serta hasil pemeriksaan; membaca ulang berkas tidak membuktikan aplikasi berhasil dibangun atau berjalan.'
+          'Keberhasilan menyimpan berkas berbeda dari keberhasilan pemeriksaan. Mark dapat menjalankan PowerShell untuk build, lint, pemeriksaan sintaks, dan pengujian yang tersedia pada proyek. Perintah, output, dan status proses AI muncul pada Aktivitas di giliran yang menjalankannya. Membaca ulang berkas tidak membuktikan aplikasi berhasil dibangun atau berjalan.'
         ],
         example:
           'Perbaiki validasi email pada halaman login di workspace ini, lalu jalankan pemeriksaan proyek dan jelaskan hasilnya.'
       },
       {
-        title: 'Meninjau diff dan menggunakan undo',
+        title: 'Meninjau perubahan setiap giliran',
         paragraphs: [
-          'Setelah satu giliran selesai, kartu Perubahan selama giliran ini muncul di bawah jawaban jika ada berkas yang berubah. Buka kartu, lalu pilih berkas untuk membaca diff langsung di chat. Perbandingan memakai kondisi sebelum tool workspace pertama dan setelah pekerjaan berhenti, sehingga beberapa edit pada berkas yang sama menjadi satu perubahan kumulatif. Jika seluruh edit dikembalikan ke kondisi awal, kartu tidak ditampilkan. Perubahan dari shell, MCP, plugin, atau edit Anda yang berlangsung bersamaan dapat ikut tercatat; kartu tidak menganggap semuanya dibuat oleh Mark.',
-          'Pada panel Perubahan, Giliran dipilih membuka rekaman pekerjaan tertentu. Seluruh workspace membandingkan proyek Git dengan HEAD, atau folder tanpa Git dengan kondisi awal saat mulai dilacak Mark. Mark menyertakan Git bawaan untuk Windows x64 dan menyimpan checkpoint secara terpisah dari repository proyek Anda; staging, branch, serta commit pengguna tidak dipakai untuk mencatat giliran. Berkas yang diabaikan proyek, dependency, cache, dan output build standar tidak masuk cakupan pencatatan atau undo. Hasil Minibot yang terlambat ditautkan ke jawaban Mark yang meninjau laporannya, tanpa mengubah kartu lama.'
+          'Setelah giliran berakhir dan checkpoint akhir selesai dicatat, daftar berkas berubah muncul di bawah jawaban. Setiap baris menampilkan jumlah baris yang ditambah dan dihapus. Klik berkas untuk membuka diff hanya baca pada tab kanan; berkas yang sama dari dua giliran memiliki tab diff berbeda. Giliran tanpa perubahan tidak menampilkan kartu.',
+          'Terima semua mempertahankan isi yang sudah tersimpan tanpa staging atau commit. Tolak semua memulihkan kondisi sebelum giliran setelah seluruh target diperiksa. Jika ada edit lanjutan, penolakan dibatalkan dan kartu tetap belum diputuskan. Keputusan yang berhasil bersifat final: status Diterima atau Ditolak menggantikan tombol. Perubahan berikutnya dilakukan melalui giliran baru.',
+          'Checkpoint memakai Git internal yang disertakan dalam Mark, terpisah dari riwayat dan staging repository proyek. Cakupannya adalah perubahan workspace selama jendela pekerjaan, termasuk edit Anda atau tool lain yang berjalan bersamaan. Perubahan yang sudah ada sebelum giliran tetap dipertahankan. Berkas ignore, dependency, cache, dan output build standar berada di luar cakupan. Hasil Minibot tetap mempunyai kartu dan identitas pekerjanya sendiri.'
         ]
       },
       {
-        title: 'Git dan proses latar belakang',
+        title: 'Menyunting berkas secara manual',
         paragraphs: [
-          'Tombol Urungkan pada kartu dapat memulihkan satu atau seluruh berkas setelah checkpoint akhir tersedia. Mark memeriksa isi semua target sebelum menulis. Jika ada perubahan lanjutan, permintaan ditolak agar edit Anda tetap aman. Undo tidak menggunakan reset pada repository pengguna. Berkas biner tetap dapat dipulihkan meskipun hanya metadata yang ditampilkan; riwayat lama mempertahankan cakupan berkas yang memang pernah direkam.',
-          'Gunakan grup Git untuk memeriksa status dan diff, membuat commit, atau menjalankan revert. Tinjau perubahan sebelum menyimpannya ke riwayat; perubahan berkas kerja, commit, dan revert mempunyai dampak yang berbeda.',
-          'Tab Terminal membuka satu PowerShell secara otomatis jika percakapan belum mempunyai terminal. Membuka ulang tab menggunakan terminal yang sudah tersedia; tombol tambah digunakan jika Anda membutuhkan terminal lain. PowerShell berjalan pada workspace efektif dan mendukung input, paste, perubahan ukuran, serta Ctrl+C. Input yang Anda ketik sendiri merupakan tindakan langsung Anda; perintah AI tetap memakai alur persetujuan tool.',
-          'run-powershell dan run-task memakai layanan proses yang sama dengan panel Terminal. run-task digunakan untuk proses lama, seperti server pengembangan; read-task-output membaca output dan kill-task menghentikannya.',
-          'Menutup panel menyembunyikan terminal tanpa menghentikan proses. Reload menyambungkan UI ke proses yang masih hidup dengan buffer output terbatas. Tombol Hentikan proses menutup proses beserta turunannya; keluar dari Mark membersihkan proses yang dikelolanya. Setelah restart Mark, proses lama ditandai terputus dan tidak dijalankan ulang secara otomatis.'
+          'Gunakan + > Buka berkas untuk memilih TXT, Markdown, JSON, kode, atau berkas teks lain di workspace. Editor menandai isi yang belum disimpan. Tekan Ctrl+S atau pilih Simpan untuk menulisnya ke disk. Saat menutup tab yang berubah, pilih Simpan, Buang, atau Batal.',
+          'Draf disimpan untuk pemulihan setelah reload, tetapi tidak ditulis ke proyek secara otomatis. Jika AI atau aplikasi lain mengubah berkas, penyimpanan dengan versi lama ditolak. Muat ulang untuk membaca kondisi disk setelah menyimpan salinan draf yang masih diperlukan. Editor mempertahankan encoding dan akhir baris yang dikenali; berkas biner atau teks di atas 2 MiB tidak dibuka sebagai teks biasa.'
         ]
       },
       {
-        title: 'Melihat preview aplikasi',
+        title: 'Membaca dokumen pada tab',
         paragraphs: [
-          'Ketika proses pengembangan mencetak alamat lokal, tab Terminal menampilkannya sebagai kandidat preview. Pilih alamat untuk memeriksa kesiapan koneksi dan membukanya pada browser sesi yang sama. Jika ada beberapa alamat, pilih yang sesuai; Mark tidak menentukan port berdasarkan dugaan.',
-          'Minta aplikasi dijalankan atau ditinjau ketika Anda membutuhkan pemeriksaan visual. Analisis kode baca-saja tidak memerlukan dev server. Jika terminal gagal memuat ConPTY pada Windows, pesan kegagalan ditampilkan; Mark tidak menggantinya diam-diam dengan terminal yang tidak mendukung interaksi.'
+          'Buka dokumen menyediakan tampilan hanya baca untuk PDF, DOC/DOCX, PPT/PPTX, ODT, dan ODP. Gunakan navigasi halaman, zoom, dan pencarian teks untuk meninjau isinya. PDF.js dan LibreOffice dibawa dalam paket Windows Mark, sehingga preview tidak memerlukan Office terpasang atau layanan unggah online.',
+          'Dokumen Office dikonversi menjadi PDF lokal dari salinan sementara dengan profil terpisah dan makro dinonaktifkan. Dokumen asli tidak diubah. Cache mengikuti isi berkas; gunakan muat ulang setelah dokumen berubah. Hasil dapat berbeda dari Microsoft Office, khususnya pada font atau tata letak yang bergantung pada aplikasi aslinya.'
+        ]
+      },
+      {
+        title: 'Terminal manual dan aktivitas AI',
+        paragraphs: [
+          'Pilih + > Terminal baru untuk membuka satu sesi PowerShell pada satu tab. Terminal mendukung mengetik, paste, Unicode, perubahan ukuran, dan Ctrl+C. Menutup tab hanya menyembunyikannya; terminal aktif yang disembunyikan dapat dibuka kembali melalui menu +. Hentikan mengakhiri proses beserta turunannya.',
+          'Perintah AI tidak membuat tab terminal manual. Buka Aktivitas pada giliran terkait untuk melihat perintah, output berjalan, status, dan exit code. run-task dapat tetap berjalan di latar belakang; read-task-output membaca hasil dan kill-task menghentikan proses yang dituju. Setelah Mark dimulai ulang, proses lama tidak dijalankan lagi.',
+          'Browser tetap memakai sesi yang sama untuk peninjauan aplikasi. Jalankan atau minta Mark menjalankan aplikasi, lalu buka alamat lokal yang benar pada Browser. Port tidak ditentukan dengan dugaan. Tool Git tetap tersedia melalui percakapan untuk tindakan yang Anda minta; tidak ada panel Source Control atau commit otomatis dari keputusan kartu.'
         ]
       }
     ],
@@ -1121,13 +1127,6 @@ export const guideArticles = [
   }
 ]
 
-const legacySections = {
-  pengantar: 'overview',
-  carakerja: 'agent',
-  emosi: 'awareness',
-  plugin: 'plugins',
-  tips: 'faq'
-}
 export function guideArticleId(value) {
   const id = legacySections[value] || value
   return guideArticles.some((article) => article.id === id) ? id : 'overview'

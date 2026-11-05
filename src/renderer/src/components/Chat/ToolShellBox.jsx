@@ -2,8 +2,9 @@ import { McpToolName } from './McpToolName'
 /* eslint-disable react/prop-types */
 import { useState } from 'react'
 import { Copy, Check, ChevronDown } from 'lucide-react'
+import ActivityTerminal from './ActivityTerminal.jsx'
 
-export const ToolShellBox = ({ tool, query, result, preview }) => {
+export const ToolShellBox = ({ tool, query, result, preview, sessionId, toolCallId }) => {
   const [copied, setCopied] = useState(false)
   const [showFullOutput, setShowFullOutput] = useState(false)
 
@@ -111,6 +112,7 @@ export const ToolShellBox = ({ tool, query, result, preview }) => {
           </div>
         )}
 
+        {sessionId && toolCallId && ['run-powershell', 'run-task'].includes(tool) && <ActivityTerminal sessionId={sessionId} toolCallId={toolCallId} />}
         {preview && (
           <div className="border-t border-white/8 pt-2">
             <div className="mb-1.5 font-sans text-[10px] font-medium text-white/45">

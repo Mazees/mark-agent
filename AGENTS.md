@@ -168,7 +168,7 @@ Aplikasi ini adalah trusted-local desktop service, bukan server multi-user yang 
 - Perizinan AI diputuskan oleh `src/server/services/tool-approvals.js` dan diperiksa lagi pada eksekusi native, plugin, MCP, serta Minibot. Renderer hanya menyampaikan pilihan manusia. Layanan tetap trusted-local, bukan autentikasi multi-user atau isolasi OS.
 - Mode sesi memakai `approvalMode`: `manual`, `smart`, atau `full`; sesi baru menggunakan `smart`. Peninjau memakai request terpisah ke model utama dengan prompt Indonesia, tanpa persona/tool calling. Hanya verdict teks utuh APPROVE/DENY/ESCALATE yang diterima. Jangan memakai JSON repair atau reasoning sebagai keputusan izin.
 - Mode `smart` tidak membuka dialog persetujuan manual. Mutasi di luar workspace masuk peninjau; permintaan eksplisit dapat mengizinkan aksi hanya pada target yang disebutkan, tanpa izin folder umum. ESCALATE, respons tidak valid, konteks tidak lengkap, dan kegagalan peninjau menolak tindakan. Jangan meminta pengguna mengakali penolakan dengan perubahan tool atau mode.
-- Pembungkus coding menerima target luar workspace hanya melalui cakupan eksekusi dalam memori dari `tool-file-scope.js`, terikat pada objek config, tool, argumen, dan target yang diizinkan. Jangan menggantinya dengan flag JSON atau memperluas `scopedPath` untuk diff/undo/worktree. Instruksi proyek pada Windows membandingkan direktori melalui `path.relative`, bukan kesamaan huruf besar/kecil string path.
+- Pembungkus coding menerima target luar workspace hanya melalui cakupan eksekusi dalam memori dari `tool-file-scope.js`, terikat pada objek config, tool, argumen, dan target yang diizinkan. Jangan menggantinya dengan flag JSON atau memperluas `scopedPath` untuk diff/undo. Instruksi proyek pada Windows membandingkan direktori melalui `path.relative`, bukan kesamaan huruf besar/kecil string path.
 - Jangan memberi jalan pengganti untuk tindakan yang ditolak. Computer Use open_session tetap memerlukan keputusan manusia baru; Akses penuh tidak melewati ketentuan tersebut. Request izin tertunda tidak dipulihkan sebagai tindakan otomatis setelah restart/restore.
 - Deteksi command/key berbahaya pada system/task tool berbasis keyword dan bersifat advisory, bukan sandbox umum.
 - Plugin dan skill adalah kode aplikasi yang dapat dieksekusi. Perlakukan direktori serta route install/execute sebagai trusted-code boundary.
@@ -232,3 +232,11 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 - A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.
+
+### Panel workspace dan tinjauan per giliran
+
+- Browser tetap satu per sesi. Tab dinamis editor, diff historis, dokumen, dan terminal manual dikelola CodingPanel; proses AI ditampilkan pada Aktivitas dengan sessionId/toolCallId. Jangan membuka terminal atau navigasi browser dari metadata tab restore.
+- workspace-files.js memvalidasi root/symlink dan memakai mutex mutasi bersama serta expectedHash untuk simpan manual. Draf/panel tersimpan di SQLite, tanpa menulis proyek saat restore.
+- reviewCoding menyerialkan keputusan accepted/rejected per rekaman, terikat afterOid/requestId. Keputusan final tidak dapat dibalik, termasuk melalui undo lama. Tolak semua memeriksa semua target dan rollback bila tulis gagal. Tidak ada Source Control atau pembuatan worktree di UI/API. Folder worktree lama dipertahankan sebagai workspace sesi biasa.
+- AGENTS.md dimuat utuh tanpa penolakan 32 KB. Pemuatan konteks, tab, dan terminal independen. Jangan menampilkan kegagalan sebagai daftar kosong.
+- document-preview.js memakai salinan/profil LibreOffice terpisah; renderer/worker PDF lokal dikemas dari manifest terverifikasi. Runtime tidak mengunduh atau mencari Office sistem. Cache/proses tidak masuk backup; metadata tab, draf, review dan objek Git masuk backup.

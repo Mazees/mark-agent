@@ -40,13 +40,25 @@ export function createCodingStore(db) {
       return db
         .prepare('SELECT * FROM coding_records')
         .all()
+        .filter((row) => row.kind !== 'terminal')
         .map((row) => ({ kind: row.kind, ...JSON.parse(row.data) }))
     },
     restore(records, overwrite) {
       db.transaction(() => {
         if (overwrite) db.prepare('DELETE FROM coding_records').run()
         for (const { kind, ...record } of records || []) {
-          if (!['run', 'memory', 'worktree', 'terminal', 'git-workspace'].includes(kind)) continue
+          if (
+            ![
+              'run',
+              'memory',
+              'worktree',
+              'terminal',
+              'git-workspace',
+              'workspace-panel',
+              'editor-draft'
+            ].includes(kind)
+          )
+            continue
           if (['running', 'starting'].includes(record.status)) record.status = 'interrupted'
           if (kind === 'run' && record.beforeOid && !record.afterOid) {
             record.captureStatus = 'failed'
@@ -54,7 +66,6 @@ export function createCodingStore(db) {
             record.status = 'interrupted'
             record.finishedAt ||= Date.now()
           }
-          if (kind === 'worktree') record.active = false
           this.put(kind, record.id, record)
         }
       })()

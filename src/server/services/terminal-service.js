@@ -20,6 +20,8 @@ export const terminalInfo = (terminal) => ({
   sequence: terminal.sequence,
   urls: [...terminal.urls],
   createdAt: terminal.createdAt,
+  codingRunId: terminal.codingRunId,
+  toolCallId: terminal.toolCallId,
   interactive: terminal.interactive
 })
 function publish(terminal, event, payload) {
@@ -50,7 +52,8 @@ export function startTerminal({
   root,
   command = '',
   interactive = false,
-  codingRunId = null
+  codingRunId = null,
+  toolCallId = null
 }) {
   const previous = processes.get(id)
   if (previous) {
@@ -82,6 +85,7 @@ export function startTerminal({
     command,
     interactive,
     codingRunId,
+    toolCallId,
     pid: null,
     child,
     status: 'starting',
@@ -190,7 +194,8 @@ export async function runCommand(command, config = {}) {
     sessionId: config.codingSessionId || config.sessionId || '1',
     root: config.workspaceRoot,
     command,
-    codingRunId: config.codingRunId
+    codingRunId: config.codingRunId,
+    toolCallId: config.toolCallId
   })
   const terminal = getTerminal(id)
   const abort = () => stopTerminal(id)
@@ -253,6 +258,8 @@ export function terminalSocket(payload, client) {
   if (!terminal.clients.has(client)) throw new Error('Hubungkan terminal sebelum mengirim input.')
   if (terminal.status !== 'running' && !(terminal.status === 'starting' && action === 'resize'))
     throw new Error('Proses terminal belum siap atau telah berhenti.')
+  if (action === 'input' && !terminal.interactive)
+    throw new Error('Proses AI hanya menerima input melalui tool yang disetujui.')
   if (action === 'input')
     terminal.child.send({ type: 'input', data: String(payload.data || '').slice(0, 20000) })
   else if (action === 'resize')

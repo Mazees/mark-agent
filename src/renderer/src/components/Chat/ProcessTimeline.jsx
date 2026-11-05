@@ -222,6 +222,8 @@ export const ProcessTimeline = ({
                       query={step.query}
                       result={result}
                       preview={step.preview}
+                      sessionId={step.sessionId}
+                      toolCallId={step.toolCallId}
                       reason={displayReason}
                     />
                   </details>

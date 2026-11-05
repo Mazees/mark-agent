@@ -13,13 +13,14 @@ export function spawnBackgroundTask(taskId, command, cwd, config = {}) {
       command,
       root: cwd || process.cwd(),
       sessionId: config.codingSessionId || config.sessionId || '1',
-      codingRunId: config.codingRunId
+      codingRunId: config.codingRunId,
+      toolCallId: config.toolCallId
     })
     return {
       success: true,
       ...terminal,
       taskId: terminal.id,
-      message: 'Proses dimulai. Log tersedia melalui read-task-output dan panel Terminal.'
+      message: 'Proses dimulai. Log tersedia melalui read-task-output pada Aktivitas di percakapan ini.'
     }
   } catch (error) {
     return { success: false, error: error.message }

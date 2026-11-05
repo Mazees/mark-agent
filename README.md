@@ -263,7 +263,7 @@ Fitur Knowledge dan pencarian otomatis dokumen telah dihapus. Tabel `documents` 
 
 ### Git bawaan untuk Chat Studio (Windows x64)
 
-Paket Mark menyertakan MinGit, jadi pengguna tidak perlu memasang Git terpisah untuk diff, terminal Git, dan worktree. Pengembang menjalankan `npm run prepare:git` sebelum memakai fitur coding dari source. Persiapan paket memeriksa versi dan checksum distribusi resmi; pemakaian Mark tidak mengunduh Git.
+Paket Mark menyertakan MinGit, jadi pengguna tidak perlu memasang Git terpisah untuk checkpoint diff dan terminal Git. Pengembang menjalankan `npm run prepare:git` sebelum memakai fitur coding dari source. Persiapan paket memeriksa versi dan checksum distribusi resmi; pemakaian Mark tidak mengunduh Git. Penampil dokumen juga membawa LibreOffice Windows x64. Jalankan `npm run prepare:office` untuk menyiapkan renderer lokal sebelum development atau rilis. Paket npm menyertakan distribusi tersebut untuk instalasi `--ignore-scripts`; ukurannya bertambah karena Office dibawa bersama Mark.
 
 Kartu **Perubahan selama giliran ini** muncul di bawah jawaban setelah turn yang mengubah berkas. Checkpoint Git internal terpisah dari staging dan riwayat repository pengguna. Perubahan yang terjadi bersamaan bisa ikut tercatat. Detail cakupan, backup, dan batas undo tersedia di [panduan coding](docs/coding-workspace.md).
 

@@ -11,16 +11,20 @@ export const fileHash = (bytes) =>
 export const rootKey = (root) => path.resolve(root).replaceAll('\\', '/').toLowerCase()
 export function workspaceFor(sessionId = '1') {
   const id = String(sessionId)
-  const session = dbStore.sessions.getById(id)
+  let session = dbStore.sessions.getById(id)
   if (id !== '1' && !session) throw new Error('Percakapan workspace tidak ditemukan.')
   const worktree = codingStore.get('worktree', id)
-  const localRoot =
-    id === '1' ? DEFAULT_WORKSPACE_ROOT : session?.workspaceRoot || DEFAULT_WORKSPACE_ROOT
+  if (worktree?.active) {
+    dbStore.sqlite.transaction(() => {
+      session = dbStore.sessions.insert({ ...session, id, workspaceRoot: worktree.root })
+      codingStore.put('worktree', id, { ...worktree, active: false, retired: true })
+    })()
+  }
+  const localRoot = session?.workspaceRoot || DEFAULT_WORKSPACE_ROOT
   return {
     sessionId: id,
-    root: worktree?.active ? worktree.root : localRoot,
-    sourceRoot: worktree?.active ? worktree.sourceRoot : localRoot,
-    worktree
+    root: localRoot,
+    sourceRoot: localRoot
   }
 }
 export function scopedPath(root, value = '.') {
@@ -57,8 +61,6 @@ export function instructionsFor(root, files = []) {
         .find(fs.existsSync)
       if (!file) return []
       const content = fs.readFileSync(scopedPath(root, file), 'utf8')
-      if (Buffer.byteLength(content) > 32768)
-        throw new Error(`Instruksi proyek terlalu panjang: ${file}`)
       return [{ path: file, scope: dir, hash: fileHash(content), content }]
     })
 }

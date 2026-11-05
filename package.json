@@ -31,9 +31,10 @@
     "build:ui": "node scripts/build-computer-overlay.mjs && vite build",
     "build:computer-overlay": "node scripts/build-computer-overlay.mjs",
     "prepare:git": "node scripts/prepare-git.mjs",
-    "prepack": "npm run prepare:git",
-    "prepublishOnly": "npm run prepare:git && npm run build:ui",
-    "cli": "node bin/mark.js"
+    "prepack": "npm run prepare:git && npm run prepare:office",
+    "prepublishOnly": "npm run prepare:git && npm run prepare:office && npm run build:ui",
+    "cli": "node bin/mark.js",
+    "prepare:office": "node scripts/prepare-office.mjs"
   },
   "files": [
     "bin",
@@ -53,7 +54,9 @@
     "scripts/prepare-git.mjs",
     "src/main/pc-agent-scripts/overlay-runtime/MarkOverlay.exe",
     "src/main/pc-agent-scripts/overlay-runtime/build-id",
-    "package.json"
+    "package.json",
+    "resources/office",
+    "scripts/prepare-office.mjs"
   ],
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -87,6 +90,7 @@
     "open": "^11.0.0",
     "openai": "^6.17.0",
     "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "5.4.296",
     "puppeteer-core": "^25.12.0",
     "react-force-graph-2d": "^1.29.1",
     "react-icons": "^5.6.0",
