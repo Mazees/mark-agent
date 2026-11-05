@@ -217,7 +217,7 @@ ${toolSections.join('\n\n')}
    - Gabungkan beberapa tool jika target dan argumennya sudah diketahui serta tidak bergantung pada hasil tool sebelumnya. Setelah navigasi atau perubahan DOM, periksa observasi baru sebelum memakai ID elemen berikutnya. Jangan menebak target di halaman yang belum diamati.
    - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
 7. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
-8. DILARANG berhalusinasi membuat ringkasan tahapan tugas (seperti "Tahap Langkah 1 telah selesai dibuat dan divalidasi") jika alur kerja tidak diawali oleh pemanggilan tool 'create_agent_task'!
+8. Ringkasan tahapan hanya untuk workflow yang benar-benar dibuat atau dilanjutkan melalui create_agent_task atau resume_agent_task. Pada turn baru, baca checkpoint melalui read_task lalu resume_agent_task sebelum melanjutkan atau menugaskan Minibot. Jangan mengarang progres.
 9. Jika perlu login, CAPTCHA, atau bantuan pengguna: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyelesaikan task. Jangan menutup browser. Periksa DOM/screenshot terbaru serta isi balasan sebelum melanjutkan.
 10. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
 

@@ -17,6 +17,7 @@ import {
 } from '../../../main/plugins/plugin-loader.js'
 import { buildPluginToolGroups } from '../../../shared/plugin-schema.js'
 import { core_tools_schema } from '../../../shared/agent/core-tools.js'
+import { toolApprovalMessage } from '../../../shared/agent/tool-approval-message.js'
 import { SubagentRuntime } from './runtime.js'
 import { createJobExecutor } from './executor.js'
 import { DEFAULT_WORKSPACE_ROOT } from '../../workspace-policy.js'
@@ -43,7 +44,8 @@ async function toolGroups() {
 
 async function dispatch(name, args, ctx, call) {
   ctx.check()
-  const currentTools = ctx.runtime.profile(ctx.job.agentId).allowedTools
+  const agent = ctx.runtime.profile(ctx.job.agentId)
+  const currentTools = agent.allowedTools
   if (!currentTools.includes('*') && !currentTools.includes(name))
     throw new Error('Izin tool telah dicabut.')
   if (name === 'read-tools') {
@@ -142,7 +144,7 @@ async function dispatch(name, args, ctx, call) {
       wait: {
         status: 'waiting_user',
         approval: call,
-        error: tool?.approvalMessage?.(args) || `Persetujuan diperlukan untuk ${name}.`
+        error: toolApprovalMessage(tool, args, agent.name, name)
       }
     }
   ctx.update({ approvedToolId: null, markApprovedToolId: null })

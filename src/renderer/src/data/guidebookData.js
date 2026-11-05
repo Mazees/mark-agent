@@ -391,7 +391,7 @@ export const guideArticles = [
       {
         title: 'Kapan menggunakan Minibots?',
         paragraphs: [
-          'Minibots berguna untuk pekerjaan yang dapat dibagi menjadi tugas mandiri. Pada riset, satu agen dapat membaca dokumentasi dan agen lain memeriksa contoh penerapan. Pada proyek kode, beberapa agen dapat meninjau modul berbeda dan mengirimkan temuan masing-masing.',
+          'Mark menggunakan Minibots untuk bagian pekerjaan independen yang dapat berjalan bersamaan. Pada riset, satu agen dapat membaca dokumentasi dan agen lain memeriksa contoh penerapan. Mark juga dapat mengerjakan satu bagian sementara Minibot menangani bagian lain. Tugas tunggal dan langkah yang harus menunggu hasil sebelumnya dikerjakan Mark sendiri.',
           'Mark memberikan tujuan dan batas tugas, lalu meninjau laporan untuk menyusun hasil bagi Anda. Pekerjaan berjalan pada server sehingga chat tetap dapat digunakan. Setiap Minibot mempunyai sesi browser terpisah.'
         ],
         example:
@@ -435,7 +435,7 @@ export const guideArticles = [
     summary:
       'Task Workflow adalah rencana kerja tersimpan dalam bentuk checklist berurutan. Mark mengerjakan langkah aktif, memeriksa hasilnya, dan menyimpan ringkasan beserta bukti sebelum melanjutkan.',
     keywords:
-      'agent workflows durable tasks task create_agent_task mark_done_task read_task update_task_plan checkpoint artifact /task',
+      'agent workflows durable tasks task create_agent_task mark_done_task read_task resume_agent_task update_task_plan checkpoint artifact /task',
     sections: [
       {
         title: 'Membuat rencana kerja',
@@ -456,7 +456,8 @@ export const guideArticles = [
       {
         title: 'Melanjutkan atau menghentikan',
         paragraphs: [
-          'Checkpoint dan sesi asal disimpan. Setelah restart, pekerjaan yang terputus dijeda agar keadaan terakhir dapat diperiksa sebelum dilanjutkan. Gunakan Lanjutkan atau Coba lagi sesuai status pada kartu.',
+          'Checkpoint dan sesi asal disimpan. Setelah restart, pekerjaan yang terputus dijeda agar keadaan terakhir dapat diperiksa sebelum dilanjutkan. Gunakan Lanjutkan atau Coba lagi pada kartu, atau kirim pesan seperti “Lanjutkan workflow yang tadi gagal” dalam sesi yang sama. Mark membaca checkpoint dan melanjutkan langkah yang belum selesai; langkah selesai tidak diulang. Jika ada beberapa tugas yang mungkin dimaksud, sebutkan judulnya.',
+          'Penugasan Minibot yang dibuat setelah workflow dilanjutkan tetap terhubung ke tugas dan langkah aktif yang sama. Laporan Minibot ditinjau Mark sebelum checklist diperbarui. Turn baru tidak membuat workflow pengganti, dan percakapan yang tidak berkaitan tidak otomatis mengubah tugas lama.',
           'Hentikan membatalkan workflow pilihan dan penugasan Minibot terkait. Setelah seluruh langkah selesai, Mark menyusun jawaban penutup dari hasil tersimpan, terpisah dari catatan kemajuan setiap langkah.'
         ]
       }

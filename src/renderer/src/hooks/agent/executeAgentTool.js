@@ -72,7 +72,15 @@ export async function executeAgentTool({
     })
     return { res, durableTask, durableActiveStep, reason: execReason }
   }
-  if (['create_agent_task', 'mark_done_task', 'read_task', 'update_task_plan'].includes(tool)) {
+  if (
+    [
+      'create_agent_task',
+      'mark_done_task',
+      'read_task',
+      'update_task_plan',
+      'resume_agent_task'
+    ].includes(tool)
+  ) {
     return executeWorkflowTool({
       tool,
       args: rawArgs,

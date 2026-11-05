@@ -708,7 +708,7 @@ export const core_tools_schema = [
     function: {
       name: 'spawn_subagent',
       description:
-        'Mendelegasikan tugas ke Minibot baru yang bekerja mandiri di background secara non-blocking. Minibot akan mengeksekusi misi dan melapor kembali secara otomatis via push notification tanpa Lead Agent perlu memanggil wait_subagents.',
+        'Mendelegasikan bagian pekerjaan independen ke Minibot untuk dikerjakan bersamaan dengan bagian lain oleh Mark atau Minibot lain. Gunakan hanya bila ada pekerjaan yang benar-benar dapat berjalan paralel; tugas tunggal atau langkah berurutan dikerjakan Mark sendiri. Minibot bekerja di background dan melapor otomatis tanpa wait_subagents.',
       parameters: {
         type: 'object',
         properties: {
@@ -977,7 +977,7 @@ core_tools_schema.push({
   function: {
     name: 'read_task',
     description:
-      'Membaca status checklist, sasaran, hasil, bukti pemeriksaan, dan lokasi berkas. Gunakan read-file jika membutuhkan isi berkas hasil.',
+      'Membaca checkpoint workflow tanpa mengaktifkannya. Tanpa taskId, menampilkan workflow dalam sesi saat ini (atau membaca workflow aktif). Gunakan untuk menemukan tugas gagal pada turn baru, lalu resume_agent_task untuk melanjutkannya. Gunakan read-file untuk isi berkas hasil.',
     parameters: {
       type: 'object',
       properties: {
@@ -987,7 +987,24 @@ core_tools_schema.push({
           description: 'Nomor langkah mulai 1. Jika kosong membaca seluruh ringkasan workflow.'
         }
       },
-      required: ['taskId'],
+      additionalProperties: false
+    }
+  }
+})
+
+core_tools_schema.push({
+  type: 'function',
+  function: {
+    name: 'resume_agent_task',
+    description:
+      'Menautkan workflow yang masih berjalan atau melanjutkan workflow gagal/dijeda dari checkpoint di sesi yang sama, termasuk pada turn baru atas permintaan pengguna. Baca read_task dahulu untuk taskId dan planVersion terbaru. Mempertahankan langkah selesai dan jumlah percobaan saat hanya menautkan workflow berjalan. Tidak menjalankan ulang aksi lama otomatis; periksa hasil aksi yang belum diketahui.',
+    parameters: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'ID workflow yang dipilih dari read_task.' },
+        planVersion: { type: 'integer', description: 'Versi rencana dari snapshot terbaru.' }
+      },
+      required: ['taskId', 'planVersion'],
       additionalProperties: false
     }
   }

@@ -48,10 +48,15 @@ export const workflowMutation = (task, operation, input = {}) =>
   })
 export const reviseAgentTask = (task, input) => workflowMutation(task, 'plan', input)
 export const finalizeAgentTask = (task, answer) => workflowMutation(task, 'finalize', { answer })
-export async function listAgentTasks({ status, limit = 50 } = {}) {
+export async function listAgentTasks({ sessionId, status, statuses, limit = 50 } = {}) {
   const tasks = await taskRequest('')
   return tasks
-    .filter((t) => !status || t.status === status)
+    .filter(
+      (t) =>
+        (sessionId == null || String(t.sessionId) === String(sessionId)) &&
+        (!status || t.status === status) &&
+        (!statuses || statuses.includes(t.status))
+    )
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, limit)
 }

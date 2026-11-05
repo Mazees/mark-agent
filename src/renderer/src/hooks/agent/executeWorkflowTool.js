@@ -1,6 +1,7 @@
 import {
   createAgentTask,
   getAgentTaskWithSteps,
+  listAgentTasks,
   reviseAgentTask,
   workflowMutation,
   taskRequestId
@@ -36,6 +37,30 @@ export async function executeWorkflowTool({
   const sessionId = String(context?.sessionId || activeSessionNum || 1)
   let task = durableTask
   try {
+    if (tool === 'read_task' && !input.taskId && !task) {
+      const tasks = await listAgentTasks({ sessionId })
+      return {
+        durableTask,
+        durableActiveStep: null,
+        res: {
+          success: true,
+          data: {
+            tasks: tasks.map((item) => ({
+              taskId: item.id,
+              title: item.title,
+              objective: item.objective,
+              status: item.status,
+              planVersion: item.planVersion,
+              currentStepIndex: item.currentStepIndex,
+              error: item.error,
+              updatedAt: item.updatedAt
+            })),
+            instruction:
+              'Daftar ini hanya milik sesi saat ini dan tidak mengaktifkan workflow. Baca checkpoint dengan read_task(taskId). Jika pengguna meminta melanjutkan, gunakan resume_agent_task dengan taskId dan planVersion dari snapshot. Jika target ambigu, minta pengguna memilih.'
+          }
+        }
+      }
+    }
     if (tool === 'create_agent_task') {
       if (task)
         throw new Error(
@@ -60,13 +85,27 @@ export async function executeWorkflowTool({
         }
       ])
     } else {
-      if (tool !== 'read_task' && (!task || (input.taskId && input.taskId !== task.id)))
+      if (
+        !['read_task', 'resume_agent_task'].includes(tool) &&
+        (!task || (input.taskId && input.taskId !== task.id))
+      )
         throw new Error('Lanjutkan workflow yang dipilih terlebih dahulu.')
       const id = input.taskId || task?.id
       if (!id) throw new Error('taskId wajib disertakan.')
       task = await getAgentTaskWithSteps(id)
       if (!task || (task.sessionId != null && String(task.sessionId) !== sessionId))
         throw new Error('Workflow tidak ditemukan dalam sesi ini.')
+      if (tool === 'resume_agent_task') {
+        if (durableTask && durableTask.id !== task.id)
+          throw new Error('Selesaikan workflow aktif sebelum melanjutkan workflow lain.')
+        if (!Number.isInteger(input.planVersion))
+          throw new Error('Baca checkpoint melalui read_task dan sertakan planVersion.')
+        task = await workflowMutation(task, 'control', {
+          action: 'resume',
+          planVersion: input.planVersion,
+          requestId: requestId || taskRequestId()
+        })
+      }
       if (tool === 'mark_done_task')
         task = await workflowMutation(task, 'complete', {
           ...input,
@@ -75,11 +114,24 @@ export async function executeWorkflowTool({
         })
       if (tool === 'update_task_plan')
         task = await reviseAgentTask(task, { ...input, requestId: requestId || taskRequestId() })
-      targetSetChatData?.((prev) =>
-        prev.map((m) =>
+      targetSetChatData?.((prev) => {
+        const messages = prev.map((m) =>
           m.isPlanSteps && m.taskId === task.id ? { ...m, ...workflowMessage(task) } : m
         )
-      )
+        if (
+          tool === 'resume_agent_task' &&
+          !messages.some((m) => m.isPlanSteps && m.taskId === task.id)
+        )
+          messages.push({
+            id: `plan-${task.id}`,
+            role: 'ai',
+            isPlanSteps: true,
+            ...workflowMessage(task),
+            timestamp: getCurrentTimeInfo?.(),
+            created_at: Date.now()
+          })
+        return messages
+      })
       if (tool === 'update_task_plan')
         targetSetChatData?.((prev) => [
           ...prev.filter((m) => m.id !== `revision-${task.id}-${task.planVersion}`),
@@ -119,7 +171,11 @@ export async function executeWorkflowTool({
               instruction:
                 task.status === 'completed'
                   ? 'Checklist selesai. Susun jawaban penutup untuk pengguna berdasarkan hasil tersimpan.'
-                  : `Kerjakan hanya langkah aktif ${active?.stepIndex + 1}: ${active?.title}. Periksa hasil sesuai jenis pekerjaan. Ringkasan dan bukti wajib; berkas hanya bila diperlukan. Jika menugaskan Minibot, tunggu laporannya sebelum menyelesaikan langkah.`
+                  : task.status === 'running'
+                    ? `Kerjakan hanya langkah aktif ${active?.stepIndex + 1}: ${active?.title}. Sebelum mengulang aksi yang hasilnya belum diketahui, periksa keadaan terakhir. Pertahankan hasil langkah selesai. Periksa hasil sesuai jenis pekerjaan. Ringkasan dan bukti wajib; berkas hanya bila diperlukan. Jika menugaskan Minibot, tunggu laporannya sebelum menyelesaikan langkah.`
+                    : task.status === 'cancelled'
+                      ? 'Workflow sudah berakhir dan tidak dapat dilanjutkan.'
+                      : `Workflow berstatus ${task.status}. Jika pengguna meminta melanjutkan, panggil resume_agent_task dengan taskId dan planVersion ini sebelum bekerja. Jangan membuat workflow pengganti atau mengulang langkah selesai.`
             }
       }
     }

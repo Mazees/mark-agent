@@ -161,13 +161,13 @@ Laporkan lokasi plugin, nama group dan tools, cara memakai query, hasil pengujia
       'Membuat dan mengeksekusi alur tugas multi-langkah terstruktur (Durable Tasks / Task Workflow)',
     content: `
 # TASK WORKFLOW /task
-1. Buat checklist dengan create_agent_task, lalu langsung kerjakan langkah aktif secara berurutan. Jika pengguna meminta rencana saja, tampilkan rencana tanpa eksekusi.
+1. Untuk tugas baru, buat checklist dengan create_agent_task, lalu langsung kerjakan langkah aktif secara berurutan. Jika melanjutkan workflow yang sudah ada, ikuti langkah 7 tanpa membuat checklist pengganti. Jika pengguna meminta rencana saja, tampilkan rencana tanpa eksekusi.
 2. Kerjakan sasaran langkah aktif, periksa hasil, lalu mark_done_task dengan taskId, stepIndex (mulai 1), summary hasil langkah, dan verificationProof. Jangan menandai langkah lain atau menganggap panjang teks sebagai bukti.
 3. Sesuaikan pemeriksaan: audit baca-saja menggunakan rujukan sumber dan hasil pembacaan; coding menggunakan pemeriksaan relevan; kesimpulan dapat merujuk hasil langkah sebelumnya. Jangan mengklaim teruji 100%.
 4. artifactContent tidak wajib. Hasil berkas dapat dirujuk melalui artifactPath; berkas yang diwajibkan tugas harus benar-benar tersedia sebelum selesai. Jangan membuat dokumen atau build hanya untuk memenuhi workflow.
 5. Revisi langkah mendatang melalui update_task_plan dengan taskId, planVersion, explanation, dan daftar langkah mendatang pengganti. Pertahankan langkah aktif/selesai; beri tahu alasan singkat.
-6. Minibot ditautkan ke task dan langkah aktif. Tunggu laporan yang dibutuhkan sebelum menyelesaikan langkah; chat tetap dapat digunakan.
-7. Setelah jeda atau restart, gunakan checkpoint task dan sesi asal. Periksa hasil aksi yang belum diketahui sebelum mengulang.
+6. Gunakan Minibots hanya untuk bagian independen yang bisa dikerjakan bersamaan dengan pekerjaan Mark atau Minibot lain. Tugas tunggal dan langkah yang bergantung pada hasil sebelumnya dikerjakan Mark sendiri. Minibot ditautkan ke task dan langkah aktif; jangan mendelegasikan langkah workflow mendatang sebelum langkah aktif selesai. Pada turn baru, aktifkan workflow lama melalui resume_agent_task sebelum menugaskan Minibot agar laporan tetap memperbarui checklist yang sama. Tunggu laporan yang dibutuhkan sebelum menyelesaikan langkah; chat tetap dapat digunakan.
+7. Untuk melanjutkan tugas gagal atau dijeda pada turn baru, gunakan read_task tanpa taskId untuk menemukan workflow dalam sesi ini, lalu baca checkpoint dengan taskId yang sesuai. Panggil resume_agent_task dengan taskId dan planVersion terbaru. Jangan membuat workflow pengganti atau mengulang langkah selesai. Jika target ambigu, minta pengguna memilih. Setelah jeda atau restart, periksa hasil aksi yang belum diketahui sebelum mengulang.
 8. Setelah checklist selesai sistem menyusun jawaban penutup berdasarkan permintaan awal dan hasil tersimpan. Summary adalah hasil langkah, bukan laporan akhir; jangan menyisipkan penalaran atau catatan kepatuhan internal.`
   }
 ]

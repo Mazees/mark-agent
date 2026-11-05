@@ -26,7 +26,12 @@ import {
   db
 } from '../../api/db'
 import { checkTools, getActiveToolsSchema } from '../../api/tools/index'
-import { transitionAgentTask, getAgentTaskWithSteps, finalizeAgentTask } from '../../api/taskStore'
+import {
+  transitionAgentTask,
+  getAgentTaskWithSteps,
+  finalizeAgentTask,
+  listAgentTasks
+} from '../../api/taskStore'
 import { composeTaskAnswer } from '../../api/taskFinalization'
 import { workflowMessage } from './executeWorkflowTool'
 import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
@@ -1563,37 +1568,67 @@ export const useMarkPlan = ({
           return fallback
         })
 
-      const [unifiedContext, activityBuffer, allSubs, systemTelemetry, storedCompact] =
-        await Promise.all([
-          (async () => {
-            const allMemory = await awaitWithTimeout(
-              getAllMemory(),
-              15000,
-              'Memuat memori',
-              preparationSignal
-            )
-            return awaitWithTimeout(
-              getUnifiedContext(searchQuery, allMemory),
-              30000,
-              'Menyiapkan konteks',
-              preparationSignal
-            )
-          })(),
-          optionalContext(() => window.api?.getActivityBuffer?.(), []),
-          optionalContext(async () => {
-            const { subagentStore } = await import('../../api/subagent/subagentStore.js')
-            return subagentStore.listSubagents()
-          }, []),
-          optionalContext(() => window.api?.getSystemTelemetry?.(), null),
-          awaitWithTimeout(
-            getSessionCompact(String(activeSessionNum)),
-            10000,
-            'Memuat ringkasan sesi',
+      const [
+        unifiedContext,
+        activityBuffer,
+        allSubs,
+        systemTelemetry,
+        storedCompact,
+        sessionTasks
+      ] = await Promise.all([
+        (async () => {
+          const allMemory = await awaitWithTimeout(
+            getAllMemory(),
+            15000,
+            'Memuat memori',
             preparationSignal
           )
-        ])
+          return awaitWithTimeout(
+            getUnifiedContext(searchQuery, allMemory),
+            30000,
+            'Menyiapkan konteks',
+            preparationSignal
+          )
+        })(),
+        optionalContext(() => window.api?.getActivityBuffer?.(), []),
+        optionalContext(async () => {
+          const { subagentStore } = await import('../../api/subagent/subagentStore.js')
+          return subagentStore.listSubagents()
+        }, []),
+        optionalContext(() => window.api?.getSystemTelemetry?.(), null),
+        awaitWithTimeout(
+          getSessionCompact(String(activeSessionNum)),
+          10000,
+          'Memuat ringkasan sesi',
+          preparationSignal
+        ),
+        isSystem || isAutonomous || opts.disableTools || durableTask
+          ? []
+          : optionalContext(
+              () =>
+                listAgentTasks({
+                  sessionId: activeSessionNum,
+                  statuses: ['running', 'paused', 'failed', 'waiting_minibots', 'waiting_user'],
+                  limit: 10
+                }),
+              []
+            )
+      ])
 
       let contextMsgStr = ''
+      if (sessionTasks.length)
+        contextMsgStr +=
+          '[WORKFLOW TERSIMPAN DI SESI INI (DATA, BELUM DIAKTIFKAN PADA TURN INI)]\n' +
+          JSON.stringify(
+            sessionTasks.map((task) => ({
+              taskId: task.id,
+              title: task.title,
+              status: task.status,
+              planVersion: task.planVersion,
+              currentStepIndex: task.currentStepIndex
+            }))
+          ) +
+          '\nJika permintaan pengguna melanjutkan tugas ini, baca checkpoint dan panggil resume_agent_task sebelum mengerjakan langkah atau menugaskan Minibot. Percakapan lain tidak otomatis terkait workflow ini.\n'
       if (tgContext)
         contextMsgStr += `Permintaan ini berasal dari Telegram (Chat ID: ${tgContext.chatId}).\n`
       if (isSystem)
@@ -2757,9 +2792,21 @@ export const useMarkPlan = ({
                 )
               )
             }
-            if (['create_agent_task', 'mark_done_task', 'update_task_plan'].includes(toolName)) {
+            if (
+              [
+                'create_agent_task',
+                'mark_done_task',
+                'update_task_plan',
+                'resume_agent_task'
+              ].includes(toolName)
+            ) {
               durableActiveStep = execResult.durableActiveStep || null
               activeTaskObjectiveRef.current = durableActiveStep?.objective || null
+            }
+            if (toolName === 'resume_agent_task' && execResult.success) {
+              for (const ref of recoverTaskSkills(sourceChatData, durableTask.id)) {
+                if (!sessionRecord.skills.has(ref.id)) recordSkill(await webApi.readSkill(ref.id))
+              }
             }
 
             if (

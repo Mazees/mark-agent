@@ -233,6 +233,10 @@ export function createTaskWorkflow(
         else if (action === 'fail') status = 'failed'
         else if (action === 'help') status = 'waiting_user'
         else if (action === 'resume' || action === 'retry') {
+          if (action === 'resume' && task.status === 'running') {
+            if (!step || step.status !== 'running') fail('Checkpoint aktif tidak ditemukan.')
+            return
+          }
           if (
             !['paused', 'failed', 'waiting_minibots', 'waiting_user', 'pending'].includes(
               task.status

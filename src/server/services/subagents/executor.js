@@ -17,6 +17,7 @@ export const forbiddenTools = new Set([
   'send_message',
   'create_agent_task',
   'mark_done_task',
+  'resume_agent_task',
   'update_task_plan'
 ])
 
