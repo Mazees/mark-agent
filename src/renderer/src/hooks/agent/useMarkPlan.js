@@ -1,4 +1,5 @@
 import { pendingVerification, createProgressGuard } from '@shared/agent/execution-quality.js'
+import { captureApprovalHistory } from '@shared/approval-context.js'
 import { CODING_INSTRUCTIONS } from '@shared/agent/coding-prompt.js'
 import {
   parseSkillRequest,
@@ -366,6 +367,7 @@ export const useMarkPlan = ({
 
     const interventionItem = {
       type: 'intervention',
+      origin: 'user',
       text: displayMsg,
       timestamp: Date.now()
     }
@@ -380,6 +382,13 @@ export const useMarkPlan = ({
       session.lastActivityTime = Date.now()
       if (!session.interventions) session.interventions = []
       session.interventions.push(textMsg)
+      session.approvalInterventions.push({ origin: 'user', role: 'user', source: 'intervention', content: textMsg, createdAt: Date.now() })
+      session.approvalRevision++
+      if (session.getApprovalContext) {
+        const snapshot = session.getApprovalContext()
+        session.approvalSync = (session.approvalSync || Promise.resolve()).catch(() => {}).then(() => webApi.codingRequest('/tools/approval/context', sId, { config: { codingSessionId: String(sId), computerUseRunId: session.computerUseRunId, approvalContext: snapshot } }, 'POST'))
+        session.approvalSync.catch((error) => console.warn('[Approval] Konteks intervensi belum tersinkron:', error.message))
+      }
       session.pendingSkillRefs = [...(session.pendingSkillRefs || []), ...(opts.skillRefs || [])]
       if (session.executedToolsList) {
         session.executedToolsList.push(interventionItem)
@@ -987,7 +996,7 @@ export const useMarkPlan = ({
             }
           }
         } else {
-          resultString = `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
+          resultString = res?.approval ? JSON.stringify({ success: false, code: res.code, error: res.error, approval: res.approval }) : `[ERROR] ${tool} gagal: ${(res && (res.message || res.error)) || 'Unknown error'}`
         }
 
         const toolImageUrls = extractedImageUrl ? [extractedImageUrl] : null
@@ -1043,7 +1052,7 @@ export const useMarkPlan = ({
           ? typeof safePluginData === 'string'
             ? safePluginData
             : JSON.stringify(safePluginData)
-          : `[ERROR] Plugin ${tool} gagal: ${res.error}`
+          : res?.approval ? JSON.stringify({ success: false, code: res.code, error: res.error, approval: res.approval }) : `[ERROR] Plugin ${tool} gagal: ${res.error}`
         if (pluginImage && !resultString.includes('[Gambar dilampirkan]')) {
           resultString = `${resultString}\n[Gambar tersedia untuk ditampilkan di bubble chat]`
         }
@@ -1187,7 +1196,9 @@ export const useMarkPlan = ({
       startTime: Date.now(),
       lastActivityTime: Date.now(),
       prompt: userInput,
-      interventions: []
+      interventions: [],
+      approvalInterventions: [],
+      approvalRevision: 0
     }
     activeSessionsRef.current.set(activeSessionNum, sessionRecord)
 
@@ -1426,6 +1437,14 @@ export const useMarkPlan = ({
 
     const agenticProcessId = `agentic-${activeSessionNum}-${Date.now()}`
     sessionRecord.computerUseRunId = agenticProcessId
+    const approvalHistory = captureApprovalHistory(sourceChatData)
+    sessionRecord.getApprovalContext = () => ({
+      sessionId: String(activeSessionNum), contextId: agenticProcessId, revision: sessionRecord.approvalRevision,
+      currentRequest: !isSystem && !isAutonomous && userMessage.role === 'user' ? userMessage : null,
+      history: approvalHistory,
+      interventions: [...sessionRecord.approvalInterventions],
+      observations: (sessionRecord.executedToolsList || []).filter((step) => step.tool && step.fullResult).slice(-6).map((step) => ({ tool: step.tool, query: step.query, status: step.status, fullResult: String(step.fullResult).slice(0, 1800) }))
+    })
     let durableTaskForRecovery = null
     let execSteps = [{ task: 'Menganalisis Konteks...' }]
     let accumulatedThoughts = []
@@ -2753,7 +2772,9 @@ export const useMarkPlan = ({
                 content: CODING_INSTRUCTIONS
               })
             }
+            await sessionRecord.approvalSync
             const execResult = await executeSingleTool(toolName, parsedArgs, {
+              getApprovalContext: sessionRecord.getApprovalContext,
               tgContext,
               toolCallId: `${agenticProcessId}:${stepCount}:${tc.id}`,
               onApprovalReview: (reviewing, permission) => {
@@ -2910,7 +2931,8 @@ export const useMarkPlan = ({
               tool: toolName,
               success: executionSucceeded,
               data: executionSucceeded ? obsStr : null,
-              error: executionSucceeded ? null : obsStr
+              error: executionSucceeded ? null : obsStr,
+              ...(execResult.res?.approval ? { approval: execResult.res.approval } : {})
             }
 
             // Push role: 'tool' observation ke ephemeral context

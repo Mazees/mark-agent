@@ -50,11 +50,15 @@ export function createSubagentRouter(runtime, dbStore) {
   )
   subagentsRouter.post(
     '/subagents/jobs/:id/resume',
-    route((req) => runtime.resume(req.params.id, req.body))
+    route((req) =>
+      runtime.resume(req.params.id, { ...req.body, sender: req.body.sender || 'user' })
+    )
   )
   subagentsRouter.post(
     '/subagents/jobs/:id/retry',
-    route((req) => runtime.resume(req.params.id, { ...req.body, retry: true }))
+    route((req) =>
+      runtime.resume(req.params.id, { ...req.body, sender: req.body.sender || 'user', retry: true })
+    )
   )
   subagentsRouter.post(
     '/subagents/jobs/:id/decision',

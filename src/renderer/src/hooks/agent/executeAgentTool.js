@@ -81,6 +81,7 @@ export async function executeAgentTool({
       codingRunId: agenticProcessId,
       taskId: durableTask?.id,
       stepId: durableActiveStep?.id,
+      approvalContext: context?.getApprovalContext?.(),
       skillRefs: context?.skillRefs || []
     })
     return { res, durableTask, durableActiveStep, reason: execReason }
@@ -209,14 +210,7 @@ export async function executeAgentTool({
       toolCallId: context?.toolCallId,
       taskId: durableTask?.id,
       stepId: incomingDurableActiveStep?.id,
-      approvalGoal: userInput,
-      approvalInstructions:
-        context?.approvalInstructions ||
-        [...(context?.loopMessages || [])]
-          .reverse()
-          .find((message) => message.role === 'user' && typeof message.content === 'string')
-          ?.content ||
-        '',
+      approvalContext: context?.getApprovalContext?.(),
       approvalRequestId: context?.toolCallId,
       approvalReason: execReason
     }
@@ -231,7 +225,17 @@ export async function executeAgentTool({
         res: {
           success: false,
           denied: true,
-          code: 'APPROVAL_DENIED',
+          code: permission.reviewError
+            ? 'APPROVAL_REVIEW_FAILED'
+            : permission.verdict === 'ESCALATE'
+              ? 'APPROVAL_NEEDS_CONTEXT'
+              : 'APPROVAL_DENIED',
+          approval: {
+            verdict: permission.verdict,
+            reason: permission.reason,
+            reviewError: permission.reviewError,
+            contextVersion: permission.contextVersion
+          },
           error: permission.reason,
           haltRun: permission.pause || permission.source === 'user'
         },

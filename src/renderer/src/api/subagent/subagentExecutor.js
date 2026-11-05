@@ -20,6 +20,8 @@ export async function runSubagentTurn(id, message, senderType = 'mark', options 
     if (['interrupted', 'waiting_user'].includes(job.status)) {
       const data = await subagentRequest('/jobs/' + job.id + '/resume', {
         instruction: message,
+        sender: senderType,
+        approvalContext: options.approvalContext,
         requestId: options.requestId || crypto.randomUUID()
       })
       return {

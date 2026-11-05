@@ -283,7 +283,7 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
         const visuals = all.filter((m) => ids.has(m.tool_call_id) && m.action?.imageUrl)
         if (visuals.length)
           ctx.append({
-            sender: 'user',
+            sender: 'tool-observation',
             role: 'user',
             content: [
               { type: 'text', text: 'Observasi visual aktual dari tool pada langkah ini.' },

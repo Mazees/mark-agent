@@ -5,6 +5,7 @@ import {
   uid,
   runtimeTables
 } from './storage.js'
+import { captureApprovalHistory } from '../../../shared/approval-context.js'
 
 const pending = (job) => !terminal.has(job.status)
 const normalize = (name) =>
@@ -271,6 +272,24 @@ export class SubagentRuntime {
           : [],
         stepId: input.stepId || null,
         contextSummary: input.contextSummary || '',
+        approvalContext:
+          input.approvalContext && String(input.approvalContext.sessionId) === sessionId
+            ? input.approvalContext
+            : input.sender === 'user'
+              ? {
+                  sessionId,
+                  revision: 0,
+                  history: captureApprovalHistory(JSON.parse(session.data || '[]')),
+                  currentRequest: {
+                    role: 'user',
+                    source: 'minibot-chat',
+                    content: input.initialMessage || input.goal,
+                    createdAt: Date.now()
+                  },
+                  interventions: [],
+                  observations: []
+                }
+              : null,
         skillRefs: Array.isArray(input.skillRefs)
           ? input.skillRefs
               .filter((ref) => typeof ref.id === 'string')
@@ -766,6 +785,13 @@ export class SubagentRuntime {
       }
     }
     const message = this.db.transaction(() => {
+      if (
+        !source &&
+        input.approvalContext &&
+        String(input.approvalContext.sessionId) === target.parentSessionId
+      ) {
+        target = this.saveJob({ ...target, approvalContext: input.approvalContext })
+      }
       const record = this.store.put('subagent_inbox', {
         id: uid('mail'),
         agentId: profile.id,
@@ -838,22 +864,36 @@ export class SubagentRuntime {
       const delivered = []
       const job = this.job(jobId)
       if (job.pendingInput) {
-        this.store.addMessage(job, runId, {
-          sender: 'mark',
+        const instruction = this.store.addMessage(job, runId, {
+          sender: job.pendingInputSender || 'mark',
           role: 'user',
           content: job.pendingInput
         })
-        this.saveJob({ ...job, pendingInput: null })
+        this.saveJob({
+          ...job,
+          pendingInput: null,
+          approvalUserMessages:
+            instruction.sender === 'user'
+              ? [...(job.approvalUserMessages || []), instruction]
+              : job.approvalUserMessages
+        })
         delivered.push({ kind: 'instruction', content: job.pendingInput })
       }
       for (const message of this.store
         .all('subagent_inbox')
         .filter((m) => m.targetJobId === jobId && m.status === 'pending')) {
-        this.store.addMessage(this.job(jobId), runId, {
+        const deliveredMessage = this.store.addMessage(this.job(jobId), runId, {
           sender: message.sender,
           role: 'user',
           content: `[PESAN ${message.kind}; ID=${message.id}; target_agent=${message.senderJobId ? this.store.get('subagent_jobs', message.senderJobId)?.agentId || 'agent-dihapus' : 'Mark'}; job_id=${message.senderJobId || ''}]: ${message.content}`
         })
+        if (deliveredMessage.sender === 'user') {
+          const latest = this.job(jobId)
+          this.saveJob({
+            ...latest,
+            approvalUserMessages: [...(latest.approvalUserMessages || []), deliveredMessage]
+          })
+        }
         this.store.put('subagent_inbox', { ...message, status: 'delivered' })
         if (message.kind === 'reply')
           this.saveJob({ ...this.job(jobId), waitingForJobId: null, waitDeadline: null })
@@ -881,7 +921,9 @@ export class SubagentRuntime {
       retry = false,
       requestId,
       expectedApprovalId,
-      reviewedByMark = false
+      reviewedByMark = false,
+      sender = 'mark',
+      approvalContext
     } = {}
   ) {
     if (this.stopped) throw new Error('Runtime Minibot sedang berhenti.')
@@ -962,6 +1004,15 @@ export class SubagentRuntime {
       approvedToolId: approved ? job.approval?.id : null,
       markApprovedToolId: approved && reviewedByMark ? job.approval?.id : null,
       pendingInput: instruction || job.pendingInput || null,
+      pendingInputSender: instruction
+        ? sender === 'user'
+          ? 'user'
+          : 'mark'
+        : job.pendingInputSender,
+      approvalContext:
+        approvalContext && String(approvalContext.sessionId) === job.parentSessionId
+          ? approvalContext
+          : job.approvalContext,
       approval: null,
       permissionBlocked: false,
       clientRequest: null,

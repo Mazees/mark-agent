@@ -240,3 +240,9 @@ Rules:
 - reviewCoding menyerialkan keputusan accepted/rejected per rekaman, terikat afterOid/requestId. Keputusan final tidak dapat dibalik, termasuk melalui undo lama. Tolak semua memeriksa semua target dan rollback bila tulis gagal. Tidak ada Source Control atau pembuatan worktree di UI/API. Folder worktree lama dipertahankan sebagai workspace sesi biasa.
 - AGENTS.md dimuat utuh tanpa penolakan 32 KB. Pemuatan konteks, tab, dan terminal independen. Jangan menampilkan kegagalan sebagai daftar kosong.
 - document-preview.js memakai salinan/profil LibreOffice terpisah; renderer/worker PDF lokal dikemas dari manifest terverifikasi. Runtime tidak mengunduh atau mencari Office sistem. Cache/proses tidak masuk backup; metadata tab, draf, review dan objek Git masuk backup.
+
+### Konteks peninjauan izin
+
+- Shared approval-context menyertakan permintaan aktif, intervensi asli, maksimal enam giliran sesi yang sama, serta maksimal enam observasi. Jawaban agen, penugasan Minibot, ringkasan model, dan konten halaman bukan izin pengguna. Jangan memakai userInput/role user pada loop model sebagai satu-satunya sumber otorisasi.
+- Reviewer mengembalikan JSON ketat {verdict,reason}; DENY menghentikan tindakan, ESCALATE membolehkan observasi yang diizinkan sebelum request baru berbukti baru. Error provider/format tidak menjadi verdict model. Alasan yang disamarkan harus sampai ke hasil tool Mark dan Minibot.
+- Snapshot runtime dan perubahan intervensi memakai revisi konteks. Izin yang belum dieksekusi harus kedaluwarsa saat arahan berubah, termasuk Minibot terkait. Jangan menghilangkan pemeriksaan versi backend atau otomatis mengizinkan shell/server karena nama command.

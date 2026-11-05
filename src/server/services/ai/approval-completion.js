@@ -72,7 +72,7 @@ export async function executeApprovalCompletion({
           messages,
           stream: false,
           temperature: 0,
-          max_tokens: 256
+          max_tokens: 512
         })
       },
       config.aiProvider

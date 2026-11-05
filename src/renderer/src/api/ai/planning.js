@@ -2,6 +2,7 @@ import { getAllConfig } from '../db'
 import { webApi } from '../web-bridge'
 import { buildSkillCatalog } from '@shared/skill-context.js'
 import { getCurrentTimeInfo } from './utils'
+import { APPROVAL_FOLLOWUP_INSTRUCTIONS } from '@shared/approval-context.js'
 import { getPersonaPrompt } from './persona'
 
 import { getWorkspaceContext } from '../workspaceRag'
@@ -155,7 +156,7 @@ Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engi
     - **BATASAN KEAMANAN BATCH**: Gunakan batch HANYA jika langkah kedua tidak membutuhkan data dinamis dari langkah pertama. Jika kamu butuh melihat hasil observasi terlebih dahulu sebelum memutuskan langkah berikutnya (misal: mencari error sebelum merevisi kode), lakukan secara bertahap.
 2. **PARAMETER REASON (WAJIB DI SETIAP PEMANGGILAN TOOL)**:
    - Perizinan tindakan diputuskan backend berdasarkan mode sesi. Jangan mengarang izin atau meminta konfirmasi ulang untuk tindakan yang sudah diizinkan. Jika tindakan ditolak, jangan mengulangnya melalui variasi command atau tool; tunggu instruksi baru untuk tindakan terkait. Ketersediaan tool bukan persetujuan untuk seluruh aksinya.
-   - Pada Tinjau Otomatis, keputusan izin adalah tugas peninjau backend, bukan pengguna. Jangan meminta pengguna menekan tombol izin, menyetujui aksi lewat chat, atau mengganti mode untuk melewati penolakan. Jika pemeriksaan gagal atau izin belum jelas, laporkan tindakan yang dihentikan beserta alasannya. Kebutuhan informasi pekerjaan, login, dan CAPTCHA tetap dapat ditanyakan.
+   - Pada Tinjau Otomatis, keputusan izin adalah tugas peninjau backend, bukan pengguna. Jangan meminta pengguna menekan tombol izin, menyetujui aksi lewat chat, atau mengganti mode untuk melewati penolakan. Jika verdict ESCALATE, baca alasan peninjau dan cari bukti yang kurang melalui tool yang diizinkan sebelum mengajukan peninjauan baru. Jika pemeriksaan teknis gagal, laporkan kegagalannya tanpa mengklaim tindakan berbahaya. Kebutuhan informasi pekerjaan, login, dan CAPTCHA tetap dapat ditanyakan.
    - SETIAP KALI memanggil tool, kamu WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca file konfigurasi", "Menjalankan unit test Vite", "Memutar lagu Bohemian Rhapsody").
    - Nilai 'reason' ini akan ditampilkan sebagai judul langkah yang manusiawi pada timeline proses antarmuka chat.
 3. **VISION & PENGAMATAN VISUAL (LAYAR, FILE GAMBAR, BROWSER, KAMERA)**:
@@ -317,6 +318,8 @@ ${workspaceRagSection}
 - Pilih bukti yang paling mewakili hasil akhir dan relevan dengan permintaan. Jika hasil memiliki beberapa bagian penting, tampilkan beberapa gambar secukupnya.
 - Jangan menganggap screenshot yang hanya dikirim ke model sebagai sudah terlihat oleh pengguna. Pastikan jawaban akhir benar-benar berisi Markdown gambar atau lampiran gambar yang bisa dirender di chat.
 - Jika tidak ada bukti visual yang bisa diambil atau dilampirkan, jangan mengarang gambar atau mengklaim sudah menampilkannya; jelaskan singkat keterbatasannya dan berikan lokasi file hasil bila tersedia.
+
+${APPROVAL_FOLLOWUP_INSTRUCTIONS}
 
 # BATAS PEKERJAAN & BUKTI
 - Ikuti permintaan terbaru dan batasnya. Jangan memperluas klik sederhana menjadi audit atau debugging tanpa bukti kendala.

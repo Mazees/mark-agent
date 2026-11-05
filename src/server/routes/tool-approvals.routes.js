@@ -12,6 +12,9 @@ const fail = (res, cause) =>
     success: false,
     denied: true,
     code: cause.code || 'APPROVAL_ERROR',
+    ...(cause.approval
+      ? { approval: cause.approval, reason: cause.approval.reason, verdict: cause.approval.verdict }
+      : {}),
     error: cause.message
   })
 function localDecision(req, res, next) {
@@ -57,6 +60,14 @@ toolApprovalsRouter.post('/tools/approval/decide', localDecision, async (req, re
   try {
     const { requestId, config, choice } = req.body || {}
     res.json(await toolApprovals.decide(requestId, config || {}, choice))
+  } catch (cause) {
+    fail(res, cause)
+  }
+})
+
+toolApprovalsRouter.post('/tools/approval/context', localDecision, (req, res) => {
+  try {
+    res.json(toolApprovals.updateContext(req.body?.config || {}))
   } catch (cause) {
     fail(res, cause)
   }

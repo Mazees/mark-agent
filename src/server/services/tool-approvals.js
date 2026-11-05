@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { approvalStore, dbStore } from '../memory/db-store.js'
 import { getActiveConfig } from '../config-manager.js'
 import { workspaceFor } from './coding-workspace.js'
+import { resolveApprovalContext } from './approval-context.js'
 import { reviewToolAction } from './approval-reviewer.js'
 import { withApprovedFileTargets } from './tool-file-scope.js'
 import {
@@ -56,6 +57,9 @@ export function createToolApprovals({
   workspace,
   lookup,
   review,
+  task = () => null,
+  job = () => null,
+  inheritContext = () => {},
   desktopStatus = () => ({}),
   grantDesktop = () => null,
   onChange = () => {}
@@ -65,6 +69,9 @@ export function createToolApprovals({
   const denials = new Map()
   const waiters = new Map()
   const rejected = new Map()
+  const contexts = new Map()
+  const sessionContextVersions = new Map()
+  const deferred = new Map()
   let generation = 0
   const ownerKey = (owner) => `${owner.sessionId}:${owner.jobId || ''}:${owner.runId}`
   const ownerOf = (cfg = {}) => ({
@@ -110,8 +117,74 @@ export function createToolApprovals({
           ? grant.target === digest([tool, args])
           : action.targets.some((target) => within(grant.target, target)))
     )
+    const registered = contexts.get(ownerKey(owner))
+    const assignedJob = owner.jobId ? job(owner.jobId) : null
+    const parentRunId = assignedJob?.approvalContext?.contextId || assignedJob?.codingRunId
+    const parentContext = parentRunId
+      ? contexts.get(`${owner.sessionId}::${parentRunId}`)?.snapshot
+      : null
+    const approvalContext = resolveApprovalContext({
+      sessionId: owner.sessionId,
+      session,
+      cfg: {
+        ...cfg,
+        approvalContext: parentContext || registered?.snapshot || cfg.approvalContext
+      },
+      task: cfg.taskId ? task(cfg.taskId) : null,
+      job: assignedJob
+    })
+    const supporting = []
+    const readSupporting = (file) => {
+      const resolved = canonicalTarget(file)
+      if (!within(root, resolved) || !fs.existsSync(resolved) || !fs.statSync(resolved).isFile())
+        return
+      const limit = 16000
+      const descriptor = fs.openSync(resolved, 'r')
+      try {
+        const buffer = Buffer.alloc(limit + 4),
+          length = fs.readSync(descriptor, buffer, 0, buffer.length, 0)
+        const content = buffer.subarray(0, length).toString('utf8')
+        const truncated = fs.statSync(resolved).size > limit
+        supporting.push({ path: resolved, content: content.slice(0, limit), truncated })
+      } finally {
+        fs.closeSync(descriptor)
+      }
+    }
+    if (action.command) {
+      readSupporting(path.join(root, 'package.json'))
+      for (const match of action.command.matchAll(
+        /(?:-File\s+|\b(?:node|python|python3|pwsh|powershell)\s+)(?:["']([^"']+)["']|([^\s;&|]+))/gi
+      )) {
+        if (supporting.length >= 3) {
+          approvalContext.incomplete.push('Sebagian script pendukung belum tersedia.')
+          break
+        }
+        readSupporting(path.resolve(root, match[1] || match[2]))
+      }
+    }
+    if (supporting.some((entry) => entry.truncated))
+      approvalContext.incomplete.push(
+        'Isi berkas pendukung melebihi cuplikan; baca bagian yang diperlukan sebelum menilai efek yang belum terlihat.'
+      )
+    const contextVersion = digest([approvalContext, supporting])
+    const evidenceVersion = digest([
+      approvalContext.userRequests,
+      approvalContext.recentConversation.filter((m) => m.origin === 'user'),
+      approvalContext.observations,
+      supporting
+    ])
+    const authorizationVersion = digest([
+      root,
+      mode,
+      relevantGrants,
+      approvalContext.userRequests,
+      approvalContext.recentConversation.filter((m) => m.origin === 'user'),
+      sessionContextVersions.get(owner.sessionId) || 0
+    ])
     const version = digest([
-      'automatic-decisions-v2',
+      'contextual-decisions-v3',
+      contextVersion,
+      authorizationVersion,
       root,
       mode,
       relevantGrants,
@@ -121,7 +194,21 @@ export function createToolApprovals({
       action.outside
     ])
     const actionHash = digest([tool, args, owner, action.targets, root])
-    return { owner, root, mode, info, action, grants, version, actionHash }
+    return {
+      owner,
+      root,
+      mode,
+      info,
+      action,
+      grants,
+      version,
+      actionHash,
+      approvalContext,
+      contextVersion,
+      authorizationVersion,
+      supporting,
+      evidenceVersion
+    }
   }
   function publicRequest(req) {
     return {
@@ -134,6 +221,9 @@ export function createToolApprovals({
       source: req.source,
       message: redactReview(req.message).value,
       reason: req.reason,
+      verdict: req.verdict || null,
+      reviewError: req.reviewError || null,
+      contextVersion: req.contextVersion,
       requiresFreshApproval: req.action.forceHuman && req.mode !== 'smart',
       canRemember:
         req.mode !== 'smart' &&
@@ -160,12 +250,19 @@ export function createToolApprovals({
   }
   function settle(req, status, source, reason) {
     Object.assign(req, { status, source, reason })
-    if (source === 'model' && status === 'denied') {
+    if (source === 'model' && status === 'denied' && req.verdict === 'DENY') {
       const count = (denials.get(ownerKey(req.owner)) || 0) + 1
       denials.set(ownerKey(req.owner), count)
       req.pause = count >= 3
     } else if (status === 'allowed') denials.delete(ownerKey(req.owner))
-    if (status === 'denied') rejected.set(req.actionHash, req.version)
+    if (status === 'denied' && (source === 'user' || req.verdict === 'DENY'))
+      rejected.set(req.actionHash, {
+        authorizationVersion: req.authorizationVersion,
+        reason,
+        verdict: req.verdict
+      })
+    if (req.verdict === 'ESCALATE')
+      deferred.set(req.actionHash, { contextVersion: req.evidenceVersion, reason })
     audit(req)
     if (status === 'allowed' || status === 'denied') {
       waiters.get(req.id)?.(publicRequest(req))
@@ -181,6 +278,7 @@ export function createToolApprovals({
       }
     signal?.throwIfAborted()
     if (typeof tool !== 'string' || !tool) throw error('Nama tool tidak valid.')
+    if (cfg.approvalContext && !cfg.approvalJobId) updateContext(cfg)
     const ctx = await context(tool, args, cfg)
     if (cancelled.has(ownerKey(ctx.owner)))
       throw error('Pekerjaan sudah dibatalkan.', 'APPROVAL_CANCELLED')
@@ -229,13 +327,16 @@ export function createToolApprovals({
     req.evaluation = (async () => {
       const blocked = hardDenial(req.action, args)
       if (blocked) return settle(req, 'denied', 'rule', blocked)
-      if (rejected.get(req.actionHash) === req.version)
-        return settle(
-          req,
-          'denied',
-          'model',
-          'Tindakan ini sudah ditolak. Jangan mengulangnya melalui variasi command atau tool.'
-        )
+      const denied = rejected.get(req.actionHash)
+      if (denied?.authorizationVersion === req.authorizationVersion) {
+        req.verdict = denied.verdict
+        return settle(req, 'denied', 'model', denied.reason)
+      }
+      const pendingEvidence = deferred.get(req.actionHash)
+      if (pendingEvidence?.contextVersion === req.evidenceVersion) {
+        req.verdict = 'ESCALATE'
+        return settle(req, 'denied', 'model', pendingEvidence.reason)
+      }
       if (req.action.forceHuman) {
         const current = desktopStatus()
         if (
@@ -282,48 +383,33 @@ export function createToolApprovals({
       } else return settle(req, 'allowed', 'rule', 'Operasi biasa dalam cakupan workspace.')
       onReview?.()
       const active = config()
-      const supporting = []
-      if (req.action.command) {
-        const manifest = path.join(req.root, 'package.json')
-        if (fs.existsSync(manifest) && fs.statSync(manifest).size < 32768)
-          supporting.push({ path: manifest, content: fs.readFileSync(manifest, 'utf8') })
-        for (const match of req.action.command.matchAll(
-          /(?:-File\s+|\b(?:node|python|python3|pwsh|powershell)\s+)(?:["']([^"']+)["']|([^\s;&|]+))/gi
-        )) {
-          const file = path.resolve(req.root, match[1] || match[2])
-          if (
-            within(req.root, canonicalTarget(file)) &&
-            fs.existsSync(file) &&
-            fs.statSync(file).isFile() &&
-            fs.statSync(file).size < 32768
-          )
-            supporting.push({ path: file, content: fs.readFileSync(file, 'utf8') })
-        }
-      }
       const safe = redactReview(
         {
-          request: cfg.approvalGoal || cfg.codingObjective || '',
-          latestInstructions: cfg.approvalInstructions || '',
+          context: req.approvalContext,
           reason: cfg.approvalReason || args?.reason || '',
           actor: cfg.agentName || 'Mark',
           tool,
           description: req.info.description || '',
           args,
           targets: req.action.targets,
-          supporting
+          supporting: req.supporting
         },
         Object.entries(active)
           .filter(([k, v]) => /key|token|secret|password|cookie/i.test(k) && typeof v === 'string')
           .map(([, v]) => v)
       )
-      if (safe.redacted || JSON.stringify(safe.value).length > 64000)
+      if (JSON.stringify(safe.value).length > 64000)
         return settle(
           req,
           'denied',
           'rule',
-          'Tindakan dihentikan karena konteks terlalu besar atau mengandung rahasia yang tidak dapat ditinjau secara lengkap.'
+          'Konteks peninjauan melebihi batas; tindakan belum dijalankan. Sediakan bukti terarah yang lebih ringkas tanpa membuang batasan pengguna.'
         )
-      const verdict = await review({
+      if (safe.redacted)
+        safe.value.context.incomplete.push(
+          'Sebagian isi disamarkan karena mengandung rahasia. Jangan mengasumsikan efek yang tidak terlihat.'
+        )
+      const result = await review({
         data: safe.value,
         policy: {
           workspace: req.root,
@@ -335,7 +421,7 @@ export function createToolApprovals({
           massDeletionOrPatch: req.action.massive,
           outsideMutationRequiresHuman: false,
           explicitRequestAuthorizesExactTargetsOnly: true,
-          uncertainDecision: 'DENY',
+          uncertainDecision: 'ESCALATE',
           manualApprovalAvailable: false
         },
         config: active,
@@ -345,26 +431,32 @@ export function createToolApprovals({
       signal?.throwIfAborted()
       if (req.invalidated || req.generation !== generation || cancelled.has(ownerKey(req.owner)))
         throw error('Pekerjaan sudah dibatalkan.', 'APPROVAL_CANCELLED')
-      if (verdict === 'APPROVE')
-        return settle(req, 'allowed', 'model', 'Tindakan diizinkan oleh peninjau otomatis.')
-      if (verdict === 'DENY')
+      const secrets = Object.entries(active)
+        .filter(([k, v]) => /key|token|secret|password|cookie/i.test(k) && typeof v === 'string')
+        .map(([, v]) => v)
+      const reason = redactReview(result?.reason || '', secrets).value
+      if (
+        !['APPROVE', 'DENY', 'ESCALATE'].includes(result?.verdict) ||
+        !reason ||
+        result.reviewError
+      ) {
+        req.reviewError = result?.reviewError || 'invalid_response'
         return settle(
           req,
           'denied',
-          'model',
-          'Peninjau menolak tindakan ini. Jangan mengulangnya lewat variasi command atau tool.'
+          'rule',
+          reason || 'Respons peninjau tidak valid; tindakan belum dijalankan.'
         )
-      return settle(
-        req,
-        'denied',
-        'model',
-        'Peninjau belum dapat memastikan izin tindakan ini. Tindakan dihentikan tanpa meminta persetujuan manual.'
-      )
+      }
+      req.verdict = result.verdict
+      if (req.verdict === 'APPROVE') return settle(req, 'allowed', 'model', reason)
+      return settle(req, 'denied', 'model', reason)
     })().catch((cause) => {
       if (signal?.aborted || cause.code === 'APPROVAL_CANCELLED') {
         req.status = 'cancelled'
         throw cause
       }
+      req.reviewError = 'provider_error'
       return settle(
         req,
         req.mode === 'smart' ? 'denied' : 'pending',
@@ -375,6 +467,51 @@ export function createToolApprovals({
       )
     })
     return req.evaluation
+  }
+  function updateContext(cfg) {
+    const snapshot = cfg.approvalContext
+    const owner = ownerOf(cfg),
+      key = ownerKey(owner)
+    if (
+      !snapshot ||
+      String(snapshot.sessionId) !== owner.sessionId ||
+      !Number.isInteger(snapshot.revision) ||
+      snapshot.revision < 0
+    )
+      throw error('Konteks peninjauan tidak valid.', 'APPROVAL_STALE')
+    const previous = contexts.get(key)
+    if (previous && snapshot.revision < previous.snapshot.revision)
+      throw error('Arahan pengguna sudah berubah. Periksa tindakan kembali.', 'APPROVAL_STALE')
+    if (JSON.stringify(snapshot).length > 500000)
+      throw error('Konteks peninjauan terlalu besar.', 'APPROVAL_STALE')
+    const authority = digest([snapshot.currentRequest, snapshot.interventions])
+    if (
+      previous &&
+      snapshot.revision === previous.snapshot.revision &&
+      previous.authority !== authority
+    )
+      throw error('Isi konteks berubah tanpa revisi.', 'APPROVAL_STALE')
+    contexts.set(key, { snapshot: structuredClone(snapshot), authority })
+    if (!owner.jobId) inheritContext(owner, snapshot)
+    if ((previous && previous.authority !== authority) || (!previous && snapshot.revision > 0)) {
+      sessionContextVersions.set(
+        owner.sessionId,
+        (sessionContextVersions.get(owner.sessionId) || 0) + 1
+      )
+      for (const req of requests.values())
+        if (
+          req.owner.sessionId === owner.sessionId &&
+          !req.started &&
+          ['evaluating', 'allowed', 'pending'].includes(req.status)
+        ) {
+          req.invalidated = true
+          req.status = 'cancelled'
+          req.reason = 'Arahan pengguna berubah. Tindakan harus ditinjau ulang.'
+          waiters.get(req.id)?.(publicRequest(req))
+          onChange(publicRequest(req))
+        }
+    }
+    return { success: true, revision: snapshot.revision }
   }
   async function decide(id, cfg, choice) {
     const req = requests.get(id)
@@ -446,19 +583,24 @@ export function createToolApprovals({
     const evaluated = await evaluate(tool, args, cfg, { signal: cfg.signal })
     const req = requests.get(evaluated.requestId)
     if (req.status !== 'allowed')
-      throw error(req.reason, req.status === 'denied' ? 'APPROVAL_DENIED' : 'APPROVAL_REQUIRED')
+      throw Object.assign(
+        error(req.reason, req.status === 'denied' ? 'APPROVAL_DENIED' : 'APPROVAL_STALE'),
+        { approval: publicRequest(req) }
+      )
     if (req.execution) return req.execution
     req.execution = (async () => {
       const fresh = await context(tool, args, cfg)
       cfg.signal?.throwIfAborted()
       if (
         req.generation !== generation ||
+        req.invalidated ||
         cancelled.has(ownerKey(req.owner)) ||
         fresh.version !== req.version ||
         fresh.actionHash !== req.actionHash
       )
         throw error('Izin dicabut atau target berubah.', 'APPROVAL_STALE')
       const finalConfig = { ...cfg, workspaceRoot: req.root }
+      req.started = true
       if (req.action.forceHuman && req.human)
         finalConfig.computerUseApprovalToken = grantDesktop({
           sessionId: String(cfg.sessionId || req.owner.sessionId),
@@ -475,6 +617,7 @@ export function createToolApprovals({
   function cancel(cfg) {
     const key = ownerKey(ownerOf(cfg))
     cancelled.add(key)
+    contexts.delete(key)
     for (const req of requests.values())
       if (ownerKey(req.owner) === key && !req.execution) {
         req.status = 'cancelled'
@@ -557,8 +700,21 @@ export function createToolApprovals({
     cancelled.clear()
     denials.clear()
     rejected.clear()
+    deferred.clear()
+    contexts.clear()
+    sessionContextVersions.clear()
   }
-  return { evaluate, decide, execute, cancel, modeChanged, clear, pendingJobs, waitForDecision }
+  return {
+    evaluate,
+    decide,
+    execute,
+    cancel,
+    updateContext,
+    modeChanged,
+    clear,
+    pendingJobs,
+    waitForDecision
+  }
 }
 
 export const toolApprovals = createToolApprovals({
@@ -568,6 +724,28 @@ export const toolApprovals = createToolApprovals({
   workspace: (id) => workspaceFor(id).root,
   lookup: resolveTool,
   review: reviewToolAction,
+  task: (id) => dbStore.agentTasks.getById(id),
+  job: (id) => {
+    const row = dbStore.subagentJobs.getById(id)
+    return row?.data || row
+  },
+  inheritContext: (owner, snapshot) => {
+    dbStore.sqlite.transaction(() => {
+      for (const row of dbStore.subagentJobs.getAll()) {
+        const record = row.data || row
+        const parentRun = record.approvalContext?.contextId || record.codingRunId
+        if (
+          String(record.parentSessionId) !== owner.sessionId ||
+          parentRun !== owner.runId ||
+          ['completed', 'failed', 'cancelled'].includes(record.status)
+        )
+          continue
+        dbStore.sqlite
+          .prepare('UPDATE subagent_jobs SET data=?, updated_at=? WHERE id=?')
+          .run(JSON.stringify({ ...record, approvalContext: snapshot }), Date.now(), record.id)
+      }
+    })()
+  },
   desktopStatus: computerUseSessionStatus,
   grantDesktop: grantComputerUsePermission,
   onChange: (permission) =>

@@ -37,6 +37,7 @@ export async function executeSubagentTool(tool, rawArgs, context) {
         ownedFiles: Array.isArray(args.owned_files) ? args.owned_files : [],
         stepId: context.stepId,
         initialMessage: args.initial_message,
+        approvalContext: context.approvalContext,
         skillRefs: context.skillRefs || [],
         parentSessionId: context.sessionId,
         parentSessionTitle: context.sessionTitle,
@@ -106,12 +107,14 @@ export async function executeSubagentTool(tool, rawArgs, context) {
           jobId: args.job_id,
           kind: args.kind || 'info',
           replyTo: args.reply_to,
-          parentSessionId: context.sessionId
+          parentSessionId: context.sessionId,
+          approvalContext: context.approvalContext
         })
       }
     if (target.parentSessionId && target.parentSessionId !== context.sessionId)
       throw new Error('Agent sedang berada dalam sesi koordinasi lain.')
     const result = await runSubagentTurn(target.id, args.message, 'mark', {
+      approvalContext: context.approvalContext,
       taskId: context.taskId,
       stepId: context.stepId,
       parentSessionId: context.sessionId,

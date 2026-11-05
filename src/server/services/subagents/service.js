@@ -136,8 +136,12 @@ async function dispatch(name, args, ctx, call) {
     agentName: ctx.agent.name,
     approvalRunId: `job:${job.id}:${job.approvalEpoch || 0}`,
     approvalJobId: job.id,
-    approvalGoal: job.goal,
+    approvalContext: job.approvalContext || undefined,
     approvalInstructions: job.pendingInput || job.contextSummary || '',
+    approvalJobMessages: ctx
+      .messages()
+      .filter((m) => ['tool', 'user'].includes(m.role))
+      .slice(-12),
     approvalRequestId: `${job.id}:${job.approvalEpoch || 0}:${job.approvalRequestEpoch || 0}:${call.id}`,
     signal: ctx.signal
   }
@@ -164,7 +168,21 @@ async function dispatch(name, args, ctx, call) {
   if (permission.denied) {
     if (permission.pause)
       return { wait: { status: 'waiting_user', permissionBlocked: true, error: permission.reason } }
-    return { success: false, code: 'APPROVAL_DENIED', error: permission.reason }
+    return {
+      success: false,
+      code: permission.reviewError
+        ? 'APPROVAL_REVIEW_FAILED'
+        : permission.verdict === 'ESCALATE'
+          ? 'APPROVAL_NEEDS_CONTEXT'
+          : 'APPROVAL_DENIED',
+      error: permission.reason,
+      approval: {
+        verdict: permission.verdict,
+        reason: permission.reason,
+        reviewError: permission.reviewError,
+        contextVersion: permission.contextVersion
+      }
+    }
   }
   if (permission.needsApproval) {
     ctx.phase('waiting_user', permission.reason)
