@@ -186,7 +186,7 @@ export async function finishCodingRun(id, sessionId, status = 'completed') {
   finishing.set(id, promise)
   return promise
 }
-async function locked(files, action) {
+export async function locked(files, action) {
   const releases = []
   try {
     for (const key of [...new Set(files.map(rootKey))].sort()) {
@@ -473,45 +473,12 @@ export function wrapCodingTool(name, tool) {
   }
   return wrapped
 }
-export async function applyWorkspaceChanges(run, changes) {
-  const config = { codingRunId: run.id, codingSessionId: run.sessionId, workspaceRoot: run.root }
-  await beginCodingRun(config)
-  try {
-    await locked(
-      changes.map((c) => c.path),
-      async () => {
-        for (const change of changes) scopedPath(run.root, change.path)
-        for (const change of changes)
-          if (fileHash(bytes(change.path)) !== fileHash(change.before))
-            throw new Error(`Konflik pada ${change.path}`)
-        const applied = []
-        try {
-          for (const change of changes) {
-            writeBytes(change.path, change.after)
-            applied.push(change)
-          }
-          const fresh = codingStore.get('run', run.id)
-          recordObserved(fresh, changes)
-          return saveResult(fresh)
-        } catch (error) {
-          for (const change of applied.reverse())
-            if (fileHash(bytes(change.path)) === fileHash(change.after))
-              writeBytes(change.path, change.before)
-          throw error
-        }
-      }
-    )
-    return await finishCodingRun(run.id, run.sessionId)
-  } catch (error) {
-    await finishCodingRun(run.id, run.sessionId, 'failed')
-    throw error
-  }
-}
-export async function undoCoding(runId, sessionId, filePath) {
+async function restoreCoding(runId, sessionId, filePath, review = null) {
   const run = await migrateCodingRun(codingStore.get('run', runId))
   const { root } = workspaceFor(sessionId)
   if (!run || run.sessionId !== String(sessionId) || rootKey(run.root) !== rootKey(root))
     throw new Error('Pekerjaan tidak tersedia pada workspace aktif.')
+  if (run.review) throw new Error('Keputusan tinjauan sudah final dan tidak dapat diubah.')
   if (
     ['running', 'waiting'].includes(run.status) ||
     (!run.finishedAt && run.checkpointVersion && run.captureScope !== 'recorded-files')
@@ -549,6 +516,7 @@ export async function undoCoding(runId, sessionId, filePath) {
           const fresh = codingStore.get('run', runId)
           for (const file of fresh.files)
             if (changes.some((change) => change.path === file.path)) file.undone = true
+          if (review) fresh.review = review
           return saveResult(fresh)
         } catch (error) {
           for (const change of applied.reverse())
@@ -559,4 +527,43 @@ export async function undoCoding(runId, sessionId, filePath) {
       }
     )
   )
+}
+export function undoCoding(runId, sessionId, filePath) {
+  return withCheckpointLock(`review:${runId}`, () => restoreCoding(runId, sessionId, filePath))
+}
+export function reviewCoding(runId, sessionId, input) {
+  return withCheckpointLock(`review:${runId}`, async () => {
+    const run = await migrateCodingRun(codingStore.get('run', runId))
+    const { root } = workspaceFor(sessionId)
+    if (!run || run.sessionId !== String(sessionId) || rootKey(run.root) !== rootKey(root))
+      throw new Error('Rekaman perubahan tidak tersedia pada workspace sesi ini.')
+    if (
+      !['accepted', 'rejected'].includes(input.decision) ||
+      typeof input.requestId !== 'string' ||
+      !input.requestId ||
+      input.requestId.length > 200
+    )
+      throw new Error('Keputusan dan ID permintaan tinjauan wajib diisi.')
+    if (input.afterOid !== run.afterOid) throw new Error('Checkpoint tinjauan tidak cocok.')
+    if (run.review) {
+      if (run.review.requestId === input.requestId && run.review.decision === input.decision)
+        return run
+      throw new Error('Keputusan tinjauan sudah final dan tidak dapat diubah.')
+    }
+    if (
+      !run.finishedAt ||
+      ['running', 'waiting'].includes(run.status) ||
+      run.captureStatus !== 'completed' ||
+      !run.files.length
+    )
+      throw new Error('Tunggu pencatatan perubahan selesai sebelum meninjau.')
+    const review = {
+      decision: input.decision,
+      requestId: input.requestId,
+      decidedAt: Date.now(),
+      afterOid: run.afterOid
+    }
+    if (input.decision === 'rejected') return restoreCoding(runId, sessionId, null, review)
+    return saveResult({ ...run, review })
+  })
 }

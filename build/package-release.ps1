@@ -13,6 +13,9 @@ Write-Host ">>> Menyiapkan Git bawaan..." -ForegroundColor Cyan
 npm run prepare:git
 if ($LASTEXITCODE -ne 0) { throw "Persiapan Git bawaan gagal." }
 
+npm run prepare:office
+if ($LASTEXITCODE -ne 0) { throw "Persiapan renderer dokumen gagal." }
+
 Write-Host ">>> [1/6] Membersihkan direktori rilis lama..." -ForegroundColor Cyan
 if (Test-Path $DistDir) {
     $ResolvedDist = (Resolve-Path -LiteralPath $DistDir).Path

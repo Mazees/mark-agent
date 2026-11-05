@@ -1,48 +1,29 @@
 /* eslint-disable react/prop-types */
-import { lazy, Suspense, useCallback, useEffect, useId, useState } from 'react'
-import { ChevronRight, FileDiff, FileText, Undo2 } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { ChevronDown, FileDiff, FileText, Check, X } from 'lucide-react'
 import { webApi } from '../../api/web-bridge.js'
-const DiffEditor = lazy(() => import('./CodingDiff.jsx'))
-
 function ChangeCard({ run, sessionId, refresh }) {
-  const [open, setOpen] = useState(false)
-  const [selected, setSelected] = useState(null)
-  const [diff, setDiff] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [open, setOpen] = useState(true),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
   const detailId = useId()
-  useEffect(() => {
-    setDiff(null)
-    if (!open || !selected) return
-    let disposed = false
-    webApi
-      .codingRequest(`/coding/runs/${encodeURIComponent(run.id)}/diff`, sessionId, {
-        path: selected
-      })
-      .then((value) => {
-        if (!disposed) setDiff(value)
-      })
-      .catch((e) => {
-        if (!disposed) setError(e.message)
-      })
-    return () => {
-      disposed = true
-    }
-  }, [run.id, sessionId, selected, open])
+  const requestIds = useRef({})
   if (
     ['running', 'waiting'].includes(run.status) ||
     run.captureStatus !== 'completed' ||
     !run.files.length
   )
     return null
-  const undo = async (path) => {
+  const decided =
+    run.review?.decision || (run.files.every((file) => file.undone) ? 'rejected' : null)
+  const decide = async (decision) => {
     setBusy(true)
     setError('')
     try {
       await webApi.codingRequest(
-        `/coding/runs/${encodeURIComponent(run.id)}/undo`,
+        '/coding/runs/' + encodeURIComponent(run.id) + '/review',
         sessionId,
-        path ? { path } : {},
+        { decision, requestId: requestIds.current[decision] ||= crypto.randomUUID(), afterOid: run.afterOid },
         'POST'
       )
       await refresh()
@@ -52,141 +33,96 @@ function ChangeCard({ run, sessionId, refresh }) {
       setBusy(false)
     }
   }
-  const additions = run.files.reduce((total, file) => total + (file.additions || 0), 0)
-  const deletions = run.files.reduce((total, file) => total + (file.deletions || 0), 0)
+  const openFile = (file) =>
+    window.dispatchEvent(
+      new CustomEvent('coding-panel-open', {
+        detail: {
+          sessionId: String(sessionId),
+          type: 'diff',
+          runId: run.id,
+          path: file.relativePath || file.path
+        }
+      })
+    )
   return (
     <section
-      className="mt-4 min-w-0 rounded-xl border border-white/10 bg-white/[0.02] text-xs [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-primary [&_button:focus-visible]:outline-offset-2"
       aria-label="Perubahan selama giliran ini"
+      className="mt-4 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.025] text-xs [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-primary [&_button:focus-visible]:outline-offset-[-2px]"
     >
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-controls={detailId}
-        className="flex w-full items-start gap-2.5 rounded-xl p-4 text-left hover:bg-white/[0.03]"
-      >
-        <FileDiff size={17} className="shrink-0 text-white/65" aria-hidden="true" />
-        <span className="min-w-0 flex-1">
-          <span className="block font-medium text-white/85">Perubahan selama giliran ini</span>
-          <span className="mt-1 block text-white/60">
-            {run.files.length} berkas{run.agentName ? ` · ${run.agentName}` : ''}
-            {['failed', 'interrupted'].includes(run.status) ? ' · Pekerjaan terhenti' : ''}
-          </span>
-        </span>
-        <span className="flex shrink-0 gap-2 tabular-nums">
-          <span className="text-primary">+{additions}</span>
-          <span className="text-error">−{deletions}</span>
-        </span>
-        <ChevronRight
-          size={14}
-          aria-hidden="true"
-          className={`shrink-0 text-white/55 transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
-        />
-      </button>
+      {run.agentName && (
+        <p className="border-b border-white/5 px-3 py-2 text-white/50">{run.agentName}</p>
+      )}
       {open && (
-        <div id={detailId} className="border-t border-white/10">
-          <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <p className="min-w-0 flex-1 leading-relaxed text-white/60">
-              {run.captureScope === 'recorded-files'
-                ? 'Riwayat ini mencakup berkas yang direkam pada versi Mark sebelumnya.'
-                : 'Perubahan workspace selama pekerjaan berlangsung, termasuk edit bersamaan dari Anda atau tool lain.'}
-            </p>
-            {run.files.some((file) => file.undoAvailable && !file.undone) && (
+        <ul id={detailId} className="py-1">
+          {run.files.map((file) => (
+            <li key={file.path}>
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => undo()}
-                className="inline-flex items-center gap-1.5 text-white/70 hover:text-white disabled:opacity-40"
+                onClick={() => openFile(file)}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5"
+                title={file.relativePath || file.path}
               >
-                <Undo2 size={13} aria-hidden="true" />
-                Urungkan semua
+                <FileText size={14} className="shrink-0 text-white/40" />
+                <span className="shrink-0 tabular-nums text-primary">+{file.additions || 0}</span>
+                <span className="shrink-0 tabular-nums text-error">−{file.deletions || 0}</span>
+                <span className="min-w-0 flex-1 truncate text-white/80">
+                  {(file.relativePath || file.path).split(/[\\/]/).pop()}
+                </span>
+                <span className="hidden max-w-[45%] truncate text-[10px] text-white/40 sm:block">
+                  {file.relativePath || file.path}
+                </span>
+                {file.binary && <span className="text-white/40">Biner</span>}
               </button>
-            )}
-          </div>
-          <ul className="divide-y divide-white/5 border-t border-white/5">
-            {run.files.map((file) => (
-              <li
-                key={file.path}
-                className={`flex items-center gap-1 px-3 ${selected === file.path ? 'bg-primary/[0.07]' : ''}`}
-              >
-                <button
-                  type="button"
-                  aria-pressed={selected === file.path}
-                  onClick={() => {
-                    setError('')
-                    setSelected((value) => (value === file.path ? null : file.path))
-                  }}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 py-3 text-left text-white/80"
-                >
-                  <FileText size={15} aria-hidden="true" className="shrink-0 text-white/55" />
-                  <span className="min-w-0 flex-1 break-all">{file.relativePath}</span>
-                  <span className="shrink-0 text-[10px] text-white/60">
-                    {file.undone
-                      ? 'Dipulihkan'
-                      : file.binary
-                        ? 'Biner'
-                        : file.added
-                          ? 'Baru'
-                          : file.deleted
-                            ? 'Dihapus'
-                            : 'Diubah'}
-                  </span>
-                </button>
-                {file.undoAvailable && !file.undone && (
-                  <button
-                    type="button"
-                    aria-label={`Urungkan ${file.relativePath}`}
-                    disabled={busy}
-                    onClick={() => undo(file.path)}
-                    className="p-2 text-white/60 hover:text-white disabled:opacity-40"
-                  >
-                    <Undo2 size={14} aria-hidden="true" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          {selected && (
-            <div className="min-w-0 border-t border-white/10">
-              {!diff && error ? null : !diff ? (
-                <p role="status" className="p-4 text-white/60">
-                  Memuat perbandingan...
-                </p>
-              ) : diff.notice ? (
-                <p className="p-4 leading-relaxed text-white/65">
-                  {diff.notice} Sebelum: {diff.beforeSize || 0} byte. Sesudah: {diff.afterSize || 0}{' '}
-                  byte.
-                </p>
-              ) : (
-                <div className="h-80 min-w-0 overflow-hidden">
-                  <Suspense
-                    fallback={
-                      <p role="status" className="p-4 text-white/60">
-                        Memuat editor...
-                      </p>
-                    }
-                  >
-                    <DiffEditor
-                      original={diff.before}
-                      modified={diff.after}
-                      options={{
-                        readOnly: true,
-                        fontSize: 12,
-                        renderSideBySide: false,
-                        minimap: { enabled: false },
-                        wordWrap: 'on'
-                      }}
-                    />
-                  </Suspense>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            </li>
+          ))}
+        </ul>
       )}
+      <div className="flex flex-wrap items-center gap-2 border-t border-white/10 px-3 py-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={detailId}
+          onClick={() => setOpen(!open)}
+          className="mr-auto inline-flex items-center gap-2 text-white/60"
+        >
+          <FileDiff size={14} />
+          {run.files.length} berkas berubah
+          <ChevronDown size={13} className={open ? 'rotate-180' : ''} />
+        </button>
+        {decided ? (
+          <span
+            className={
+              decided === 'accepted'
+                ? 'inline-flex items-center gap-1 text-primary'
+                : 'inline-flex items-center gap-1 text-white/55'
+            }
+          >
+            {decided === 'accepted' ? <Check size={13} /> : <X size={13} />}
+            {decided === 'accepted' ? 'Diterima' : 'Ditolak'}
+          </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide('rejected')}
+              className="rounded px-2 py-1 text-white/55 hover:bg-white/5 disabled:opacity-40"
+            >
+              Tolak semua
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide('accepted')}
+              className="rounded bg-primary/15 px-2 py-1 text-primary hover:bg-primary/25 disabled:opacity-40"
+            >
+              {busy ? 'Memproses…' : 'Terima semua'}
+            </button>
+          </>
+        )}
+      </div>
       {error && (
-        <p role="alert" className="break-words px-4 pb-4 text-error">
+        <p role="alert" className="break-words px-3 pb-3 text-error">
           {error}
         </p>
       )}

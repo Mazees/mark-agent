@@ -2657,6 +2657,8 @@ export const useMarkPlan = ({
               null
 
             currentInFlightTool = {
+              toolCallId: `${agenticProcessId}:${stepCount}:${tc.id}`,
+              sessionId: String(activeSessionNum),
               tool: toolName,
               query: JSON.stringify(parsedArgs),
               reason: toolReason,
@@ -2848,6 +2850,8 @@ export const useMarkPlan = ({
 
             sessionRecord.lastActivityTime = Date.now()
             executedToolsList.push({
+              toolCallId: currentInFlightTool?.toolCallId,
+              sessionId: currentInFlightTool?.sessionId,
               tool: toolName,
               query: JSON.stringify(parsedArgs),
               reason: toolReason,

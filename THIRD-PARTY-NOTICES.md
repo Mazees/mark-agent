@@ -27,3 +27,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## LibreOffice document renderer
+
+LibreOffice 26.8.2 is distributed in resources/office/win32-x64, with its original license, credits, and third-party notices. LibreOffice is a project of The Document Foundation and is available under the Mozilla Public License 2.0 (and applicable component licenses). Source and license information: https://www.libreoffice.org/about-us/licenses/ and https://download.documentfoundation.org/libreoffice/src/. The original notices in the distribution must be retained.
+
+## PDF.js
+
+PDF.js (pdfjs-dist) is Copyright Mozilla Foundation and contributors, licensed under Apache-2.0. The dependency LICENSE and local viewer assets are included in the package. Source: https://github.com/mozilla/pdf.js.
+
+## Build-time MSI extraction
+
+lessmsi v2.12.9 (https://github.com/activescott/lessmsi) is used only while preparing the document renderer. Its original license is included in the downloaded extraction tool and the temporary tool is removed after preparation. It is not required by the installed Mark runtime.

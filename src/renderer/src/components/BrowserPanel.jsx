@@ -1,12 +1,11 @@
 /* eslint-disable react/prop-types */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { ArrowLeft, ArrowRight, RotateCw, X, Maximize2, Minimize2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, RotateCw } from 'lucide-react'
 import { webApi } from '../api/web-bridge.js'
 import { browserCommand, getBrowserState, subscribeBrowserState } from '../api/browser-panel.js'
 import { createBrowserFrameRenderer, createBrowserInputQueue } from '../api/browser-stream.js'
 
-export default function BrowserPanel({ sessionId, onClose, onResume, expanded, onExpand }) {
-  void onResume
+export default function BrowserPanel({ sessionId }) {
   const state = useSyncExternalStore(subscribeBrowserState, () => getBrowserState(sessionId))
   const addressRef = useRef(null),
     lastCursor = useRef(0),
@@ -208,34 +207,6 @@ export default function BrowserPanel({ sessionId, onClose, onResume, expanded, o
       className="h-full w-full min-h-0 min-w-0 overflow-hidden flex flex-col bg-base-300 border-l border-white/10"
       aria-label="Browser"
     >
-      {expanded && (
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3 pt-2 text-left text-xs text-white/60 hover:text-white"
-        >
-          Kembali ke chat
-        </button>
-      )}
-      <div className="flex items-center gap-2 px-3 h-12 shrink-0 border-b border-white/10">
-        <span className="text-xs font-medium text-white/70 mr-auto">Browser</span>
-        <button
-          type="button"
-          onClick={onExpand}
-          title={expanded ? 'Perkecil browser' : 'Perluas browser'}
-          className="p-1 text-white/50 hover:text-white"
-        >
-          {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Tutup panel browser"
-          className="p-1 text-white/50 hover:text-white"
-        >
-          <X size={16} />
-        </button>
-      </div>
       <div className="flex items-center gap-1 p-2 border-b border-white/10">
         {[
           ['back', ArrowLeft, 'Kembali'],

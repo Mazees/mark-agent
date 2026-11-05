@@ -74,14 +74,6 @@ async function ensureRepository(key) {
   return repo
 }
 export const runCheckpointRef = (id, phase) => `refs/mark/runs/${sha256(String(id))}/${phase}`
-async function refValue(repo, ref) {
-  try {
-    return (await command(repo, ['rev-parse', '--verify', ref])).stdout.trim()
-  } catch (error) {
-    if (error.code === 128) return null
-    throw error
-  }
-}
 function relativeFile(value) {
   if (
     typeof value !== 'string' ||
@@ -182,8 +174,6 @@ export async function captureWorkspace(root, ref) {
       ref,
       'Mark workspace checkpoint'
     )
-    if (!(await refValue(repo, 'refs/mark/workspace-base')))
-      await command(repo, ['update-ref', 'refs/mark/workspace-base', oid])
     return { workspaceId: key, oid }
   })
 }
@@ -261,17 +251,6 @@ export async function checkpointBytes(key, oid, size = 0) {
       maxBuffer: Math.max(size + 1024, 32 * 1024 * 1024)
     })
   ).stdout
-}
-export async function checkpointFileBytes(key, treeOid, file) {
-  if (!/^[a-f0-9]{40}$/.test(treeOid)) throw new Error('Checkpoint awal tidak valid.')
-  const name = relativeFile(file)
-  const row = (
-    await command(repoPath(key), ['ls-tree', '--long', '-z', treeOid, '--', `:(literal)${name}`])
-  ).stdout
-  if (!row) return null
-  const match = /^\d+ blob ([a-f0-9]{40})\s+(\d+)\t/.exec(row)
-  if (!match) throw new Error('Berkas checkpoint tidak valid.')
-  return checkpointBytes(key, match[1], Number(match[2]))
 }
 export async function checkpointDiff(key, file) {
   if (file.binary)
@@ -367,108 +346,6 @@ export async function migrateSnapshotRun(run) {
       }))
     }
   })
-}
-export async function projectGitInfo(root) {
-  let top
-  try {
-    top = (await runGit(['rev-parse', '--show-toplevel'], { cwd: root })).stdout.trim()
-  } catch (error) {
-    if (error.code === 128 && String(error.stderr).includes('not a git repository')) return null
-    throw error
-  }
-  let head = null
-  try {
-    head = (await runGit(['rev-parse', '--verify', 'HEAD'], { cwd: root })).stdout.trim()
-  } catch (error) {
-    if (error.code !== 128) throw error
-  }
-  return { top, head }
-}
-export async function workspaceChanges(root, filePath) {
-  const info = await projectGitInfo(root)
-  if (info) {
-    if (filePath) {
-      const relative = path.relative(info.top, filePath).replaceAll('\\', '/')
-      let before = null
-      if (info.head) {
-        try {
-          before = (
-            await runGit(['show', `${info.head}:${relative}`], { cwd: root, encoding: 'buffer' })
-          ).stdout
-        } catch (error) {
-          if (error.code !== 128) throw error
-        }
-      }
-      const after = fs.existsSync(filePath) ? fs.readFileSync(filePath) : null
-      const binary = Boolean(before?.includes(0) || after?.includes(0))
-      const tooLarge = Math.max(before?.length || 0, after?.length || 0) > textLimit
-      return {
-        path: filePath,
-        binary,
-        tooLarge,
-        before: binary || tooLarge ? '' : before?.toString('utf8') || '',
-        after: binary || tooLarge ? '' : after?.toString('utf8') || '',
-        notice: binary
-          ? 'Berkas biner.'
-          : tooLarge
-            ? 'Isi berkas melebihi batas tampilan diff 2 MiB.'
-            : null
-      }
-    }
-    const result = await runGit(
-      [
-        '-c',
-        'status.renames=false',
-        'status',
-        '--porcelain=v1',
-        '--untracked-files=all',
-        '-z',
-        '--',
-        '.'
-      ],
-      { cwd: root }
-    )
-    return {
-      git: true,
-      available: true,
-      baselineKind: info.head ? 'head' : 'empty',
-      baselineLabel: info.head
-        ? 'Dibandingkan dengan commit terakhir (HEAD).'
-        : 'Repository belum memiliki commit.',
-      files: result.stdout
-        .split('\0')
-        .filter(Boolean)
-        .map((row) => {
-          const absolute = path.join(info.top, relativeFile(row.slice(3)))
-          const relativePath = path.relative(root, absolute)
-          if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) return null
-          return {
-            path: absolute,
-            relativePath: relativePath.replaceAll('\\', '/'),
-            status: row.slice(0, 2),
-            external: true,
-            undoAvailable: false
-          }
-        })
-        .filter(Boolean)
-    }
-  }
-  const current = await captureWorkspace(root, 'refs/mark/workspace-current')
-  const baseline = await refValue(repoPath(current.workspaceId), 'refs/mark/workspace-base')
-  const files = await checkpointChanges(root, current.workspaceId, baseline, current.oid)
-  if (filePath) {
-    const file = files.find((f) => path.resolve(f.path) === path.resolve(filePath))
-    if (!file) throw new Error('Berkas tidak ada pada diff workspace.')
-    return checkpointDiff(current.workspaceId, file)
-  }
-  return {
-    git: false,
-    available: true,
-    gitWorkspaceId: current.workspaceId,
-    baselineKind: 'initial',
-    baselineLabel: 'Dibandingkan dengan kondisi saat mulai dilacak Mark.',
-    files: files.map((f) => ({ ...f, undoAvailable: false, external: true }))
-  }
 }
 export function exportCheckpointArchives(records) {
   const keys = [...new Set(records.map((r) => r.gitWorkspaceId).filter(Boolean))]

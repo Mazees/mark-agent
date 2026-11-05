@@ -3,6 +3,26 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import pkg from './package.json'
+import fs from 'node:fs'
+import express from 'express'
+
+const pdfAssets = {
+  name: 'local-pdf-assets',
+  configureServer(server) {
+    server.middlewares.use(
+      '/pdf-assets',
+      express.static(resolve(__dirname, 'node_modules/pdfjs-dist'))
+    )
+  },
+  writeBundle() {
+    for (const folder of ['cmaps', 'standard_fonts', 'wasm'])
+      fs.cpSync(
+        resolve(__dirname, 'node_modules/pdfjs-dist', folder),
+        resolve(__dirname, 'out/renderer/pdf-assets', folder),
+        { recursive: true }
+      )
+  }
+}
 
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
@@ -20,7 +40,7 @@ export default defineConfig({
       )
     }
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), pdfAssets],
   server: {
     host: true,
     port: 5173,

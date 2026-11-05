@@ -186,13 +186,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('1')
   const [browserOpen, setBrowserOpen] = useState(!!location.state?.openBrowser)
-  const [workspaceTab, setWorkspaceTab] = useState('changes')
-  const [selectedCodingRun, setSelectedCodingRun] = useState(null)
+  const [workspaceRequest, setWorkspaceRequest] = useState(null)
   useEffect(() => {
     const open = (event) => {
       if (String(event.detail?.sessionId) === String(activeSessionId)) {
-        setSelectedCodingRun(event.detail.runId || null)
-        setWorkspaceTab(event.detail.tab || 'changes')
+        setWorkspaceRequest({ ...event.detail, token: Date.now() })
         setBrowserOpen(true)
       }
     }
@@ -205,7 +203,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     setEffectiveCodingRoot(null)
     const update = () =>
       webApi
-        .codingRequest('/workspace/context', activeSessionId, {}, 'POST')
+        .codingRequest('/workspace/panel', activeSessionId)
         .then((project) => {
           if (!disposed) setEffectiveCodingRoot(project.root)
         })
@@ -230,7 +228,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     window.addEventListener('resize', resize)
     const off = webApi.onBrowserPanel('open-request', (event) => {
       if (event?.sessionId === browserId) {
-        setWorkspaceTab('browser')
+        setWorkspaceRequest({ type: 'browser', token: Date.now() })
         setBrowserOpen(true)
       }
     })
@@ -1036,12 +1034,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             )}
             <div className="min-w-0 h-full flex-1 overflow-hidden">
               <CodingPanel
-                key={browserId}
+                key={`${browserId}:${activeSessionWorkspace || ''}`}
                 sessionId={activeSessionId}
                 sessionBusy={isCurrentLoading}
-                selectedRunId={selectedCodingRun}
-                tab={workspaceTab}
-                onTab={setWorkspaceTab}
+                request={workspaceRequest}
                 narrow={narrow}
                 onWorkspaceChange={() =>
                   window.dispatchEvent(
