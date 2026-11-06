@@ -7,6 +7,8 @@ import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../uti
 import { CodeBlock } from '../Chat/CodeBlock'
 import PluginExecutionBubble from '../Chat/PluginExecutionBubble'
 import { stripMarkTags } from '../../../../shared/parsers/mark-tag-parser'
+import { ChatLink } from '../Chat/ChatLink'
+import { transformChatLinkUrl } from '../../utils/chatLinks'
 
 const ResponseArea = ({ currentResponse }) => {
   const [animState, setAnimState] = useState('idle') // 'fade-out', 'fade-in', 'idle'
@@ -53,24 +55,7 @@ const ResponseArea = ({ currentResponse }) => {
         </code>
       )
     },
-    a: ({ node, ...props }) => {
-      let url = props.href || '#'
-      if (url !== '#' && !url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'https://' + url
-      }
-      return (
-        <a
-          {...props}
-          className="text-primary hover:underline"
-          onClick={(e) => {
-            e.preventDefault()
-            if (window.api && window.api.openExternal && url !== '#') {
-              window.api.openExternal(url)
-            }
-          }}
-        />
-      )
-    }
+    a: ChatLink
   }
 
   const renderContent = () => {
@@ -126,6 +111,7 @@ const ResponseArea = ({ currentResponse }) => {
             remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
             rehypePlugins={[...mathRehypePlugins, [rehypeExternalLinks, { target: '_blank' }]]}
             components={markdownComponents}
+            urlTransform={transformChatLinkUrl}
           >
             {preprocessLaTeX(stripMarkTags(text))}
           </Markdown>

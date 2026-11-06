@@ -24,10 +24,12 @@ export function getProviderTimeouts(provider) {
   return { ...customTimeouts }
 }
 
-export function fetchProviderResponse(endpoint, options, provider) {
-  if (provider !== 'custom') return fetch(endpoint, options)
+export function fetchProviderResponse(endpoint, options, provider, { unlimited = false } = {}) {
+  if (provider !== 'custom' && !unlimited) return fetch(endpoint, options)
   // Keep Node's HTTP deadline beyond Mark's explicit watchdogs, including buffered inference.
-  const transportTimeout = Math.max(...Object.values(getProviderTimeouts(provider))) + 1000
+  const transportTimeout = unlimited
+    ? 0
+    : Math.max(...Object.values(getProviderTimeouts(provider))) + 1000
   return fetch(endpoint, {
     ...options,
     dispatcher: {

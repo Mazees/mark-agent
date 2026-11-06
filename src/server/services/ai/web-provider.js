@@ -106,6 +106,7 @@ async function executeWebProviderInternal({
   stream = false,
   config = {},
   isSmallTask = false,
+  purpose = null,
   jsonSchema = null,
   sessionId = null,
   onToken = null,
@@ -119,6 +120,7 @@ async function executeWebProviderInternal({
   const activeConf = getActiveConfig() || {}
   const conf = { ...activeConf, ...(config || {}) }
   const isGemini = conf.aiProvider === 'gemini-web'
+  const isCompaction = purpose === 'compaction' && isSmallTask === true && !stream
   const shouldStreamContent = false
   const moodFilter = null
 
@@ -299,7 +301,7 @@ ${toolSections.join('\n\n')}
         modelName + pld.substring(999, 1000),
         undefined,
         undefined,
-        { signal }
+        { signal, ...(isCompaction ? { timeoutMs: 0 } : {}) }
       )
     } catch (err) {
       if (signal?.aborted) throw err
@@ -311,7 +313,7 @@ ${toolSections.join('\n\n')}
             'gemini-flash-lite',
             undefined,
             undefined,
-            { signal }
+            { signal, ...(isCompaction ? { timeoutMs: 0 } : {}) }
           )
         } catch {
           // ignore fallback error
@@ -409,7 +411,7 @@ ${toolSections.join('\n\n')}
     }
   }
 
-  if (!answer && reasoning) {
+  if (purpose !== 'compaction' && !answer && reasoning) {
     const firstBrace = reasoning.indexOf('{')
     const lastBrace = reasoning.lastIndexOf('}')
     if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -424,7 +426,7 @@ ${toolSections.join('\n\n')}
 
   // 6. Jika Non-Streaming (One-shot fetchAI)
   if (!stream) {
-    return { content: answer, reasoning }
+    return { content: answer, reasoning, finishReason: 'stop' }
   }
 
   // 7. Jika Streaming Mode (Agent ReAct Gateway)

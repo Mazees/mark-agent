@@ -312,6 +312,9 @@ ensureTableColumns('agent_task_steps', {
 })
 
 ensureTableColumns('session_compact', {
+  checkpoint: 'TEXT',
+  pending: 'TEXT',
+  revision: 'INTEGER DEFAULT 0',
   summary_block: 'TEXT',
   last_compacted_message_id: 'TEXT',
   last_compacted_at: 'INTEGER',
@@ -685,6 +688,7 @@ export function exportFullDatabase() {
     config: dbStore.config.getAll(),
     memories: dbStore.memories.getAll(),
     sessions: dbStore.sessions.getAll(),
+    sessionCompact: dbStore.sessionCompact.getAll(),
     chatTurns: dbStore.chatTurns.getAll(),
     chatArchives: dbStore.chatArchives.getAll(),
     documents: dbStore.documents.getAll(),

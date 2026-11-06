@@ -140,7 +140,8 @@ export const guideArticles = [
         title: 'Menghentikan atau mengarahkan ulang pekerjaan',
         paragraphs: [
           'Gunakan tombol penghentian pada area pesan jika Anda ingin membatalkan proses aktif. Setelah itu, tuliskan arahan baru dan sebutkan bagian pekerjaan yang ingin dilanjutkan atau diubah. Perubahan yang sudah diterapkan pada berkas atau layanan tidak otomatis diurungkan.',
-          'Pada percakapan panjang, konteks dapat diringkas agar pekerjaan dapat dilanjutkan. Gunakan nama berkas, lokasi, dan tujuan yang jelas ketika kembali membahas pekerjaan lama, terutama jika kondisi proyek sudah berubah.'
+          'Pada percakapan panjang, Mark merangkum konteks ketika mendekati batas kapasitas. Progres peringkasan muncul di bagian bawah Proses. Ringkasan menggunakan provider dan model yang sedang Anda pilih; waktu tunggunya bergantung pada respons provider, dan tombol penghentian tetap dapat digunakan.',
+          'Bagian ringkasan yang selesai disimpan sebagai checkpoint. Jika proses gagal, melanjutkan dengan sumber konteks yang sama dapat memakai bagian yang sudah tersimpan. Ringkasan baru diterapkan setelah selesai dan jumlah token berkurang ke batas aman. Riwayat chat asli tetap tersedia, sementara permintaan berikutnya menggunakan ringkasan bersama pesan serta hasil tool yang belum dirangkum. Gunakan nama berkas, lokasi, dan tujuan yang jelas ketika kembali membahas pekerjaan lama, terutama jika kondisi proyek sudah berubah.'
         ]
       }
     ],

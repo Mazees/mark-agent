@@ -24,6 +24,8 @@ Tool apply-patch tetap mendukung Add/Update/Delete dengan konteks unik dan valid
 
 ## Dokumen lokal
 
+Tautan dalam jawaban chat dibuka di tab luar menggunakan `noopener noreferrer`, tanpa mengganti halaman Mark. Path berkas relatif, path Windows absolut, dan URL `file:///` diarahkan ke `GET /api/workspace/download?sessionId=...&path=...`. Backend menentukan workspace dari sesi, memeriksa target serta junction/symlink, lalu mengirim berkas sebagai attachment. Berkas di luar workspace ditolak; halaman HTML hasil pekerjaan diunduh sebagai berkas dan tidak dijalankan di origin antarmuka Mark. Link web HTTP/HTTPS tetap menggunakan alamat aslinya. Route unduhan tidak menjalankan tool AI atau mengubah berkas.
+
 PDF.js beserta worker, cMaps, standard fonts, dan WASM dikemas lokal. Viewer menyediakan halaman, zoom, serta pencarian teks. DOC/DOCX, PPT/PPTX, ODT/ODP dikonversi ke PDF oleh LibreOffice Windows x64 dari resources/office/manifest.json. Versi, URL resmi, dan SHA-256 dikunci. Jalankan npm run prepare:office saat development/rilis. Ekstraksi MSI memakai lessmsi terverifikasi pada tahap persiapan, tanpa memasang Office ke Windows. Ekstraktor sementara tidak dibawa ke runtime.
 
 Konversi memakai salinan sementara, profil unik, makro dinonaktifkan, pengaturan tanpa pembaruan tautan, mode headless, dan batas 90 detik. Dokumen asli tidak diubah. Preview disimpan berdasarkan hash isi serta versi renderer di ~/.config/mark-agent/document-cache. Perubahan isi memerlukan preview baru; error menyediakan Coba lagi. Batas dokumen 150 MiB. Ini bukan isolasi OS untuk dokumen berbahaya dan tidak menjanjikan kesamaan piksel dengan Microsoft Office. Font yang tersedia dapat memengaruhi hasil.

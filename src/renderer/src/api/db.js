@@ -480,8 +480,9 @@ export async function saveSession(id, data, title = null) {
       ...(title ? { title } : {}),
       timestamp: Date.now()
     }
-    await db.sessions.put(session)
-    return session
+    const saved = await db.sessions.put(session)
+    if (!saved?.id) throw new Error('Riwayat sesi belum berhasil disimpan.')
+    return saved
   } catch (error) {
     console.error(`Error saveSession ${id}:`, error)
   }
@@ -917,14 +918,11 @@ export async function restoreDatabaseDump(dumpData, overwrite = true) {
 
 // --- SESSION COMPACT HELPERS ---
 export async function getSessionCompact(sessionId) {
-  try {
-    const cleanId = normalizeDbId(sessionId)
-    const res = await apiGet(`/api/session-compact/${cleanId}`)
-    return res || null
-  } catch (err) {
-    console.error('[DB Proxy] Error getSessionCompact:', err)
-    return null
-  }
+  const cleanId = normalizeDbId(sessionId)
+  const response = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(cleanId)}/compaction`)
+  const result = await response.json()
+  if (!response.ok || !result.success) throw new Error(result.error || 'Checkpoint konteks belum dapat dimuat.')
+  return result.data
 }
 
 export async function saveSessionCompact(sessionId, data) {

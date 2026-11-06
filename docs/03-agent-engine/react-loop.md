@@ -209,7 +209,7 @@ Pengguna dapat menghentikan eksekusi agen kapan saja melalui tombol Stop di UI a
 
 ## 7. Konteks, observasi, dan pemeriksaan hasil
 
-Sebelum inferensi, `checkAndCompressInLoop` memeriksa kapasitas pesan, schema tool, dan reminder. Pada ambang 90% dari batas internal 256.000 token, bagian tengah dirangkum dengan mempertahankan hasil tool sebagai bahan ringkasan. Rekaman lama tidak dibuang sebelum peringkas membacanya. Lihat [manajemen konteks](../02-architecture/search-and-memory.md) untuk batas dan persistensinya.
+Sebelum inferensi, `checkAndCompressInLoop` memeriksa kapasitas pesan, schema tool, dan reminder. Pada ambang 90% dari batas internal 256.000 token, bagian lama dirangkum dengan mempertahankan hasil tool sebagai bahan ringkasan. Ekor dipilih menurut anggaran token, dengan target payload akhir di bawah 75%. Ringkasan loop disimpan sebagai checkpoint sesi; giliran baru dan penghitung UI memakai cakupan ID/hash yang sama. Tiap bagian selesai disimpan agar request yang gagal dapat dilanjutkan, tanpa menulis ulang riwayat atau menerapkan ringkasan yang belum lengkap. Lihat [manajemen konteks](../02-architecture/search-and-memory.md) untuk batas dan persistensinya.
 
 Lead Agent menyimpan hasil tool lengkap pada `fullResult`; `resultSummary` yang pendek hanya untuk tampilan ringkas. Grup yang berhasil dimuat disimpan pada pesan sehingga giliran selanjutnya dalam sesi yang sama dapat memulihkan schema tool.
 

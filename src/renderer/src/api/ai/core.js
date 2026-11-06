@@ -35,6 +35,11 @@ async function loadRequestConfig(signal) {
  * @param {Object} [options={}] - tools, signal, isSmallTask, jsonSchema, configOverride, callbacks
  */
 export const fetchAI = async (messages, stream = false, options = {}) => {
+  messages = (messages || []).map((message) => {
+    const copy = { ...message }
+    delete copy.contextOrigin
+    return copy
+  })
   let actualStream = stream
   let actualOptions = options
 
@@ -56,7 +61,8 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     onMood = null,
     onMeta = null,
     onToolCall = null,
-    sessionId = null
+    sessionId = null,
+    purpose = null
   } = actualOptions
 
   const cleanSignal = resolveAbortSignal(signal)
@@ -146,7 +152,7 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
 
   // 2. Non-Streaming Mode
   const result = await window.api.fetchAI(
-    { messages, config: conf, isSmallTask, jsonSchema, stream: false, sessionId },
+    { messages, config: conf, isSmallTask, jsonSchema, stream: false, sessionId, purpose },
     cleanSignal
   )
   if (import.meta.env.DEV && typeof window !== 'undefined') {

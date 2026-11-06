@@ -21,6 +21,7 @@ export async function executeOpenAIProvider({
   stream = false,
   config = {},
   isSmallTask = false,
+  purpose = null,
   jsonSchema = null,
   signal = null,
   sessionId = null,
@@ -33,6 +34,7 @@ export async function executeOpenAIProvider({
   onStatus = null
 }) {
   const conf = config || {}
+  const isCompaction = purpose === 'compaction' && isSmallTask === true && !stream
   const timeouts = getProviderTimeouts(conf.aiProvider)
   const latestUserMessageIndex = (messages || []).findLastIndex((m) => m.role === 'user')
 
@@ -711,10 +713,12 @@ export async function executeOpenAIProvider({
       ? 'subagent'
       : 'lead'
     activeAbortControllers.add(abortController)
-    const timeoutId = setTimeout(
-      () => abortController.abort(new Error('Request Timeout (Tidak ada respon dari server)')),
-      timeoutMs
-    )
+    const timeoutId = isCompaction
+      ? null
+      : setTimeout(
+          () => abortController.abort(new Error('Request Timeout (Tidak ada respon dari server)')),
+          timeoutMs
+        )
     const abortRequest = () => abortController.abort(parentAbortController.signal.reason)
     parentAbortController.signal.addEventListener('abort', abortRequest, { once: true })
     if (parentAbortController.signal.aborted) abortRequest()
@@ -730,7 +734,8 @@ export async function executeOpenAIProvider({
           body: JSON.stringify(currentBody),
           signal: abortController.signal
         },
-        conf.aiProvider
+        conf.aiProvider,
+        { unlimited: isCompaction }
       )
       rawText = await response.text()
     } catch (err) {
@@ -816,8 +821,11 @@ export async function executeOpenAIProvider({
           const lastId = parsedArray[0]?.id || 'chatcmpl-array-stream'
           const modelName = parsedArray[0]?.model || model
           let isChunkArray = false
+          let completionReason = null
 
           for (const item of parsedArray) {
+            if (item?.choices?.[0]?.finish_reason)
+              completionReason = item.choices[0].finish_reason
             if (item?.object === 'chat.completion.chunk' || item?.choices?.[0]?.delta) {
               isChunkArray = true
               const delta = item.choices?.[0]?.delta
@@ -842,7 +850,8 @@ export async function executeOpenAIProvider({
                     role: 'assistant',
                     content: combinedContent,
                     reasoning: reasoning || null
-                  }
+                  },
+                  finish_reason: completionReason
                 }
               ]
             }
@@ -858,15 +867,23 @@ export async function executeOpenAIProvider({
       let reasoning = ''
       let lastId = 'chatcmpl-stream'
       let modelName = model
+      let completionReason = null
+      let doneMarker = false
 
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed || !trimmed.startsWith('data:')) continue
         const dataStr = trimmed.slice(5).trim()
-        if (!dataStr || dataStr === '[DONE]') continue
+        if (dataStr === '[DONE]') {
+          doneMarker = true
+          continue
+        }
+        if (!dataStr) continue
 
         try {
           const chunk = JSON.parse(dataStr)
+          if (chunk.choices?.[0]?.finish_reason)
+            completionReason = chunk.choices[0].finish_reason
           if (chunk.id) lastId = chunk.id
           if (chunk.model) modelName = chunk.model
           const delta = chunk.choices?.[0]?.delta
@@ -890,7 +907,8 @@ export async function executeOpenAIProvider({
                 role: 'assistant',
                 content: combinedContent,
                 reasoning: reasoning || null
-              }
+              },
+              finish_reason: completionReason || (doneMarker ? 'stop' : null)
             }
           ]
         }
@@ -905,9 +923,12 @@ export async function executeOpenAIProvider({
         .filter(Boolean)
       let combinedContent = ''
       let isValidNdjson = false
+      let completionReason = null
       for (const line of lines) {
         try {
           const parsed = JSON.parse(line)
+          if (parsed.choices?.[0]?.finish_reason)
+            completionReason = parsed.choices[0].finish_reason
           if (parsed.choices?.[0]?.delta?.content) {
             combinedContent += parsed.choices[0].delta.content
             isValidNdjson = true
@@ -919,7 +940,7 @@ export async function executeOpenAIProvider({
       }
       if (isValidNdjson && combinedContent) {
         return {
-          choices: [{ message: { role: 'assistant', content: combinedContent } }]
+          choices: [{ message: { role: 'assistant', content: combinedContent }, finish_reason: completionReason }]
         }
       }
     }
@@ -960,7 +981,9 @@ export async function executeOpenAIProvider({
     if (Array.isArray(processedData)) {
       let combinedContent = ''
       let combinedReasoning = ''
+      let completionReason = null
       for (const item of processedData) {
+        if (item.choices?.[0]?.finish_reason) completionReason = item.choices[0].finish_reason
         const delta = item.choices?.[0]?.delta || item.choices?.[0]?.message
         if (delta) {
           if (delta.content) combinedContent += delta.content
@@ -975,7 +998,8 @@ export async function executeOpenAIProvider({
               role: 'assistant',
               content: combinedContent,
               reasoning: combinedReasoning || null
-            }
+            },
+            finish_reason: completionReason
           }
         ]
       }
@@ -1043,7 +1067,7 @@ export async function executeOpenAIProvider({
       }
     }
 
-    if (!content && reasoning) {
+    if (!isCompaction && !content && reasoning) {
       const firstBrace = reasoning.indexOf('{')
       const lastBrace = reasoning.lastIndexOf('}')
       if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -1053,7 +1077,14 @@ export async function executeOpenAIProvider({
       }
     }
 
-    return { content, reasoning, usage: processedData?.usage || null }
+    if (isCompaction && choice?.finish_reason !== 'stop')
+      throw new Error('Provider belum menandai ringkasan selesai; checkpoint tidak diperbarui.')
+    return {
+      content,
+      reasoning,
+      usage: processedData?.usage || null,
+      finishReason: choice?.finish_reason || null
+    }
   } catch (error) {
     if (conf.aiProvider !== 'custom' && isLMStudioOfflineError(error)) {
       throw createLMStudioOfflineError(error)

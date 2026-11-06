@@ -241,7 +241,8 @@ const InputBar = ({
           compact?.summaryBlock || compact?.summary_block || '',
           compact?.lastCompactedMessageId || compact?.last_compacted_message_id || null,
           '',
-          compact?.lastCompactedAt || compact?.last_compacted_at || null
+          compact?.lastCompactedAt || compact?.last_compacted_at || null,
+          compact
         )
         setContextTracker({
           currentTokens: tokens,

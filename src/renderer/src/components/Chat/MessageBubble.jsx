@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import React from 'react'
-import Markdown, { defaultUrlTransform } from 'react-markdown'
+import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeExternalLinks from 'rehype-external-links'
 import { preprocessLaTeX, mathRemarkPlugins, mathRehypePlugins } from '../../utils/latexHelper'
@@ -9,6 +9,8 @@ import { Brain, ChevronRight, ExternalLink, Sparkles } from 'lucide-react'
 import { DesktopPreviewWidget } from '../DesktopPreviewWidget'
 import { sanitizeProcessSteps } from '../../utils/processSteps'
 import { ProcessTimeline } from './ProcessTimeline'
+import { ChatLink } from './ChatLink'
+import { transformChatLinkUrl } from '../../utils/chatLinks'
 
 const LOCAL_IMAGE_EXTENSIONS = /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i
 
@@ -42,7 +44,7 @@ function resolveMarkdownImageSource(source) {
 
 function transformMarkdownUrl(url, key, node) {
   if (key === 'src' && node?.tagName === 'img') return resolveMarkdownImageSource(url)
-  return defaultUrlTransform(url)
+  return transformChatLinkUrl(url)
 }
 
 function MarkdownImage({ src, alt = '' }) {
@@ -179,6 +181,8 @@ export const MessageBubble = React.memo(
               <Markdown
                 remarkPlugins={[remarkGfm, ...mathRemarkPlugins]}
                 rehypePlugins={[...mathRehypePlugins]}
+                components={{ a: ChatLink }}
+                urlTransform={transformMarkdownUrl}
               >
                 {preprocessLaTeX(
                   typeof reasoning === 'string' ? reasoning : JSON.stringify(reasoning, null, 2)
@@ -227,6 +231,7 @@ export const MessageBubble = React.memo(
                   [rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]
                 ]}
                 components={{
+                  a: ChatLink,
                   code: CodeBlock,
                   img: MarkdownImage
                 }}

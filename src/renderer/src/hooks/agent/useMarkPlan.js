@@ -1,6 +1,10 @@
 import { parseEffortCommand, resolveEffort } from '@shared/agent/effort.js'
 import { createVerificationGate, createProgressGuard } from '@shared/agent/execution-quality.js'
-import { captureApprovalHistory } from '@shared/approval-context.js'
+import {
+  captureApprovalAuthority,
+  captureApprovalHistory,
+  captureApprovalUserRequest
+} from '@shared/approval-context.js'
 import { CODING_INSTRUCTIONS } from '@shared/agent/coding-prompt.js'
 import {
   parseSkillRequest,
@@ -1429,11 +1433,16 @@ export const useMarkPlan = ({
     const agenticProcessId = `agentic-${activeSessionNum}-${Date.now()}`
     sessionRecord.computerUseRunId = agenticProcessId
     const approvalHistory = captureApprovalHistory(sourceChatData)
+    const approvalRequest = captureApprovalUserRequest(
+      !isSystem && !isAutonomous ? userMessage : null
+    )
     sessionRecord.getApprovalContext = () => ({
       sessionId: String(activeSessionNum), contextId: agenticProcessId, revision: sessionRecord.approvalRevision,
-      currentRequest: !isSystem && !isAutonomous && userMessage.role === 'user' ? userMessage : null,
-      history: approvalHistory,
-      interventions: [...sessionRecord.approvalInterventions],
+      ...captureApprovalAuthority({
+        currentRequest: approvalRequest,
+        interventions: sessionRecord.approvalInterventions
+      }),
+      history: structuredClone(approvalHistory),
       observations: (sessionRecord.executedToolsList || []).filter((step) => step.tool && step.fullResult).slice(-6).map((step) => ({ tool: step.tool, query: step.query, status: step.status, fullResult: String(step.fullResult).slice(0, 1800) }))
     })
     let durableTaskForRecovery = null
@@ -1688,7 +1697,8 @@ export const useMarkPlan = ({
         activeSummaryBlock,
         activeLastCompactedId,
         systemPrompt,
-        activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
+        activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null,
+        activeSessionCompact
       )
 
       // Bypass proses kompaksi berat jika instruksi internal (greeting sistem / awareness autonomous / disableTools)
@@ -1712,7 +1722,7 @@ export const useMarkPlan = ({
             id: compactBannerId,
             role: 'system',
             isCompacting: true,
-            compactProgress: 'Memangkas log tool di memori...'
+            compactProgress: 'Menyiapkan ringkasan konteks...'
           }
         ])
 
@@ -1724,6 +1734,7 @@ export const useMarkPlan = ({
             systemPrompt,
             signal: sessionAbortController.signal,
             onProgress: (prog) => {
+              sessionRecord.lastActivityTime = Date.now()
               targetSetChatData((prev) =>
                 prev.map((item) =>
                   item.id === compactBannerId ? { ...item, compactProgress: prog.text } : item
@@ -1735,21 +1746,16 @@ export const useMarkPlan = ({
           if (compactionResult?.isCompacted) {
             if (compactionResult.compactedMessages) {
               effectiveSourceMessages = compactionResult.compactedMessages
-              // Sinkronkan riwayat pesan terpangkas ke state UI & persistent storage
-              targetSetChatData(compactionResult.compactedMessages)
             }
-            if (compactionResult.newSummaryBlock && compactionResult.lastCompactedMessageId) {
-              activeSessionCompact = {
-                summaryBlock: compactionResult.newSummaryBlock,
-                lastCompactedMessageId: compactionResult.lastCompactedMessageId,
-                lastCompactedAt: Date.now()
-              }
+            if (compactionResult.checkpoint) {
+              activeSessionCompact = compactionResult.checkpoint
               window.dispatchEvent(
                 new CustomEvent('session-compact-updated', {
                   detail: {
                     sessionId: String(activeSessionNum),
                     lastCompactedMessageId: compactionResult.lastCompactedMessageId,
-                    summaryBlock: compactionResult.newSummaryBlock
+                    summaryBlock: compactionResult.newSummaryBlock,
+                    checkpoint: activeSessionCompact
                   }
                 })
               )
@@ -1778,7 +1784,10 @@ export const useMarkPlan = ({
           }
         } catch (compactErr) {
           console.error('[useMarkPlan] Gagal context compaction:', compactErr)
-          throw new Error(`Kompaksi konteks gagal: ${compactErr.message}`)
+          if (sessionAbortController.signal.aborted) throw compactErr
+          throw Object.assign(new Error(`Kompaksi konteks gagal: ${compactErr.message}`), {
+            code: compactErr.code || 'CONTEXT_COMPACTION_FAILED'
+          })
         } finally {
           targetSetChatData((prev) => (prev || []).filter((item) => item.id !== compactBannerId))
         }
@@ -2202,13 +2211,14 @@ export const useMarkPlan = ({
             sessionId: String(activeSessionNum || 1),
             maxTokens: MAX_CONTEXT_TOKENS,
             thresholdRatio: IN_LOOP_COMPACT_THRESHOLD,
-            protectLastN: 6,
-            protectFirstN: 2,
+            sourceMessages: effectiveSourceMessages,
+            executedTools: executedToolsList,
             activeConfig: config[0] || {},
             systemPrompt,
             reservedTokens,
             signal: sessionAbortController.signal,
             onProgress: (progress) => {
+              sessionRecord.lastActivityTime = Date.now()
               if (!inLoopBannerId) {
                 inLoopBannerId = `compact-loop-${Date.now()}`
                 targetSetChatData((prev) => [
@@ -2232,6 +2242,16 @@ export const useMarkPlan = ({
 
           if (inLoopResult?.compressed && inLoopResult.loopMessages) {
             loopMessages = inLoopResult.loopMessages
+            activeSessionCompact = inLoopResult.checkpoint
+            window.dispatchEvent(
+              new CustomEvent('session-compact-updated', {
+                detail: {
+                  sessionId: String(activeSessionNum),
+                  checkpoint: activeSessionCompact,
+                  summaryBlock: activeSessionCompact.summaryBlock
+                }
+              })
+            )
           }
         } finally {
           if (inLoopBannerId) {
@@ -3585,7 +3605,8 @@ export const useMarkPlan = ({
             activeSessionCompact?.last_compacted_message_id ||
             null,
           systemPrompt,
-          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
+          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null,
+          activeSessionCompact
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {

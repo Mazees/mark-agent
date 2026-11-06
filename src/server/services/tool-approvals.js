@@ -5,6 +5,7 @@ import { approvalStore, dbStore } from '../memory/db-store.js'
 import { getActiveConfig } from '../config-manager.js'
 import { workspaceFor } from './coding-workspace.js'
 import { resolveApprovalContext } from './approval-context.js'
+import { captureApprovalAuthority } from '../../shared/approval-context.js'
 import { reviewToolAction } from './approval-reviewer.js'
 import { withApprovedFileTargets } from './tool-file-scope.js'
 import {
@@ -469,7 +470,7 @@ export function createToolApprovals({
     return req.evaluation
   }
   function updateContext(cfg) {
-    const snapshot = cfg.approvalContext
+    let snapshot = cfg.approvalContext
     const owner = ownerOf(cfg),
       key = ownerKey(owner)
     if (
@@ -484,13 +485,15 @@ export function createToolApprovals({
       throw error('Arahan pengguna sudah berubah. Periksa tindakan kembali.', 'APPROVAL_STALE')
     if (JSON.stringify(snapshot).length > 500000)
       throw error('Konteks peninjauan terlalu besar.', 'APPROVAL_STALE')
-    const authority = digest([snapshot.currentRequest, snapshot.interventions])
+    const userAuthority = captureApprovalAuthority(snapshot)
+    const authority = digest(userAuthority)
     if (
       previous &&
       snapshot.revision === previous.snapshot.revision &&
       previous.authority !== authority
     )
       throw error('Isi konteks berubah tanpa revisi.', 'APPROVAL_STALE')
+    snapshot = { ...snapshot, ...userAuthority }
     contexts.set(key, { snapshot: structuredClone(snapshot), authority })
     if (!owner.jobId) inheritContext(owner, snapshot)
     if ((previous && previous.authority !== authority) || (!previous && snapshot.revision > 0)) {

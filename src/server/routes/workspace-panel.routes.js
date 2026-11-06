@@ -1,10 +1,12 @@
 import { Router } from 'express'
+import fs from 'node:fs/promises'
 import {
   workspaceTree,
   readWorkspaceFile,
   saveWorkspaceFile,
   saveEditorDraft,
-  panelState
+  panelState,
+  workspaceFile
 } from '../services/workspace-files.js'
 import { prepareDocument, documentContent } from '../services/document-preview.js'
 export const workspacePanelRouter = Router()
@@ -32,6 +34,22 @@ workspacePanelRouter.get(
   '/workspace/file',
   route((req) => readWorkspaceFile(session(req), req.query.path))
 )
+workspacePanelRouter.get('/workspace/download', async (req, res) => {
+  try {
+    if (!allowed(req)) return res.sendStatus(403)
+    const { file } = workspaceFile(session(req), req.query.path)
+    if (!(await fs.stat(file)).isFile()) return res.sendStatus(404)
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.set('Content-Security-Policy', "default-src 'none'; sandbox")
+    res.set('Cache-Control', 'no-store')
+    res.download(file, (error) => {
+      if (error && !res.headersSent) res.status(error.status || 500).end()
+    })
+  } catch (error) {
+    const status = ['ENOENT', 'ENOTDIR'].includes(error.code) ? 404 : 403
+    res.status(status).json({ success: false, error: error.message })
+  }
+})
 workspacePanelRouter.post(
   '/workspace/file',
   route((req) => saveWorkspaceFile(session(req), req.body))

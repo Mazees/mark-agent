@@ -108,7 +108,7 @@ sequenceDiagram
 
 ## 4. Context Management Engine (`contextManager.js`)
 
-Mark membedakan riwayat tersimpan dari konteks yang dikirim ke model. Kompaksi mengurangi konteks aktif melalui ringkasan dan penanda pesan terakhir yang telah dirangkum; riwayat asli beserta hasil tool tetap tersimpan.
+Mark membedakan riwayat tersimpan dari konteks yang dikirim ke model. Kompaksi mengurangi konteks aktif melalui ringkasan dan cakupan pesan/hasil tool yang telah dirangkum; riwayat asli tetap tersimpan. Jalur sebelum giliran, di dalam loop, dan kompaksi manual memakai checkpoint sesi yang sama.
 
 ### Pemicu dan batas
 
@@ -121,9 +121,23 @@ Mark membedakan riwayat tersimpan dari konteks yang dikirim ke model. Kompaksi m
 
 Ringkasan menerima isi pesan serta rekaman `executionSteps`/`executedTools`, termasuk status dan hasilnya. Bagian tengah pesan panjang tidak lagi dibuang sebelum dikirim ke peringkas. Rekaman panjang dibagi menjadi beberapa bagian agar peringkas tetap menerima bukti yang tersedia.
 
-Kompaksi sesi mempertahankan sedikitnya delapan pesan terakhir jika tersedia. Batas potongan diselaraskan agar pemanggilan dan hasil tool tetap berpasangan. Kompaksi di dalam loop mempertahankan bagian awal dan ekor aktif sesuai parameter caller, lalu merangkum bagian tengah. Keduanya mempertahankan tujuan, batas pengguna, progres, kendala, keputusan, berkas relevan, dan langkah berikutnya.
+Pemilihan bagian yang dipertahankan memakai anggaran token, bukan jumlah pesan tetap. Instruksi sistem dan permintaan pengguna terbaru dipertahankan; pasangan pemanggilan serta hasil tool tetap berada dalam satu kelompok. Ekor percakapan yang dipertahankan dibatasi agar ringkasan mempunyai ruang, dengan target akhir di bawah 75% kapasitas. Tujuan, batas pengguna, progres, kendala, keputusan, berkas relevan, dan langkah berikutnya menjadi bahan serah-terima. Jika instruksi wajib sendiri terlalu besar, operasi gagal dengan penjelasan tanpa mengirim request utama yang melampaui kapasitas.
 
 Ringkasan adalah hasil model dan tetap dapat kehilangan detail; riwayat asli menjadi sumber pemeriksaan ulang. Hasil tool yang tidak tersimpan dinyatakan tidak diketahui, bukan dianggap sukses. Helper pruning lama masih diekspor, tetapi jalur utama Lead Agent tidak memakainya untuk menghapus bukti sebelum ringkasan.
+
+Request ringkasan memakai `purpose: compaction` dan tidak memiliki batas durasi yang ditetapkan Mark. Penanda ini diteruskan melalui client, gateway, dan provider; batas frontend 300 detik serta batas inferensi backend dikecualikan khusus request ringkasan nonstream dengan `isSmallTask: true`. Transport OpenAI-compatible tidak memasang batas tunggu header/body untuk request tersebut, dan Gemini Web tidak memasang timer request compacting. Batas request biasa dan peninjau izin tetap berlaku. Gangguan jaringan atau penolakan dari provider tetap dapat menghentikan request dan dilaporkan sebagai kegagalan, bukan pembatalan pengguna.
+
+Indikator berada paling bawah grup Proses, setelah narasi serta Aktivitas, tanpa mengikuti posisi banner dalam array pesan. Penantian menampilkan nomor bagian dan waktu berlalu setiap lima detik; status ini memperbarui aktivitas pekerjaan agar penantian yang masih berlangsung tidak dianggap sesi macet. Waktu dihitung ulang dari nol saat bagian baru dimulai. Bagian berikutnya hanya dimulai setelah respons ringkasan sebelumnya berhasil diterima; tidak ada timer 60 detik yang memajukan bagian secara otomatis. Kegagalan request menghasilkan `CONTEXT_COMPACTION_FAILED`. Stop tetap membatalkan request melalui signal induk, termasuk adapter yang tidak merespons pembatalan; interval progres dan listener dibersihkan ketika selesai.
+
+Data preview dan gambar Base64 dalam rekaman tool diganti penanda gambar sebelum dikirim ke peringkas; teks instruksi, argumen, status, serta hasil tool tetap menjadi bahan ringkasan. Respons kosong, terpotong, atau lebih dari 8192 token ditolak. Adapter OpenAI-compatible mempertahankan penanda akhir provider dan mensyaratkan respons selesai untuk kompaksi. Hasil yang tidak mengecil atau tetap melebihi target tidak mengganti checkpoint aktif.
+
+### Checkpoint persisten dan pemulihan
+
+Tabel `session_compact` menyimpan ringkasan aktif, `checkpoint` berupa ID/hash pesan dan hasil tool, `pending` untuk progres bagian, serta `revision`. API `GET /api/sessions/:id/compaction` membaca status. Operasi `begin`, `part`, `discard`, dan `commit` menggunakan POST pada path tersebut dan transaksi SQLite dengan pemeriksaan revisi. Komit memverifikasi hash pesan sumber agar edit yang terjadi selama peringkasan tidak tertimpa ringkasan usang.
+
+Setiap bagian yang selesai disimpan sebelum melanjutkan request berikutnya. Percobaan berikutnya dengan sumber, cakupan, dan konfigurasi model yang sama melanjutkan bagian tersisa. Sumber yang berubah membuat pekerjaan baru. Progres parsial belum menjadi konteks aktif; hanya komit lengkap yang mengaktifkan ringkasan. Kegagalan simpan dilaporkan sebagai kegagalan. Riwayat sesi tidak ditulis ulang oleh kompaksi, sehingga pesan/intervensi yang masuk selama request tetap ada.
+
+Perakitan payload dan penghitung token menggunakan cakupan checkpoint yang sama. Rekaman yang sudah dirangkum tidak dimasukkan kembali setelah reload atau giliran baru; rekaman yang berubah hash dimuat kembali untuk diperiksa. Identitas hasil tool juga dipakai untuk mencegah log kumulatif yang sama masuk berulang. Metadata internal cakupan tidak dikirim ke provider. Backup/restore menyertakan checkpoint serta progres parsial, tetapi tidak memulai request secara otomatis. Ringkasan lama berbasis pointer tetap terbaca bila sumber pointer masih tersedia.
 
 ### Memori dan sesi provider
 

@@ -16,6 +16,30 @@ const synthetic = (message) =>
     textOf(message?.content)
   )
 export const isApprovalUserMessage = (message) => message?.role === 'user' && !synthetic(message)
+
+export function captureApprovalUserRequest(message) {
+  if (!isApprovalUserMessage(message)) return null
+  return {
+    id: message.id ?? null,
+    role: 'user',
+    source: message.source ?? null,
+    createdAt: message.createdAt || message.created_at || message.timestamp || null,
+    content: structuredClone(message.content ?? message.text ?? ''),
+    truncated: Boolean(message.truncated)
+  }
+}
+
+export function captureApprovalAuthority({ currentRequest, interventions = [] } = {}) {
+  return {
+    currentRequest: captureApprovalUserRequest(currentRequest),
+    interventions: interventions.flatMap((item) => {
+      if (item?.origin !== 'user') return []
+      const request = captureApprovalUserRequest({ ...item, role: item.role ?? 'user' })
+      return request ? [{ ...request, origin: 'user' }] : []
+    })
+  }
+}
+
 const approvalResult = (value) => {
   try {
     const parsed = JSON.parse(textOf(value))

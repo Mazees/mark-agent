@@ -26,7 +26,8 @@ aiRouter.post('/ai/fetch', async (req, res) => {
     config = {},
     isSmallTask = false,
     jsonSchema = null,
-    sessionId = null
+    sessionId = null,
+    purpose = null
   } = req.body || {}
   try {
     const { fetchAI } = await import('../services/ai-bridge.js')
@@ -62,6 +63,7 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       isSmallTask,
       jsonSchema,
       sessionId,
+      purpose: purpose === 'compaction' && isSmallTask === true ? 'compaction' : null,
       signal: clientAbortController.signal
     })
     res.json(result)

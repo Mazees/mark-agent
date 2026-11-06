@@ -326,8 +326,10 @@ export const webApi = {
   fetchAI: async (params, signal = null) => {
     const endpoint = params?.stream ? `${API_BASE}/api/ai/stream` : `${API_BASE}/api/ai/fetch`
     const callerSignal = resolveAbortSignal(signal) || resolveAbortSignal(params?.signal)
+    const isCompaction =
+      params?.purpose === 'compaction' && params?.isSmallTask === true && !params?.stream
     const timeoutSignal =
-      typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(300000) : null
+      !isCompaction && typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(300000) : null
     const effectiveSignal = callerSignal
       ? timeoutSignal && typeof AbortSignal?.any === 'function'
         ? AbortSignal.any([callerSignal, timeoutSignal])

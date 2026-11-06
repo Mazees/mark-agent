@@ -61,9 +61,10 @@ function httpPost(urlStr, headers, bodyData, timeoutMs = 25000, signal) {
       res.on('data', (chunk) => (data += chunk.toString()))
       res.on('end', () => resolve(data))
     })
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Gemini Web HTTP request timed out after ${timeoutMs}ms`))
-    })
+    if (timeoutMs > 0)
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`Gemini Web HTTP request timed out after ${timeoutMs}ms`))
+      })
     req.on('error', (err) => reject(err))
     req.write(bodyData)
     req.end()
@@ -87,7 +88,7 @@ export async function generateGeminiResponse(
   modelName = 'gemini-3.6-flash',
   cookie = '',
   bl = DEFAULT_BL,
-  { signal, strictModel = false } = {}
+  { signal, strictModel = false, timeoutMs = 25000 } = {}
 ) {
   const reqModel = (modelName || 'gemini-3.6-flash').toLowerCase()
 
@@ -147,7 +148,7 @@ export async function generateGeminiResponse(
     headers['cookie'] = cookie
   }
 
-  const rawText = await httpPost(url, headers, bodyParams.toString(), 25000, signal)
+  const rawText = await httpPost(url, headers, bodyParams.toString(), timeoutMs, signal)
 
   let finalAnswer = ''
   const lines = rawText.split('\n')

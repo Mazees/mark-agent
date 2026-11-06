@@ -19,6 +19,7 @@ import { workspacePanelRouter } from './workspace-panel.routes.js'
 import { chromeBridgeRouter } from './chrome-bridge.routes.js'
 import { mcpRouter } from './mcp.routes.js'
 import { toolApprovalsRouter } from './tool-approvals.routes.js'
+import { compactionRouter } from './compaction.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -29,6 +30,7 @@ export function registerRoutes(app) {
   app.use('/api', toolApprovalsRouter)
   app.use('/api', chatRouter)
   app.use('/api', memoryRouter)
+  app.use('/api', compactionRouter)
   app.use('/api', subagentsRouter)
   app.use('/api', skillsRouter)
   app.use('/api', pluginsRouter)

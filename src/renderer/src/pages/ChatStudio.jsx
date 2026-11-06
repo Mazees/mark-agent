@@ -262,10 +262,12 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   useEffect(() => {
     let isMounted = true
+    let checkpointUpdated = false
+    setActiveSessionCompact(null)
     const loadCompactData = async () => {
       try {
         const data = await getSessionCompact(String(activeSessionId))
-        if (isMounted) {
+        if (isMounted && !checkpointUpdated) {
           setActiveSessionCompact(data || null)
           setLastCompactedMessageId(
             data?.lastCompactedMessageId || data?.last_compacted_message_id || null
@@ -277,8 +279,9 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
     const handleCompactUpdated = (e) => {
       if (String(e.detail?.sessionId) === String(activeSessionId)) {
+        checkpointUpdated = true
         setLastCompactedMessageId(e.detail?.lastCompactedMessageId || null)
-        setActiveSessionCompact({
+        setActiveSessionCompact(e.detail?.checkpoint || {
           summaryBlock: e.detail?.summaryBlock,
           lastCompactedMessageId: e.detail?.lastCompactedMessageId
         })
@@ -382,7 +385,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             activeSessionCompact?.last_compacted_message_id ||
             null,
           '',
-          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null
+          activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null,
+          activeSessionCompact
         )
         window.dispatchEvent(
           new CustomEvent('context-tracker-updated', {
@@ -405,7 +409,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact, isCurrentLoading])
 
   const handleSendMessage = async (prompt, sendOptions = {}) => {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || manualCompactBusy) return
 
     const rawDisplay = sendOptions?.displayPrompt || prompt
     // Auto-update session title if it's default
@@ -580,11 +584,26 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }
 
   const handleStopSession = () => {
+    if (manualCompacting.current) {
+      manualCompacting.current.controller.abort()
+      return
+    }
     if (handleStop) handleStop(activeSessionId)
   }
 
+  const manualCompacting = useRef(null)
+  const [manualCompactBusy, setManualCompactBusy] = useState(false)
+  useEffect(() => () => manualCompacting.current?.controller.abort(), [activeSessionId])
   const handleManualCompaction = async () => {
-    if (!currentDisplayMessages || currentDisplayMessages.length <= 1) return
+    if (isCurrentLoading || manualCompacting.current) return
+    const controller = new AbortController()
+    manualCompacting.current = { controller }
+    setManualCompactBusy(true)
+    if (!currentDisplayMessages || currentDisplayMessages.length <= 1) {
+      manualCompacting.current = null
+      setManualCompactBusy(false)
+      return
+    }
 
     const compactBannerId = `compact-banner-${Date.now()}`
     const bannerMsg = {
@@ -610,6 +629,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         messages: currentDisplayMessages.filter((m) => !m.isCompacting),
         activeConfig,
         force: true,
+        signal: controller.signal,
         onProgress: (prog) => {
           const updateFn = (prev) =>
             (prev || []).map((m) =>
@@ -625,28 +645,20 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
         }
       })
 
+      controller.signal.throwIfAborted()
+
       if (res?.isCompacted) {
-        if (res.compactedMessages) {
-          const cleanCompacted = res.compactedMessages.filter((m) => m.id !== compactBannerId)
-          if (String(activeSessionId) === '1') {
-            setMainChatData(cleanCompacted)
-          } else {
-            setActiveSessionData(cleanCompacted)
-          }
-        }
-        if (res.lastCompactedMessageId) {
+        if (res.checkpoint) {
           setLastCompactedMessageId(res.lastCompactedMessageId)
-          setActiveSessionCompact({
-            summaryBlock: res.newSummaryBlock,
-            lastCompactedMessageId: res.lastCompactedMessageId
-          })
+          setActiveSessionCompact(res.checkpoint)
         }
         window.dispatchEvent(
           new CustomEvent('session-compact-updated', {
             detail: {
               sessionId: String(activeSessionId),
               lastCompactedMessageId: res.lastCompactedMessageId,
-              summaryBlock: res.newSummaryBlock
+              summaryBlock: res.newSummaryBlock,
+              checkpoint: res.checkpoint
             }
           })
         )
@@ -668,7 +680,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       }
     } catch (e) {
       console.error('[ChatStudio] Manual compaction error:', e)
+      if (!controller.signal.aborted) setSessionsError(e.message)
     } finally {
+      manualCompacting.current = null
+      setManualCompactBusy(false)
       if (String(activeSessionId) === '1') {
         setMainChatData((prev) => (prev || []).filter((m) => m.id !== compactBannerId))
       } else {
@@ -676,7 +691,6 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       }
     }
   }
-
   useEffect(() => {
     const handleReqCompact = () => handleManualCompaction()
     window.addEventListener('request-manual-compaction', handleReqCompact)
@@ -813,7 +827,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                   return buildCompletedTurnRenderItems(visibleMessages, isCurrentLoading).map(
                     (item, idx) => {
                       if (item.type === 'process') {
+                        const compactingMessages = item.messages.filter(
+                          (message) => message.isCompacting
+                        )
                         const progressMessages = item.messages.filter((message) => {
+                          if (message.isCompacting) return false
                           if (message.isPlanSteps) return true
                           const content = message.content
                           if (
@@ -874,6 +892,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                                       `${message.timestamp || 'progress'}-${messageIndex}`
                                     }
                                     role={message.role || 'assistant'}
+                                    isCompacting={message.isCompacting}
+                                    compactProgress={message.compactProgress}
                                     content={message.content || ''}
                                     reasoning={item.isActive ? message.reasoning : null}
                                     compactActivity
@@ -892,6 +912,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                                   />
                                 )
                               )}
+                              {compactingMessages.map((message) => (
+                                <ChatList
+                                  key={message.id}
+                                  isCompacting
+                                  compactProgress={message.compactProgress}
+                                />
+                              ))}
                             </div>
                           </details>
                         )
@@ -991,7 +1018,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 sessionId={String(activeSessionId)}
                 inline={true}
                 onSubmit={handleSendMessage}
-                isLoading={isCurrentLoading}
+                isLoading={isCurrentLoading || manualCompactBusy}
                 isRecording={isRecording}
                 isProcessing={isProcessing}
                 audioIntensity={audioIntensity}
