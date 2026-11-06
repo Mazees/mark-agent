@@ -32,6 +32,8 @@ Konversi memakai salinan sementara, profil unik, makro dinonaktifkan, pengaturan
 
 Terminal manual menggunakan satu PTY per tab dan cwd workspace. Menutup tab/panel hanya menyembunyikan proses; terminal aktif dapat dibuka kembali dari +. Hentikan dan shutdown membersihkan pohon proses. Restart tidak menjalankan ulang perintah. Tidak ada pembuatan terminal otomatis karena metadata tab dipulihkan.
 
+Environment proses Mark menambahkan Git bawaan pada PATH dan menetapkan `GIT_PAGER=cat`. Git menafsirkan nilai ini sebagai keluaran langsung tanpa menjalankan pager, sehingga `git diff`, `git log`, dan `git show` tidak membutuhkan `less` yang tidak disertakan MinGit. Pengaturan hanya berlaku untuk proses yang dikelola Mark; konfigurasi Git global/proyek dan PATH Windows tidak diubah. Terminal yang sudah terbuka perlu dihentikan dan dibuat ulang setelah Mark dimulai ulang agar menerima environment baru.
+
 run-powershell dan run-task menggunakan terminal-service tanpa membuka tab manual. Metadata menyimpan codingRunId, toolCallId, dan sessionId. Aktivitas menampilkan log, status, dan exit code proses yang tepat. Output bernomor urut dibatasi 256.000 karakter dan dikirim hanya ke subscriber. Input raw ditolak untuk proses AI. Perintah AI tetap melewati persetujuan tool; terminal manual merupakan tindakan langsung pengguna. run-powershell dibatasi 60 detik; run-task berjalan di latar sampai dihentikan. Buffer log tidak masuk backup.
 
 ## API

@@ -48,13 +48,15 @@ export function gitEnvironment(extra = {}, cwd) {
   for (const key of Object.keys(env)) {
     if (
       key.toLowerCase() === 'path' ||
-      /^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_COMMON_DIR|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES)$/i.test(
+      /^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_COMMON_DIR|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_PAGER)$/i.test(
         key
       )
     )
       delete env[key]
   }
   env.Path = `${path.dirname(gitExecutable())}${path.delimiter}${previousPath}`
+  // Git treats "cat" as no pager; MinGit does not ship less or need a cat executable.
+  env.GIT_PAGER = 'cat'
   const repository = cwd && repositoryAt(cwd)
   if (repository) {
     const count = Number(env.GIT_CONFIG_COUNT || 0)
