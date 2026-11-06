@@ -32,6 +32,7 @@ export async function executeSubagentTool(tool, rawArgs, context) {
       })
       const result = await runSubagentTurn(agent.id, args.goal || args.initial_message, 'mark', {
         newJob: true,
+        effortLevel: context.effortLevel,
         taskId: context.taskId,
         codingRunId: context.codingRunId,
         ownedFiles: Array.isArray(args.owned_files) ? args.owned_files : [],
@@ -114,6 +115,7 @@ export async function executeSubagentTool(tool, rawArgs, context) {
     if (target.parentSessionId && target.parentSessionId !== context.sessionId)
       throw new Error('Agent sedang berada dalam sesi koordinasi lain.')
     const result = await runSubagentTurn(target.id, args.message, 'mark', {
+      effortLevel: context.effortLevel,
       approvalContext: context.approvalContext,
       taskId: context.taskId,
       stepId: context.stepId,

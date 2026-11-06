@@ -76,13 +76,7 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
             checked={config.awarenessEnabled !== false}
             onChange={(event) => update('awarenessEnabled', event.target.checked)}
           />
-          <ConfigToggle
-            id="super-effort"
-            label="Super Effort"
-            description="Minta Mark melanjutkan pekerjaan hingga selesai dan memeriksa hasilnya melalui tool yang tersedia."
-            checked={Boolean(config.superEffortEnabled)}
-            onChange={(event) => update('superEffortEnabled', event.target.checked)}
-          />
+
         </div>
       </div>
     )

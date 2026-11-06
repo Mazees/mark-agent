@@ -33,7 +33,6 @@ const defaults = {
   awarenessEnabled: true,
   cameraDeviceId: 'default',
   cameraEnabled: true,
-  superEffortEnabled: false,
   bgOverlayOpacity: 65
 }
 const sections = {

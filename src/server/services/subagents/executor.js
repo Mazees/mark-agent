@@ -1,4 +1,10 @@
 import {
+  createProgressGuard,
+  createVerificationGate,
+  verificationStepsFromMessages
+} from '../../../shared/agent/execution-quality.js'
+import { resolveEffort } from '../../../shared/agent/effort.js'
+import {
   buildSkillCatalog,
   parseSkillRequest,
   restoreSkillContext,
@@ -107,6 +113,16 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
         permitted(agentTools, t.function.name) &&
         permitted(jobTools, t.function.name)
     )
+    const effortLevel = resolveEffort(ctx.job.effortLevel)
+    const checkVerification = createVerificationGate()
+    const checkProgress = createProgressGuard()
+    const verification = () => checkVerification(verificationStepsFromMessages(ctx.messages()))
+    const verificationNote = (missing) =>
+      missing
+        ? '\n\nCatatan pemeriksaan: ' +
+          missing.instruction +
+          ' Pemeriksaan hasil belum tersedia; jangan menganggap hasil ini terverifikasi.'
+        : ''
     const allowed = new Set(tools.map((t) => t.function.name))
     const options = { config: config(), signal: ctx.signal, sessionId: `subagent_${ctx.runId}` }
     const catalog = skills ? await skills.catalog() : []
@@ -119,7 +135,7 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
       if (initialRefs.length) ctx.update({ skillRefs: initialRefs })
     }
     const system =
-      buildSubagentSystemPrompt({ role: ctx.agent.role, goal: ctx.job.goal }) +
+      buildSubagentSystemPrompt({ role: ctx.agent.role, goal: ctx.job.goal, effortLevel }) +
       '\n' +
       buildSkillCatalog(catalog) +
       `\nID agent: ${ctx.agent.id}; job_id: ${ctx.job.id}. Workspace: ${project.root}.\n` +
@@ -137,6 +153,7 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
         .flatMap((m) => m.tool_calls || [])
         .filter((call) => !results.has(call.id))
       if (unresolved.length) {
+        let progressWarning = false
         for (const call of unresolved) {
           ctx.check()
           const name = call.function?.name
@@ -178,6 +195,21 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
               })
               continue
             }
+            const { missing, retry } = verification()
+            if (missing && retry) {
+              ctx.append({
+                sender: 'tool',
+                role: 'tool',
+                tool_call_id: call.id,
+                name,
+                content:
+                  '[PEMERIKSAAN HASIL]: ' +
+                  missing.instruction +
+                  ' Gunakan bukti yang sudah ada jika cukup, atau jelaskan batas pemeriksaan.'
+              })
+              continue
+            }
+            const summary = args.summary + verificationNote(missing)
             // Complete every tool pair without executing later calls after a terminal report.
             for (const rest of unresolved.slice(unresolved.indexOf(call)))
               ctx.append({
@@ -188,8 +220,8 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
                 content:
                   rest === call ? 'Laporan akhir tersimpan.' : 'Dilewati: pekerjaan sudah selesai.'
               })
-            ctx.append({ sender: 'subagent', role: 'assistant', content: args.summary })
-            return { answer: args.summary, artifact: args.artifact || null }
+            ctx.append({ sender: 'subagent', role: 'assistant', content: summary })
+            return { answer: summary, artifact: args.artifact || null }
           }
           if (name === 'request_lead_input') {
             ctx.append({
@@ -274,7 +306,33 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
             content: text,
             action: visual ? { imageUrl: visual } : null
           })
+          const progress = checkProgress(name, args, text, result?.success !== false)
+          if (progress.stalled) {
+            for (const rest of unresolved.slice(unresolved.indexOf(call) + 1))
+              ctx.append({
+                sender: 'tool',
+                role: 'tool',
+                tool_call_id: rest.id,
+                name: rest.function?.name,
+                content: '[DILEWATI] Pekerjaan dijeda karena tindakan berulang tanpa kemajuan.'
+              })
+            return {
+              wait: {
+                status: 'waiting_user',
+                error:
+                  'Tindakan berulang tidak menghasilkan kemajuan. Perlu arahan Mark sebelum mencoba lagi.'
+              }
+            }
+          }
+          if (progress.warn) progressWarning = true
         }
+        if (progressWarning)
+          ctx.append({
+            sender: 'runtime',
+            role: 'user',
+            content:
+              '[KEMAJUAN PEKERJAAN]: Hasil tindakan sama sudah berulang. Gunakan bukti baru atau pendekatan yang relevan; jangan mengulang tindakan identik.'
+          })
         // Keep all tool results adjacent before adding visual observations for their batch.
         const all = ctx.messages()
         const unresolvedIds = new Set(unresolved.map((c) => c.id))
@@ -341,13 +399,26 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
       // A message arriving during inference must be handled before accepting the final answer.
       if (ctx.inbox().length) continue
       if (!content.trim()) throw new Error('Model mengembalikan jawaban kosong tanpa aksi.')
+      const { missing, retry } = verification()
+      if (missing && retry) {
+        ctx.append({
+          sender: 'runtime',
+          role: 'user',
+          content:
+            '[PEMERIKSAAN HASIL]: ' +
+            missing.instruction +
+            ' Gunakan bukti yang sudah tersedia; jika pemeriksaan tidak dapat dilakukan, jelaskan kendalanya.'
+        })
+        continue
+      }
+      const answer = content + verificationNote(missing)
       ctx.append({
         sender: 'subagent',
         role: 'assistant',
-        content,
+        content: answer,
         thought: result?.reasoning || null
       })
-      return { answer: content }
+      return { answer }
     }
   }
 }

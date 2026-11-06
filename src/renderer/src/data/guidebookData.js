@@ -202,11 +202,11 @@ export const guideArticles = [
   {
     id: 'agent',
     category: 'work',
-    title: 'Cara kerja agen dan Super Effort',
+    title: 'Cara kerja agen dan tingkat effort',
     summary:
-      'Mark bekerja sebagai agen yang memilih tindakan, menjalankan tool, dan memeriksa hasilnya untuk menyelesaikan permintaan. Super Effort mengatur ketekunan kerja, sedangkan mode perizinan menentukan tindakan yang boleh langsung dijalankan dan tindakan yang membutuhkan pemeriksaan atau persetujuan Anda.',
+      'Mark bekerja sebagai agen yang memilih tindakan, menjalankan tool, dan memeriksa hasilnya untuk menyelesaikan permintaan. Tingkat effort mengatur kedalaman penelusuran dan pemeriksaan, sedangkan mode perizinan menentukan tindakan yang boleh langsung dijalankan dan tindakan yang membutuhkan pemeriksaan atau persetujuan Anda.',
     keywords:
-      'ReAct reasoning thought action observation read-tools routing auto mode rencana verifikasi',
+      'ReAct reasoning thought action observation read-tools routing auto mode rencana verifikasi effort low medium high ultra super boost',
     sections: [
       {
         title: 'Bagaimana Mark mengerjakan permintaan',
@@ -223,9 +223,12 @@ export const guideArticles = [
         ]
       },
       {
-        title: 'Super Effort dan mode perizinan',
+        title: 'Memilih tingkat effort',
         paragraphs: [
-          'Super Effort mendorong Mark untuk melanjutkan pekerjaan dan memeriksa hasil sebelum menyatakan selesai. Pengaturannya tersedia melalui Pengaturan dan kontrol pada kolom pesan. Gunakan ketika pekerjaan membutuhkan penelusuran atau pemeriksaan yang lebih tekun.',
+          'Effort adalah pilihan pada kolom pesan yang mengatur seberapa dalam Mark menelusuri pekerjaan dan memeriksa hasilnya. Pilih Low untuk pekerjaan terarah, Medium untuk penelusuran bagian terkait, High untuk pemeriksaan alur yang terdampak, atau Ultra untuk investigasi kompleks beserta risiko dan kasus tepinya. Semua tingkat tetap harus memenuhi permintaan; Low tidak berarti hasil setengah jadi dan Ultra tidak memaksa penelusuran tambahan ketika hasil sudah cukup jelas.',
+          'Percakapan baru menggunakan High. Pilihan terakhir tersimpan untuk percakapan tersebut, sedangkan setiap pekerjaan memakai tingkat yang dipilih saat pesan dikirim. Jika Anda mengubah pilihan ketika Mark masih bekerja, pekerjaan itu tetap memakai tingkat semula. Minibot yang ditugaskan mewarisi tingkat pekerjaan induknya. Effort tidak mengganti model, pengaturan reasoning provider, atau panjang jawaban.',
+          'Sebagai contoh, klik tombol diperiksa dari perubahan halaman yang dikembalikan browser; Mark tidak perlu membaca source code proyek hanya untuk memastikan klik. Perubahan dokumen diperiksa sesuai isinya, sedangkan perubahan kode memakai pemeriksaan yang relevan. High dan Ultra menambah kedalaman hanya jika sesuai dengan tugas dan risikonya.',
+          'Anda juga dapat mengawali pesan dengan /effort low, /effort medium, /effort high, atau /effort ultra untuk memakai tingkat tertentu pada pesan itu saja. /super, /boost, dan /effort tanpa tingkat memakai Ultra. Perintah ini tidak mengubah pilihan tersimpan pada kolom pesan.',
           'Pilihan perizinan berada pada kolom pesan dan berlaku untuk percakapan tersebut. Tanya pengguna meminta izin untuk perubahan yang belum disetujui. Mode pintar mengizinkan edit biasa di workspace dan memakai model utama untuk menilai tindakan lain. Akses penuh melewati pemeriksaan rutin, sedangkan pembukaan sesi Computer Use tetap meminta izin manusia. Pemilihan mode tidak mengubah kemampuan model.'
         ]
       },
@@ -966,7 +969,7 @@ export const guideArticles = [
       {
         title: 'Menemukan pengaturan yang diperlukan',
         paragraphs: [
-          'Bagian AI mengatur provider, model, endpoint, dan kredensial. Bagian Perilaku mengatur gaya bicara, kreativitas jawaban, Awareness Engine, serta Super Effort. Gunakan kedua bagian ini untuk menyesuaikan cara Mark memahami dan mengerjakan permintaan.',
+          'Bagian AI mengatur provider, model, endpoint, dan kredensial. Bagian Perilaku mengatur gaya bicara, kreativitas jawaban, serta Awareness Engine. Tingkat effort dipilih langsung pada kolom pesan untuk setiap percakapan. Gunakan kedua bagian ini untuk menyesuaikan cara Mark memahami dan mengerjakan permintaan.',
           'Suara mengatur bahasa input dan kata panggilan, sedangkan Kamera menyediakan pilihan perangkat dan pratinjau. Pintasan mengatur kombinasi tombol untuk memanggil Mark. Izin akses menampilkan folder atau perintah yang sudah diizinkan secara permanen.'
         ],
         links: [

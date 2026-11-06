@@ -246,3 +246,9 @@ Rules:
 - Shared approval-context menyertakan permintaan aktif, intervensi asli, maksimal enam giliran sesi yang sama, serta maksimal enam observasi. Jawaban agen, penugasan Minibot, ringkasan model, dan konten halaman bukan izin pengguna. Jangan memakai userInput/role user pada loop model sebagai satu-satunya sumber otorisasi.
 - Reviewer mengembalikan JSON ketat {verdict,reason}; DENY menghentikan tindakan, ESCALATE membolehkan observasi yang diizinkan sebelum request baru berbukti baru. Error provider/format tidak menjadi verdict model. Alasan yang disamarkan harus sampai ke hasil tool Mark dan Minibot.
 - Snapshot runtime dan perubahan intervensi memakai revisi konteks. Izin yang belum dieksekusi harus kedaluwarsa saat arahan berubah, termasuk Minibot terkait. Jangan menghilangkan pemeriksaan versi backend atau otomatis mengizinkan shell/server karena nama command.
+
+### Tingkat effort
+
+- Effort (`low|medium|high|ultra`, default High) adalah profil alur kerja bersama, bukan reasoning provider atau mode izin. Pilihan sesi hanya untuk input berikutnya; setiap giliran menyimpan tingkat saat dikirim. Jangan membaca ulang preferensi input di tengah pekerjaan.
+- Workflow dan job/laporan Minibot mempertahankan effort untuk kelanjutan otomatis; pesan pengguna baru dapat memilih tingkat berbeda. Dispatcher menyuntikkan tingkat untuk delegasi, bukan schema argumen model. Riwayat lama tanpa metadata tidak diberi klaim tingkat effort.
+- Gate pemeriksaan memakai bukti sesuai domain dan tidak meminta pemeriksaan identik berulang; pertahankan hasil jawaban dengan batas pemeriksaan jika belum tersedia. Build/proses yang baru dimulai bukan pemeriksaan lolos. Semua tingkat menghentikan repetisi tanpa kemajuan dan tetap menghormati permintaan rencana saja.

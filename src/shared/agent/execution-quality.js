@@ -13,7 +13,14 @@ const browserMutations = new Set([
   'browser-select',
   'browser-script'
 ])
-const successful = (step) => step?.status === 'done'
+const successful = (step) => {
+  const result = resultOf(step || {})
+  return (
+    step?.status === 'done' &&
+    result.success !== false &&
+    (result.exitCode == null || result.exitCode === 0)
+  )
+}
 const argsOf = (value) => {
   if (value && typeof value === 'object') return value
   try {
@@ -24,7 +31,12 @@ const argsOf = (value) => {
 }
 const pathOf = (query) => {
   const args = argsOf(query)
-  return String(args.path || args.filePath || args.file_path || '')
+  return String(
+    args.path ||
+      args.filePath ||
+      args.file_path ||
+      (typeof query === 'string' && !query.trim().startsWith('{') ? query.split('||')[0] : '')
+  )
     .replaceAll('\\', '/')
     .toLowerCase()
 }
@@ -41,7 +53,10 @@ export function pendingVerification(steps = []) {
     const name = mutation.tool
     const later = tools.slice(i + 1).filter(successful)
     if (browserMutations.has(name)) {
-      const result = mutation.fullResult || ''
+      const result =
+        typeof mutation.fullResult === 'string'
+          ? mutation.fullResult
+          : JSON.stringify(mutation.fullResult || {})
       if (
         result.includes('[Observasi halaman setelah aksi]') &&
         !result.includes('[DOM terbaru belum tersedia:')
@@ -49,6 +64,7 @@ export function pendingVerification(steps = []) {
         continue
       if (later.some((step) => ['browser-read', 'browser-screenshot'].includes(step.tool))) continue
       return {
+        key: `browser:${i}:${name}`,
         tool: name,
         instruction:
           'Periksa hasil pada halaman browser yang sama. Gunakan observasi DOM atau screenshot; jangan memeriksa berkas proyek untuk membuktikan klik.'
@@ -56,13 +72,36 @@ export function pendingVerification(steps = []) {
     }
     if (fileMutations.has(name)) {
       const target = pathOf(mutation.query)
+      const patch = String(argsOf(mutation.query).patch || '')
+      const targets =
+        name === 'apply-patch'
+          ? [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((match) =>
+              match[1].trim()
+            )
+          : [target]
+      // Text and document edits need content checks, not an application build.
+      if (
+        !targets.some((file) =>
+          /\.(?:[cm]?[jt]sx?|py|cs|java|go|rs|cpp|c|h|php|rb|vue|svelte|html|css|scss|json|ya?ml|toml)$/i.test(
+            file
+          )
+        )
+      )
+        continue
       if (
         later.some((step) => {
           if (['read-file', 'grep-search'].includes(step.tool)) return false
-          if (step.tool === 'run-powershell') {
+          if (['run-powershell', 'run-task'].includes(step.tool)) {
             const args = argsOf(step.query)
-            return isVerificationCommand(args.command || args.query || '')
+            if (step.tool === 'run-task' && !completedCommand(step)) return false
+            return isVerificationCommand(
+              args.command || args.query || (typeof step.query === 'string' ? step.query : '')
+            )
           }
+          if (step.tool === 'read-task-output')
+            return (
+              completedCommand(step) && verificationTask(step, tools.slice(0, i + 1).concat(later))
+            )
           if (name === 'delete-file' && step.tool === 'list-dir')
             return target && target.startsWith(pathOf(step.query) + '/')
           return false
@@ -70,6 +109,7 @@ export function pendingVerification(steps = []) {
       )
         continue
       return {
+        key: `file:${i}:${target || name}`,
         tool: name,
         instruction:
           'Jalankan pemeriksaan proyek yang relevan jika tersedia. Membaca ulang berkas hanya memeriksa isi, bukan membuktikan build atau fungsi aplikasi. Jelaskan bila pemeriksaan tidak berlaku atau belum dapat dijalankan.'
@@ -79,6 +119,7 @@ export function pendingVerification(steps = []) {
       if (mutation.preview || later.some((step) => step.tool === 'computer_use' && step.preview))
         continue
       return {
+        key: `desktop:${i}`,
         tool: name,
         instruction:
           'Periksa observasi desktop dari sesi Computer Use yang sama. Jangan menjalankan build atau membaca berkas untuk memverifikasi tindakan desktop.'
@@ -86,6 +127,67 @@ export function pendingVerification(steps = []) {
     }
   }
   return null
+}
+function resultOf(step) {
+  const value = step.fullResult || step.resultSummary
+  if (value && typeof value === 'object') return value
+  try {
+    const parsed = JSON.parse(value || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+function completedCommand(step) {
+  const result = resultOf(step)
+  const data = result.data || result
+  return data.exitCode === 0 && !['running', 'queued'].includes(data.status)
+}
+function verificationTask(step, tools) {
+  const data = resultOf(step).data || resultOf(step)
+  if (data.command) return isVerificationCommand(data.command)
+  const args = argsOf(step.query)
+  const id = args.task_id || args.taskId || (typeof step.query === 'string' ? step.query : '')
+  return (
+    id &&
+    tools.some((item) => {
+      const query = argsOf(item.query)
+      return (
+        item.tool === 'run-task' &&
+        (query.task_id || query.taskId) === id &&
+        isVerificationCommand(query.command)
+      )
+    })
+  )
+}
+
+export function createVerificationGate() {
+  const requested = new Set()
+  return (steps) => {
+    const missing = pendingVerification(steps)
+    if (!missing) return { missing: null, retry: false }
+    const retry = !requested.has(missing.key)
+    requested.add(missing.key)
+    return { missing, retry }
+  }
+}
+
+export function verificationStepsFromMessages(messages) {
+  const calls = new Map(messages.flatMap((m) => m.tool_calls || []).map((call) => [call.id, call]))
+  return messages
+    .filter((m) => m.role === 'tool' && calls.has(m.tool_call_id))
+    .map((m) => {
+      const call = calls.get(m.tool_call_id)
+      const result = resultOf({ fullResult: m.content })
+      return {
+        tool: m.name || call.function?.name,
+        query: call.function?.arguments,
+        fullResult: m.content,
+        status: result.success === false || result.error ? 'error' : 'done',
+        preview:
+          m.action?.imageUrl || result.dataUrl || result.screenshot || result.data?.screenshot
+      }
+    })
 }
 function ordered(value) {
   if (Array.isArray(value)) return value.map(ordered)

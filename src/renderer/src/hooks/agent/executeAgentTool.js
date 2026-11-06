@@ -81,6 +81,7 @@ export async function executeAgentTool({
       codingRunId: agenticProcessId,
       taskId: durableTask?.id,
       stepId: durableActiveStep?.id,
+      effortLevel: context?.effortLevel,
       approvalContext: context?.getApprovalContext?.(),
       skillRefs: context?.skillRefs || []
     })

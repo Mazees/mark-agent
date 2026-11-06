@@ -1,3 +1,5 @@
+import { DEFAULT_EFFORT, parseEffortCommand } from '@shared/agent/effort.js'
+import EffortPicker from './EffortPicker'
 import { parseSkillRequest } from '@shared/skill-context.js'
 /* eslint-disable react/prop-types */
 import { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react'
@@ -14,7 +16,7 @@ import {
   FaFileImage,
   FaLock
 } from 'react-icons/fa'
-import { Sparkles, Folder, Wrench, FileText } from 'lucide-react'
+import { Folder, Wrench, FileText } from 'lucide-react'
 import ApprovalModePicker from './ApprovalModePicker'
 import ConfirmModal from './ConfirmModal'
 import SkillComposer from './SkillComposer'
@@ -182,35 +184,28 @@ const InputBar = ({
     lastCompactedAt: null
   })
 
-  const [isSuperEffort, setIsSuperEffort] = useState(false)
-
+  const [effortState, setEffortState] = useState({ sessionId: null, level: DEFAULT_EFFORT, busy: true, error: '' })
+  const effortSession = useRef(sessionId)
+  effortSession.current = sessionId
+  const effortReady = effortState.sessionId === String(sessionId) && !effortState.busy
   useEffect(() => {
-    let isMounted = true
-
-    // Cek konfigurasi default global dari database
-    import('../../api/db').then(({ getAllConfig }) => {
-      getAllConfig()
-        .then((configs) => {
-          const conf = configs?.[0] || {}
-          if (isMounted && conf.superEffortEnabled) {
-            setIsSuperEffort(true)
-          }
-        })
-        .catch(() => {})
-    })
-
-    const handleConfigUpdate = (e) => {
-      if (e.detail?.superEffortEnabled !== undefined) {
-        setIsSuperEffort(Boolean(e.detail.superEffortEnabled))
-      }
-    }
-
-    window.addEventListener('config-updated', handleConfigUpdate)
-    return () => {
-      isMounted = false
-      window.removeEventListener('config-updated', handleConfigUpdate)
-    }
+    let alive = true
+    setEffortState({ sessionId: String(sessionId), level: DEFAULT_EFFORT, busy: true, error: '' })
+    webApi.codingRequest(`/sessions/${encodeURIComponent(sessionId)}/effort`, sessionId)
+      .then((data) => { if (alive) setEffortState({ sessionId: String(sessionId), level: data.effortLevel, busy: false, error: '' }) })
+      .catch((error) => { if (alive) setEffortState({ sessionId: String(sessionId), level: DEFAULT_EFFORT, busy: false, error: error.message }) })
+    return () => { alive = false }
   }, [sessionId])
+  const chooseEffort = async (level) => {
+    const target = sessionId
+    setEffortState((previous) => ({ ...previous, busy: true, error: '' }))
+    try {
+      const data = await webApi.codingRequest(`/sessions/${encodeURIComponent(target)}/effort`, target, { effortLevel: level }, 'POST')
+      if (effortSession.current === target) setEffortState({ sessionId: String(target), level: data.effortLevel, busy: false, error: '' })
+    } catch (error) {
+      if (effortSession.current === target) setEffortState((previous) => ({ ...previous, busy: false, error: error.message }))
+    }
+  }
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -549,11 +544,12 @@ const InputBar = ({
     let finalPrompt = rawPrompt
     let userText = rawPrompt
 
-    // INTERCEPT SUPER EFFORT SLASH COMMANDS: /super, /effort, /boost
-    const isSlashEffort = Boolean(rawPrompt.match(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/i))
-    if (isSlashEffort) {
-      userText = userText.replace(/(?:\s|^)\/(super|effort|boost)(?:\s|$)/gi, ' ').trim()
+    if (!effortReady || effortState.error) return
+    const effortCommand = parseEffortCommand(rawPrompt)
+    if (effortCommand.matched) {
+      userText = effortCommand.text
       finalPrompt = userText
+      if (!finalPrompt) return
     }
 
     const skillNames = parseSkillRequest(finalPrompt).names
@@ -582,7 +578,7 @@ const InputBar = ({
           displayPrompt: rawUserText,
           skillRefs,
           attachedFiles: currentAttachments,
-          isSuperEffort: isSuperEffort || isSlashEffort
+          effortLevel: effortCommand.effortLevel || effortState.level
         })
       }
     }
@@ -932,18 +928,7 @@ const InputBar = ({
         </div>
       )}
 
-      {isSuperEffort && (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          {isSuperEffort && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/15 border border-primary/40 rounded-lg text-xs text-primary font-medium w-fit backdrop-blur-md animate-fade-in shadow-md select-none">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="text-[10px] uppercase font-bold tracking-wider">
-                Super Effort Active
-              </span>
-            </div>
-          )}
-        </div>
-      )}
+      {effortState.error && <p role="alert" className="mb-2 text-xs text-error">Pilihan effort gagal dimuat atau disimpan: {effortState.error}. Buka ulang percakapan untuk mencoba lagi.</p>}
 
       {/* Hidden Native File Input */}
       <input
@@ -1193,25 +1178,7 @@ const InputBar = ({
 
           {/* Action Buttons */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {/* Super Effort Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsSuperEffort((prev) => !prev)}
-              className={`relative flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all duration-200 cursor-pointer select-none outline-none btn btn-circle ${
-                isSuperEffort
-                  ? 'bg-primary/25 text-primary border border-primary/50 font-semibold shadow-sm shadow-primary/20'
-                  : 'text-white/30 hover:text-white/70 hover:bg-white/5 border border-transparent font-normal'
-              }`}
-              title={
-                isSuperEffort
-                  ? 'Super Effort: AKTIF. ReAct loop pantang menyerah & wajib verifikasi mandiri sebelum selesai.'
-                  : 'Super Effort: NONAKTIF. Klik untuk mengaktifkan persistensi otonom & pengujian mandiri.'
-              }
-            >
-              <Sparkles
-                className={`w-3.5 h-3.5 ${isSuperEffort ? 'fill-primary text-primary' : ''}`}
-              />
-            </button>
+            <EffortPicker value={effortReady ? effortState.level : undefined} disabled={!effortReady} onChange={chooseEffort} error={effortState.error} />
 
             <ApprovalModePicker sessionId={sessionId} />
 

@@ -213,15 +213,21 @@ Sebelum inferensi, `checkAndCompressInLoop` memeriksa kapasitas pesan, schema to
 
 Lead Agent menyimpan hasil tool lengkap pada `fullResult`; `resultSummary` yang pendek hanya untuk tampilan ringkas. Grup yang berhasil dimuat disimpan pada pesan sehingga giliran selanjutnya dalam sesi yang sama dapat memulihkan schema tool.
 
-Dalam Super Effort, pemeriksaan mengikuti jenis tindakan melalui `src/shared/agent/execution-quality.js`:
+Effort memakai empat profil bersama pada `src/shared/agent/effort.js`: Low mengarahkan pekerjaan terkecil dan pemeriksaan terarah, Medium menelusuri hubungan langsung, High memeriksa alur terdampak dan regresi relevan, Ultra menambah investigasi serta kasus tepi berdasarkan risiko. Profil dimasukkan ke prompt Mark dan Minibot; tidak mengubah model, reasoning provider, temperature, panjang keluaran, atau perizinan.
+
+InputBar memuat/menyimpan pilihan melalui GET/POST `/api/sessions/:id/effort` (`effortLevel`: `low|medium|high|ultra`). High menjadi default sesi baru atau sesi lama yang belum memiliki pilihan. POST hanya mengubah preferensi input; tidak mengubah pekerjaan aktif. `effortLevel` pada opsi pengiriman dibekukan saat submit dan disimpan pada pesan pengguna/jawaban, checkpoint workflow, job, serta laporan Minibot. Perubahan pilihan tidak mengubah riwayat. Metadata tersebut ikut backup/restore; riwayat lama tidak diberi tingkat yang dikarang.
+
+`/effort <level>` mengubah tingkat pesan tersebut, sedangkan `/super`, `/boost`, dan `/effort` tanpa tingkat memilih Ultra. Override tidak mengubah preferensi sesi. Kelanjutan otomatis workflow/laporan memakai metadata asal; resume melalui pesan pengguna baru memakai pilihan pesan baru. Penugasan Minibot baru menerima tingkat dari dispatcher, bukan dari argumen model. Retry job tetap memakai tingkat yang tersimpan.
+
+Pada seluruh tingkat, pemeriksaan mengikuti jenis tindakan melalui `src/shared/agent/execution-quality.js`:
 
 - Browser memakai observasi DOM yang dikembalikan aksi, atau pembacaan/screenshot berikutnya. Membaca berkas proyek tidak membuktikan klik browser.
-- Perubahan berkas diperiksa pada berkas yang sama atau dengan perintah pemeriksaan proyek. Keberhasilan dispatch tidak berarti seluruh tugas telah teruji.
-- Computer Use memakai observasi desktop. Jika bukti belum cukup setelah dua kesempatan pemeriksaan, jawaban menyebutkan batas verifikasinya.
+- Perubahan teks/dokumen diperiksa sesuai isi, tanpa kewajiban build. Perubahan kode memerlukan pemeriksaan proyek yang relevan; membaca ulang berkas bukan bukti build atau fungsi berjalan. Patch multi-berkas turut diperiksa. Proses pemeriksaan asinkron yang masih berjalan bukan hasil lolos.
+- Computer Use memakai observasi desktop. Gate meminta pemeriksaan sekali per tindakan yang belum memiliki bukti; tidak mengulang permintaan untuk tindakan yang sama tanpa perubahan. Perubahan baru dapat memerlukan pemeriksaan baru. Jika bukti tetap belum tersedia, jawaban hasil tetap dipertahankan dan dilengkapi batas pemeriksaan.
 
 ID elemen browser tetap melekat pada elemen yang sama selama dokumen hidup dan tidak digunakan ulang untuk elemen baru setelah navigasi. Pembacaan atau aksi pada sesi browser yang sudah berakhir mengembalikan error; hanya navigasi yang membuka kembali browser. Ini mencegah pembacaan diam-diam membuka Google dan mengganti konteks halaman.
 
-Lead Agent membatasi error berturut-turut menjadi delapan. Pengulangan tool dengan argumen dan hasil identik dipantau pada dua belas eksekusi terakhir: pengulangan kedua memberi arahan evaluasi, keempat menghentikan loop yang tidak maju. Ini pemeriksaan repetisi, bukan batas umum jumlah turn.
+Lead Agent membatasi error berturut-turut menjadi delapan. Mark dan Minibot memakai penjaga kemajuan bersama, tanpa toleransi pengulangan lebih tinggi pada Ultra. Pengulangan tool dengan argumen dan hasil identik dipantau pada dua belas eksekusi terakhir: pengulangan kedua memberi arahan evaluasi, keempat menghentikan loop yang tidak maju. Ini pemeriksaan repetisi, bukan batas umum jumlah turn.
 
 Synthesis learned skill memakai status dan hasil tool yang tercatat. Tindakan gagal, penolakan, atau klaim jawaban akhir tidak diperlakukan sebagai bukti prosedur berhasil.
 

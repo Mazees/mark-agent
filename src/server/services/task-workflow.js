@@ -1,3 +1,4 @@
+import { resolveEffort } from '../../shared/agent/effort.js'
 import { randomUUID, createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -122,6 +123,7 @@ export function createTaskWorkflow(
           objective: text(input.objective),
           contextSummary: text(input.contextSummary),
           mode: 'durable',
+          effortLevel: resolveEffort(input.effortLevel),
           status: 'running',
           sessionId: String(input.sessionId),
           planVersion: 1,
@@ -229,6 +231,9 @@ export function createTaskWorkflow(
     control(id, input) {
       return mutate(id, input, 'control', (task) => {
         const action = input.action
+        if (['resume', 'retry'].includes(action) && input.effortLevel != null) {
+          store.agentTasks.update(id, { effortLevel: resolveEffort(input.effortLevel) })
+        }
         if (['cancelled', 'completed'].includes(task.status)) fail('Workflow sudah berakhir.')
         const step = task.steps.find((s) => s.id === task.activeStepId)
         let status

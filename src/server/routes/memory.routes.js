@@ -52,7 +52,7 @@ memoryRouter.get('/sessions', (req, res) => {
     const summaries = dbStore.sqlite
       .prepare(
         `
-      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, timestamp
+      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, effort_level AS effortLevel, timestamp
       FROM sessions ORDER BY rowid ASC
     `
       )
@@ -68,7 +68,7 @@ memoryRouter.get('/sessions/:id', (req, res) => {
     const summary = dbStore.sqlite
       .prepare(
         `
-      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, timestamp
+      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, effort_level AS effortLevel, timestamp
       FROM sessions WHERE id = ?
     `
       )
@@ -81,6 +81,8 @@ memoryRouter.get('/sessions/:id', (req, res) => {
 
 memoryRouter.post('/sessions', (req, res) => {
   const item = { ...req.body }
+  item.effortLevel = dbStore.sessions.getById(item.id)?.effortLevel || 'high'
+  delete item.effort_level
   item.approvalMode = dbStore.sessions.getById(item.id)?.approvalMode || 'smart'
   delete item.approval_mode
   if (item.data != null) item.data = subagentRuntime.mergeReports(String(item.id || '1'), item.data)
@@ -104,6 +106,8 @@ memoryRouter.post('/sessions/batch', (req, res) => {
         ...item,
         approvalMode: dbStore.sessions.getById(item.id)?.approvalMode || 'smart',
         approval_mode: undefined,
+        effortLevel: dbStore.sessions.getById(item.id)?.effortLevel || 'high',
+        effort_level: undefined,
         ...(item.data == null
           ? {}
           : { data: subagentRuntime.mergeReports(String(item.id || '1'), item.data) })

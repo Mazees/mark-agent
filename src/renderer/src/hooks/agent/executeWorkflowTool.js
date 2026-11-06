@@ -14,6 +14,7 @@ export function workflowMessage(task) {
     taskObjective: task.objective,
     taskStatus: task.status,
     taskSessionId: task.sessionId,
+    effortLevel: task.effortLevel,
     planVersion: task.planVersion,
     artifactRoot: task.artifactRoot,
     plan: task.steps,
@@ -68,6 +69,7 @@ export async function executeWorkflowTool({
         )
       task = await createAgentTask({
         ...input,
+        effortLevel: context?.effortLevel,
         sessionId,
         contextSummary: userInput,
         objective: input.objective || userInput,
@@ -102,6 +104,7 @@ export async function executeWorkflowTool({
           throw new Error('Baca checkpoint melalui read_task dan sertakan planVersion.')
         task = await workflowMutation(task, 'control', {
           action: 'resume',
+          effortLevel: context?.effortLevel,
           planVersion: input.planVersion,
           requestId: requestId || taskRequestId()
         })

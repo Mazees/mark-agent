@@ -141,6 +141,8 @@ export const useMarkAgent = () => {
         null,
         {
           sessionId: report.parentSessionId,
+          effortLevel: report.effortLevel,
+          isMinibotFollowup: true,
           taskId: report.taskId || null,
           relatedCodingRunIds: codingRunIds,
           forceSpeak: false,

@@ -682,7 +682,6 @@ export async function getAllConfig() {
       if (!conf.aiProvider) conf.aiProvider = 'gemini-web'
       if (conf.windowOpacity === undefined) conf.windowOpacity = 0.85
       if (!conf.speechLanguage) conf.speechLanguage = 'id-ID'
-      if (conf.superEffortEnabled === undefined) conf.superEffortEnabled = false
       return [conf]
     }
     return []

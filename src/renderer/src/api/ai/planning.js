@@ -1,3 +1,4 @@
+import { buildEffortPrompt } from '@shared/agent/effort.js'
 import { getAllConfig } from '../db'
 import { webApi } from '../web-bridge'
 import { buildSkillCatalog } from '@shared/skill-context.js'
@@ -89,27 +90,7 @@ ${options.currentMusicTrack ? `\n# STATUS PLAYER MUSIK (REAL-TIME):\nLagu yang A
 ${options.systemTelemetry ? `\n# TELEMETRI FISIK PC (REAL-TIME):\n- Status Baterai: ${options.systemTelemetry.battery?.hasBattery ? `${options.systemTelemetry.battery.percent}% (${options.systemTelemetry.battery.isCharging ? 'Sedang Di-charge' : 'Discharging'})` : 'PC Desktop (Sumber daya AC tetap)'}\n- Beban Mesin: RAM ${options.systemTelemetry.hardware?.ramPercent || 0}%, CPU ${options.systemTelemetry.hardware?.cpuPercent || 0}%\n- Keberadaan Pengguna: ${options.systemTelemetry.isUserAFK ? 'Baru saja kembali dari AFK' : 'Aktif di depan layar'}` : ''}
 ${options.latestThought ? `\n# GUMAMAN BATIN TERAKHIR:\n"${options.latestThought}"` : ''}
 ${buildSkillCatalog(skillCatalog, conf.skillCatalogTokenBudget)}
-${
-  options.isSuperEffort || conf.superEffortEnabled
-    ? `
-# SUPER EFFORT AUTONOMOUS DOCTRINE (HIGH PERSISTENCE MODE)
-Mode Super Effort sedang AKTIF. Ekspektasi kinerja kamu berada pada standar engineer otonom tertinggi:
-
-1. DILARANG MENYERAH & ZERO-SLOTH POLICY:
-   - Dilarang keras menginstruksikan pengguna untuk menjalankan perintah, menguji, atau mengedit manual jika kamu memiliki tool yang mampu mengeksekusinya di sistem PC pengguna.
-   - Kerjakan seluruh proses secara tuntas dari hulu ke hilir.
-
-2. ACTION-VERIFICATION PAIRING (MUTLAK):
-   - Jangan pernah mengasumsikan kode atau konfigurasi yang kamu buat langsung berhasil.
-   - Periksa hasil sesuai jenis tindakan. Perubahan kode memakai pemeriksaan proyek yang tersedia; tindakan browser memakai DOM/screenshot pada halaman yang sama. Gunakan observasi yang sudah dikembalikan tool jika cukup. Jangan mengulang pembacaan atau menelusuri kode hanya untuk membuktikan klik.
-
-3. DEEP ROOT-CAUSE INVESTIGATION:
-   - Jika terjadi error pada eksekusi tool atau tes, jangan hanya memperbaiki gejala di permukaan. Telusuri hingga ke berkas konfigurasi, dependensi, dan aliran data yang mendasarinya.
-
-4. PROOF-OF-WORK REQUIREMENT:
-  - Jelaskan hasil pemeriksaan nyata dan batasnya. Keberhasilan tool menjalankan aksi bukan bukti bahwa seluruh tujuan pengguna sudah tercapai.`
-    : ''
-}
+${options.isAutonomous || options.disableTools || (options.isSystem && !options.taskId && !options.isMinibotFollowup) ? '' : buildEffortPrompt(options.effortLevel)}
 
 # ATURAN PENULISAN & PENYUNTINGAN FILE (SANGAT KETAT)
 1. Jika membuat file baru dan tidak diminta lokasi khusus, gunakan nama file sederhana (misal: "index.html" atau "app.js"). Sistem akan menyimpannya ke workspace aktif. Untuk path absolut, gunakan root workspace aktif yang diberikan pada konteks; jangan berasumsi semua sesi memakai folder default.

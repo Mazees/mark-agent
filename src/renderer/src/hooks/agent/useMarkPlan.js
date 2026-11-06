@@ -1,4 +1,5 @@
-import { pendingVerification, createProgressGuard } from '@shared/agent/execution-quality.js'
+import { parseEffortCommand, resolveEffort } from '@shared/agent/effort.js'
+import { createVerificationGate, createProgressGuard } from '@shared/agent/execution-quality.js'
 import { captureApprovalHistory } from '@shared/approval-context.js'
 import { CODING_INSTRUCTIONS } from '@shared/agent/coding-prompt.js'
 import {
@@ -1137,14 +1138,11 @@ export const useMarkPlan = ({
       opts = { ...opts, ...options }
     }
 
-    // Deteksi pemicu Super Effort (slash command /super, /effort, /boost, opts, atau config)
-    const isSlashSuperEffort =
-      typeof userInput === 'string' && /^\/(super|effort|boost)\b/i.test(userInput.trim())
-
-    const isSuperEffort = Boolean(
-      opts.isSuperEffort || config?.superEffortEnabled || isSlashSuperEffort
-    )
-    opts.isSuperEffort = isSuperEffort
+    const effortCommand = parseEffortCommand(userInput)
+    if (effortCommand.matched && !effortCommand.text) return
+    const hasExplicitEffort = effortCommand.matched || opts.effortLevel != null
+    let effortLevel = resolveEffort(effortCommand.effortLevel || opts.effortLevel)
+    opts = { ...opts, effortLevel, isSystem, isAutonomous }
 
     // ------------------------------------------------------------------------
     // FASE 1: VALIDASI INPUT & PER-SESSION LOCKING
@@ -1196,6 +1194,7 @@ export const useMarkPlan = ({
       startTime: Date.now(),
       lastActivityTime: Date.now(),
       prompt: userInput,
+      effortLevel,
       interventions: [],
       approvalInterventions: [],
       approvalRevision: 0
@@ -1245,11 +1244,8 @@ export const useMarkPlan = ({
     // FASE 2: FORMATTING PROMPT & VISION PAYLOAD
     // ------------------------------------------------------------------------
     let finalContent = userInput
-    if (isSlashSuperEffort) {
-      finalContent = finalContent.replace(/^\/(super|effort|boost)\s*/i, '').trim()
-      if (!finalContent) {
-        finalContent = 'Lakukan analisis dan selesaikan tugas ini dengan mode Super Effort.'
-      }
+    if (effortCommand.matched) {
+      finalContent = effortCommand.text
     } else if (isSystem) {
       finalContent = `[SYSTEM INSTRUCTION]: ${userInput}`
     }
@@ -1306,13 +1302,8 @@ export const useMarkPlan = ({
     }
 
     let uiDisplayContent = opts.displayPrompt !== undefined ? opts.displayPrompt : userInput
-    if (
-      isSlashSuperEffort &&
-      typeof uiDisplayContent === 'string' &&
-      /^\/(super|effort|boost)\b/i.test(uiDisplayContent.trim())
-    ) {
-      uiDisplayContent = uiDisplayContent.replace(/^\/(super|effort|boost)\s*/i, '').trim()
-      if (!uiDisplayContent) uiDisplayContent = 'Mode Super Effort Diaktifkan'
+    if (effortCommand.matched && typeof uiDisplayContent === 'string') {
+      uiDisplayContent = parseEffortCommand(uiDisplayContent).text
     } else if (
       typeof uiDisplayContent === 'string' &&
       uiDisplayContent.includes('=== SYSTEM INSTRUCTION: SKILL DIAKTIFKAN ===')
@@ -1340,11 +1331,13 @@ export const useMarkPlan = ({
     const userMessage = opts.customUserMessage
       ? {
           ...opts.customUserMessage,
+          effortLevel,
           timestamp: timestampStr,
           created_at: Date.now()
         }
       : {
           role: 'user',
+          effortLevel,
           content: finalUserMessageContent,
           timestamp: timestampStr,
           created_at: Date.now(),
@@ -1493,6 +1486,11 @@ export const useMarkPlan = ({
       let durableActiveStep =
         durableTask?.steps?.find((s) => s.id === durableTask.activeStepId) || null
       durableTaskForRecovery = durableTask
+      if (isSystem && durableTask?.effortLevel && !hasExplicitEffort) {
+        effortLevel = resolveEffort(durableTask.effortLevel)
+        opts.effortLevel = effortLevel
+        sessionRecord.effortLevel = effortLevel
+      }
       sessionRecord.taskId = durableTask?.id
       const activeTaskObjectiveRef = { current: durableActiveStep?.objective || null }
       const activationRefs = [...(opts.skillRefs || [])]
@@ -1918,6 +1916,7 @@ export const useMarkPlan = ({
           skills: [...sessionRecord.skills.values()].map(skillSummary),
           taskId: task.id,
           role: 'ai',
+          effortLevel: task.effortLevel || effortLevel,
           content: saved.finalAnswer,
           isTaskDone: true,
           mood: 'neutral',
@@ -1995,7 +1994,7 @@ export const useMarkPlan = ({
       let consecutiveNoToolTurns = 0
       const maxConsecutiveErrorRetries = 8
       const checkProgress = createProgressGuard()
-      let verificationGateCount = 0
+      const checkVerification = createVerificationGate()
 
       const panelSessionId = browserSessionId(activeSessionNum)
       let browserRelevant = /browser|tab chrome|halaman ini|captcha|login/i.test(
@@ -2774,6 +2773,7 @@ export const useMarkPlan = ({
             }
             await sessionRecord.approvalSync
             const execResult = await executeSingleTool(toolName, parsedArgs, {
+              effortLevel,
               getApprovalContext: sessionRecord.getApprovalContext,
               tgContext,
               toolCallId: `${agenticProcessId}:${stepCount}:${tc.id}`,
@@ -2992,6 +2992,7 @@ export const useMarkPlan = ({
                 {
                   role: 'ai',
                   content: finalContentAccumulator,
+                  effortLevel,
                   created_at: Date.now(),
                   codingRunId: agenticProcessId,
                   codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
@@ -3334,13 +3335,11 @@ export const useMarkPlan = ({
         if (
           !awaitingBrowserUser &&
           !pausedWorkflowMessage &&
-          isSuperEffort &&
           !opts.disableTools &&
-          !isSystem
+          (!isSystem || opts.taskId || opts.isMinibotFollowup)
         ) {
-          const missing = pendingVerification(executedToolsList)
-          if (missing && verificationGateCount < 2) {
-            verificationGateCount++
+          const { missing, retry } = checkVerification(executedToolsList)
+          if (missing && retry) {
             loopMessages.push({
               role: 'system',
               content:
@@ -3359,9 +3358,8 @@ export const useMarkPlan = ({
 
         isDone = true
         finalContentAccumulator =
-          verificationBoundary ||
           pausedWorkflowMessage ||
-          turnAnswer.trim() ||
+          (turnAnswer.trim() ? turnAnswer.trim() + (verificationBoundary ? '\n\nCatatan pemeriksaan: ' + verificationBoundary : '') : verificationBoundary) ||
           (executedToolsList.length > 0
             ? 'Hasil tool tersimpan, tetapi model belum memberikan jawaban. Periksa detail proses.'
             : 'Tidak ada respon yang dihasilkan oleh model.')
@@ -3427,6 +3425,7 @@ export const useMarkPlan = ({
               : null
 
           const aiMsg = {
+            effortLevel,
             role: 'ai',
             content: pluginImagesForTurn.length
               ? [
@@ -3522,6 +3521,7 @@ export const useMarkPlan = ({
           ...filtered,
           {
             role: 'ai',
+            effortLevel,
             content: 'Tugas telah selesai diproses.',
             codingRunId: agenticProcessId,
             codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],
@@ -3755,6 +3755,7 @@ export const useMarkPlan = ({
           ...updated,
           {
             role: 'ai',
+            effortLevel,
             content: abortContent,
             codingRunId: agenticProcessId,
             codingRunIds: [agenticProcessId, ...(opts.relatedCodingRunIds || [])],

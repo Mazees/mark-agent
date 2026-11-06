@@ -5,6 +5,7 @@ import {
   uid,
   runtimeTables
 } from './storage.js'
+import { resolveEffort } from '../../../shared/agent/effort.js'
 import { captureApprovalHistory } from '../../../shared/approval-context.js'
 
 const pending = (job) => !terminal.has(job.status)
@@ -259,6 +260,7 @@ export class SubagentRuntime {
         agentId,
         requestId: input.requestId,
         goal: input.goal,
+        effortLevel: resolveEffort(input.effortLevel),
         status: 'queued',
         phase: null,
         allowedTools: input.allowedTools || agent.allowedTools,
@@ -519,6 +521,7 @@ export class SubagentRuntime {
           summary: result || error || 'Pekerjaan dihentikan.',
           artifact,
           outcome: status,
+          effortLevel: finished.effortLevel,
           subagentName: this.profile(finished.agentId).name
         })
       }
@@ -590,6 +593,7 @@ export class SubagentRuntime {
         parentSessionId: job.parentSessionId,
         parentSessionTitle: job.parentSessionTitle,
         outcome: 'waiting_user',
+        effortLevel: job.effortLevel,
         subagentName: this.profile(job.agentId).name,
         summary: reason
       })
@@ -1122,6 +1126,7 @@ export class SubagentRuntime {
     return {
       id: report.id,
       reportId: report.id,
+      ...(report.effortLevel ? { effortLevel: report.effortLevel } : {}),
       role: 'ai',
       source: 'subagent',
       sender: `@${report.subagentName}`,

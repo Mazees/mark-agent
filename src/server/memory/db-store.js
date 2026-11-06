@@ -1,3 +1,4 @@
+import { resolveEffort } from '../../shared/agent/effort.js'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
@@ -230,7 +231,8 @@ function ensureTableColumns(tableName, requiredColumns) {
 ensureTableColumns('sessions', {
   workspace_root: 'TEXT',
   is_auto_mode: 'INTEGER DEFAULT 0',
-  approval_mode: 'TEXT'
+  approval_mode: 'TEXT',
+  effort_level: "TEXT DEFAULT 'high'"
 })
 sqlite.exec("UPDATE sessions SET approval_mode = CASE WHEN is_auto_mode = 1 THEN 'full' ELSE 'manual' END WHERE approval_mode IS NULL")
 
@@ -272,6 +274,7 @@ ensureTableColumns('subagent_messages', {
 })
 
 ensureTableColumns('agent_tasks', {
+  effort_level: 'TEXT',
   session_id: 'TEXT',
   plan_version: 'INTEGER',
   create_request_id: 'TEXT',
@@ -481,6 +484,9 @@ class SqliteTable {
       const existing = this.getById(cleanId)
       const mode = raw.approvalMode ?? raw.approval_mode ?? existing?.approvalMode ?? 'smart'
       if (!validApprovalMode(mode)) throw new Error('Mode perizinan tidak valid.')
+      const effort = resolveEffort(raw.effortLevel ?? raw.effort_level ?? existing?.effortLevel)
+      raw.effort_level = effort
+      raw.effortLevel = effort
       raw.approval_mode = mode
       raw.approvalMode = mode
       delete raw.is_auto_mode

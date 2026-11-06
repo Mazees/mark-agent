@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { effortRouter } from './effort.routes.js'
 import { configRouter } from './config.routes.js'
 import { chatRouter } from './chat.routes.js'
 import { memoryRouter } from './memory.routes.js'
@@ -24,6 +25,7 @@ const __dirname = path.dirname(__filename)
 
 export function registerRoutes(app) {
   app.use('/api', configRouter)
+  app.use('/api', effortRouter)
   app.use('/api', toolApprovalsRouter)
   app.use('/api', chatRouter)
   app.use('/api', memoryRouter)
