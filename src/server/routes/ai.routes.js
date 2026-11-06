@@ -68,7 +68,16 @@ aiRouter.post('/ai/fetch', async (req, res) => {
     })
     res.json(result)
   } catch (err) {
-    res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })
+    res
+      .status(err.code === 'GEMINI_CONTEXT_LENGTH' ? 413 : 500)
+      .json({
+        error: {
+          message: err.message,
+          code: err.code || 'AI_ERROR',
+          ...(err.retryable === true ? { retryable: true } : {}),
+          ...(err.inputBudget ? { inputBudget: err.inputBudget } : {})
+        }
+      })
   }
 })
 
@@ -141,7 +150,16 @@ aiRouter.post('/ai/stream', async (req, res) => {
 
     res.json(result)
   } catch (err) {
-    res.status(500).json({ error: { message: err.message, code: err.code || 'AI_ERROR' } })
+    res
+      .status(err.code === 'GEMINI_CONTEXT_LENGTH' ? 413 : 500)
+      .json({
+        error: {
+          message: err.message,
+          code: err.code || 'AI_ERROR',
+          ...(err.retryable === true ? { retryable: true } : {}),
+          ...(err.inputBudget ? { inputBudget: err.inputBudget } : {})
+        }
+      })
   }
 })
 

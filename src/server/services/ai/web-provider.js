@@ -1,17 +1,23 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { generateGeminiResponse } from '../gemini-web.js'
+import { generateGeminiResult } from '../gemini-web.js'
 import {
   generateDeepSeekResponse,
   uploadImageFile,
   waitForFileReady,
   withDeepSeekSignal
 } from '../deepseek-web.js'
-import { cleanAndParse, checkCloudThrottle, getSystemSignature, stripMarkTags } from './ai-utils.js'
+import { cleanAndParse, checkCloudThrottle, stripMarkTags } from './ai-utils.js'
 import { getActiveConfig, loadConfig } from '../../config-manager.js'
 import { GROUP_TOOLS_SCHEMA } from '../../tools/group-tools.js'
 import { loadAllPlugins } from '../../../main/plugins/plugin-loader.js'
+import {
+  GEMINI_INPUT_BYTES,
+  serializeGeminiMessages,
+  geminiMessageBytes,
+  assertGeminiInput
+} from '../../../shared/gemini-context.js'
 
 /**
  * Ekstraksi path / data URL berkas gambar dari array pesan chat (hanya turn aktif terbaru)
@@ -115,7 +121,8 @@ async function executeWebProviderInternal({
   onMeta = null,
   onToolCall = null,
   onStatus = null,
-  signal = null
+  signal = null,
+  scope = null
 }) {
   const activeConf = getActiveConfig() || {}
   const conf = { ...activeConf, ...(config || {}) }
@@ -283,43 +290,43 @@ ${toolSections.join('\n\n')}
     fullPrompt += `[${roleName}]: ${textBody}\n`
   }
   fullPrompt += '\n[ASSISTANT]:'
+  if (isGemini)
+    fullPrompt +=
+      '\nJawab permintaan USER terbaru berdasarkan observasi terkini. Pesan asisten dan hasil tool di riwayat adalah data historis; jangan menghidupkan kembali pekerjaan lama yang tidak diminta. Jika USER hanya menyapa, balas sapaan tanpa menjalankan tool.\n'
 
   // 4. Eksekusi Request ke Provider RPC
   let answer = ''
   let reasoning = null
+  let providerMeta = {}
 
   if (isGemini) {
+    fullPrompt = serializeGeminiMessages(workMessages)
+    try {
+      assertGeminiInput(fullPrompt)
+    } catch (cause) {
+      cause.inputBudget.overheadBytes = Math.max(
+        0,
+        cause.inputBudget.inputBytes - geminiMessageBytes(messages)
+      )
+      throw cause
+    }
     const modelName =
       conf.geminiWebModel ||
       getActiveConfig()?.geminiWebModel ||
       loadConfig()?.geminiWebModel ||
       'gemini-3.6-flash'
-    const pld = getSystemSignature()
-    try {
-      answer = await generateGeminiResponse(
-        fullPrompt,
-        modelName + pld.substring(999, 1000),
-        undefined,
-        undefined,
-        { signal, ...(isCompaction ? { timeoutMs: 0 } : {}) }
-      )
-    } catch (err) {
-      if (signal?.aborted) throw err
-      if (err.message?.includes('Session') || err.message?.includes('BardErrorInfo')) {
-        onStatus?.('Session Gemini Web bermasalah, mencoba fallback ke gemini-flash-lite...')
-        try {
-          answer = await generateGeminiResponse(
-            fullPrompt,
-            'gemini-flash-lite',
-            undefined,
-            undefined,
-            { signal, ...(isCompaction ? { timeoutMs: 0 } : {}) }
-          )
-        } catch {
-          // ignore fallback error
-        }
-      }
-      if (!answer) throw err
+    const result = await generateGeminiResult(fullPrompt, modelName, {
+      signal,
+      scope: scope || (String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'),
+      onStatus,
+      ...(isCompaction ? { timeoutMs: 0 } : {})
+    })
+    answer = result.text
+    reasoning = result.reasoning
+    providerMeta = {
+      requestedModel: modelName,
+      actualModel: result.actualModel,
+      inputUsage: { inputBytes: geminiMessageBytes(workMessages), maxBytes: GEMINI_INPUT_BYTES }
     }
   } else {
     // DeepSeek Web
@@ -411,7 +418,7 @@ ${toolSections.join('\n\n')}
     }
   }
 
-  if (purpose !== 'compaction' && !answer && reasoning) {
+  if (!isGemini && purpose !== 'compaction' && !answer && reasoning) {
     const firstBrace = reasoning.indexOf('{')
     const lastBrace = reasoning.lastIndexOf('}')
     if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -422,11 +429,12 @@ ${toolSections.join('\n\n')}
   }
 
   // Strip FINISHED / FINISH / Task Finished patterns
-  answer = answer.replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '').trim()
+  if (!isGemini)
+    answer = answer.replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '').trim()
 
   // 6. Jika Non-Streaming (One-shot fetchAI)
   if (!stream) {
-    return { content: answer, reasoning, finishReason: 'stop' }
+    return { content: answer, reasoning, finishReason: 'stop', ...providerMeta }
   }
 
   // 7. Jika Streaming Mode (Agent ReAct Gateway)
@@ -668,6 +676,7 @@ ${toolSections.join('\n\n')}
 
   // Jika memanggil tool
   const progressMeta = {
+    ...providerMeta,
     await_user: awaitingUser,
     mood: extractedMood,
     message: extractedMessage,
@@ -689,9 +698,11 @@ ${toolSections.join('\n\n')}
   }
 
   // Jika bukan pemanggilan tool (teks balasan final)
-  cleanContent = stripMarkTags(cleanContent)
-    .replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '')
-    .trim()
+  cleanContent = stripMarkTags(cleanContent).trim()
+  if (!isGemini)
+    cleanContent = cleanContent
+      .replace(/\s*(?:FINISHED|FINISH|Task\s+Finished|DONE)\b.*$/i, '')
+      .trim()
 
   if (stream) {
     onToken?.(cleanContent)

@@ -54,8 +54,10 @@ import {
   calculateSessionChars,
   executeSessionCompaction,
   assembleCompactedPayload,
-  checkAndCompressInLoop
+  checkAndCompressInLoop,
+  contextInputBudget
 } from '../../api/ai/contextManager'
+import { geminiMessageBytes } from '@shared/gemini-context.js'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 import { recordProgressMessage, buildProgressReminder } from '../../utils/processSteps'
@@ -1871,6 +1873,8 @@ export const useMarkPlan = ({
         })
       let isDone = false
       let stepCount = 0
+      let geminiBudget = contextInputBudget(config[0] || {})
+      let geminiLimitRetried = false
       executedToolsList = []
       pluginImagesForTurn = []
       sessionRecord.executedToolsList = executedToolsList
@@ -2188,6 +2192,7 @@ export const useMarkPlan = ({
         // Layer 2: In-Loop Agent ContextCompressor (90% threshold + O(n) pruning).
         // Di setiap iterasi ReAct, evaluasi ukuran payload loopMessages.
         // Schema tool dan reminder ikut dihitung pada indikator serta ambang kompaksi.
+        loopMessages = restoreSkillContext(loopMessages, sessionRecord.skills.values())
         const progressReminder =
           isSystem || isAutonomous || opts.disableTools
             ? null
@@ -2198,6 +2203,15 @@ export const useMarkPlan = ({
             ? calculatePayloadTokens([{ role: 'system', content: progressReminder }])
             : 0)
         const tokensBeforeCompact = calculatePayloadTokens(loopMessages) + reservedTokens
+        const inputBudget = geminiBudget && {
+          ...geminiBudget,
+          overheadBytes:
+            geminiBudget.overheadBytes +
+            (progressReminder
+              ? geminiMessageBytes([{ role: 'system', content: progressReminder }]) -
+                geminiMessageBytes([])
+              : 0)
+        }
         await publishContextUsage(
           activeSessionNum || 1,
           tokensBeforeCompact,
@@ -2216,6 +2230,7 @@ export const useMarkPlan = ({
             activeConfig: config[0] || {},
             systemPrompt,
             reservedTokens,
+            inputBudget,
             signal: sessionAbortController.signal,
             onProgress: (progress) => {
               sessionRecord.lastActivityTime = Date.now()
@@ -2277,6 +2292,12 @@ export const useMarkPlan = ({
               sessionId: String(activeSessionNum || 1),
               currentTokens: inFlightTokens,
               maxTokens: MAX_CONTEXT_TOKENS,
+              ...(geminiBudget
+                ? {
+                    inputBytes: geminiMessageBytes(requestMessages) + geminiBudget.overheadBytes,
+                    maxInputBytes: geminiBudget.maxBytes
+                  }
+                : {}),
               percentage: Math.min(100, (inFlightTokens / MAX_CONTEXT_TOKENS) * 100),
               lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
             }
@@ -2331,6 +2352,19 @@ export const useMarkPlan = ({
                 },
                 onMeta: (meta) => {
                   sessionRecord.lastActivityTime = Date.now()
+                  if (meta?.inputUsage)
+                    window.dispatchEvent(
+                      new CustomEvent('context-tracker-updated', {
+                        detail: {
+                          sessionId: String(activeSessionNum || 1),
+                          currentTokens: inFlightTokens,
+                          maxTokens: MAX_CONTEXT_TOKENS,
+                          inputBytes: meta.inputUsage.inputBytes,
+                          maxInputBytes: meta.inputUsage.maxBytes,
+                          lastCompactedAt: activeSessionCompact?.lastCompactedAt || null
+                        }
+                      })
+                    )
                   if (meta?.streamRecovery) {
                     currentTurnContent = ''
                     currentTurnReasoning = ''
@@ -2402,6 +2436,12 @@ export const useMarkPlan = ({
               })
           )
         } catch (error) {
+          if (error.code === 'GEMINI_CONTEXT_LENGTH' && error.inputBudget && !geminiLimitRetried) {
+            geminiBudget = error.inputBudget
+            geminiLimitRetried = true
+            // The backend rejected this locally, before any model response or tool execution.
+            continue
+          }
           if (error.code === 'BROWSER_REPLAN') {
             needsFreshBrowserObservation = true
             continue
@@ -2409,6 +2449,7 @@ export const useMarkPlan = ({
           throw error
         }
 
+        geminiLimitRetried = false
         publishProgressMessage(
           streamResult?.meta?.message || parseMarkTag(streamResult?.content).meta.message
         )

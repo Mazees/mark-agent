@@ -50,6 +50,7 @@
     "docs/chrome-bridge.md",
     "docs/coding-workspace.md",
     "docs/permissions.md",
+    "docs/gemini-web.md",
     "scripts/build-computer-overlay.mjs",
     "scripts/prepare-git.mjs",
     "src/main/pc-agent-scripts/overlay-runtime/MarkOverlay.exe",

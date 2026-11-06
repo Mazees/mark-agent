@@ -183,6 +183,7 @@ const InputBar = ({
     percentage: 0,
     lastCompactedAt: null
   })
+  const [providerInputUsage, setProviderInputUsage] = useState(null)
 
   const [effortState, setEffortState] = useState({ sessionId: null, level: DEFAULT_EFFORT, busy: true, error: '' })
   const effortSession = useRef(sessionId)
@@ -268,6 +269,12 @@ const InputBar = ({
         }
         const tokens = Number(e.detail.currentTokens ?? e.detail.currentChars ?? 0)
         const maxTokens = Number(e.detail.maxTokens ?? e.detail.maxChars ?? MAX_CONTEXT_TOKENS)
+        if (e.detail.maxInputBytes > 0 && Number.isFinite(e.detail.inputBytes))
+          setProviderInputUsage({
+            sessionId: String(sessionId),
+            bytes: e.detail.inputBytes,
+            max: e.detail.maxInputBytes
+          })
         setContextTracker({
           currentTokens: tokens,
           maxTokens,
@@ -1269,6 +1276,14 @@ const InputBar = ({
                         </span>
                         <span className="text-white/60">{roundedPct}%</span>
                       </div>
+
+                      {providerInputUsage?.sessionId === String(sessionId) && (
+                        <p className="mb-2 text-[11px] leading-relaxed text-white/60">
+                          Input Gemini Web terakhir: {(providerInputUsage.bytes / 1000).toFixed(1)} /{' '}
+                          {(providerInputUsage.max / 1000).toFixed(0)} kB UTF-8. Batas ini diperiksa
+                          terpisah dari token sesi.
+                        </p>
+                      )}
 
                       {/* Progress Bar */}
                       <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">

@@ -90,7 +90,8 @@ export const guideArticles = [
       {
         title: 'Memilih layanan atau model lokal',
         paragraphs: [
-          'Gemini Web menggunakan jalur layanan web dan tidak meminta API key pada konfigurasi ini. DeepSeek Web menggunakan user token sesuai petunjuk Pengaturan. Keduanya memerlukan internet; integrasi sesi web dapat terpengaruh perubahan atau pembatasan layanan.',
+          'Gemini Web menggunakan jalur layanan web Google dan tidak memerlukan API key. Pilih model di Pengaturan, termasuk Gemini 3.8 Flash dan Gemini 4 Argon beserta varian Thinking. Klik Hubungkan akun Google dan selesaikan login melalui browser biasa dengan profil khusus Mark. Setelah halaman Gemini dapat digunakan, tutup jendela login agar Mark memeriksa sesinya. Tidak perlu menyalin cookie atau mengatur berkas. Akses model mengikuti akun Google Anda. Jika Google mengembalikan model lain atau identitasnya tidak dapat dipastikan, Mark menampilkan kesalahan tanpa berpindah model otomatis.',
+          'Sesi web Gemini selalu dimulai sebagai percakapan baru dengan konteks aktif dari Mark, termasuk ringkasan bila ada. Proses peninjauan izin tidak melanjutkan percakapan Google milik chat utama. DeepSeek Web menggunakan user token sesuai petunjuk Pengaturan. Kedua integrasi memerlukan internet dan dapat terpengaruh perubahan protokol atau pembatasan layanan.',
           'Untuk LM Studio, muat model dan jalankan server lokal terlebih dahulu. Pilihan Custom API digunakan untuk endpoint yang kompatibel dengan format OpenAI: masukkan URL lengkap berakhiran /chat/completions, ID model, dan API key jika server memerlukannya. Endpoint tersebut dapat berada di komputer lokal maupun layanan online.'
         ]
       },
@@ -98,6 +99,7 @@ export const guideArticles = [
         title: 'Memeriksa dukungan gambar',
         paragraphs: [
           'Dukungan gambar ditentukan oleh model dan jalur provider yang digunakan. Model teks tidak dapat membaca lampiran gambar hanya karena gambar berhasil ditambahkan ke chat. Jalur Gemini Web yang didokumentasikan di Mark saat ini juga belum mendukung input gambar.',
+          'Gemini Web memiliki pemeriksaan ukuran input tersendiri. Mark membatasi prompt akhir sampai 128.000 byte UTF-8, termasuk instruksi dan daftar tool, lalu merangkum riwayat melalui checkpoint saat mendekati batas tersebut. Pesan terbaru tetap dipertahankan dan riwayat tersimpan tidak dihapus. Angka token sesi bukan ukuran batas input web ini; ukuran input Gemini terakhir dapat dilihat pada informasi konteks. Jika pesan aktif atau instruksi wajib sendiri terlalu besar, Mark menampilkan kesalahan agar tidak mengirim pesan yang terpotong.',
           'Jika ingin meminta analisis screenshot atau kamera, pilih model dan provider yang mendukung vision. Bila dukungan tersebut belum tersedia, sertakan teks pesan kesalahan atau informasi lain yang dapat dibaca melalui percakapan.'
         ]
       }

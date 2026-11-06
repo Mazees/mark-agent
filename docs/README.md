@@ -13,6 +13,7 @@ MARK adalah sistem operasi kecerdasan buatan otonom (_Autonomous AI OS Companion
 - **Decoupled Architecture**: Memisahkan backend server berbasis Node.js ESM murni dengan antarmuka pengguna WebUI modern (React 19 / Vite 7 / Tailwind CSS 4) yang berjalan di Microsoft Edge App Mode.
 - **Centralized Local Storage**: Riwayat percakapan, memori relasional, task, dan Minibot disimpan secara terpusat di engine SQLite lokal (`~/.config/mark-agent/mark.db`) dengan mode WAL (_Write-Ahead Logging_). Data dokumen Knowledge lama tetap disimpan untuk kompatibilitas backup, tetapi tidak lagi digunakan sebagai konteks AI.
 - **Hybrid AI Engine**: Mendukung inferensi lokal tanpa batas via LM Studio / Ollama, cloud API berkecepatan tinggi (Groq, Cerebras, Custom OpenAI-compatible), dan Google Gemini Web RPC engine bawaan.
+  Pengaturan akun, model 3.8 Flash/Argon, dan batas integrasi web dijelaskan dalam [panduan Gemini Web](./gemini-web.md).
 - **Autonomous Multi-Agent System**: Memiliki mesin Minibot independen (_Mission Control_) dengan isolasi sesi browser Puppeteer konkuren, tanpa batasan giliran (_no maxTurns limit_).
 - **Deep Desktop & Web Automation**: Otomasi Win32 via daemon C# persisten untuk kontrol mouse/keyboard tingkat rendah, serta otomasi browser dengan parsing DOM interaktif (maksimal 80 elemen).
 - **Zero Cloud Leak Audio Pipeline**: Transkripsi suara latensi rendah berbasis Web Speech API lokal, Background Wake Word watchdog ("Hey Mark" / "Mark"), dan sintesis suara Edge-TTS streaming.

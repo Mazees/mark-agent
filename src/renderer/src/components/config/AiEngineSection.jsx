@@ -1,17 +1,12 @@
 import { ConfigField, ConfigToggle } from './ConfigFields'
+import GeminiConnection from './GeminiConnection'
 import { useState } from 'react'
 import PropTypes from 'prop-types'
 import { Eye, EyeOff } from 'lucide-react'
 import { configProps, controlClass } from './configStyles'
+import { DEFAULT_GEMINI_WEB_MODEL, GEMINI_WEB_MODELS } from '../../../../shared/gemini-models.js'
 
-const geminiModels = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-thinking',
-  'gemini-3.5-flash-thinking-lite',
-  'gemini-auto',
-  'gemini-flash-lite'
-]
+const geminiModels = Object.entries(GEMINI_WEB_MODELS)
 
 export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
   const [visible, setVisible] = useState(false)
@@ -76,7 +71,6 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
             checked={config.awarenessEnabled !== false}
             onChange={(event) => update('awarenessEnabled', event.target.checked)}
           />
-
         </div>
       </div>
     )
@@ -108,25 +102,28 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
         </ConfigField>
       </div>
       {provider === 'gemini-web' && (
-        <ConfigField
-          id="gemini-model"
-          label="Model Gemini"
-          hint="Tidak memerlukan API key. Koneksi internet diperlukan; input gambar belum didukung oleh provider ini."
-        >
-          <select
+        <>
+          <ConfigField
             id="gemini-model"
-            aria-describedby="gemini-model-hint"
-            className={`select ${controlClass}`}
-            value={config.geminiWebModel || geminiModels[0]}
-            onChange={(event) => update('geminiWebModel', event.target.value)}
+            label="Model Gemini"
+            hint="Provider ini tidak memerlukan apikey karena merupakan provider scraping dari web gemini.google.com. Kekurangan provider ini adalah tidak support input gambar. Untuk menggunakan model terbaru gemini 3.8 flash dan gemini 4 argon anda perlu menghubungkan akun google anda dibawah ini."
           >
-            {geminiModels.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
-        </ConfigField>
+            <select
+              id="gemini-model"
+              aria-describedby="gemini-model-hint"
+              className={`select ${controlClass}`}
+              value={config.geminiWebModel || DEFAULT_GEMINI_WEB_MODEL}
+              onChange={(event) => update('geminiWebModel', event.target.value)}
+            >
+              {geminiModels.map(([model, data]) => (
+                <option key={model} value={model}>
+                  {data.label}
+                </option>
+              ))}
+            </select>
+          </ConfigField>
+          <GeminiConnection />
+        </>
       )}
       {provider === 'lm-studio' && (
         <ConfigField

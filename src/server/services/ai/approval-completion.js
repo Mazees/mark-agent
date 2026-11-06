@@ -29,9 +29,10 @@ export async function executeApprovalCompletion({
     controller.signal.throwIfAborted()
     if (config.aiProvider === 'gemini-web') {
       const { generateGeminiResponse } = clients.gemini || (await import('../gemini-web.js'))
-      return await generateGeminiResponse(prompt, config.geminiWebModel, undefined, undefined, {
+      return await generateGeminiResponse(prompt, config.geminiWebModel, {
         signal: controller.signal,
-        strictModel: true
+        strictModel: true,
+        scope
       })
     }
     if (config.aiProvider === 'deepseek-web') {

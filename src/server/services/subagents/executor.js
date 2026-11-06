@@ -15,6 +15,7 @@ import { jsonrepair } from 'jsonrepair'
 import { buildSubagentSystemPrompt } from '../../../shared/agent/subagent-prompt.js'
 import { CODING_INSTRUCTIONS } from '../../../shared/agent/coding-prompt.js'
 import { projectContext } from '../coding-workspace.js'
+import { compactGeminiMessages } from '../ai/gemini-compaction.js'
 
 export const forbiddenTools = new Set([
   'spawn_subagent',
@@ -59,6 +60,8 @@ export function normalizeCompletion(result) {
 }
 
 export async function compactMessages(messages, fetch, options) {
+  if (options.config?.aiProvider === 'gemini-web')
+    return compactGeminiMessages(messages, fetch, options)
   let payload = messages.map((m) => ({
     role: m.role,
     content: m.content || '',
@@ -374,7 +377,17 @@ export function createJobExecutor({ fetch, schemas, dispatch, config, skills = n
         if (countTokens(JSON.stringify(messages)) >= 256000)
           throw new Error('Instruksi skill aktif melebihi kapasitas konteks.')
       }
-      const result = await fetch(messages, true, { ...options, tools })
+      let result
+      try {
+        result = await fetch(messages, true, { ...options, tools })
+      } catch (error) {
+        if (error.code !== 'GEMINI_CONTEXT_LENGTH' || !error.inputBudget) throw error
+        messages = await compactMessages(messages, fetch, {
+          ...options,
+          inputBudget: error.inputBudget
+        })
+        result = await fetch(messages, true, { ...options, tools })
+      }
       ctx.check()
       const { content, calls } = normalizeCompletion(result)
       if (result?.meta?.await_user) {

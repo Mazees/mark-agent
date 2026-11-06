@@ -346,6 +346,8 @@ export const webApi = {
     if (!res.ok || json.error) {
       const err = new Error(json.error?.message || `HTTP error ${res.status}`)
       err.code = json.error?.code
+      err.retryable = json.error?.retryable === true
+      if (json.error?.inputBudget) err.inputBudget = json.error.inputBudget
       throw err
     }
     return json
