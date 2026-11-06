@@ -3,12 +3,10 @@ import { countTokens } from 'gpt-tokenizer'
 export function parseSkillRequest(input = '') {
   const names = []
   const text = String(input)
-    .replace(/(^|\s)\/([a-z0-9][a-z0-9_-]*)(?=\s|$)/gi, (match, space, name) => {
-      if (['super', 'effort', 'boost'].includes(name.toLowerCase())) return match
-      if (!names.includes(name)) names.push(name)
-      return space
-    })
-    .trim()
+  for (const [, , name] of text.matchAll(/(^|\s)\/([a-z0-9][a-z0-9_-]*)(?=\s|$)/gi)) {
+    if (['super', 'effort', 'boost'].includes(name.toLowerCase())) continue
+    if (!names.includes(name)) names.push(name)
+  }
   return { names, text }
 }
 

@@ -1258,8 +1258,6 @@ export const useMarkPlan = ({
       !isSystem && !isAutonomous
         ? parseSkillRequest(finalContent)
         : { names: [], text: finalContent }
-    if (skillRequest.names.length)
-      finalContent = skillRequest.text || 'Gunakan skill yang dipilih untuk tugas ini.'
     sessionRecord.skills = new Map()
 
     let imageVisionPayloads = []

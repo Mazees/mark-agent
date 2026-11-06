@@ -20,6 +20,8 @@ Katalog awal dibatasi oleh `skillCatalogTokenBudget` (default 2000 token). Entri
 
 InputBar mengirim teks pengguna dan skillRefs, tanpa menyisipkan dokumen skill ke teks pesan. Backend reader yang sama menyelesaikan referensi dari slash command dan read-skill. Nama bawaan yang telah dipakai sebagai command tetap dipertahankan. Nama lain yang ambigu memerlukan ID dari katalog.
 
+`parseSkillRequest` mengekstrak nama skill tanpa menghapus token slash atau mengubah teks pengguna. Pesan `gunakan /antislop` tetap dikirim utuh ke model, bukan menjadi `gunakan` atau kalimat pengganti. Instruksi skill yang berhasil dibaca dimuat terpisah melalui `restoreSkillContext`; menyimpan nama pada pesan tidak menggantikan pemuatan instruksinya. Aturan yang sama berlaku pada pesan dengan beberapa skill dan pesan yang hanya berisi `/nama-skill`. Command effort diproses terpisah dan tidak dianggap sebagai nama skill.
+
 Konteks aktif dilampirkan pada request model dengan file instruksi dan direktori dasarnya. File pendukung dihitung dari basePath; output tugas tetap menuju workspace pengguna. Kompaksi tidak boleh menghapus instruksi aktif: pembentuk konteks memasukkannya kembali sebelum request model. Versi konten dibaca ulang pada aktivasi berikutnya.
 
 Riwayat sesi hanya menyimpan metadata skill yang dipakai, bukan salinan instruksi panjang. Workflow menyimpan metadata itu pada pesan kartunya; kelanjutan task membaca ulang ID yang terkait. Percakapan atau pekerjaan baru tidak otomatis menerima skill pekerjaan lain.
