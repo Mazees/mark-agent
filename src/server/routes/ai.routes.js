@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { GEMINI_COMPACTION_MODEL } from '../../shared/gemini-models.js'
 import { getActiveConfig } from '../config-manager.js'
 import { wsHub } from '../ws-hub.js'
 import { getStreamDiagnostics } from '../services/ai/stream-diagnostics.js'
@@ -35,7 +36,9 @@ aiRouter.post('/ai/fetch', async (req, res) => {
     const provider = finalConfig.aiProvider || 'gemini-web'
     const resolvedModel =
       provider === 'gemini-web'
-        ? finalConfig.geminiWebModel || 'gemini-3.6-flash'
+        ? purpose === 'compaction' && isSmallTask === true
+          ? GEMINI_COMPACTION_MODEL
+          : finalConfig.geminiWebModel || 'gemini-3.6-flash'
         : provider === 'deepseek-web'
           ? finalConfig.deepseekWebModel || 'deepseek-chat'
           : provider === 'custom'
@@ -47,6 +50,9 @@ aiRouter.post('/ai/fetch', async (req, res) => {
       sessionId,
       provider,
       model: resolvedModel,
+      ...(provider === 'gemini-web' && purpose === 'compaction' && isSmallTask === true
+        ? { purpose: 'compaction', authenticationMode: 'anonymous' }
+        : {}),
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       hasTools: false
     })
@@ -68,16 +74,15 @@ aiRouter.post('/ai/fetch', async (req, res) => {
     })
     res.json(result)
   } catch (err) {
-    res
-      .status(err.code === 'GEMINI_CONTEXT_LENGTH' ? 413 : 500)
-      .json({
-        error: {
-          message: err.message,
-          code: err.code || 'AI_ERROR',
-          ...(err.retryable === true ? { retryable: true } : {}),
-          ...(err.inputBudget ? { inputBudget: err.inputBudget } : {})
-        }
-      })
+    res.status(err.code === 'GEMINI_CONTEXT_LENGTH' ? 413 : 500).json({
+      error: {
+        message: err.message,
+        code: err.code || 'AI_ERROR',
+        ...(err.retryable === true ? { retryable: true } : {}),
+        ...(err.modelMismatch ? { modelMismatch: err.modelMismatch } : {}),
+        ...(err.inputBudget ? { inputBudget: err.inputBudget } : {})
+      }
+    })
   }
 })
 
@@ -150,16 +155,15 @@ aiRouter.post('/ai/stream', async (req, res) => {
 
     res.json(result)
   } catch (err) {
-    res
-      .status(err.code === 'GEMINI_CONTEXT_LENGTH' ? 413 : 500)
-      .json({
-        error: {
-          message: err.message,
-          code: err.code || 'AI_ERROR',
-          ...(err.retryable === true ? { retryable: true } : {}),
-          ...(err.inputBudget ? { inputBudget: err.inputBudget } : {})
-        }
-      })
+    res.status(err.code === 'GEMINI_CONTEXT_LENGTH' ? 413 : 500).json({
+      error: {
+        message: err.message,
+        code: err.code || 'AI_ERROR',
+        ...(err.retryable === true ? { retryable: true } : {}),
+        ...(err.modelMismatch ? { modelMismatch: err.modelMismatch } : {}),
+        ...(err.inputBudget ? { inputBudget: err.inputBudget } : {})
+      }
+    })
   }
 })
 

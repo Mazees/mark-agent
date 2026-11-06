@@ -2,7 +2,13 @@ import https from 'node:https'
 import crypto from 'node:crypto'
 import { geminiAuth } from './gemini-auth.js'
 import { activeAbortControllers } from './ai/ai-utils.js'
-import { DEFAULT_GEMINI_WEB_MODEL, GEMINI_WEB_MODELS } from '../../shared/gemini-models.js'
+import {
+  DEFAULT_GEMINI_WEB_MODEL,
+  GEMINI_COMPACTION_MODEL,
+  GEMINI_WEB_MODELS,
+  geminiModelMismatchDetails,
+  describeGeminiModelMismatch
+} from '../../shared/gemini-models.js'
 import { assertGeminiInput } from '../../shared/gemini-context.js'
 
 export { GEMINI_WEB_MODELS }
@@ -29,7 +35,8 @@ export function resolveGeminiModel(name = DEFAULT_GEMINI_WEB_MODEL) {
     .trim()
     .toLowerCase()
     .match(/^([^@]+)(?:@think=([0-4]))?$/)
-  const selected = match && GEMINI_WEB_MODELS[match[1]]
+  const selected =
+    match && Object.hasOwn(GEMINI_WEB_MODELS, match[1]) && GEMINI_WEB_MODELS[match[1]]
   if (!selected)
     throw error(
       'GEMINI_MODEL_UNKNOWN',
@@ -86,39 +93,48 @@ export function geminiHttpRequest(url, { method = 'GET', headers, body, signal }
 
 export function parseGeminiFrames(raw) {
   const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
-  let offset = 0
+  if (buffer.length > MAX_RESPONSE_BYTES)
+    throw error('GEMINI_RESPONSE_LIMIT', 'Respons Gemini Web melebihi batas ukuran.')
+  let text
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+  } catch {
+    throw error('GEMINI_PROTOCOL', 'Encoding respons Gemini Web tidak valid.')
+  }
+  let offset = text.startsWith(")]}'") ? 4 : 0
   const frames = []
-  const parse = (bytes) => {
+  const parse = (json) => {
     let value
     try {
-      value = JSON.parse(bytes.toString('utf8'))
+      value = JSON.parse(json)
     } catch {
       throw error('GEMINI_PROTOCOL', 'Format respons Gemini Web berubah atau terpotong.')
     }
     if (!Array.isArray(value)) throw error('GEMINI_PROTOCOL', 'Frame Gemini Web tidak valid.')
     frames.push(...(typeof value[0] === 'string' ? [value] : value))
   }
-  if (buffer.subarray(0, 4).toString() === ")]}'") offset = 4
-  while (offset < buffer.length) {
-    while (offset < buffer.length && /\s/.test(String.fromCharCode(buffer[offset]))) offset++
-    if (offset >= buffer.length) break
-    const newline = buffer.indexOf(10, offset)
-    const lineEnd = newline < 0 ? buffer.length : newline
-    const line = buffer.subarray(offset, lineEnd).toString().trim()
+  while (offset < text.length) {
+    while (offset < text.length && /\s/.test(text[offset])) offset++
+    if (offset >= text.length) break
+    const newline = text.indexOf('\n', offset)
+    const lineEnd = newline < 0 ? text.length : newline
+    const line = text.slice(offset, lineEnd).trim()
     if (/^\d+$/.test(line)) {
       const length = Number(line),
         start = lineEnd
+      // StreamGenerate counts UTF-16 code units, including the surrounding newlines.
+      // UTF-8 byte offsets corrupt frames containing non-ASCII response text.
       if (
         !Number.isSafeInteger(length) ||
         length <= 0 ||
         length > MAX_RESPONSE_BYTES ||
-        start + length > buffer.length
+        start + length > text.length
       )
         throw error('GEMINI_RESPONSE_INCOMPLETE', 'Frame Gemini Web terpotong sebelum selesai.')
-      parse(buffer.subarray(start, start + length))
+      parse(text.slice(start, start + length))
       offset = start + length
     } else {
-      parse(buffer.subarray(offset, lineEnd))
+      parse(text.slice(offset, lineEnd))
       offset = lineEnd + 1
     }
   }
@@ -126,23 +142,7 @@ export function parseGeminiFrames(raw) {
 }
 
 function reportedModel(payload) {
-  const arrays = [payload]
-  while (arrays.length) {
-    const candidate = arrays.pop()
-    if (!Array.isArray(candidate)) continue
-    for (const value of candidate) if (Array.isArray(value)) arrays.push(value)
-    for (let i = 0; i < candidate.length - 3; i++) {
-      if (
-        typeof candidate[i] === 'string' &&
-        /^[a-f\d]{16}$/i.test(candidate[i]) &&
-        candidate[i + 1] === null &&
-        candidate[i + 2] === null &&
-        typeof candidate[i + 3] === 'string'
-      )
-        return candidate[i + 3]
-    }
-  }
-  return ''
+  return typeof payload?.[42] === 'string' ? payload[42].trim() : ''
 }
 
 export function parseGeminiResponse(raw, selected) {
@@ -195,16 +195,21 @@ export function parseGeminiResponse(raw, selected) {
       'GEMINI_EMPTY',
       'Gemini Web tidak menghasilkan jawaban. Tidak ada tool yang dijalankan dari respons ini.'
     )
-  if (
-    selected.expected &&
-    (!actualModel || !actualModel.toLowerCase().includes(selected.expected.toLowerCase()))
-  )
-    throw error(
-      'GEMINI_MODEL_MISMATCH',
+  const normalizedModel = actualModel.replace(/^Gemini\s+/i, '').toLowerCase()
+  const matchesModel =
+    selected.expected === 'Argon'
+      ? /^(?:4 )?argon$/.test(normalizedModel)
+      : normalizedModel === selected.expected?.toLowerCase()
+  if (selected.expected && !matchesModel) {
+    const modelMismatch = geminiModelMismatchDetails({
+      requestedModel: selected.name,
       actualModel
-        ? `Google tidak menjalankan ${selected.label}; model yang dilaporkan: ${actualModel.slice(0, 80)}. Periksa akses akun.`
-        : `Google belum mengonfirmasi identitas ${selected.label}. Respons tidak dipakai agar model tidak salah dilaporkan.`
+    })
+    throw Object.assign(
+      error('GEMINI_MODEL_MISMATCH', describeGeminiModelMismatch(modelMismatch)),
+      { modelMismatch }
     )
+  }
   return {
     text: answer.trim(),
     reasoning: reasoning || null,
@@ -431,6 +436,16 @@ export function createGeminiWebClient({
 }
 
 export const generateGeminiResult = createGeminiWebClient()
+export function createGeminiCompactionClient({ request = geminiHttpRequest } = {}) {
+  const generate = createGeminiWebClient({
+    request,
+    authentication: async () => ({ cookie: '', authUser: '0' }),
+    onAuthRejected: async () => {}
+  })
+  return (prompt, options = {}) =>
+    generate(prompt, GEMINI_COMPACTION_MODEL, { ...options, timeoutMs: 0 })
+}
+export const generateGeminiCompactionResult = createGeminiCompactionClient()
 export async function generateGeminiResponse(...args) {
   return (await generateGeminiResult(...args)).text
 }

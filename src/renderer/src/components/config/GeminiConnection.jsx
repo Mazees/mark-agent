@@ -1,3 +1,4 @@
+import providerIcon from '../../assets/providers/gemini.png'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { API_BASE } from '../../api/web-bridge'
 
@@ -64,11 +65,21 @@ export default function GeminiConnection() {
   return (
     <div className="space-y-3 rounded-xl border border-white/10 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-medium text-white/85">Akun Google</h3>
-          <p role="status" aria-live="polite" className="mt-1 text-xs text-white/55">
-            {labels[state.status] || 'Memuat koneksi…'}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <img
+            src={providerIcon}
+            alt=""
+            aria-hidden="true"
+            width={40}
+            height={40}
+            className="size-10 shrink-0 rounded-lg object-contain"
+          />
+          <div>
+            <h3 className="text-sm font-medium text-white/85">Akun Google</h3>
+            <p role="status" aria-live="polite" className="mt-1 text-xs text-white/55">
+              {labels[state.status] || 'Memuat koneksi…'}
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

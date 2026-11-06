@@ -34,7 +34,7 @@ function browserExecutable() {
   return executable
 }
 
-export async function launchGeminiLogin(profile, { signal } = {}) {
+export async function launchGeminiLogin(profile, { signal, url = ORIGIN + '/app' } = {}) {
   signal?.throwIfAborted()
   await fs.mkdir(profile, { recursive: true })
   const child = spawn(
@@ -45,7 +45,7 @@ export async function launchGeminiLogin(profile, { signal } = {}) {
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-background-mode',
-      ORIGIN + '/app'
+      url
     ],
     { stdio: 'ignore', windowsHide: false }
   )
@@ -113,7 +113,11 @@ function loginAccount(profile, previous) {
 }
 
 // Only a dedicated Mark profile is opened. Personal browser profiles are never attached.
-export async function launchGeminiBrowser(profile, visible, { signal } = {}) {
+export async function launchGeminiBrowser(
+  profile,
+  visible,
+  { signal, url = ORIGIN + '/app' } = {}
+) {
   signal?.throwIfAborted()
   await fs.mkdir(profile, { recursive: true })
   const portFile = path.join(profile, 'DevToolsActivePort')
@@ -127,7 +131,7 @@ export async function launchGeminiBrowser(profile, visible, { signal } = {}) {
       '--no-first-run',
       '--no-default-browser-check',
       ...(visible ? ['--new-window'] : ['--headless=new']),
-      ORIGIN + '/app'
+      url
     ],
     { stdio: 'ignore', windowsHide: !visible }
   )

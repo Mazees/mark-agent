@@ -19,6 +19,7 @@ import { setServerPort } from './tools/overlay-manager.js'
 import { subagentRuntime } from './services/subagents/service.js'
 import { chromeBridge } from '../main/addons/chrome-bridge/service.js'
 import { mcpRuntime } from './services/mcp-service.js'
+import { deepseekAuth } from './services/deepseek-auth.js'
 import { geminiAuth } from './services/gemini-auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -96,6 +97,7 @@ server.on('close', () => {
   chromeBridge.stop().catch(() => {})
   mcpRuntime.shutdown().catch(() => {})
   geminiAuth.stop().catch(() => {})
+  deepseekAuth.stop().catch(() => {})
 })
 const shutdownServices = () => {
   const timeout = setTimeout(() => process.exit(0), 1500)
@@ -105,7 +107,8 @@ const shutdownServices = () => {
     chromeBridge.stop(),
     mcpRuntime.shutdown(),
     shutdownTerminals(),
-    geminiAuth.stop()
+    geminiAuth.stop(),
+    deepseekAuth.stop()
   ]).finally(() => {
     for (const client of wsHub.clients) client.terminate()
     server.close(() => {

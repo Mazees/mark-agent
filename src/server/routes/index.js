@@ -20,6 +20,7 @@ import { chromeBridgeRouter } from './chrome-bridge.routes.js'
 import { mcpRouter } from './mcp.routes.js'
 import { toolApprovalsRouter } from './tool-approvals.routes.js'
 import { compactionRouter } from './compaction.routes.js'
+import { deepseekAuthRouter } from './deepseek-auth.routes.js'
 import { geminiAuthRouter } from './gemini-auth.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -33,6 +34,7 @@ export function registerRoutes(app) {
   app.use('/api', memoryRouter)
   app.use('/api', compactionRouter)
   app.use('/api', geminiAuthRouter)
+  app.use('/api', deepseekAuthRouter)
   app.use('/api', subagentsRouter)
   app.use('/api', skillsRouter)
   app.use('/api', pluginsRouter)

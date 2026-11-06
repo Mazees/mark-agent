@@ -329,7 +329,9 @@ export const webApi = {
     const isCompaction =
       params?.purpose === 'compaction' && params?.isSmallTask === true && !params?.stream
     const timeoutSignal =
-      !isCompaction && typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(300000) : null
+      !isCompaction && typeof AbortSignal?.timeout === 'function'
+        ? AbortSignal.timeout(300000)
+        : null
     const effectiveSignal = callerSignal
       ? timeoutSignal && typeof AbortSignal?.any === 'function'
         ? AbortSignal.any([callerSignal, timeoutSignal])
@@ -347,6 +349,7 @@ export const webApi = {
       const err = new Error(json.error?.message || `HTTP error ${res.status}`)
       err.code = json.error?.code
       err.retryable = json.error?.retryable === true
+      if (json.error?.modelMismatch) err.modelMismatch = json.error.modelMismatch
       if (json.error?.inputBudget) err.inputBudget = json.error.inputBudget
       throw err
     }

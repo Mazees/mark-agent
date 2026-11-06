@@ -1,3 +1,4 @@
+import { deepseekAuth } from '../deepseek-auth.js'
 import { randomUUID } from 'node:crypto'
 import { fetchProviderResponse } from './provider-transport.js'
 import { activeAbortControllers } from './ai-utils.js'
@@ -38,21 +39,25 @@ export async function executeApprovalCompletion({
     if (config.aiProvider === 'deepseek-web') {
       const { generateDeepSeekResponse, withDeepSeekSignal, clearDeepSeekSession } =
         clients.deepseek || (await import('../deepseek-web.js'))
+      const token = await deepseekAuth.getToken()
       const sessionId = `approval_${randomUUID()}`
       try {
-        const result = await withDeepSeekSignal(controller.signal, () =>
-          generateDeepSeekResponse(prompt, config.deepseekWebModel, config.deepseekUserToken, {
-            sessionId,
-            isSmallTask: true,
-            maxAttempts: 1,
-            strictText: true,
-            disableThinking: true,
-            disableSearch: true
-          })
+        const result = await withDeepSeekSignal(
+          controller.signal,
+          () =>
+            generateDeepSeekResponse(prompt, config.deepseekWebModel, token, {
+              sessionId,
+              isSmallTask: true,
+              maxAttempts: 1,
+              strictText: true,
+              disableThinking: true,
+              disableSearch: true
+            }),
+          scope
         )
         return result.text || ''
       } finally {
-        clearDeepSeekSession(config.deepseekUserToken, sessionId)
+        clearDeepSeekSession(token, sessionId)
       }
     }
     const custom = config.aiProvider === 'custom'

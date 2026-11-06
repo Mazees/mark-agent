@@ -1,3 +1,5 @@
+import { describeGeminiModelMismatch } from './gemini-models.js'
+
 const transientCodes = new Set([
   'GEMINI_EMPTY',
   'GEMINI_RESPONSE_INCOMPLETE',
@@ -16,7 +18,8 @@ const explanations = {
   GEMINI_AUTH: 'Sesi Google ditolak. Hubungkan ulang akun pada Pengaturan Gemini Web.',
   GEMINI_AUTH_REQUIRED:
     'Sesi Google perlu diperiksa. Selesaikan atau perbarui koneksi akun di Pengaturan.',
-  GEMINI_MODEL_MISMATCH: 'Model yang dikembalikan Google tidak sesuai pilihan.',
+  GEMINI_MODEL_MISMATCH:
+    'Model yang Anda pilih tidak dapat digunakan. Kemungkinan batas penggunaan sudah tercapai atau akun Anda belum mendukung model tersebut. Coba lagi nanti atau pilih model lain di Pengaturan.',
   GEMINI_PROTOCOL: 'Format respons Gemini tidak valid atau telah berubah.',
   GEMINI_CONTEXT_LENGTH: 'Input bagian ringkasan melebihi anggaran byte Gemini Web.',
   GEMINI_HTTP: 'Gemini mengembalikan kegagalan HTTP.',
@@ -109,7 +112,11 @@ export async function requestCompactionSummary({
     const providerCode = /^[A-Z][A-Z0-9_]{0,63}$/.test(cause?.code || '')
       ? cause.code
       : 'PROVIDER_ERROR'
-    const detail = explanations[providerCode] || 'Request ringkasan gagal diproses oleh provider.'
+    const detail =
+      (providerCode === 'GEMINI_MODEL_MISMATCH' &&
+        describeGeminiModelMismatch(cause?.modelMismatch)) ||
+      explanations[providerCode] ||
+      'Request ringkasan gagal diproses oleh provider.'
     throw Object.assign(
       new Error(
         `${label} gagal [${providerCode}]: ${detail} Bagian yang sudah berhasil tetap tersimpan; riwayat percakapan tidak dihapus.`

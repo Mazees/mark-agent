@@ -1,5 +1,6 @@
 import { ConfigField, ConfigToggle } from './ConfigFields'
 import GeminiConnection from './GeminiConnection'
+import DeepSeekConnection from './DeepSeekConnection'
 import { useState } from 'react'
 import PropTypes from 'prop-types'
 import { Eye, EyeOff } from 'lucide-react'
@@ -10,10 +11,9 @@ const geminiModels = Object.entries(GEMINI_WEB_MODELS)
 
 export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
   const [visible, setVisible] = useState(false)
-  const [clipboardNotice, setClipboardNotice] = useState('')
   const update = (key, value) => setConfig((previous) => ({ ...previous, [key]: value }))
   const provider = config.aiProvider || 'gemini-web'
-  const tokenField = provider === 'deepseek-web' ? 'deepseekUserToken' : 'customApiKey'
+  const tokenField = 'customApiKey'
   const invalidEndpoint = Boolean(
     config.customEndpoint && !config.customEndpoint.trim().endsWith('/chat/completions')
   )
@@ -91,7 +91,6 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
             onChange={(event) => {
               update('aiProvider', event.target.value)
               setVisible(false)
-              setClipboardNotice('')
             }}
           >
             <option value="gemini-web">Gemini Web</option>
@@ -106,7 +105,7 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
           <ConfigField
             id="gemini-model"
             label="Model Gemini"
-            hint="Provider ini tidak memerlukan apikey karena merupakan provider scraping dari web gemini.google.com. Kekurangan provider ini adalah tidak support input gambar. Untuk menggunakan model terbaru gemini 3.8 flash dan gemini 4 argon anda perlu menghubungkan akun google anda dibawah ini."
+            hint="Gemini Web menggunakan sesi gemini.google.com, tanpa API key. Input gambar belum didukung. Gemini 3.8 Flash dan Gemini 4 Argon memerlukan akun Google yang memiliki akses ke model tersebut. Menghubungkan akun saja tidak membuka akses model. Jika Google mengembalikan model berbeda, Mark menghentikan request dan menampilkan nama modelnya."
           >
             <select
               id="gemini-model"
@@ -174,7 +173,7 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
           </ConfigField>
         </>
       )}
-      {(provider === 'custom' || provider === 'deepseek-web') && (
+      {provider === 'custom' && (
         <ConfigField
           id="provider-secret"
           label={provider === 'custom' ? 'API key' : 'User token DeepSeek'}
@@ -207,75 +206,7 @@ export const AiEngineSection = ({ config, setConfig, section = 'ai' }) => {
           </div>
         </ConfigField>
       )}
-      {provider === 'deepseek-web' && (
-        <>
-          <p className="border-l-2 border-warning/60 pl-4 text-xs leading-relaxed text-white/60">
-            Integrasi ini menggunakan sesi web, bukan API resmi DeepSeek. Penggunaannya dapat
-            menyebabkan pembatasan akun.
-          </p>
-          <details className="rounded-xl border border-white/10 p-4 text-xs text-white/65">
-            <summary className="cursor-pointer text-sm text-white/80">
-              Cara mendapatkan user token
-            </summary>
-            <ol className="mt-4 list-decimal space-y-3 pl-5 leading-relaxed">
-              <li>
-                Masuk ke{' '}
-                <a
-                  className="underline underline-offset-4"
-                  href="https://chat.deepseek.com"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  chat.deepseek.com
-                </a>{' '}
-                melalui browser.
-              </li>
-              <li>Tekan F12, buka tab Console, lalu jalankan kode berikut.</li>
-            </ol>
-            <code className="my-4 block overflow-x-auto rounded-lg bg-white/5 p-3">
-              {"JSON.parse(localStorage.getItem('userToken')).value"}
-            </code>
-            <p>Salin token yang muncul, lalu tempelkan pada kolom di atas.</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm rounded-full border-white/15"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(
-                      "JSON.parse(localStorage.getItem('userToken')).value"
-                    )
-                    setClipboardNotice('Kode disalin.')
-                  } catch {
-                    setClipboardNotice('Kode belum dapat disalin. Silakan salin secara manual.')
-                  }
-                }}
-              >
-                Salin kode
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm rounded-full border-white/15"
-                onClick={async () => {
-                  try {
-                    update('deepseekUserToken', (await navigator.clipboard.readText()).trim())
-                    setClipboardNotice('Token ditempelkan.')
-                  } catch {
-                    setClipboardNotice(
-                      'Clipboard belum dapat dibaca. Silakan tempelkan token secara manual.'
-                    )
-                  }
-                }}
-              >
-                Tempel token
-              </button>
-            </div>
-            <p role="status" className="mt-3">
-              {clipboardNotice}
-            </p>
-          </details>
-        </>
-      )}
+      {provider === 'deepseek-web' && <DeepSeekConnection />}
     </div>
   )
 }

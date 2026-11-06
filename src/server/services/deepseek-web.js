@@ -3,10 +3,27 @@
  * Reverse-engineered chat.deepseek.com client with native WASM PoW Solver
  */
 import https from 'https'
+import { deepseekAuth } from './deepseek-auth.js'
+import { activeAbortControllers } from './ai/ai-utils.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { setTimeout as delay } from 'node:timers/promises'
 const requestContext = new AsyncLocalStorage()
-export const withDeepSeekSignal = (signal, request) => requestContext.run({ signal }, request)
+export const withDeepSeekSignal = async (signal, request, scope = 'lead') => {
+  const controller = new AbortController()
+  controller.provider = 'deepseek-web'
+  controller.markScope = scope
+  const abort = () => controller.abort(signal.reason)
+  if (signal?.aborted) abort()
+  else signal?.addEventListener('abort', abort, { once: true })
+  activeAbortControllers.add(controller)
+  try {
+    controller.signal.throwIfAborted()
+    return await requestContext.run({ signal: controller.signal }, request)
+  } finally {
+    activeAbortControllers.delete(controller)
+    signal?.removeEventListener('abort', abort)
+  }
+}
 const requestDelay = (ms) => delay(ms, undefined, { signal: requestContext.getStore()?.signal })
 import fs from 'fs'
 import path from 'path'
@@ -174,6 +191,16 @@ function httpPostJson(path, headers, bodyObj) {
     }
 
     const req = https.request(options, (res) => {
+      if ([401, 403].includes(res.statusCode)) {
+        res.resume()
+        deepseekAuth.expire().catch(() => {})
+        reject(
+          Object.assign(new Error('Sesi DeepSeek ditolak. Hubungkan ulang melalui Pengaturan.'), {
+            code: 'DEEPSEEK_AUTH_REQUIRED'
+          })
+        )
+        return
+      }
       let data = ''
       res.on('data', (chunk) => (data += chunk.toString()))
       res.on('end', () => {
@@ -209,6 +236,16 @@ function httpGetJson(path, headers) {
     }
 
     const req = https.request(options, (res) => {
+      if ([401, 403].includes(res.statusCode)) {
+        res.resume()
+        deepseekAuth.expire().catch(() => {})
+        reject(
+          Object.assign(new Error('Sesi DeepSeek ditolak. Hubungkan ulang melalui Pengaturan.'), {
+            code: 'DEEPSEEK_AUTH_REQUIRED'
+          })
+        )
+        return
+      }
       let data = ''
       res.on('data', (chunk) => (data += chunk.toString()))
       res.on('end', () => {
@@ -311,6 +348,16 @@ function httpPostMultipart(reqPath, headers, fields, fileField) {
     }
 
     const req = https.request(options, (res) => {
+      if ([401, 403].includes(res.statusCode)) {
+        res.resume()
+        deepseekAuth.expire().catch(() => {})
+        reject(
+          Object.assign(new Error('Sesi DeepSeek ditolak. Hubungkan ulang melalui Pengaturan.'), {
+            code: 'DEEPSEEK_AUTH_REQUIRED'
+          })
+        )
+        return
+      }
       let data = ''
       res.on('data', (chunk) => (data += chunk.toString()))
       res.on('end', () => {
@@ -567,7 +614,8 @@ async function _executeSingleDeepSeekCall(
   await requestDelay(jitterMs)
 
   const reqModel = (modelName || 'deepseek-chat').toLowerCase()
-  if (options.strictText && !DEEPSEEK_WEB_MODELS[reqModel]) throw new Error('Model peninjau tidak dikenal. Periksa konfigurasi model aktif.')
+  if (options.strictText && !DEEPSEEK_WEB_MODELS[reqModel])
+    throw new Error('Model peninjau tidak dikenal. Periksa konfigurasi model aktif.')
   let selected = DEEPSEEK_WEB_MODELS[reqModel] || DEEPSEEK_WEB_MODELS['deepseek-chat']
   const powHeader = await generatePowHeader(token, '/api/v0/chat/completion', wasmBuffer)
 
@@ -607,6 +655,16 @@ async function _executeSingleDeepSeekCall(
     }
 
     const req = https.request(reqOptions, (res) => {
+      if ([401, 403].includes(res.statusCode)) {
+        res.resume()
+        deepseekAuth.expire().catch(() => {})
+        reject(
+          Object.assign(new Error('Sesi DeepSeek ditolak. Hubungkan ulang melalui Pengaturan.'), {
+            code: 'DEEPSEEK_AUTH_REQUIRED'
+          })
+        )
+        return
+      }
       const encoding = (res.headers['content-encoding'] || '').toLowerCase()
       console.log(
         `[DeepSeek-Web] Status: ${res.statusCode}, encoding: "${encoding}", type: "${res.headers['content-type']}"`
@@ -650,12 +708,16 @@ async function _executeSingleDeepSeekCall(
           payload = trimmed.slice(5).trim()
         }
         if (!payload) return
-        if (payload === '[DONE]') { responseCompleted = true; return }
+        if (payload === '[DONE]') {
+          responseCompleted = true
+          return
+        }
         lastReceivedPayload = payload
 
         try {
           const obj = JSON.parse(payload)
-          if (obj.v === 'FINISHED' || obj.v?.response?.status === 'FINISHED') responseCompleted = true
+          if (obj.v === 'FINISHED' || obj.v?.response?.status === 'FINISHED')
+            responseCompleted = true
 
           // Tangkap message_id respon assistant
           if (obj.v?.response?.message_id) {
@@ -717,7 +779,7 @@ async function _executeSingleDeepSeekCall(
             }
             reject(
               new Error(
-                `Akun DeepSeek Web kamu sedang dibatasi sementara oleh DeepSeek: "${errMsg}"${muteUntil}. Tunggu beberapa saat atau ganti token akun baru.`
+                `Akun DeepSeek Web kamu sedang dibatasi sementara oleh DeepSeek: "${errMsg}"${muteUntil}. Tunggu hingga pembatasan berakhir.`
               )
             )
             return
@@ -822,7 +884,10 @@ async function _executeSingleDeepSeekCall(
         }
 
         if (!fullContent) {
-          if (options.strictText) { reject(new Error('Peninjau tidak mengembalikan jawaban teks.')); return }
+          if (options.strictText) {
+            reject(new Error('Peninjau tidak mengembalikan jawaban teks.'))
+            return
+          }
           console.warn(
             `[DeepSeek-Web] Empty response on end. Last payload:`,
             lastReceivedPayload,
@@ -836,7 +901,10 @@ async function _executeSingleDeepSeekCall(
           )
           return
         }
-        if (options.strictText && !responseCompleted) { reject(new Error('Respons peninjau belum selesai.')); return }
+        if (options.strictText && !responseCompleted) {
+          reject(new Error('Respons peninjau belum selesai.'))
+          return
+        }
 
         // Simpan progress chaining sesi jika berhasil
         if (sessionId && sessionStateMap.has(sessionId)) {
@@ -878,9 +946,7 @@ export async function generateDeepSeekResponse(
   options = {}
 ) {
   if (!token) {
-    throw new Error(
-      'DeepSeek User Token (Bearer) dibutuhkan. Silakan ambil dari localStorage.userToken.'
-    )
+    throw new Error('Hubungkan akun DeepSeek melalui Pengaturan terlebih dahulu.')
   }
 
   const maxAttempts = options.maxAttempts ?? 50
@@ -891,6 +957,8 @@ export async function generateDeepSeekResponse(
     try {
       return await _executeSingleDeepSeekCall(prompt, modelName, token, options)
     } catch (err) {
+      requestContext.getStore()?.signal?.throwIfAborted()
+      if (err.code === 'DEEPSEEK_AUTH_REQUIRED') throw err
       const errMsg = err?.message || ''
       const isRetryable =
         errMsg.toLowerCase().includes('session expired') ||

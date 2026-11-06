@@ -104,6 +104,8 @@ Panduan teknis bagi pengembang yang ingin memodifikasi atau berkontribusi.
 
 ---
 
+- [DeepSeek Web](./deepseek-web.md): Login browser, penyimpanan sesi, dan pemutusan koneksi.
+
 ## 3. Konvensi & Standar Kode
 
 - **Node.js ECMAScript Modules (ESM)**: Seluruh backend server menggunakan sintaks `import` / `export` standar ESM.

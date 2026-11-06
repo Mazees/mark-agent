@@ -30,7 +30,7 @@ export async function fetchAI(messages, stream = false, options = {}) {
   }
 
   const active = getActiveConfig() || {}
-  const disk = !active.deepseekUserToken ? loadConfig() || {} : {}
+  const disk = loadConfig() || {}
   const conf = { ...disk, ...active, ...globalConfig, ...(opts.config || {}) }
   opts.config = conf
 

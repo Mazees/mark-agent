@@ -1,7 +1,9 @@
+import { deepseekAuth } from '../deepseek-auth.js'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { generateGeminiResult } from '../gemini-web.js'
+import { generateGeminiResult, generateGeminiCompactionResult } from '../gemini-web.js'
+import { GEMINI_COMPACTION_MODEL } from '../../../shared/gemini-models.js'
 import {
   generateDeepSeekResponse,
   uploadImageFile,
@@ -103,8 +105,15 @@ function extractImageSources(messages) {
   return [...new Set(sources)]
 }
 
-export const executeWebProvider = (options) =>
-  withDeepSeekSignal(options.signal, () => executeWebProviderInternal(options))
+export const executeWebProvider = (options) => {
+  if ((options.config?.aiProvider || getActiveConfig()?.aiProvider) !== 'deepseek-web')
+    return executeWebProviderInternal(options)
+  return withDeepSeekSignal(
+    options.signal,
+    () => executeWebProviderInternal(options),
+    options.scope || (String(options.sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead')
+  )
+}
 
 async function executeWebProviderInternal({
   messages,
@@ -137,7 +146,7 @@ async function executeWebProviderInternal({
   let workMessages = (messages || []).map((m) => ({ ...m }))
 
   // 1. Injeksi Instruksi JSON Schema jika ada
-  if (jsonSchema) {
+  if (!(isGemini && isCompaction) && jsonSchema) {
     const instruction = `\n\n[CRITICAL] YOU MUST RETURN ONLY VALID JSON THAT STRICTLY MATCHES THIS EXACT SCHEMA:\n${JSON.stringify(jsonSchema)}\n`
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {
@@ -148,7 +157,7 @@ async function executeWebProviderInternal({
   }
 
   // 2. Injeksi Skema Tools OpenAPI jika ada
-  if (Array.isArray(tools) && tools.length > 0) {
+  if (!(isGemini && isCompaction) && Array.isArray(tools) && tools.length > 0) {
     const activeToolList = tools
       .map((t) => {
         const fn = t.function || t
@@ -310,36 +319,31 @@ ${toolSections.join('\n\n')}
       )
       throw cause
     }
-    const modelName =
-      conf.geminiWebModel ||
-      getActiveConfig()?.geminiWebModel ||
-      loadConfig()?.geminiWebModel ||
-      'gemini-3.6-flash'
-    const result = await generateGeminiResult(fullPrompt, modelName, {
+    const modelName = isCompaction
+      ? GEMINI_COMPACTION_MODEL
+      : conf.geminiWebModel ||
+        getActiveConfig()?.geminiWebModel ||
+        loadConfig()?.geminiWebModel ||
+        'gemini-3.6-flash'
+    const requestOptions = {
       signal,
       scope: scope || (String(sessionId || '').startsWith('subagent_') ? 'subagent' : 'lead'),
-      onStatus,
-      ...(isCompaction ? { timeoutMs: 0 } : {})
-    })
+      onStatus
+    }
+    const result = isCompaction
+      ? await generateGeminiCompactionResult(fullPrompt, requestOptions)
+      : await generateGeminiResult(fullPrompt, modelName, requestOptions)
     answer = result.text
     reasoning = result.reasoning
     providerMeta = {
       requestedModel: modelName,
       actualModel: result.actualModel,
+      ...(isCompaction ? { authenticationMode: 'anonymous' } : {}),
       inputUsage: { inputBytes: geminiMessageBytes(workMessages), maxBytes: GEMINI_INPUT_BYTES }
     }
   } else {
     // DeepSeek Web
-    const userToken =
-      conf.deepseekUserToken?.trim() ||
-      getActiveConfig()?.deepseekUserToken?.trim() ||
-      loadConfig()?.deepseekUserToken?.trim() ||
-      ''
-    if (!userToken) {
-      throw new Error(
-        'DeepSeek User Token belum diisi di Pengaturan. Buka chat.deepseek.com, buka Console F12, lalu copy nilai dari: JSON.parse(localStorage.getItem("userToken")).value'
-      )
-    }
+    const userToken = await deepseekAuth.getToken()
     const modelName =
       conf.deepseekWebModel ||
       getActiveConfig()?.deepseekWebModel ||
