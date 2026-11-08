@@ -102,26 +102,17 @@ MARK memanfaatkan API Edge Neural TTS yang terkenal sangat ekspresif dan natural
 Implementasi:
 
 - Backend Service: [`src/server/tools/media-tools.js`](file:///d:/My%20Project/mark-project/mark/src/server/tools/media-tools.js)
-- Client Audio Queue: [`src/renderer/src/api/ai/utils.js`](file:///d:/My%20Project/mark-project/mark/src/renderer/src/api/ai/utils.js)
+- Client Audio Queue: `src/renderer/src/api/ai/speech.js` (diekspor melalui `utils.js`).
 
-### Monkey Patch Pencegah Crash Node.js:
+### Siklus stream
 
-Library open-source `msedge-tts` rentan memicu `UnhandledPromiseRejection` jika stream audio diputus mendadak di tengah kalimat. MARK mem-patch prototype `MsEdgeTTS` di `media-tools.js`:
-
-```javascript
-// Menghindari unhandled rejection saat koneksi websocket ditutup paksa
-MsEdgeTTS.prototype._pushAudioData = function (data, requestId) {
-  if (this._streams && this._streams[requestId] && this._streams[requestId].audio) {
-    try {
-      if (!this._streams[requestId].audio.destroyed) {
-        this._streams[requestId].audio.push(data)
-      }
-    } catch (_) {}
-  }
-}
-```
+Backend membuat instance `MsEdgeTTS` terpisah per request. Stream menutup koneksinya ketika selesai, ditutup, atau gagal. Klien memakai stream URL yang disediakan bridge, dengan voice, rate, dan pitch yang sama untuk seluruh antrean jawaban.
 
 ### Antrean Suara Cerdas (`speechQueue`):
 
 - Kalimat dipotong berdasarkan tanda baca (`.`, `!`, `?`, `\n`) sehingga audio kalimat pertama dapat langsung diputar ke speaker saat kalimat berikutnya masih dalam proses sintesis (_pipelined playback_).
 - Jika pengguna berbicara kembali atau menekan tombol Stop, `speechQueue.reset()` seketika mematikan audio yang sedang diputar tanpa dengung sisa.
+- Pengaturan suara dibaca sekali ketika antrean jawaban dimulai. Hanya kalimat aktif dan satu kalimat berikutnya yang melakukan preload; antrean panjang tidak membuka koneksi sintesis untuk seluruh kalimat sekaligus.
+- Kalimat yang gagal sebelum mulai terdengar dicoba sekali lagi memakai Edge TTS dan pengaturan yang sama. Kegagalan setelah audio mulai terdengar, kegagalan berulang, atau larangan autoplay menghentikan pembacaan dengan pemberitahuan. Teks jawaban tetap tersedia. Tidak ada pergantian diam-diam ke suara `speechSynthesis` browser pada kalimat tengah.
+- Penyelesaian segmen memakai satu jalur agar `audio.onerror` dan penolakan `audio.play()` tidak sama-sama memajukan antrean. Reset membatalkan segmen aktif dan mengabaikan hasil preload dari generasi lama.
+- Tujuan suara mengikuti sesi asal. Wake word memilih Personal; mikrofon manual menangkap sesi ketika perekaman dimulai. Jawaban Agent tidak otomatis dibacakan atau menggerakkan avatar Personal. Lihat [mode Personal dan Agent](../personal-agent-modes.md).

@@ -1,3 +1,4 @@
+import { usesPersonalMood } from '../../../shared/agent-mode.js'
 import { jsonrepair } from 'jsonrepair'
 import { beginStreamTrace, finishStreamTrace } from './stream-diagnostics.js'
 import { requestBufferedCompletion } from './buffered-completion.js'
@@ -34,12 +35,16 @@ export async function executeOpenAIProvider({
   onStatus = null
 }) {
   const conf = config || {}
+  const personal = usesPersonalMood({ sessionId, purpose, isSmallTask })
   const isCompaction = purpose === 'compaction' && isSmallTask === true && !stream
   const timeouts = getProviderTimeouts(conf.aiProvider)
   const latestUserMessageIndex = (messages || []).findLastIndex((m) => m.role === 'user')
 
   let formattedMessages = (messages || []).map((m, index) => {
     let sanitizedContent = m.content
+    if (!personal && (m.role === 'assistant' || m.role === 'model') && typeof sanitizedContent === 'string')
+      sanitizedContent = sanitizedContent.replace(/(<mark\b[^>]*?)\s+mood\s*=\s*(?:"[^"]*"|'[^']*')/gi, '$1')
+
     if (Array.isArray(m.content)) {
       if (index < messages.length - 1 && index !== latestUserMessageIndex) {
         sanitizedContent = m.content.find((c) => c.type === 'text')?.text || '[Gambar terlampir]'
@@ -51,7 +56,7 @@ export async function executeOpenAIProvider({
     if (
       (m.role === 'assistant' || m.role === 'model') &&
       typeof sanitizedContent === 'string' &&
-      m.mood &&
+      personal && m.mood &&
       !/<mark\b/i.test(sanitizedContent.trim())
     ) {
       sanitizedContent = `<mark mood="${m.mood}" done="true" /> ${sanitizedContent}`

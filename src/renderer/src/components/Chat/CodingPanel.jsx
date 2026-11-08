@@ -216,10 +216,10 @@ export default function CodingPanel({
   }
   return (
     <section
-      className="relative flex h-full min-h-0 min-w-0 flex-col bg-base-100 text-sm [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-primary [&_button:focus-visible]:outline-offset-[-2px]"
+      className="mark-workspace-panel relative flex h-full min-h-0 min-w-0 flex-col bg-base-100 text-sm [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-primary [&_button:focus-visible]:outline-offset-[-2px]"
       aria-label="Workspace"
     >
-      <header className="flex min-h-12 min-w-0 items-center gap-1 border-b border-white/10 px-2">
+      <header className="flex min-h-14 shrink-0 min-w-0 items-center gap-1 border-b border-white/10 px-2">
         <div
           ref={strip}
           role="tablist"
@@ -232,7 +232,7 @@ export default function CodingPanel({
             return (
               <div
                 key={tab.id}
-                className={`flex max-w-56 shrink-0 items-center rounded-lg ${active.id === tab.id ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}
+                className={`flex max-w-56 shrink-0 items-center rounded-lg ${active.id === tab.id ? 'mark-workspace-tab-active text-white' : 'text-white/50 hover:bg-white/5'}`}
               >
                 <button
                   type="button"

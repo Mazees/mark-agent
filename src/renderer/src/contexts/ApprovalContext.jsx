@@ -4,6 +4,8 @@ import { useLocation } from 'react-router-dom'
 import { ShieldAlert } from 'lucide-react'
 import { webApi } from '../api/web-bridge.js'
 import { McpToolName } from '../components/Chat/McpToolName'
+import { isMainSession } from '@shared/workspaces.js'
+import { openSession, readInterfaceState } from '../api/interfaceState.js'
 
 const ApprovalContext = createContext()
 
@@ -30,6 +32,14 @@ export function ApprovalProvider({ children }) {
   const queue = useRef([])
   const dialog = useRef(null)
   const location = useLocation()
+  const sourceSession = approvalData?.meta?.sessionId || approvalData?.meta?.owner?.codingSessionId
+  const displayedSession = location.pathname === '/' ? '1'
+    : location.pathname === '/chat'
+      ? new URLSearchParams(location.search).get('session') || readInterfaceState().agentSessionId
+      : null
+  const inlineApproval = approvalData && !approvalData.meta.owner?.approvalJobId && !approvalData.meta.direct &&
+    sourceSession != null && displayedSession != null &&
+    (isMainSession(sourceSession) && isMainSession(displayedSession) || String(sourceSession) === String(displayedSession))
   const showNext = useCallback(
     () => setApprovalData(queue.current[0] ? { ...queue.current[0] } : null),
     []
@@ -184,15 +194,13 @@ export function ApprovalProvider({ children }) {
   useEffect(() => {
     if (
       !approvalData ||
-      (location.pathname === '/chat' &&
-        !approvalData.meta.owner?.approvalJobId &&
-        !approvalData.meta.direct)
+      inlineApproval
     )
       return
     const previous = document.activeElement
     dialog.current?.querySelector('button')?.focus()
     return () => previous?.focus?.()
-  }, [approvalData?.id, location.pathname])
+  }, [approvalData?.id, location.pathname, inlineApproval])
 
   return (
     <ApprovalContext.Provider
@@ -204,10 +212,7 @@ export function ApprovalProvider({ children }) {
       }}
     >
       {children}
-      {approvalData &&
-        (location.pathname !== '/chat' ||
-          approvalData.meta.owner?.approvalJobId ||
-          approvalData.meta.direct) && (
+      {approvalData && !inlineApproval && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
             role="presentation"
@@ -243,6 +248,10 @@ export function ApprovalProvider({ children }) {
               </h3>
               <McpToolName name={approvalData.tool} />
               <p className="mt-3 whitespace-pre-wrap break-words">{approvalData.message}</p>
+              {sourceSession && <button type="button" className="btn btn-ghost btn-sm mt-2"
+                onClick={() => openSession(sourceSession)}>
+                Buka sesi {isMainSession(sourceSession) ? 'Personal' : 'Agent'}
+              </button>}
               <p className="mt-3 text-xs leading-relaxed text-base-content/70">
                 {approvalData.meta.reason}
               </p>

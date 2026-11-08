@@ -7,7 +7,6 @@ import {
   getBrowserState
 } from '../../api/browser-panel.js'
 import {
-  ArrowLeft,
   Folder,
   FolderPlus,
   Loader2,
@@ -15,7 +14,8 @@ import {
   PanelLeftOpen,
   Plus,
   Search,
-  Settings
+  Settings,
+  SquarePen
 } from 'lucide-react'
 import { groupWorkspaceSessions, isMainSession, workspaceKey } from '@shared/workspaces.js'
 import SessionEditor from './SessionEditor.jsx'
@@ -29,7 +29,6 @@ export default function WorkspaceSidebar({
   error,
   busy,
   onRetry,
-  onClose,
   minimized = false,
   onToggleMinimized,
   onSelect,
@@ -59,7 +58,7 @@ export default function WorkspaceSidebar({
     return (
       <div
         key={session.id}
-        className={`group/session flex items-center gap-1 rounded-lg ${active ? 'bg-white/10' : 'hover:bg-white/5'}`}
+        className={`group/session flex items-center gap-1 rounded-lg ${active ? 'mark-session-selected bg-white/10' : 'hover:bg-white/5'}`}
       >
         <button
           type="button"
@@ -92,15 +91,13 @@ export default function WorkspaceSidebar({
       </div>
     )
   }
-  const general = grouped.general.some((s) => isMainSession(s.id))
-    ? grouped.general
-    : [{ id: '1', title: 'Main Thread' }, ...grouped.general]
+  const general = grouped.general.filter((session) => !isMainSession(session.id))
   return (
     <>
       {minimized && (
         <aside
           aria-label="Navigasi Chat Studio"
-          className="w-12 shrink-0 border-r border-white/10 bg-base-200/50 flex flex-col items-center py-3 gap-2"
+          className="mark-agent-sidebar w-12 shrink-0 border-r border-white/10 flex flex-col items-center py-3 gap-2"
         >
           <button
             type="button"
@@ -114,42 +111,46 @@ export default function WorkspaceSidebar({
           </button>
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Tutup Chat Studio"
-            title="Tutup Chat Studio"
+            onClick={() => onCreate(null)}
+            disabled={busy}
+            aria-label="Percakapan baru"
+            title="Percakapan baru"
             className="btn btn-ghost btn-sm btn-circle"
           >
-            <ArrowLeft size={18} />
+            <SquarePen size={18} />
           </button>
         </aside>
       )}
       <aside
         hidden={minimized}
-        className={`w-80 max-w-[80vw] border-r border-white/10 bg-base-200/50 flex-col h-full shrink-0 ${minimized ? 'hidden' : 'flex'}`}
+        aria-label="Percakapan Agent"
+        className={`mark-agent-sidebar w-80 max-w-[80vw] border-r border-white/10 flex-col h-full shrink-0 ${minimized ? 'hidden' : 'flex'}`}
       >
-        <div className="p-4 border-b border-white/10 space-y-3">
-          <div className="flex items-center gap-2">
+        <div>
+          <div className="mark-sidebar-header h-14 px-4 flex items-center gap-2 border-b border-white/10">
+            <h2 className="text-[13px] font-medium text-white/80">Percakapan</h2>
             <button
               type="button"
-              onClick={onClose}
-              className="btn btn-ghost btn-sm btn-circle"
-              aria-label="Tutup Chat Studio"
+              onClick={() => onCreate(null)}
+              disabled={busy}
+              className="btn btn-ghost btn-sm btn-circle ml-auto"
+              aria-label="Percakapan baru"
+              title="Percakapan baru"
             >
-              <ArrowLeft size={19} />
+              <SquarePen size={17} />
             </button>
-            <h2 className="text-sm font-semibold text-white">Chat Studio</h2>
             <button
               type="button"
               onClick={onToggleMinimized}
-              aria-label="Minimize sidebar"
-              title="Minimize sidebar"
+              aria-label="Tutup sidebar"
+              title="Tutup sidebar"
               aria-expanded={true}
-              className="btn btn-ghost btn-sm btn-circle ml-auto"
+              className="btn btn-ghost btn-sm btn-circle"
             >
               <PanelLeftClose size={18} />
             </button>
           </div>
-          <div className="relative">
+          <div className="relative m-3">
             <Search
               size={14}
               className="absolute z-10 left-3 top-1/2 -translate-y-1/2 text-white/35 pointer-events-none"
@@ -181,7 +182,7 @@ export default function WorkspaceSidebar({
             {general.map(renderSession)}
           </section>
           <section>
-            <h3 className="px-2 mb-2 text-xs font-medium text-white/40">Workspaces</h3>
+            <h3 className="px-2 mb-2 text-xs font-medium text-white/40">Workspace</h3>
             {grouped.workspaces.map((group) => {
               const expanded =
                 !!query.trim() ||

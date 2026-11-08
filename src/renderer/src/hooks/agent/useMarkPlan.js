@@ -1,3 +1,4 @@
+import { isMainSession } from '@shared/workspaces.js'
 import { parseEffortCommand, resolveEffort } from '@shared/agent/effort.js'
 import { createVerificationGate, createProgressGuard } from '@shared/agent/execution-quality.js'
 import {
@@ -426,7 +427,7 @@ export const useMarkPlan = ({
   // Penghentian tugas per-sesi secara independen
   const handleStop = async (targetSessionId = null, targetTaskId = null) => {
     try {
-      speechQueue.reset()
+      if (targetSessionId == null || isMainSession(targetSessionId)) speechQueue.reset()
     } catch (_) {}
 
     const sessionsToAbort = []
@@ -670,7 +671,8 @@ export const useMarkPlan = ({
               { role: 'ai', content: `(Sedang berbicara) ${textToSpeak}`, isThinking: true }
             ]
           })
-          await playVoice(textToSpeak)
+          const spoken = await playVoice(textToSpeak, null, null, context.sessionId || activeSessionNum)
+          if (!spoken) throw new Error('Audio tidak berhasil diputar; teks tetap tersedia di percakapan.')
           resultString = `Berhasil berbicara secara lisan: "${textToSpeak}"`
         } else {
           throw new Error('Teks yang mau diucapkan kosong.')
@@ -1217,6 +1219,8 @@ export const useMarkPlan = ({
       }
     }
 
+    if (!isMainSession(activeSessionNum)) finalIsSpeak = false
+
     // Reset Speech Queue sebelum memulai turn baru
     if (finalIsSpeak) {
       speechQueue.reset()
@@ -1416,7 +1420,7 @@ export const useMarkPlan = ({
           role: 'ai',
           content: 'Menganalisis instruksi...',
           isThinking: true,
-          mood: 'neutral'
+          mood: isMainSession(activeSessionNum) ? 'neutral' : undefined
         }
       ])
     }
@@ -1954,7 +1958,7 @@ export const useMarkPlan = ({
           effortLevel: task.effortLevel || effortLevel,
           content: saved.finalAnswer,
           isTaskDone: true,
-          mood: 'neutral',
+          mood: isMainSession(activeSessionNum) ? 'neutral' : undefined,
           timestamp: getCurrentTimeInfo(),
           created_at: Date.now(),
           source: tgContext ? 'telegram' : 'pc'
@@ -2189,7 +2193,7 @@ export const useMarkPlan = ({
               isThinking: true,
               reasoning: initialReasoning,
               executedTools: executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-              mood: currentActiveMood
+              mood: isMainSession(activeSessionNum) ? currentActiveMood : undefined
             }
           ]
         })
@@ -2371,7 +2375,7 @@ export const useMarkPlan = ({
                         reasoning: liveReasoning || undefined,
                         executedTools:
                           executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                        mood: currentActiveMood
+                        mood: isMainSession(activeSessionNum) ? currentActiveMood : undefined
                       }
                     ]
                   })
@@ -2460,7 +2464,7 @@ export const useMarkPlan = ({
                         reasoning: liveReasoning || undefined,
                         executedTools:
                           executedToolsList.length > 0 ? [...executedToolsList] : undefined,
-                        mood: currentActiveMood
+                        mood: isMainSession(activeSessionNum) ? currentActiveMood : undefined
                       }
                     ]
                   })
@@ -2689,7 +2693,7 @@ export const useMarkPlan = ({
           consecutiveEmptyTurns = 0
           consecutiveNoToolTurns = 0
           sentenceBuffer = ''
-          speechQueue.reset()
+          if (isMainSession(activeSessionNum)) speechQueue.reset()
 
           // Rekam pesan narasi / observasi yang ditulis model sebelum mengeksekusi tool (seperti pada Codex)
           let turnNarration = stripMarkTags(currentTurnContent || '')
@@ -2792,7 +2796,7 @@ export const useMarkPlan = ({
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
                   executedTools: currentLiveTools,
-                  mood: currentActiveMood,
+                  mood: isMainSession(activeSessionNum) ? currentActiveMood : undefined,
                   usage: lastServerUsage || undefined,
                   tokens: lastServerUsage?.completion_tokens || undefined
                 }
@@ -3001,7 +3005,7 @@ export const useMarkPlan = ({
                   isThinking: true,
                   reasoning: liveReasoning || undefined,
                   executedTools: [...executedToolsList],
-                  mood: currentActiveMood,
+                  mood: isMainSession(activeSessionNum) ? currentActiveMood : undefined,
                   usage: lastServerUsage || undefined,
                   tokens: lastServerUsage?.completion_tokens || undefined
                 }
@@ -3474,8 +3478,8 @@ export const useMarkPlan = ({
             speechQueue.enqueue(sentenceBuffer.trim())
             sentenceBuffer = ''
           } else if (
-            !speechQueue.isPlaying &&
-            speechQueue.queue.length === 0 &&
+            !speechQueue.hasQueued &&
+            !speechQueue.failed &&
             finalContentAccumulator
           ) {
             // Fallback jika tidak ada tanda baca di output model sama sekali
@@ -3536,7 +3540,7 @@ export const useMarkPlan = ({
             codingSessionId: String(activeSessionNum),
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
-            mood: currentActiveMood || 'neutral',
+            mood: isMainSession(activeSessionNum) ? currentActiveMood || 'neutral' : undefined,
             pluginExecution: lastToolExecution,
             isProactive: isAutonomous,
             timestamp: getCurrentTimeInfo(),
@@ -3622,7 +3626,7 @@ export const useMarkPlan = ({
             executedTools: executedToolsList.length > 0 ? executedToolsList : null,
             isTaskDone: !awaitingBrowserUser,
             reasoning: mergedReasoning,
-            mood: currentActiveMood || 'neutral',
+            mood: isMainSession(activeSessionNum) ? currentActiveMood || 'neutral' : undefined,
             timestamp: getCurrentTimeInfo(),
             created_at: Date.now(),
             usage: lastServerUsage || null,
@@ -3753,7 +3757,7 @@ export const useMarkPlan = ({
       } else {
         dismissProcess(agenticProcessId)
         try {
-          speechQueue.reset()
+          if (isMainSession(activeSessionNum)) speechQueue.reset()
         } catch (_) {}
         try {
           const runningTasks = await db.agentTasks.where('status').equals('running').toArray()

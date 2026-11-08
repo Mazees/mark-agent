@@ -1,15 +1,20 @@
+import { isMainSession } from '@shared/workspaces.js'
 import { getAgentTaskWithSteps, transitionAgentTask, listAgentTasks } from '../api/taskStore.js'
 import { subagentRequest } from '../api/subagent/client.js'
-import { getSessionSummary } from '../api/db.js'
+import { getChatData, getSessionSummary } from '../api/db.js'
 import { addWebListener, removeWebListener } from '../api/web-bridge.js'
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useYoutubeMusic } from '../contexts/YoutubeMusicContext'
 import { useApproval } from '../contexts/ApprovalContext'
 import { useMarkState, useMarkYoutube, useMarkMusic, useMarkPlan } from './agent'
 import { useAwareness } from './useAwareness'
 import { useRelationalGrowth } from './agent/useRelationalGrowth'
 import { useVAD } from './useVAD'
-import { formatForTelegram, getCurrentTimeInfo } from '../api/ai/utils'
+import {
+  broadcastPersonalMessageToTelegram,
+  formatForTelegram,
+  getCurrentTimeInfo
+} from '../api/ai/utils'
 import { fetchAI } from '../api/ai/core'
 import { parseMarkTag } from '@shared/parsers/mark-tag-parser.js'
 import { useSubagentReportFollowup } from './agent/useSubagentReportFollowup.js'
@@ -50,7 +55,6 @@ export const useMarkAgent = () => {
     dismissProcess,
     inputSource,
     setInputSource,
-    activeTopic,
     currentActiveSessionId,
     setCurrentActiveSessionId,
     isChatLoaded,
@@ -105,7 +109,7 @@ export const useMarkAgent = () => {
     currentMusicTrack: youtubeMusicTools.isPlaying ? youtubeMusicTools.currentTrack : null
   })
 
-  useRelationalGrowth({ chatData, currentActiveSessionId, isLoading })
+  useRelationalGrowth({ chatData, currentActiveSessionId: '1', isLoading })
 
   useSubagentReportFollowup({
     ready: isChatLoaded && !isBooting && !isAgentBusy && !isLoading && !runningSessionIds?.length,
@@ -322,7 +326,7 @@ export const useMarkAgent = () => {
                 }
               ],
               false,
-              { isSmallTask: true, signal: controller.signal }
+              { isSmallTask: true, sessionId: '1', signal: controller.signal }
             ),
             aborted
           ])
@@ -352,6 +356,7 @@ export const useMarkAgent = () => {
           }
         ])
         setIsBooting(false)
+        void broadcastPersonalMessageToTelegram(greeting)
       }
 
       bootSequence()
@@ -421,7 +426,7 @@ export const useMarkAgent = () => {
 
   useEffect(() => {
     let disposed = false
-    const sessionId = String(currentActiveSessionId || activeTopic?.id || '1')
+    const sessionId = '1'
     const receive = (data) => {
       if (!data?.persisted || String(data.parentSessionId) !== sessionId || !data.message) return
       setChatData((current) =>
@@ -468,7 +473,7 @@ export const useMarkAgent = () => {
       removeWebListener('subagent:report', receive)
       removeWebListener('core:ready', sync)
     }
-  }, [currentActiveSessionId, activeTopic?.id, isChatLoaded, setChatData])
+  }, [isChatLoaded, setChatData])
 
   const isInitialSyncDoneRef = useRef(false)
   const lastSyncedMsgIdRef = useRef(null)
@@ -476,36 +481,38 @@ export const useMarkAgent = () => {
   useEffect(() => {
     if (!isChatLoaded) return
 
+    const lastAiMsg = chatData.findLast(
+      (message) =>
+        message.role === 'ai' &&
+        !message.isProactive &&
+        message.source !== 'startup' &&
+        !message.isThinking &&
+        !message.isSearching &&
+        !message.isSummarizing
+    )
+    const msgKey = lastAiMsg?.id ?? lastAiMsg?.created_at ?? lastAiMsg?.timestamp ?? lastAiMsg?.content
+
     // Pada render pertama setelah chat DB dimuat, tandai pesan AI terakhir sebagai "sudah tersinkron" agar pesan histori tidak terkirim ulang
     if (!isInitialSyncDoneRef.current) {
       isInitialSyncDoneRef.current = true
-      if (chatData && chatData.length > 0) {
-        const lastAiMsg = [...chatData]
-          .reverse()
-          .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
-        if (lastAiMsg) {
-          lastSyncedMsgIdRef.current = lastAiMsg.timestamp || lastAiMsg.content
-        }
-      }
+      if (lastAiMsg) lastSyncedMsgIdRef.current = msgKey
       return
     }
 
     if (!isAgentBusy && activeTgRequestRef.current && chatData.length > 0) {
-      const lastAiMsg = [...chatData]
-        .reverse()
-        .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
       if (lastAiMsg) {
         const currentReq = activeTgRequestRef.current
         if (
-          currentReq.abortRequestedAt &&
-          Number(lastAiMsg.created_at || 0) < currentReq.abortRequestedAt
+          msgKey === lastSyncedMsgIdRef.current ||
+          (currentReq.abortRequestedAt &&
+            Number(lastAiMsg.created_at || 0) < currentReq.abortRequestedAt)
         ) {
           return
         }
         activeTgRequestRef.current = null
         lastTgProgressRef.current = { msgId: null, reason: null }
         setInputSource('pc')
-        lastSyncedMsgIdRef.current = lastAiMsg.timestamp || lastAiMsg.content
+        lastSyncedMsgIdRef.current = msgKey
 
         window.api?.sendTgAgentExecutionDone({
           chatId: currentReq.chatId,
@@ -519,22 +526,12 @@ export const useMarkAgent = () => {
       inputSource !== 'tg' &&
       !activeTgRequestRef.current
     ) {
-      const lastAiMsg = [...chatData]
-        .reverse()
-        .find((m) => m.role === 'ai' && !m.isThinking && !m.isSearching && !m.isSummarizing)
-      const msgKey = lastAiMsg ? lastAiMsg.timestamp || lastAiMsg.content : null
       if (lastAiMsg && lastAiMsg.content && lastSyncedMsgIdRef.current !== msgKey) {
         lastSyncedMsgIdRef.current = msgKey
-        if (
-          window.api?.tgBroadcastToAdmins &&
-          !lastAiMsg.isProactive &&
-          lastAiMsg.source !== 'telegram'
-        ) {
-          window.api.tgBroadcastToAdmins(`*Mark (PC)*:\n${lastAiMsg.content}`)
-        }
+        if (lastAiMsg.source !== 'telegram') void broadcastPersonalMessageToTelegram(lastAiMsg.content)
       }
     }
-  }, [isAgentBusy, chatData, isChatLoaded, setInputSource])
+  }, [isAgentBusy, chatData, isChatLoaded, inputSource, setInputSource])
 
   const handleSubmit = (e, textPrompt, sendOptions = {}) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault()
@@ -557,21 +554,64 @@ export const useMarkAgent = () => {
     }
   }
 
+
+  const voiceSession = useRef('1')
+  const [speechError, setSpeechError] = useState('')
+  useEffect(() => {
+    let timer
+    const failed = (event) => {
+      clearTimeout(timer)
+      setSpeechError(event.detail?.message || '')
+      timer = setTimeout(() => setSpeechError(''), 6000)
+    }
+    window.addEventListener('mark-tts-error', failed)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('mark-tts-error', failed)
+    }
+  }, [])
+  const [recordingSessionId, setRecordingSessionId] = useState('1')
+  const activatePersonalVoice = useCallback(() => {
+    voiceSession.current = '1'
+    setRecordingSessionId('1')
+    setCurrentActiveSessionId('1')
+    window.dispatchEvent(new CustomEvent('mark:wake-personal'))
+  }, [setCurrentActiveSessionId])
+  useEffect(() => {
+    const personalShortcut = () => {
+      voiceSession.current = '1'
+      setRecordingSessionId('1')
+    }
+    window.addEventListener('mark:wake-personal', personalShortcut)
+    return () => window.removeEventListener('mark:wake-personal', personalShortcut)
+  }, [])
+
   const handleVoiceTranscript = useCallback(
-    (text, meta = {}) => {
-      if (!text || !text.trim()) return
-      const wakePrefix = meta?.isWakeWord && meta?.wakePhrase ? `${meta.wakePhrase} ` : ''
-      const prefixedText = `<mic> ${wakePrefix}${text}`.trim()
-      setMessage(prefixedText)
-      setIsSpeak(true)
-      handlePlanningCommand(prefixedText, null, false, null, { forceSpeak: true })
+    async (text, meta = {}) => {
+      if (!text?.trim()) return
+      const target = meta.isWakeWord ? '1' : voiceSession.current
+      const prefixedText = '<mic> ' + (meta.isWakeWord && meta.wakePhrase ? meta.wakePhrase + ' ' : '') + text
+      const personal = isMainSession(target)
+      setIsSpeak(personal)
+      const options = {
+        sessionId: target,
+        forceSpeak: personal,
+        ...(!personal ? { customChatData: await getChatData(target) } : {})
+      }
+      if (runningSessionIds.map(String).includes(target))
+        handleIntervention(prefixedText, target, options)
+      else handlePlanningCommand(prefixedText, null, false, null, options)
     },
-    [setMessage, setIsSpeak, handlePlanningCommand]
+    [setIsSpeak, runningSessionIds, handleIntervention, handlePlanningCommand]
   )
 
-  const vad = useVAD({
-    onTranscript: handleVoiceTranscript
-  })
+  const vad = useVAD({ onTranscript: handleVoiceTranscript, onWake: activatePersonalVoice })
+  const startRecording = (id = currentActiveSessionId) => {
+    const target = typeof id === 'string' || typeof id === 'number' ? String(id) : '1'
+    voiceSession.current = target
+    setRecordingSessionId(target)
+    vad.startRecording()
+  }
 
   return {
     chatData,
@@ -614,10 +654,11 @@ export const useMarkAgent = () => {
     isRecording: vad.isRecording,
     isProcessing: vad.isProcessing,
     audioIntensity: vad.audioIntensity,
-    startRecording: vad.startRecording,
+    startRecording,
+    recordingSessionId,
     stopRecording: vad.stopRecording,
     wakeStatus: vad.wakeStatus,
     toggleRecording: vad.toggleRecording,
-    toastMessage: vad.toastMessage
+    toastMessage: speechError || vad.toastMessage
   }
 }

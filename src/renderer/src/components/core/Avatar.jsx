@@ -62,6 +62,7 @@ const getMoodColor = (mood = 'neutral', status = 'idle') => {
 const Avatar = ({
   status = 'idle',
   intensity = 0,
+  receiveAudio = true,
   mood = 'neutral',
   isActive = true,
   onClick = null,
@@ -792,12 +793,16 @@ const Avatar = ({
 
   // Direct high-speed intensity listener (avoids parent React re-renders)
   useEffect(() => {
+    if (!receiveAudio) {
+      stateRef.current.intensity = 0
+      return
+    }
     const handleIntensityEvent = (e) => {
       stateRef.current.intensity = typeof e.detail === 'number' ? e.detail : 0
     }
     window.addEventListener('mark-intensity', handleIntensityEvent)
     return () => window.removeEventListener('mark-intensity', handleIntensityEvent)
-  }, [])
+  }, [receiveAudio])
 
   // Listen for sleep state from useAwareness
   useEffect(() => {
@@ -1735,7 +1740,7 @@ const Avatar = ({
         .avatar-gpu-layer {
           will-change: transform;
           transform: translateZ(0);
-          contain: layout paint;
+          contain: layout;
           backface-visibility: hidden;
         }
         .avatar-core-beat {

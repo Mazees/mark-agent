@@ -62,7 +62,7 @@ const FloatingMenu = () => {
       )}
 
       {/* Slide-over Left Navigation Drawer */}
-      <aside
+      <aside inert={!isOpen} aria-hidden={!isOpen}
         className={`fixed top-0 left-0 bottom-0 w-80 max-w-[85vw] bg-base-300/98 border-r border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] z-[110] flex flex-col transition-transform duration-300 ease-out transform ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -90,29 +90,6 @@ const FloatingMenu = () => {
 
         {/* Scrollable Navigation Items */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 space-y-4">
-          {/* Section: Main Studio & Live */}
-          <div>
-            <span className="text-[10px] font-mono font-bold text-base-content/40 uppercase tracking-widest px-2.5 mb-1.5 block">
-              Workspace & Live
-            </span>
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={handleOpenStudio}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-white/5 text-base-content/80 hover:text-white text-xs font-medium font-mono transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-3">
-                  <FaCommentAlt className="text-primary text-sm" />
-                  <span>Chat Studio</span>
-                </div>
-                <FaChevronRight
-                  size={10}
-                  className="text-base-content/30 group-hover:text-white/60 group-hover:translate-x-0.5 transition-all"
-                />
-              </button>
-            </div>
-          </div>
-
           {/* Section: Brain & Cognitive Systems */}
           <div>
             <span className="text-[10px] font-mono font-bold text-base-content/40 uppercase tracking-widest px-2.5 mb-1.5 block">

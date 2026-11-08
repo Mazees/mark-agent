@@ -67,7 +67,7 @@ export default function WorkspaceTerminal({ terminal, sessionId }) {
         fontSize: 12,
         fontFamily: TERMINAL_FONT,
         scrollback: 3000,
-        theme: { background: '#100d0d', foreground: '#d4d4d4' }
+        theme: { background: '#0d1412', foreground: '#d4d4d4' }
       })
       const fit = new FitAddon()
       term.loadAddon(fit)

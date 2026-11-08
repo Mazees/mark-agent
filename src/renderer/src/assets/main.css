@@ -696,3 +696,102 @@ body,
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+/* Personal and Agent share one application runtime. */
+.mark-shell { height: 100dvh; width: 100%; display: flex; flex-direction: column; overflow: hidden; background: #0d1412; color: #eef4f0; }
+.mark-mode-header { min-height: 64px; padding: 10px 24px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; border-bottom: 1px solid #ffffff12; flex-shrink: 0; }
+.mark-shell-brand { display: flex; align-items: center; gap: 12px; font-size: 17px; font-weight: 600; }
+.mark-mode-tabs { display: flex; padding: 4px; gap: 4px; background: #15201a; border: 1px solid #ffffff12; border-radius: 12px; }
+.mark-mode-tabs button { display: flex; align-items: center; gap: 8px; padding: 7px 16px; border-radius: 8px; color: #a6b6ac; font-size: 13px; cursor: pointer; }
+.mark-mode-tabs button[aria-pressed="true"] { color: #eff8f2; background: #27352d; }
+.mark-mode-tabs button:focus-visible { outline: 2px solid #74d69b; outline-offset: 3px; }
+.mark-mode-indicator { width: 6px; height: 6px; border-radius: 50%; background: #74d69b; }
+.mark-mode-attention { justify-self: end; min-width: 0; }
+.mark-mode-content { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.mark-mode-view { position: absolute; inset: 0; overflow: hidden; animation: mark-mode-enter 180ms ease-out; }
+.mark-mode-view[hidden] { display: none !important; }
+.mark-studio {
+  --glass-bg: #152019;
+  --glass-border: #283b30;
+  --color-base-100: #0d1412;
+  --color-base-200: #101a15;
+  --color-base-300: #0d1412;
+}
+.mark-agent-studio { background: #0d1412; }
+.mark-agent-studio .mark-studio-main { background: #0d1412; }
+.mark-agent-studio .mark-studio-header { background: #0d1412; backdrop-filter: none; border-color: #ffffff12; }
+.mark-agent-sidebar { background: #101a15; border-color: #ffffff12; }
+.mark-sidebar-header { border-color: #ffffff12; }
+.mark-agent-sidebar .mark-session-selected { background: #24352b; }
+.mark-agent-sidebar .mark-session-selected > button:first-child > span:first-child { color: #c6e1ce; }
+.mark-agent-sidebar .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #365040 transparent; }
+.mark-agent-sidebar .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.mark-agent-sidebar .custom-scrollbar::-webkit-scrollbar-thumb { background: #365040; border-radius: 8px; }
+.mark-studio .mark-studio-composer { background: transparent; border-color: transparent; }
+.mark-studio .mark-studio-composer form { background: var(--glass-bg); border-color: var(--glass-border); box-shadow: none; }
+.mark-studio .mark-studio-composer form:focus-within { border-color: #6dba8c; box-shadow: 0 0 0 1px #6dba8c22; }
+.mark-workspace-panel { border-left: 1px solid #ffffff12; }
+.mark-workspace-panel > header { border-color: #ffffff12; }
+.mark-workspace-tab-active { background: #24352b; }
+.mark-personal-workspace .mark-personal-toolbar { min-height: 3.5rem; padding: 0 12px; align-items: center; border-bottom: 1px solid #ffffff12; }
+.mark-personal-home { height: 100%; display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr); gap: clamp(24px, 3vw, 48px); max-width: 1680px; padding: clamp(20px, 3vw, 40px); margin: auto; position: relative; }
+.mark-personal-avatar { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; overflow: visible; }
+.mark-avatar-stage { width: 100%; height: min(78dvh, 800px); display: flex; justify-content: center; align-items: center; overflow: visible; }
+.mark-avatar-stage > div { flex-shrink: 0; transform: scale(2); }
+.mark-personal-status { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 0 12px; overflow-wrap: anywhere; color: #a7dbbb; font-size: 13px; }
+.mark-personal-status > span { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #74d69b; }
+.mark-personal-music { margin-top: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a6b6ac; font-size: 12px; }
+.mark-personal-conversation { min-width: 0; min-height: 0; height: 100%; padding: 12px 0; }
+.mark-personal-conversation .mark-studio { background: transparent; }
+.mark-personal-conversation .mark-studio > div { background-color: transparent; }
+.mark-personal-toolbar { display: flex; justify-content: flex-end; padding: 0 12px 12px; flex-shrink: 0; }
+.mark-personal-tool { display: inline-flex; align-items: center; gap: 7px; padding: 8px; border-radius: 8px; font-size: 12px; color: #94a89a; cursor: pointer; }
+.mark-personal-tool:hover, .mark-personal-tool[aria-expanded="true"] { background: #ffffff08; color: #d7e6dc; }
+.mark-personal-tool:focus-visible { outline: 2px solid #74d69b; outline-offset: 2px; }
+.mark-avatar-waking { animation: mark-avatar-wake 1.8s ease-out both; }
+.mark-avatar-stage .avatar-eye-mesh { scale: 1 1; transition: transform 120ms cubic-bezier(.2,.8,.2,1), scale 650ms ease-out, opacity 400ms ease-out; }
+.mark-avatar-waking .avatar-eye-mesh { scale: 1 .06; opacity: .45; }
+.mark-avatar-waking .avatar-core-beat { animation: mark-boot-core 1.4s ease-in-out infinite; }
+.mark-personal-home[aria-busy="true"] .mark-personal-conversation { opacity: .45; }
+.mark-personal-conversation { transition: opacity 180ms ease-out; }
+@keyframes mark-avatar-wake {
+  from { opacity: .25; filter: brightness(.35) saturate(.3); translate: 0 12px; }
+  45% { opacity: .85; filter: brightness(.8) saturate(.75); }
+  to { opacity: 1; filter: brightness(1) saturate(1); translate: 0 0; }
+}
+@keyframes mark-boot-core {
+  0%, 100% { opacity: .35; filter: brightness(.7); }
+  50% { opacity: 1; filter: brightness(1.5); }
+}
+.mark-personal-workspace { grid-template-columns: minmax(0, 1fr); padding: 0; }
+.mark-personal-workspace .mark-personal-avatar { display: none; }
+.mark-personal-workspace .mark-personal-conversation { padding: 0; }
+@keyframes mark-mode-enter { from { opacity: .4; } to { opacity: 1; } }
+@media (min-width: 801px) and (max-width: 1200px), (min-width: 801px) and (max-height: 760px) {
+  .mark-avatar-stage { height: min(69dvh, 570px); }
+  .mark-avatar-stage > div { transform: scale(1.45); }
+}
+@media (max-width: 800px) {
+  .mark-mode-header { padding: 8px 12px; gap: 8px; min-height: 56px; }
+  .mark-mode-tabs button { padding-inline: 10px; }
+  .mark-mode-attention button { font-size: 11px; max-width: 110px; height: auto; }
+  .mark-personal-home { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 8px 12px 12px; gap: 6px; }
+  .mark-avatar-stage { height: min(30dvh, 250px); align-items: flex-start; }
+  .mark-avatar-stage > div { transform: scale(.7); transform-origin: center top; }
+  .mark-personal-status { margin-top: -3px; font-size: 12px; }
+  .mark-personal-conversation { padding: 0; }
+  .mark-personal-workspace { grid-template-rows: minmax(0, 1fr); padding: 0; }
+  .mark-personal-music { display: none; }
+}
+@media (max-width: 400px) {
+  .mark-mode-header { grid-template-columns: auto 1fr; }
+  .mark-mode-tabs { justify-self: end; }
+  .mark-mode-attention { grid-column: 1 / -1; }
+  .mark-mode-attention:empty { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .mark-mode-view { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .mark-avatar-waking, .mark-avatar-waking .avatar-eye-mesh, .mark-avatar-waking .avatar-core-beat { animation: none; }
+  .mark-avatar-stage .avatar-eye-mesh { transition: none; }
+  .mark-personal-conversation { transition: none; }
+}

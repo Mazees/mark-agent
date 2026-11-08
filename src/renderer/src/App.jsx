@@ -1,3 +1,4 @@
+import { webApi } from './api/web-bridge.js'
 import { useState, useEffect } from 'react'
 import MarkHome from './pages/MarkHome'
 import Configuration from './pages/Configuration'
@@ -13,6 +14,15 @@ import Addons from './pages/Addons'
 import Subagents from './pages/Subagents'
 import ChatStudio from './pages/ChatStudio'
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { isMainSession } from '@shared/workspaces.js'
+import {
+  readInterfaceState,
+  saveInterfaceState,
+  queueWorkspaceRequest
+} from './api/interfaceState.js'
+import { useChat } from './contexts/ChatContext'
+import { useApproval } from './contexts/ApprovalContext'
+import FloatingMenu from './components/core/FloatingMenu'
 import { ChatProvider } from './contexts/ChatContext'
 import { YoutubeMusicProvider } from './contexts/YoutubeMusicContext'
 import { ApprovalProvider } from './contexts/ApprovalContext'
@@ -47,6 +57,7 @@ const GlobalListener = () => {
 
     const triggerMicShortcut = () => {
       // Dispatch custom event langsung agar didengar oleh useVAD / MarkHome seketika
+      window.dispatchEvent(new CustomEvent('mark:wake-personal'))
       window.dispatchEvent(new CustomEvent('trigger-mic-toggle'))
       // Pastikan jika user sedang berada di sub-page atau drawer, kita juga arahkan view ke root Home
       navigate('/')
@@ -125,21 +136,178 @@ const GlobalListener = () => {
 
 const MainLayout = () => {
   const location = useLocation()
-  const isHome = location.pathname === '/'
+  const navigate = useNavigate()
+  const {
+    chatData = [],
+    runningSessionIds = [],
+    setCurrentActiveSessionId,
+    toastMessage
+  } = useChat()
+  const { activeApproval } = useApproval()
+  const isPersonal = location.pathname === '/'
+  const isAgent = location.pathname === '/chat'
+  const isChatMode = isPersonal || isAgent
+  const [agentMounted, setAgentMounted] = useState(isAgent)
+  const [unread, setUnread] = useState({})
+  const [initialMode] = useState(() => readInterfaceState().mode)
+  const [lastRoute, setLastRoute] = useState(location.pathname)
+  if (lastRoute !== location.pathname) {
+    setLastRoute(location.pathname)
+    if (isAgent) setAgentMounted(true)
+    if (isPersonal || isAgent)
+      setUnread((current) => ({ ...current, [isPersonal ? 'personal' : 'agent']: null }))
+  }
 
+  useEffect(() => {
+    if (
+      initialMode === 'agent' &&
+      location.pathname === '/' &&
+      !window.location.hash &&
+      !location.state?.personalRequested
+    )
+      navigate('/chat', { replace: true })
+  }, [])
+  useEffect(() => {
+    if (isPersonal || isAgent) {
+      saveInterfaceState({ mode: isPersonal ? 'personal' : 'agent' })
+    }
+    if (isPersonal) setCurrentActiveSessionId('1')
+  }, [isAgent, isPersonal, setCurrentActiveSessionId])
+
+  useEffect(() => {
+    const open = (event) => {
+      const id = String(event.detail?.sessionId || '1')
+      navigate(isMainSession(id) ? '/' : '/chat?session=' + encodeURIComponent(id), {
+        state: { personalRequested: true }
+      })
+    }
+    const wake = () => navigate('/', { state: { personalRequested: true } })
+    const coding = (event) => {
+      if (event.detail?.sessionId) {
+        queueWorkspaceRequest(event.detail)
+        open(event)
+      }
+    }
+    const browser = webApi.onBrowserPanel('open-request', (event) => {
+      const id = event?.sessionId === 'main' ? '1' : event?.sessionId?.replace(/^workspace-/, '')
+      if (id) {
+        queueWorkspaceRequest({ sessionId: id, type: 'browser' })
+        const mode = isMainSession(id) ? 'personal' : 'agent'
+        if (isMainSession(id) ? !isPersonal : !isAgent)
+          setUnread((current) => ({ ...current, [mode]: id }))
+      }
+    })
+    const updated = (event) => {
+      const id = String(event.detail?.sessionId || '')
+      if (!id) return
+      const mode = isMainSession(id) ? 'personal' : 'agent'
+      if ((mode === 'personal' && isPersonal) || (mode === 'agent' && isAgent)) return
+      const last = event.detail?.data?.at(-1)
+      if (last && !last.isThinking) setUnread((current) => ({ ...current, [mode]: id }))
+    }
+    window.addEventListener('mark:open-session', open)
+    window.addEventListener('mark:wake-personal', wake)
+    window.addEventListener('coding-panel-open', coding)
+    window.addEventListener('session-updated', updated)
+    return () => {
+      browser()
+      window.removeEventListener('mark:open-session', open)
+      window.removeEventListener('mark:wake-personal', wake)
+      window.removeEventListener('coding-panel-open', coding)
+      window.removeEventListener('session-updated', updated)
+    }
+  }, [navigate, isPersonal, isAgent])
+
+  const lastPersonal = chatData.at(-1)
+  const personalKey = JSON.stringify([
+    lastPersonal?.id,
+    lastPersonal?.content,
+    lastPersonal?.isThinking
+  ])
+  const [seenPersonal, setSeenPersonal] = useState(personalKey)
+  if (seenPersonal !== personalKey) {
+    setSeenPersonal(personalKey)
+    if (
+      seenPersonal !== '[null,null,null]' &&
+      !isPersonal &&
+      lastPersonal &&
+      !lastPersonal.isThinking
+    )
+      setUnread((current) => ({ ...current, personal: '1' }))
+  }
+  const chooseMode = (personal) => {
+    const id = unread[personal ? 'personal' : 'agent']
+    navigate(personal ? '/' : id ? '/chat?session=' + encodeURIComponent(id) : '/chat', {
+      state: { personalRequested: true }
+    })
+  }
+  const approvalSession =
+    activeApproval?.meta?.sessionId || activeApproval?.meta?.owner?.codingSessionId
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#0f1715] text-[#cac9c9]">
-      {/* Base Home Page - Always Mounted so AI Agent & Telegram Listeners Never Die */}
-      <div className="h-full w-full">
-        <MarkHome isHome={isHome} />
-      </div>
-
-      {/* Floating Glass Sub-page Overlay */}
-      {!isHome && (
-        <div className="fixed inset-0 z-50 flex flex-col animate-fade-in bg-transparent pointer-events-none">
-          <div className="flex-1 pointer-events-auto h-full w-full flex flex-col min-h-0 overflow-hidden">
+    <div className="mark-shell">
+      {isChatMode && (
+        <header className="mark-mode-header">
+          <div className="mark-shell-brand">
+            <FloatingMenu />
+            <span>Mark</span>
+          </div>
+          <nav aria-label="Mode Mark" className="mark-mode-tabs">
+            {[
+              ['Personal', true],
+              ['Agent', false]
+            ].map(([label, personal]) => {
+              const running = runningSessionIds.some((id) => isMainSession(id) === personal)
+              const newResult = unread[personal ? 'personal' : 'agent']
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={personal ? isPersonal : isAgent}
+                  onClick={() => chooseMode(personal)}
+                >
+                  {label}
+                  {(running || newResult) && (
+                    <span
+                      className="mark-mode-indicator"
+                      aria-label={running ? 'Pekerjaan berjalan' : 'Hasil baru'}
+                    />
+                  )}
+                </button>
+              )
+            })}
+          </nav>
+          <div className="mark-mode-attention">
+            {approvalSession && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  navigate(
+                    isMainSession(approvalSession)
+                      ? '/'
+                      : '/chat?session=' + encodeURIComponent(approvalSession),
+                    { state: { personalRequested: true } }
+                  )
+                }
+              >
+                Buka permintaan bantuan
+              </button>
+            )}
+          </div>
+        </header>
+      )}
+      <main className="mark-mode-content">
+        <section className="mark-mode-view" hidden={!isPersonal} inert={!isPersonal}>
+          <MarkHome isHome={isPersonal} />
+        </section>
+        {agentMounted && (
+          <section className="mark-mode-view" hidden={!isAgent} inert={!isAgent}>
+            <ChatStudio isOpen={isAgent} />
+          </section>
+        )}
+        {!isChatMode && (
+          <section className="mark-mode-view">
             <Routes>
-              <Route path="/chat" element={<ChatStudio />} />
               <Route path="/config" element={<Configuration />} />
               <Route path="/plugins" element={<Plugins />} />
               <Route path="/plugins/:pluginName" element={<Plugins />} />
@@ -159,7 +327,15 @@ const MainLayout = () => {
               <Route path="/subagents" element={<Subagents />} />
               <Route path="/subagents/:agentId" element={<Subagents />} />
             </Routes>
-          </div>
+          </section>
+        )}
+      </main>
+      {toastMessage && (
+        <div
+          role="alert"
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[10000] max-w-[calc(100%-32px)] rounded-xl border border-white/10 bg-base-200 px-4 py-3 text-sm shadow-xl"
+        >
+          {toastMessage}
         </div>
       )}
     </div>

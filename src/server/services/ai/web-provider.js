@@ -1,3 +1,4 @@
+import { responseContract, usesPersonalMood } from '../../../shared/agent-mode.js'
 import { deepseekAuth } from '../deepseek-auth.js'
 import fs from 'fs'
 import path from 'path'
@@ -207,37 +208,9 @@ Kamu memiliki akses ke kapabilitas sistem berikut:
 
 ${toolSections.join('\n\n')}
 
-# ATURAN EKSEKUSI & FORMAT RESPON WAJIB (FULL JSON UTUH):
-1. Kamu WAJIB SELALU merespons HANYA dalam format JSON valid (diawali langsung dengan '{' dan diakhiri dengan '}').
-2. DILARANG KERAS menyertakan teks pesan, tag XML, kata pengantar, obrolan, basa-basi, atau penutup apapun di luar objek JSON! Jangan tulis teks apapun sebelum '{' atau setelah '}'.
-3. Struktur objek JSON yang WAJIB kamu gunakan untuk SETIAP giliran respon:
-{
-  "thought": "Penalaran ringkas dalam bahasa manusia mengenai situasi saat ini atau aksi yang akan diambil",
-  "mood": "neutral | joy | sadness | fear | anger | disgust | anxiety | envy | embarrassment | ennui",
-  "message": "Update progres opsional 1-4 kalimat, atau null",
-  "await_user": false,
-  "answer": "Teks balasan langsung kepada pengguna jika TIDAK memanggil tool (atau null jika sedang memanggil tool)",
-  "tool_calls": [
-    {
-      "name": "nama_tool_1",
-      "arguments": { "parameter_key": "parameter_value" }
-    }
-  ]
-}
-4. Jika kamu ingin memanggil tool/melakukan tindakan nyata:
-   - "tool_calls" WAJIB berisi array pemanggilan tool (mendukung BATCH / MULTI-TOOL sekaligus).
-   - "answer" WAJIB bernilai null.
-   - "message" opsional: berikan 1-4 kalimat saat mulai tugas panjang, ada temuan penting, kendala, atau perubahan pendekatan. Beri update berkala selama pekerjaan panjang, tanpa wajib mengisi setiap loop. Jangan mengarang progres atau mengulang pesan. Jika tidak ada informasi baru, isi null.
-5. HANYA JIKA seluruh tindakan telah tuntas atau kamu tidak perlu memanggil tool sama sekali:
-   - "answer" WAJIB berisi teks jawaban/laporan lengkap dalam bahasa santai dan natural kepada pengguna.
-   - "tool_calls" WAJIB bernilai null.
-6. ATURAN BATCH & PARALLEL ACTIONS (EFISIENSI MAKSIMAL):
-   - Gabungkan beberapa tool jika target dan argumennya sudah diketahui serta tidak bergantung pada hasil tool sebelumnya. Setelah navigasi atau perubahan DOM, periksa observasi baru sebelum memakai ID elemen berikutnya. Jangan menebak target di halaman yang belum diamati.
-   - Seluruh tool dalam array "tool_calls" akan dieksekusi secara berurutan dan hasilnya dikembalikan sekaligus dalam observasi berikutnya.
-7. ATURAN PARAMETER REASON (WAJIB): Setiap pemanggilan tool WAJIB menyertakan parameter 'reason': ringkasan aksi singkat dan natural dalam bahasa manusia mengenai apa tindakan yang sedang kamu lakukan (contoh: "Membuka tab Instagram di browser", "Membaca konfigurasi server").
-8. Ringkasan tahapan hanya untuk workflow yang benar-benar dibuat atau dilanjutkan melalui create_agent_task atau resume_agent_task. Pada turn baru, baca checkpoint melalui read_task lalu resume_agent_task sebelum melanjutkan atau menugaskan Minibot. Jangan mengarang progres.
-9. Jika perlu login, CAPTCHA, atau bantuan pengguna: isi await_user=true, tanyakan di answer, tool_calls=null, dan akhiri giliran tanpa menyelesaikan task. Jangan menutup browser. Periksa DOM/screenshot terbaru serta isi balasan sebelum melanjutkan.
-10. Catatan Tool Musik: Jika user meminta memutar lagu, panggil tool 'search-youtube' atau 'music-play' dengan query judul lagu yang dimaksud.`
+${responseContract({ web: true, personal: usesPersonalMood({ sessionId, purpose, isSmallTask }) })}
+
+Jika pengguna meminta memutar lagu, gunakan tool musik yang tersedia.`
 
     const sysIdx = workMessages.findIndex((m) => m.role === 'system')
     if (sysIdx >= 0) {

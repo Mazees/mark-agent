@@ -38,15 +38,15 @@ export const guideArticles = [
         ]
       },
       {
-        title: 'Beranda dan Chat Studio',
+        title: 'Mode Personal dan Agent',
         paragraphs: [
-          'Beranda merupakan tempat untuk mulai berbicara dengan Mark. Anda dapat mengajukan pertanyaan, menyampaikan permintaan, dan melihat respons serta aktivitasnya dari halaman yang sama. Halaman ini juga menampilkan avatar dan kontrol percakapan untuk interaksi sehari-hari.',
-          'Chat Studio menyediakan ruang kerja dengan daftar sesi, pilihan workspace, serta panel Perubahan, Terminal, dan Browser. Gunakan sesi terpisah untuk membahas pekerjaan yang berbeda, misalnya riset dan pengembangan aplikasi. Dengan memilih folder proyek sebagai workspace, Anda memberi Mark konteks lokasi berkas yang akan dikerjakan.',
-          'Kedua halaman menggunakan mesin AI dan penyimpanan Mark yang sama. Pilih Beranda untuk memulai interaksi dengan cepat, atau buka Chat Studio ketika Anda perlu mengelola percakapan dan mengikuti pekerjaan yang melibatkan proyek atau browser.'
+          'Personal adalah ruang percakapan tetap Anda bersama Mark. Semua obrolan pada mode ini melanjutkan sesi utama yang sama, termasuk riwayat Main Thread sebelumnya. Avatar menanggapi percakapan dan aktivitas Personal; saat tidak ada kegiatan, tampilannya tetap tenang tanpa pesan status berulang. Tampilan awal menunjukkan giliran terbaru. Pilih Riwayat untuk membaca percakapan sebelumnya.',
+          'Agent membuka Chat Studio untuk pekerjaan yang memerlukan beberapa percakapan terpisah. Anda dapat mengelompokkan sesi menurut workspace, mengikuti aktivitas tool, dan membuka browser, berkas, dokumen, diff, atau terminal pada panel workspace. Main Thread tidak muncul dalam daftar Agent karena percakapan tersebut tersedia melalui Personal.',
+          'Gunakan tab Personal dan Agent di bagian atas untuk berpindah tampilan. Keduanya memiliki kemampuan tool dan aturan izin yang sama; Anda tetap dapat melakukan pekerjaan proyek dari Personal. Pergantian mode tidak menghentikan pekerjaan yang sedang berjalan. Draf dan lampiran mengikuti sesinya, sedangkan indikator pada tab membantu Anda mengetahui pekerjaan berjalan atau hasil baru di mode lain. Pengaturan effort, izin, dan konteks Personal tersedia melalui Pengaturan sesi di dekat tombol kirim.'
         ],
         links: [
           {
-            label: 'Buka Chat Studio',
+            label: 'Buka mode Agent',
             to: '/chat'
           }
         ]
@@ -163,7 +163,7 @@ export const guideArticles = [
         title: 'Hubungan sesi dan workspace',
         paragraphs: [
           'Satu sesi berisi percakapan dan riwayat pekerjaan yang dapat dibuka kembali melalui Chat Studio. Beberapa sesi dapat memakai workspace yang sama, sehingga pembahasan proyek dapat dipisahkan tanpa harus memilih folder lain.',
-          'Main Thread berada pada kelompok Percakapan Umum dan menggunakan Documents/Mark Workspace. Folder sesi utama ini tidak dapat diganti. Sesi lain dapat dikaitkan dengan folder proyek pilihan Anda; folder tersebut menjadi acuan kerja, tetapi bukan pembatas akses filesystem seperti sandbox.'
+          'Main Thread menjadi sesi tetap Personal dan menggunakan Documents/Mark Workspace. Riwayatnya tidak dipindahkan atau dibuat ulang. Mode Agent hanya menampilkan sesi kerja lainnya; saat dibuka, Mark memilih sesi Agent terakhir yang masih tersedia, atau sesi terbaru jika belum ada pilihan sebelumnya. Sesi Agent dapat dikaitkan dengan folder proyek pilihan Anda; folder tersebut menjadi acuan kerja, sedangkan cakupan izin tetap diperiksa oleh kebijakan tindakan.'
         ]
       },
       {
@@ -174,7 +174,7 @@ export const guideArticles = [
         ],
         links: [
           {
-            label: 'Buka Chat Studio',
+            label: 'Buka mode Agent',
             to: '/chat'
           }
         ]
@@ -563,7 +563,8 @@ export const guideArticles = [
         title: 'Input dan balasan suara',
         paragraphs: [
           'Input suara antarmuka menggunakan Web Speech API pada Edge atau Chrome. Aktifkan mikrofon, berikan izin browser, lalu berbicara dengan jelas agar hasil pengenalan sesuai dengan ucapan Anda.',
-          'Balasan suara dibuat melalui layanan TTS Mark. Dukungan browser, jaringan, dan perangkat audio dapat memengaruhi pengenalan atau pemutaran. Periksa volume dan keluaran audio jika balasan tidak terdengar.'
+          'Balasan suara dibuat melalui Edge TTS dengan pengaturan suara yang sama untuk seluruh jawaban. Jika satu kalimat gagal sebelum diputar, Mark mencoba kembali memakai suara tersebut. Kegagalan berulang menghentikan pembacaan dan menampilkan pemberitahuan; teks jawaban tetap dapat dibaca di chat. Periksa jaringan, volume, dan keluaran audio jika balasan tidak terdengar.',
+          'Wake word selalu membuka Personal dan mengirim ucapan ke percakapan utamanya. Tombol mikrofon manual mengikuti sesi yang sedang Anda gunakan ketika perekaman dimulai. Karena itu, memulai rekaman di Agent lalu berpindah ke Personal tidak memindahkan ucapan tersebut ke sesi lain.'
         ]
       },
       {
@@ -1135,6 +1136,14 @@ export const guideArticles = [
     ]
   }
 ]
+
+const legacySections = {
+  pengantar: 'overview',
+  carakerja: 'agent',
+  emosi: 'awareness',
+  plugin: 'plugins',
+  tips: 'faq'
+}
 
 export function guideArticleId(value) {
   const id = legacySections[value] || value

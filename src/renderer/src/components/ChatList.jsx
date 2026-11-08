@@ -29,6 +29,7 @@ const ChatList = ({
   codingRunIds = null,
   codingSessionId = null,
   compactActivity = false,
+  hideHeader = false,
   followsProcess = false,
   isActivityActive = false,
   isThinking = false,
@@ -132,11 +133,11 @@ const ChatList = ({
     return (
       <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
+        {!hideHeader && <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
           <Bot className="w-4 h-4 text-primary" />
           <span className="font-semibold text-white/90">Mark</span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
-        </div>
+        </div>}
 
         {/* Approval Bubble */}
         <div className="w-full max-w-3xl">
@@ -157,11 +158,11 @@ const ChatList = ({
     return (
       <div className="w-full my-3 py-1 group animate-[response-fade-in_0.2s_ease-out_forwards]">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
+        {!hideHeader && <div className="flex items-center gap-2 mb-2 px-0.5 text-xs font-medium text-white/70">
           <Bot className="w-4 h-4 text-primary" />
           <span className="font-semibold text-white/90">Mark</span>
           {timestamp && <span className="text-[10px] opacity-50 font-normal">{timestamp}</span>}
-        </div>
+        </div>}
 
         {/* Normal Bubble Content Flow */}
         <div className="w-full text-base-content leading-relaxed">
@@ -312,7 +313,7 @@ const ChatList = ({
           className={`w-full ${compactActivity ? 'my-1 py-0' : 'my-3 py-1'} ${followsProcess ? 'chat-process-answer' : ''} group animate-[response-fade-in_0.2s_ease-out_forwards]`}
         >
           {/* Header & Actions */}
-          <div className="flex items-center justify-between gap-2 mb-2.5 px-0.5">
+          {!hideHeader && <div className="flex items-center justify-between gap-2 mb-2.5 px-0.5">
             <div className="flex flex-1 items-center gap-2 min-w-0 text-xs font-medium text-white/70">
               <Bot className="w-4 h-4 shrink-0 text-primary" />
               <span className="shrink-0 font-semibold text-white/90">Mark</span>
@@ -353,7 +354,7 @@ const ChatList = ({
                 </button>
               </div>
             )}
-          </div>
+          </div>}
 
           {!compactActivity && <SkillUsage skills={skills} />}
           {hasReasoning && (

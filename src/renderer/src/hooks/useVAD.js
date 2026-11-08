@@ -59,6 +59,7 @@ export async function playWakeChime() {
 }
 
 export const useVAD = ({
+  onWake,
   onTranscript // Function to call when STT finishes
 }) => {
   const [isRecording, setIsRecording] = useState(false)
@@ -76,6 +77,8 @@ export const useVAD = ({
   const configReadyRef = useRef(false)
   const wakeBlockedRef = useRef(false)
   const wakeErrorRef = useRef(null)
+  const onWakeRef = useRef(onWake)
+  onWakeRef.current = onWake
   const onTranscriptRef = useRef(onTranscript)
 
   // Real-time Web Audio Analyser references
@@ -428,6 +431,7 @@ export const useVAD = ({
             if (!finalText || window.isMarkSpeaking || isRecordingRef.current) return
             const check = detectWakeWord(finalText, customWakeWords)
             if (check.detected) {
+              onWakeRef.current?.()
               stopWebSpeechRecognition()
               isWakeListeningRef.current = false
               if (check.command) {

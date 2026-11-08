@@ -43,6 +43,8 @@ graph TD
 
 ## 2. Peta Navigasi Dokumentasi
 
+Navigasi antarmuka, pemisahan sesi, suara, dan kontrak mood dijelaskan pada [Personal dan Agent](./personal-agent-modes.md).
+
 Dokumentasi ini dibagi menjadi 7 kategori utama yang saling terhubung:
 
 ### [01. Getting Started](./01-getting-started/overview.md)

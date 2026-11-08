@@ -1,8 +1,10 @@
+/* eslint-disable react/prop-types */
+import { readInterfaceState, saveInterfaceState, takeWorkspaceRequest } from '../api/interfaceState.js'
 import SubagentDecisionInbox from '../components/subagent/SubagentDecisionInbox.jsx'
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../contexts/ChatContext'
-import { ChevronRight, Folder, PanelRight } from 'lucide-react'
+import { ChevronRight, Folder, PanelRight, History } from 'lucide-react'
 import { browserSessionId } from '../api/browser-panel.js'
 import {
   db,
@@ -61,6 +63,12 @@ export function filterMessagePrefixes(content) {
   return { cleanContent, prefixes }
 }
 
+const isStartupGreeting = (message) => message.source === 'startup'
+const isStandalonePersonalMessage = (message) =>
+  isStartupGreeting(message) ||
+  message.source === 'awareness' ||
+  (message.isProactive && String(message.id).startsWith('awareness_'))
+
 function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
   const renderItems = []
   let index = 0
@@ -75,7 +83,13 @@ function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
 
     renderItems.push({ type: 'message', message: current })
     let turnEnd = index + 1
-    while (turnEnd < messages.length && messages[turnEnd].role !== 'user') turnEnd += 1
+    while (
+      turnEnd < messages.length &&
+      messages[turnEnd].role !== 'user' &&
+      !isStandalonePersonalMessage(messages[turnEnd])
+    ) {
+      turnEnd += 1
+    }
 
     const turnMessages = messages.slice(index + 1, turnEnd)
     const assistantMessages = turnMessages.filter((message) => message.role !== 'user')
@@ -143,7 +157,7 @@ function buildCompletedTurnRenderItems(messages = [], isLoading = false) {
   return renderItems
 }
 
-export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) => {
+export const ChatStudio = ({ isOpen = true, onClose, personal = false, onWorkspaceVisibilityChange, chatContext: propChatContext }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const [initialDraft] = useState(() =>
@@ -151,14 +165,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   )
 
   useEffect(() => {
-    if (typeof location.state?.composerDraft !== 'string') return
+    if (!isOpen || typeof location.state?.composerDraft !== 'string') return
     const remainingState = { ...location.state }
     delete remainingState.composerDraft
     navigate(location.pathname + location.search + location.hash, {
       replace: true,
       state: remainingState
     })
-  }, [location, navigate])
+  }, [location, navigate, isOpen])
 
   const contextChat = useChat()
   const chatContext = propChatContext || contextChat
@@ -178,15 +192,42 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     startRecording,
     stopRecording,
     inputSource,
+    recordingSessionId,
     setCurrentActiveSessionId
   } = chatContext || {}
 
   const { activeApproval } = useApproval() || {}
 
   const [sessions, setSessions] = useState([])
-  const [activeSessionId, setActiveSessionId] = useState('1')
-  const [browserOpen, setBrowserOpen] = useState(!!location.state?.openBrowser)
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    const previous = readInterfaceState().agentSessionId
+    return personal ? '1' : previous && !isMainSession(previous) ? previous : null
+  })
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const historyScrollPending = useRef(false)
+  const [panelMounted, setPanelMounted] = useState(false)
+  const [panelStates, setPanelStates] = useState(() => readInterfaceState().panels || {})
+  const browserOpen = !!panelStates[activeSessionId]?.open
+  const setBrowserOpen = (open) => setPanelStates((current) => ({ ...current,
+    [activeSessionId]: { ...current[activeSessionId], open } }))
+  useEffect(() => {
+    if (activeSessionId && panelStates[activeSessionId]) saveInterfaceState({
+      panels: { ...readInterfaceState().panels, [activeSessionId]: panelStates[activeSessionId] }
+    })
+  }, [panelStates, activeSessionId])
+  useEffect(() => {
+    if (browserOpen) setPanelMounted(true)
+    onWorkspaceVisibilityChange?.(browserOpen)
+  }, [browserOpen, onWorkspaceVisibilityChange])
   const [workspaceRequest, setWorkspaceRequest] = useState(null)
+  useEffect(() => {
+    if (!isOpen || !activeSessionId) return
+    const request = takeWorkspaceRequest(activeSessionId)
+    if (request) {
+      setWorkspaceRequest({ ...request, token: Date.now() })
+      setBrowserOpen(true)
+    }
+  }, [isOpen, activeSessionId, location.key])
   useEffect(() => {
     const open = (event) => {
       if (String(event.detail?.sessionId) === String(activeSessionId)) {
@@ -199,6 +240,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }, [activeSessionId])
   const [effectiveCodingRoot, setEffectiveCodingRoot] = useState(null)
   useEffect(() => {
+    if (!activeSessionId) return
     let disposed = false
     setEffectiveCodingRoot(null)
     const update = () =>
@@ -250,17 +292,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   const sessionsRequestRef = useRef(0)
 
   useEffect(() => {
-    if (typeof setCurrentActiveSessionId === 'function') {
+    if (isOpen && activeSessionId && typeof setCurrentActiveSessionId === 'function') {
       setCurrentActiveSessionId(String(activeSessionId))
     }
-    return () => {
-      if (typeof setCurrentActiveSessionId === 'function') {
-        setCurrentActiveSessionId('1')
-      }
-    }
-  }, [activeSessionId, setCurrentActiveSessionId])
+  }, [activeSessionId, isOpen, setCurrentActiveSessionId])
 
   useEffect(() => {
+    if (!activeSessionId) return
     let isMounted = true
     let checkpointUpdated = false
     setActiveSessionCompact(null)
@@ -296,6 +334,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }, [activeSessionId])
 
   const [activeSessionData, setActiveSessionData] = useState([])
+  const [loadedSessionId, setLoadedSessionId] = useState(null)
+  const sessionVersion = useRef(0)
   const [visibleMessageCount, setVisibleMessageCount] = useState(30)
   const [defaultRoot, setDefaultRoot] = useState('')
   const [isWorkspaceBusy, setIsWorkspaceBusy] = useState(false)
@@ -311,7 +351,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     try {
       const [list, info] = await Promise.all([getSessionSummaries(), webApi.getWorkspaceInfo()])
       if (requestId === sessionsRequestRef.current) {
-        setSessions(list)
+        setSessions(list.filter((session) => !isMainSession(session.id)))
         setDefaultRoot(info.defaultWorkspaceRoot)
       }
     } catch (e) {
@@ -332,6 +372,21 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }, [loadAllSessions])
 
+  useEffect(() => {
+    if (personal || isSessionsLoading || sessionsError) return
+    const requested = isOpen && location.pathname === '/chat'
+      ? new URLSearchParams(location.search).get('session') : null
+    if (requested && isMainSession(requested)) {
+      navigate('/', { replace: true, state: { personalRequested: true } })
+      return
+    }
+    const available = (id) => sessions.some((session) => String(session.id) === String(id))
+    const next = available(requested) ? requested : available(activeSessionId) ? activeSessionId
+      : [...sessions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0]?.id || null
+    if (String(next) !== String(activeSessionId)) setActiveSessionId(next)
+    if (next) saveInterfaceState({ agentSessionId: String(next) })
+  }, [personal, isOpen, isSessionsLoading, sessionsError, sessions, activeSessionId, location.pathname, location.search, navigate])
+
   // Direct display pipeline: Main Thread uses mainChatData directly with 0ms lag
   const currentDisplayMessages =
     String(activeSessionId) === '1' ? mainChatData || [] : activeSessionData
@@ -343,11 +398,15 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   // Sync active session data for custom sessions (id > 1)
   useEffect(() => {
     setVisibleMessageCount(30)
-    if (String(activeSessionId) === '1') return
+    setActiveSessionData([])
+    setLoadedSessionId(null)
+    if (!activeSessionId || isMainSession(activeSessionId)) return
     let isCancelled = false
+    const version = sessionVersion.current
     getChatData(activeSessionId).then((data) => {
-      if (!isCancelled) {
+      if (!isCancelled && version === sessionVersion.current) {
         setActiveSessionData(data || [])
+        setLoadedSessionId(String(activeSessionId))
       }
     })
     return () => {
@@ -357,7 +416,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
 
   // Sinkronisasi status karakter gauge ke UI saat sesi aktif dimuat/berganti
   useEffect(() => {
-    if (isCurrentLoading) return
+    if (!isOpen || !activeSessionId || isCurrentLoading) return
     if (!currentDisplayMessages || currentDisplayMessages.length === 0) {
       window.dispatchEvent(
         new CustomEvent('context-tracker-updated', {
@@ -406,10 +465,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     return () => {
       isMounted = false
     }
-  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact, isCurrentLoading])
+  }, [activeSessionId, currentDisplayMessages?.length, activeSessionCompact, isCurrentLoading, isOpen])
 
   const handleSendMessage = async (prompt, sendOptions = {}) => {
-    if (!prompt.trim() || manualCompactBusy) return
+    if (!activeSessionId || !prompt.trim() || manualCompactBusy) return
 
     const rawDisplay = sendOptions?.displayPrompt || prompt
     // Auto-update session title if it's default
@@ -452,13 +511,15 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   useEffect(() => {
     const handleSessionUpdate = (e) => {
       if (e.detail && String(e.detail.sessionId) === String(activeSessionId)) {
+        sessionVersion.current += 1
         setActiveSessionData(e.detail.data || [])
+        setLoadedSessionId(String(activeSessionId))
       }
     }
 
     const handleQuickPrompt = (e) => {
       if (e.detail?.prompt) {
-        sendMessageRef.current(e.detail.prompt)
+        if (isOpen) sendMessageRef.current(e.detail.prompt)
       }
     }
 
@@ -469,17 +530,20 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       window.removeEventListener('session-updated', handleSessionUpdate)
       window.removeEventListener('trigger-quick-prompt', handleQuickPrompt)
     }
-  }, [activeSessionId])
+  }, [activeSessionId, isOpen])
 
   const lastMessage = currentDisplayMessages[currentDisplayMessages.length - 1]
   const lastMessageContent = lastMessage?.content || ''
   const lastMessageIsThinking = !!lastMessage?.isThinking
   const isAutoScrollEnabledRef = useRef(true)
+  const scrollPositions = useRef(new Map())
+  const lastScrollSession = useRef(null)
 
   const handleScroll = () => {
     const container = messagesContainerRef.current
     if (!container) return
     const { scrollTop, scrollHeight, clientHeight } = container
+    scrollPositions.current.set(String(activeSessionId), scrollTop)
     // User is considered at bottom if within 80px
     isAutoScrollEnabledRef.current = scrollHeight - scrollTop - clientHeight < 80
   }
@@ -494,16 +558,28 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }
 
   useLayoutEffect(() => {
+    if (!personal || !isOpen || !historyOpen || !historyScrollPending.current) return
+    historyScrollPending.current = false
+    isAutoScrollEnabledRef.current = true
+    scrollToBottom()
+  }, [personal, isOpen, historyOpen])
+
+  useLayoutEffect(() => {
     if (isOpen === false) return
+    if (!isMainSession(activeSessionId) && loadedSessionId !== String(activeSessionId)) return
     const container = messagesContainerRef.current
     if (!container) return
-    isAutoScrollEnabledRef.current = true
-    container.scrollTop = container.scrollHeight
-  }, [activeSessionId, isOpen])
+    const id = String(activeSessionId)
+    if (lastScrollSession.current === id) return
+    lastScrollSession.current = id
+    const saved = scrollPositions.current.get(id)
+    isAutoScrollEnabledRef.current = saved == null
+    container.scrollTop = saved ?? container.scrollHeight
+  }, [activeSessionId, isOpen, loadedSessionId])
 
   // Direct stick-to-bottom without conflicting timers or layout thrashing
   useEffect(() => {
-    if (isAutoScrollEnabledRef.current && messagesContainerRef.current) {
+    if (isOpen && isAutoScrollEnabledRef.current && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
   }, [
@@ -512,12 +588,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     lastMessageIsThinking,
     isCurrentLoading,
     activeApproval?.status,
-    activeApproval?.id
+    activeApproval?.id,
+    isOpen
   ])
 
   // Pastikan auto-scroll ketika ada permintaan izin baru
   useEffect(() => {
-    if (activeApproval && activeApproval.status === 'pending') {
+    const approvalSession = activeApproval?.meta?.sessionId || activeApproval?.meta?.owner?.codingSessionId
+    if (isOpen && String(approvalSession) === String(activeSessionId) && activeApproval?.status === 'pending') {
       isAutoScrollEnabledRef.current = true
       scrollToBottom('smooth')
       const t = setTimeout(() => {
@@ -525,13 +603,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
       }, 100)
       return () => clearTimeout(t)
     }
-  }, [activeApproval?.id, activeApproval?.status])
+  }, [activeApproval?.id, activeApproval?.status, activeSessionId, isOpen])
 
   const createWorkspaceChat = async (root = null) => {
     const newSession = await createSession('Percakapan Baru', { workspaceRoot: root })
     setSessions((prev) => [...prev, newSession])
     setActiveSessionData([])
     setActiveSessionId(newSession.id)
+    navigate('/chat?session=' + encodeURIComponent(newSession.id), { replace: true })
   }
 
   const runWorkspaceAction = async (action) => {
@@ -580,7 +659,10 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     const result = await deleteSession(id)
     if (!result?.success) throw new Error('Percakapan belum dapat dihapus.')
     setSessions((prev) => prev.filter((session) => String(session.id) !== String(id)))
-    if (String(activeSessionId) === String(id)) setActiveSessionId('1')
+    if (String(activeSessionId) === String(id)) {
+      setActiveSessionId(null)
+      navigate('/chat', { replace: true })
+    }
   }
 
   const handleStopSession = () => {
@@ -692,10 +774,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
     }
   }
   useEffect(() => {
-    const handleReqCompact = () => handleManualCompaction()
+    const handleReqCompact = (event) => {
+      if (isOpen && (!event.detail?.sessionId || String(event.detail.sessionId) === String(activeSessionId)))
+        handleManualCompaction()
+    }
     window.addEventListener('request-manual-compaction', handleReqCompact)
     return () => window.removeEventListener('request-manual-compaction', handleReqCompact)
-  }, [activeSessionId, currentDisplayMessages])
+  }, [activeSessionId, currentDisplayMessages, isOpen])
 
   const handleClose = () => {
     if (typeof onClose === 'function') {
@@ -706,19 +791,19 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
   }
 
   // Jika dipanggil via route (tanpa prop isOpen), default ke true
-  if (isOpen === false) return null
+  // Views remain mounted while their mode is hidden.
 
   const activeSessionObj = sessions.find((s) => String(s.id) === String(activeSessionId)) || {
-    id: '1',
-    title: 'Main Thread'
+    id: activeSessionId,
+    title: personal ? 'Percakapan' : 'Sesi kerja'
   }
   const activeSessionWorkspace =
     effectiveCodingRoot || resolveSessionWorkspace(activeSessionObj, defaultRoot)
 
   return (
     <>
-      <div className="fixed inset-0 z-[80] w-screen h-screen bg-base-300 flex overflow-hidden animate-[response-fade-in_0.2s_ease-out_forwards]">
-        <div className={narrow && browserOpen ? 'hidden' : 'contents'}>
+      <div className={`relative h-full w-full min-h-0 flex overflow-hidden bg-base-300 mark-studio ${personal ? '' : 'mark-agent-studio'}`}>
+        {!personal && <div className={narrow && browserOpen ? 'hidden' : 'contents'}>
           <WorkspaceSidebar
             sessions={sessions}
             defaultRoot={defaultRoot}
@@ -734,17 +819,21 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             onClose={handleClose}
             minimized={sidebarMinimized}
             onToggleMinimized={() => setSidebarMinimized((value) => !value)}
-            onSelect={setActiveSessionId}
+            onSelect={(id) => {
+              saveInterfaceState({ agentSessionId: String(id) })
+              setActiveSessionId(id)
+              navigate('/chat?session=' + encodeURIComponent(id), { replace: true })
+            }}
             onCreate={handleCreateNewChat}
             onAddWorkspace={handleAddWorkspace}
             onSave={handleSaveSession}
             onDelete={handleDeleteSession}
           />
-        </div>
+        </div>}
 
         {/* === RIGHT MAIN: BUBBLE CHAT AREA === */}
         <div
-          className={`flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden ${browserOpen && (narrow || browserExpanded) ? 'hidden' : ''}`}
+          className={`mark-studio-main flex-1 flex flex-col h-full bg-base-300/60 relative min-w-0 overflow-hidden ${browserOpen && (narrow || browserExpanded) ? 'hidden' : ''}`}
           style={
             browserOpen && !narrow && !browserExpanded
               ? { flex: '0 0 auto', width: chatWidth, maxWidth: '40%' }
@@ -752,13 +841,13 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
           }
         >
           {/* Header */}
-          <div className="h-14 px-3 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none">
-            <div className="flex flex-col min-w-0 pr-4">
+          <div className={personal ? 'mark-personal-toolbar' : 'mark-studio-header h-14 px-5 border-b border-white/10 flex items-center justify-between bg-base-300/80 backdrop-blur-md shrink-0 z-30 relative select-none'}>
+            {!personal && <div className="flex flex-col min-w-0 pr-4">
               <div className="flex items-center gap-2 min-w-0">
                 <h3 className="text-sm font-bold text-white truncate">
                   {activeSessionObj.title || 'Percakapan'}
                 </h3>
-                {activeSessionWorkspace && (
+                {!personal && activeSessionWorkspace && (
                   <span
                     className="badge badge-xs bg-primary/10 text-primary border-primary/30 font-mono text-[9px] px-2 py-0.5 max-w-28 shrink-0 truncate inline-flex items-center gap-1"
                     title={`Workspace: ${activeSessionWorkspace}`}
@@ -769,20 +858,30 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 )}
               </div>
               <span className="text-[10px] text-white/40">
-                {currentDisplayMessages.length} pesan terdaftar
+                {!personal && currentDisplayMessages.length + ' pesan terdaftar'}
               </span>
-            </div>
+            </div>}
 
+            <div className="flex shrink-0 items-center gap-3">
+            {personal && <button type="button" className="mark-personal-tool"
+              aria-expanded={historyOpen} onClick={() => {
+                if (!historyOpen) historyScrollPending.current = true
+                setHistoryOpen((value) => !value)
+              }}>
+              <History size={16} aria-hidden="true" />
+              {historyOpen ? 'Tutup riwayat' : 'Riwayat'}
+            </button>}
             <button
               type="button"
               onClick={() => setBrowserOpen(true)}
-              className="flex shrink-0 items-center gap-2 text-xs text-white/60 hover:text-white"
+              className={personal ? 'mark-personal-tool' : 'flex shrink-0 items-center gap-2 text-xs text-white/60 hover:text-white'}
               title="Buka panel workspace"
               aria-label="Buka panel workspace"
             >
               <PanelRight size={16} />
               {!browserOpen && 'Workspace'}
             </button>
+            </div>
           </div>
 
           {/* Messages Stream Container */}
@@ -792,7 +891,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
             className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 custom-scrollbar min-h-0"
           >
             <div className="max-w-6xl mx-auto w-full min-h-full flex flex-col space-y-8">
-              {currentDisplayMessages.length > visibleMessageCount && (
+              {(!personal || historyOpen) && currentDisplayMessages.length > visibleMessageCount && (
                 <div className="flex justify-center py-2">
                   <button
                     type="button"
@@ -805,7 +904,14 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 </div>
               )}
 
-              {currentDisplayMessages.length === 0 ? (
+              {!personal && !activeSessionId ? (
+                <div className="m-auto max-w-sm space-y-4 text-center">
+                  <h2 className="text-xl font-semibold">Mulai sesi kerja</h2>
+                  <p className="text-sm text-white/60">Buat percakapan untuk mengerjakan tugas atau pilih folder proyek.</p>
+                  <button type="button" className="btn btn-primary btn-sm" disabled={isWorkspaceBusy}
+                    onClick={() => handleCreateNewChat()}>Percakapan baru</button>
+                </div>
+              ) : personal && !currentDisplayMessages.length ? null : currentDisplayMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-8 text-white/40 space-y-4 my-auto">
                   <img src="/icon-256.png" alt="icon" className="size-30" />
                   <div className="max-w-lg space-y-1">
@@ -823,7 +929,16 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                   const activeThinkingMsg =
                     [...(currentDisplayMessages || [])].reverse().find((m) => m.isThinking) || null
 
-                  const visibleMessages = currentDisplayMessages.slice(-visibleMessageCount)
+                  const start = personal && !historyOpen
+                    ? Math.max(0, currentDisplayMessages.findLastIndex((message) => message.role === 'user'))
+                    : Math.max(0, currentDisplayMessages.length - visibleMessageCount)
+                  let visibleMessages = currentDisplayMessages.slice(start)
+                  if (personal && !historyOpen) {
+                    const latestGreetingIndex = visibleMessages.findLastIndex(isStartupGreeting)
+                    visibleMessages = visibleMessages.filter(
+                      (message, index) => !isStartupGreeting(message) || index === latestGreetingIndex
+                    )
+                  }
                   return buildCompletedTurnRenderItems(visibleMessages, isCurrentLoading).map(
                     (item, idx) => {
                       if (item.type === 'process') {
@@ -833,6 +948,8 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                         const progressMessages = item.messages.filter((message) => {
                           if (message.isCompacting) return false
                           if (message.isPlanSteps) return true
+                          if ((message.isSearchingMusic || message.isSearching || message.isSummarizing) &&
+                            item.steps.some((step) => step.tool || step.action)) return false
                           const content = message.content
                           if (
                             message.isThinking &&
@@ -897,8 +1014,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                                     content={message.content || ''}
                                     reasoning={item.isActive ? message.reasoning : null}
                                     compactActivity
+                                    hideHeader={processIndex > 0}
                                     isActivityActive={processIndex === activeActivityIndex}
                                     sources={message.sources || []}
+                                    source={message.source}
+                                    sender={message.sender}
                                     timestamp={message.timestamp}
                                     isPlanSteps={message.isPlanSteps}
                                     plan={message.plan}
@@ -909,6 +1029,11 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                                     taskStatus={message.taskStatus}
                                     artifactRoot={message.artifactRoot}
                                     executedTools={messageSteps}
+                                    isApproval={message.isApproval}
+                                    approvalId={message.approvalId}
+                                    approvalTool={message.tool}
+                                    approvalQuery={message.query}
+                                    approvalStatus={message.status}
                                   />
                                 )
                               )}
@@ -999,42 +1124,44 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                   )
                 })()
               )}
-              <SubagentDecisionInbox sessionId={String(activeSessionId)} />
+              {activeSessionId && <SubagentDecisionInbox sessionId={String(activeSessionId)} />}
               {/* Spacer besar dan anti-shrink agar pesan paling bawah (termasuk tombol ApprovalBubble) tidak pernah terpotong saat scroll mentok */}
               <div
                 ref={messagesEndRef}
-                className="h-32 min-h-32 shrink-0 w-full pointer-events-none"
+                className="h-6 min-h-6 shrink-0 w-full pointer-events-none"
                 aria-hidden="true"
               />
             </div>
           </div>
 
           {/* Bottom Input Area */}
-          <div className="p-3 border-t border-white/10 bg-base-200/40 shrink-0 z-20">
+          <div className="mark-studio-composer p-3 border-t border-white/10 bg-base-200/40 shrink-0 z-20">
             <div className="max-w-6xl mx-auto w-full h-full">
-              <InputBar
+              {activeSessionId && <InputBar
+                key={String(activeSessionId)}
+                compactSettings={personal}
                 contextManagedExternally={true}
                 initialDraft={initialDraft}
                 sessionId={String(activeSessionId)}
                 inline={true}
                 onSubmit={handleSendMessage}
                 isLoading={isCurrentLoading || manualCompactBusy}
-                isRecording={isRecording}
-                isProcessing={isProcessing}
+                isRecording={isRecording && String(recordingSessionId) === String(activeSessionId)}
+                isProcessing={isProcessing && String(recordingSessionId) === String(activeSessionId)}
                 audioIntensity={audioIntensity}
-                onStartRecord={startRecording}
+                onStartRecord={() => startRecording(activeSessionId)}
                 onStopRecord={stopRecording}
                 onStop={handleStopSession}
                 source={inputSource || 'pc'}
                 workspaceRoot={activeSessionWorkspace}
                 onManualCompact={handleManualCompaction}
-              />
+              />}
             </div>
           </div>
         </div>
-        {browserOpen && (
+        {activeSessionId && (browserOpen || panelMounted) && (
           <>
-            {!narrow && !browserExpanded && (
+            {browserOpen && !narrow && !browserExpanded && (
               <div
                 role="separator"
                 aria-label="Lebar percakapan dan browser"
@@ -1059,7 +1186,7 @@ export const ChatStudio = ({ isOpen, onClose, chatContext: propChatContext }) =>
                 onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
               />
             )}
-            <div className="min-w-0 h-full flex-1 overflow-hidden">
+            <div hidden={!browserOpen} className="min-w-0 h-full flex-1 overflow-hidden">
               <CodingPanel
                 key={`${browserId}:${activeSessionWorkspace || ''}`}
                 sessionId={activeSessionId}

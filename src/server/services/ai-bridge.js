@@ -1,3 +1,4 @@
+import { usesPersonalMood, withoutAssistantMood } from '../../shared/agent-mode.js'
 import {
   cleanAndParse,
   abortAllFetches,
@@ -39,13 +40,26 @@ export async function fetchAI(messages, stream = false, options = {}) {
     return executeApprovalCompletion(opts)
   }
 
-  const provider = conf.aiProvider || 'gemini-web'
-
-  if (provider === 'gemini-web' || provider === 'deepseek-web') {
-    return executeWebProvider(opts)
+  const personal = usesPersonalMood(opts)
+  const onMeta = opts.onMeta
+  if (!personal) {
+    opts.messages = withoutAssistantMood(opts.messages)
+    opts.onMood = null
+    opts.onMeta = (meta) => {
+      const { mood, ...rest } = meta || {}
+      void mood
+      onMeta?.(rest)
+    }
   }
-
-  return executeOpenAIProvider(opts)
+  const provider = conf.aiProvider || 'gemini-web'
+  const result = provider === 'gemini-web' || provider === 'deepseek-web'
+    ? await executeWebProvider(opts)
+    : await executeOpenAIProvider(opts)
+  if (!personal && result && typeof result === 'object') {
+    delete result.mood
+    if (result.meta) delete result.meta.mood
+  }
+  return result
 }
 
 export const fetchAIStream = (opts) => fetchAI(opts?.messages || opts, true, opts)

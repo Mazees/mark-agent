@@ -16,7 +16,7 @@ import {
   FaFileImage,
   FaLock
 } from 'react-icons/fa'
-import { Folder, Wrench, FileText } from 'lucide-react'
+import { Folder, Wrench, FileText, Settings2 } from 'lucide-react'
 import ApprovalModePicker from './ApprovalModePicker'
 import ConfirmModal from './ConfirmModal'
 import SkillComposer from './SkillComposer'
@@ -64,8 +64,20 @@ const getFileIcon = (fileName = '') => {
   return <FaFileAlt className="text-primary" />
 }
 
+const draftCache = new Map()
+function readDraft(sessionId) {
+  if (draftCache.has(String(sessionId))) return draftCache.get(String(sessionId))
+  try {
+    const value = JSON.parse(sessionStorage.getItem('mark-draft:' + sessionId) || '{}')
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  } catch {
+    return {}
+  }
+}
+
 const InputBar = ({
   sessionId = '1',
+  compactSettings = false,
   initialDraft = '',
   contextManagedExternally = false,
   onSubmit,
@@ -89,21 +101,38 @@ const InputBar = ({
   const gaugeRef = useRef(null)
   const mentionListRef = useRef(null)
   const skillListRef = useRef(null)
-  const [inputText, setInputText] = useState(initialDraft)
+  const [inputText, setInputText] = useState(() => initialDraft || readDraft(sessionId).text || '')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState(false)
   const [showContextPopover, setShowContextPopover] = useState(false)
-  const [attachedFiles, setAttachedFiles] = useState([])
+  const [attachedFiles, setAttachedFiles] = useState(() => readDraft(sessionId).files || [])
   const [isDragging, setIsDragging] = useState(false)
   const lastPromptRef = useRef('')
   const isPastingRef = useRef(false)
 
   const [skills, setSkills] = useState([])
   const [filteredSkills, setFilteredSkills] = useState([])
-  const selectedSkillRefs = useRef([])
+  const selectedSkillRefs = useRef(readDraft(sessionId).skills || [])
+  const latestDraft = useRef(null)
+  latestDraft.current = { text: inputText, files: attachedFiles, skills: selectedSkillRefs.current }
   useEffect(() => {
-    selectedSkillRefs.current = []
-  }, [sessionId])
+    const save = () => {
+      const draft = latestDraft.current
+      draftCache.set(String(sessionId), draft)
+      try {
+        sessionStorage.setItem('mark-draft:' + sessionId, JSON.stringify(draft))
+      } catch {
+        // Keep the in-memory draft if browser storage is full.
+      }
+    }
+    const timer = setTimeout(save, 250)
+    window.addEventListener('pagehide', save)
+    return () => {
+      clearTimeout(timer)
+      save()
+      window.removeEventListener('pagehide', save)
+    }
+  }, [sessionId, inputText, attachedFiles])
   const [showSkillList, setShowSkillList] = useState(false)
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0)
 
@@ -1186,11 +1215,32 @@ const InputBar = ({
 
           {/* Action Buttons */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            <details className="relative" open={compactSettings ? undefined : true}
+              onKeyDown={(event) => {
+                if (compactSettings && event.key === 'Escape') {
+                  event.currentTarget.open = false
+                  event.currentTarget.querySelector('summary')?.focus()
+                }
+              }}>
+              <summary title="Pengaturan sesi" aria-label="Pengaturan sesi" className={compactSettings ? 'list-none cursor-pointer rounded-full p-3 text-white/55 hover:text-white/85 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-primary' : 'hidden'}>
+                <Settings2 size={18} aria-hidden="true" />
+              </summary>
+              <div className={compactSettings
+                ? 'absolute bottom-full right-0 mb-3 flex w-64 flex-col items-stretch gap-3 rounded-xl border border-white/10 bg-base-200 p-3 shadow-lg'
+                : 'flex items-center gap-1'}>
+            <div className={compactSettings ? 'flex items-center justify-between gap-3' : 'contents'}>
+            {compactSettings && <span className="text-xs text-white/50">Effort</span>}
             <EffortPicker value={effortReady ? effortState.level : undefined} disabled={!effortReady} onChange={chooseEffort} error={effortState.error} />
+            </div>
 
+            <div className={compactSettings ? 'flex items-center justify-between gap-3' : 'contents'}>
+            {compactSettings && <span className="text-xs text-white/50">Perizinan</span>}
             <ApprovalModePicker sessionId={sessionId} />
+            </div>
 
             {/* Ring Gauge Context Indicator (~30px) */}
+            <div className={compactSettings ? 'flex items-center justify-between gap-3' : 'contents'}>
+            {compactSettings && <span className="text-xs text-white/50">Konteks</span>}
             {(() => {
               const pct = Math.min(100, Math.max(0, contextTracker.percentage || 0))
               const roundedPct =
@@ -1317,6 +1367,9 @@ const InputBar = ({
                 </div>
               )
             })()}
+            </div>
+              </div>
+            </details>
 
             {isLoading && (
               <button
