@@ -6,7 +6,7 @@ import { getCurrentTimeInfo } from './utils'
 import { APPROVAL_FOLLOWUP_INSTRUCTIONS } from '@shared/approval-context.js'
 import { getPersonaPrompt } from './persona'
 
-import { getWorkspaceContext } from '../workspaceRag'
+import { describeWorkspaceContext, getWorkspaceContext } from '../workspaceRag'
 import { getActiveToolsSchema, getGroupTools } from '../tools/index'
 import { formatAddonStatusesForPrompt } from '../addonStatus'
 
@@ -65,7 +65,9 @@ export const buildPlanningSystemPrompt = async (
   const targetWorkspace = options.workspaceRoot || conf.workspaceRoot || null
   const [personaPrompt, workspaceContext] = await Promise.all([
     getPersonaPrompt(userId, conf.personality),
-    targetWorkspace ? getWorkspaceContext(options.sessionId || '1') : null
+    options.projectSnapshot
+      ? describeWorkspaceContext(options.projectSnapshot)
+      : targetWorkspace ? getWorkspaceContext(options.sessionId || '1') : null
   ])
   let workspaceRagSection = ''
   if (workspaceContext) {

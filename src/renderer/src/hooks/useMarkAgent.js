@@ -8,7 +8,6 @@ import { useApproval } from '../contexts/ApprovalContext'
 import { useMarkState, useMarkYoutube, useMarkMusic, useMarkPlan } from './agent'
 import { useAwareness } from './useAwareness'
 import { useRelationalGrowth } from './agent/useRelationalGrowth'
-import { useChatArchiver } from './useChatArchiver'
 import { useVAD } from './useVAD'
 import { formatForTelegram, getCurrentTimeInfo } from '../api/ai/utils'
 import { fetchAI } from '../api/ai/core'
@@ -203,9 +202,6 @@ export const useMarkAgent = () => {
       disposed = true
     }
   }, [isChatLoaded, isBooting, isAgentBusy, isLoading, runningSessionIds, handlePlanningCommand])
-
-  useChatArchiver({ chatData, activeTopic, config, pushNotification, isLoading })
-
   const activeTgRequestRef = useRef(null)
   const lastTgProgressRef = useRef({ msgId: null, reason: null })
   const hasGreetedRef = useRef(false)

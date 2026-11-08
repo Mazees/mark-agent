@@ -148,11 +148,12 @@ export function resolveAbortSignal(sig) {
 }
 
 export const webApi = {
-  codingRequest: async (operation, sessionId, values = {}, method = 'GET') => {
+  codingRequest: async (operation, sessionId, values = {}, method = 'GET', signal) => {
     const query =
       method === 'GET' ? '?' + new URLSearchParams({ sessionId: String(sessionId), ...values }) : ''
     const response = await fetch(API_BASE + '/api' + operation + query, {
       method,
+      signal,
       headers: { 'Content-Type': 'application/json' },
       ...(method === 'GET'
         ? {}

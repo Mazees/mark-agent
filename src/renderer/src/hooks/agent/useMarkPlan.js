@@ -22,12 +22,10 @@ import { executeAgentTool } from './executeAgentTool.js'
 import { webApi } from '../../api/web-bridge.js'
 import {
   deleteMemory,
-  getAllMemory,
   insertMemory,
   updateMemory,
   saveSession,
   getChatData,
-  getSessionSummary,
   getSessionCompact,
   db
 } from '../../api/db'
@@ -40,8 +38,8 @@ import {
 } from '../../api/taskStore'
 import { composeTaskAnswer } from '../../api/taskFinalization'
 import { workflowMessage } from './executeWorkflowTool'
-import { getUnifiedContext, generateVector, executeMemorySearch } from '../../api/vectorMemory'
-import { searchMemoriesInOrama } from '../../api/oramaStore'
+import { executeMemorySearch, findSimilarMemory, getUnifiedContext } from '../../api/vectorMemory'
+import { saveCompletedTurn } from '../../api/chatTurns'
 import {
   MAX_CONTEXT_TOKENS,
   MAX_CONTEXT_CHARS,
@@ -61,7 +59,6 @@ import { geminiMessageBytes } from '@shared/gemini-context.js'
 import { saveWorkspaceWorkingMemory } from '../../api/workspaceRag'
 import { synthesizeSkillAndSave } from '../../api/ai/skillSynthesizer'
 import { recordProgressMessage, buildProgressReminder } from '../../utils/processSteps'
-import { resolveSessionWorkspace } from '@shared/workspaces.js'
 import {
   browserSessionId,
   browserCommand,
@@ -595,7 +592,7 @@ export const useMarkPlan = ({
       // 4. Memory Vector Search
       else if (tool === 'memory-search') {
         const q = typeof rawArgs === 'object' && rawArgs?.query ? rawArgs.query : stringQuery
-        resultString = await executeMemorySearch(q)
+        resultString = await executeMemorySearch(q, currentSignal)
       }
       // 5. Memory Management Tool
       else if (tool === 'manage-memory') {
@@ -612,38 +609,34 @@ export const useMarkPlan = ({
           memory: memContent
         }
 
-        // Orama Auto-Dedup check untuk profile / preference
         if (action === 'insert' && (type === 'profile' || type === 'preference')) {
-          try {
-            const newVec = await generateVector(memContent)
-            if (newVec) {
-              const similarMemories = await searchMemoriesInOrama(memContent, newVec, 1, type)
-              if (similarMemories.length > 0 && similarMemories[0].score > 0.82) {
-                memoryData.id = similarMemories[0].id
-                await updateMemory(memoryData)
-                resultString = `Memori yang mirip ditemukan (ID: ${memoryData.id}). Berhasil diperbarui.`
-                return {
-                  success: true,
-                  resultString,
-                  rejected: false,
-                  toolExecution: { action: tool, query: stringQuery, result: resultString }
-                }
-              }
+          const match = await findSimilarMemory(memContent, type, currentSignal).catch(() => null)
+          currentSignal?.throwIfAborted()
+          if (match && match.score > 0.82) {
+            const saved = await updateMemory(match.id, memoryData)
+            if (!saved) throw new Error('Memori serupa belum dapat diperbarui.')
+            resultString = `Memori yang mirip ditemukan (ID:${match.id}). Berhasil diperbarui.`
+            return {
+              success: true,
+              resultString,
+              rejected: false,
+              toolExecution: { action: tool, query: stringQuery, result: resultString }
             }
-          } catch (err) {
-            console.error('Error in Orama auto-dedup check:', err)
           }
         }
 
         if (action === 'insert') {
-          await insertMemory(memoryData)
+          const saved = await insertMemory(memoryData)
+          if (!saved) throw new Error('Memori baru belum dapat disimpan.')
           resultString = `Fakta baru berhasil disimpan ke memori jangka panjang: "${summary}"`
         } else if (action === 'update') {
-          await updateMemory(memoryData)
+          const saved = await updateMemory(memArgs.id, memoryData)
+          if (!saved) throw new Error('Memori belum dapat diperbarui.')
           resultString = `Memori berhasil diperbarui: "${summary}"`
         } else if (action === 'delete') {
           if (memArgs.id) {
-            await deleteMemory(memArgs.id)
+            const deleted = await deleteMemory(memArgs.id)
+            if (!deleted.success) throw new Error('Memori belum dapat dihapus.')
             resultString = `Memori ID ${memArgs.id} berhasil dihapus.`
           } else {
             throw new Error('ID memori tidak disertakan untuk penghapusan.')
@@ -1119,6 +1112,7 @@ export const useMarkPlan = ({
     options = {},
     isSystem = false
   ) => {
+    const preparationStartedAt = performance.now()
     let tgContext = tgContextOrOptions
     let opts = options || {}
 
@@ -1335,12 +1329,14 @@ export const useMarkPlan = ({
     const userMessage = opts.customUserMessage
       ? {
           ...opts.customUserMessage,
+          id: opts.customUserMessage.id || crypto.randomUUID(),
           effortLevel,
           timestamp: timestampStr,
           created_at: Date.now()
         }
       : {
           role: 'user',
+          id: crypto.randomUUID(),
           effortLevel,
           content: finalUserMessageContent,
           timestamp: timestampStr,
@@ -1367,25 +1363,17 @@ export const useMarkPlan = ({
       }
     }
 
-    // Ambil workspaceRoot dari database jika belum disertakan di opts
-    if (!opts.workspaceRoot) {
-      try {
-        const sessionRecord = await getSessionSummary(activeSessionNum)
-        if (sessionRecord?.workspaceRoot) {
-          opts.workspaceRoot = sessionRecord.workspaceRoot
-        }
-      } catch (e) {}
-    }
-
-    const targetSetChatData = (updater) => {
+    const targetSetChatData = (updater, persist = true) => {
       if (activeSessionNum !== 1) {
         const next = typeof updater === 'function' ? updater(inMemorySessionData) : updater
         inMemorySessionData = next
 
         // 1. Direct persistent DB write
-        saveSession(activeSessionNum, next).catch((err) => {
-          console.warn(`[useMarkPlan] Gagal auto-save session ${activeSessionNum}:`, err)
-        })
+        if (persist) {
+          saveSession(activeSessionNum, next).catch((err) => {
+            console.warn(`[useMarkPlan] Gagal auto-save session ${activeSessionNum}:`, err)
+          })
+        }
 
         // 2. Broadcast reactive event to UI
         window.dispatchEvent(
@@ -1424,6 +1412,7 @@ export const useMarkPlan = ({
         ...prev,
         userMessage,
         {
+          id: sessionRecord.thinkingId,
           role: 'ai',
           content: 'Menganalisis instruksi...',
           isThinking: true,
@@ -1457,34 +1446,101 @@ export const useMarkPlan = ({
     let finalContentAccumulator = ''
 
     try {
-      const workspaceInfo = await awaitWithTimeout(
-        webApi.getWorkspaceInfo(),
-        10000,
-        'Memuat workspace',
-        sessionAbortController.signal
-      )
-      opts.workspaceRoot = resolveSessionWorkspace(
-        { id: activeSessionNum, workspaceRoot: opts.workspaceRoot },
-        workspaceInfo.defaultWorkspaceRoot
-      )
-      const codingWorkspace = await webApi.codingRequest(
-        '/workspace/context',
-        activeSessionNum,
-        {},
-        'POST'
-      )
+      const preparationSignal = sessionAbortController.signal
+      const optionalContext = (load, fallback) =>
+        awaitWithTimeout(
+          Promise.resolve().then(load),
+          2000,
+          'Memuat konteks tambahan',
+          preparationSignal
+        ).catch(() => fallback)
+      const supportingContext = Promise.all([
+        optionalContext(() => window.api?.getActivityBuffer?.(), []),
+        optionalContext(async () => {
+          const { subagentStore } = await import('../../api/subagent/subagentStore.js')
+          return subagentStore.listSubagents()
+        }, []),
+        optionalContext(() => window.api?.getSystemTelemetry?.(), null)
+      ])
+      const timings = {}
+      let compactionMs = 0
+      let measuredFirstRequest = false
+      let firstRequestAt
+      let memoryMode
+      const recordFirstRequest = (tokens) => {
+        if (measuredFirstRequest) return
+        measuredFirstRequest = true
+        firstRequestAt = performance.now()
+        const elapsedMs = firstRequestAt - preparationStartedAt
+        performance.clearMeasures('mark:preparation')
+        performance.measure('mark:preparation', {
+          start: preparationStartedAt,
+          duration: elapsedMs,
+          detail: { ...timings, elapsedMs, compactionMs, preparationMs: elapsedMs - compactionMs, tokens }
+        })
+        setPreparationText(
+          memoryMode === 'keyword'
+            ? 'Menunggu jawaban model · memori dicari lewat kata kunci…'
+            : memoryMode === 'unavailable'
+              ? 'Menunggu jawaban model · pencarian memori tidak tersedia…'
+              : 'Menunggu jawaban model…'
+        )
+      }
+      const recordFirstResponse = () => {
+        if (firstRequestAt == null) return
+        performance.clearMeasures('mark:provider-wait')
+        performance.measure('mark:provider-wait', { start: firstRequestAt, end: performance.now() })
+      }
+      const lastMessage = validHistory.at(-1)
+      const previousAnswer = ['assistant', 'ai'].includes(lastMessage?.role)
+        ? (typeof lastMessage.content === 'string' ? lastMessage.content : '')
+        : ''
+      const searchQuery = previousAnswer ? `${userInput}\n\n${previousAnswer.slice(-600)}` : userInput
+      const memoryStarted = performance.now()
+      const memoryRequest = getUnifiedContext(
+        searchQuery,
+        AbortSignal.any([preparationSignal, AbortSignal.timeout(9000)]),
+        userInput
+      ).catch(() => ({ memories: [], archives: [], turnPairs: [], mode: 'unavailable' }))
+        .then((result) => {
+          timings.memoryMs = performance.now() - memoryStarted
+          Object.assign(timings, result.timings)
+          return result
+        })
+      const setPreparationText = (content) => {
+        if (!isSystem && !isAutonomous)
+          targetSetChatData((messages) => messages.map((message) =>
+            message.id === sessionRecord.thinkingId ? { ...message, content } : message
+          ), false)
+      }
+      setPreparationText('Memuat konteks proyek dan memori...')
+      const workspaceStarted = performance.now()
+      const [codingWorkspace, , taskAtStart, storedCompact] = await Promise.all([
+        awaitWithTimeout(
+          webApi.codingRequest('/workspace/context', activeSessionNum, {}, 'POST', preparationSignal),
+          10000,
+          'Memuat konteks proyek',
+          preparationSignal
+        ).then((project) => {
+          timings.workspaceMs = performance.now() - workspaceStarted
+          return project
+        }),
+        webApi.codingRequest(
+          '/coding/runs/begin',
+          activeSessionNum,
+          { runId: agenticProcessId, objective: userInput, capture: false },
+          'POST'
+        ),
+        opts.taskId ? getAgentTaskWithSteps(opts.taskId) : null,
+        awaitWithTimeout(
+          getSessionCompact(String(activeSessionNum)),
+          10000,
+          'Memuat ringkasan sesi',
+          preparationSignal
+        )
+      ])
       opts.workspaceRoot = codingWorkspace.root
-      await webApi.codingRequest(
-        '/coding/runs/begin',
-        activeSessionNum,
-        {
-          runId: agenticProcessId,
-          objective: userInput,
-          capture: false
-        },
-        'POST'
-      )
-      let durableTask = opts.taskId ? await getAgentTaskWithSteps(opts.taskId) : null
+      let durableTask = taskAtStart
       if (
         opts.taskId &&
         (!durableTask || String(durableTask.sessionId) !== String(activeSessionNum))
@@ -1540,65 +1596,13 @@ export const useMarkPlan = ({
           recordSkill(await webApi.readSkill(reference))
       }
 
-      let searchQuery = userInput
-      if (validHistory.length > 0) {
-        const lastMsg = validHistory[validHistory.length - 1]
-        if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'ai') && lastMsg.content) {
-          let lastAiText =
-            typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)
-          if (lastAiText.length > 600) {
-            lastAiText = lastAiText.substring(0, 300) + ' ... ' + lastAiText.slice(-300)
-          }
-          searchQuery = `Konteks obrolan sebelumnya: "${lastAiText}". Pertanyaan user saat ini: "${userInput}"`
-        }
-      }
-
-      const preparationSignal = sessionAbortController.signal
-      const optionalContext = (load, fallback) =>
-        awaitWithTimeout(
-          Promise.resolve().then(load),
-          2000,
-          'Memuat konteks tambahan',
-          preparationSignal
-        ).catch((error) => {
-          if (preparationSignal.aborted) throw error
-          return fallback
-        })
-
       const [
         unifiedContext,
-        activityBuffer,
-        allSubs,
-        systemTelemetry,
-        storedCompact,
+        [activityBuffer, allSubs, systemTelemetry],
         sessionTasks
       ] = await Promise.all([
-        (async () => {
-          const allMemory = await awaitWithTimeout(
-            getAllMemory(),
-            15000,
-            'Memuat memori',
-            preparationSignal
-          )
-          return awaitWithTimeout(
-            getUnifiedContext(searchQuery, allMemory),
-            30000,
-            'Menyiapkan konteks',
-            preparationSignal
-          )
-        })(),
-        optionalContext(() => window.api?.getActivityBuffer?.(), []),
-        optionalContext(async () => {
-          const { subagentStore } = await import('../../api/subagent/subagentStore.js')
-          return subagentStore.listSubagents()
-        }, []),
-        optionalContext(() => window.api?.getSystemTelemetry?.(), null),
-        awaitWithTimeout(
-          getSessionCompact(String(activeSessionNum)),
-          10000,
-          'Memuat ringkasan sesi',
-          preparationSignal
-        ),
+        memoryRequest,
+        supportingContext,
         isSystem || isAutonomous || opts.disableTools || durableTask
           ? []
           : optionalContext(
@@ -1611,7 +1615,8 @@ export const useMarkPlan = ({
               []
             )
       ])
-
+      preparationSignal.throwIfAborted()
+      memoryMode = unifiedContext.mode
       let contextMsgStr = ''
       if (sessionTasks.length)
         contextMsgStr +=
@@ -1658,6 +1663,14 @@ export const useMarkPlan = ({
           .join('\n')
       }
 
+      setPreparationText(
+        unifiedContext.mode === 'keyword'
+          ? 'Menyusun instruksi dengan pencarian kata kunci...'
+          : unifiedContext.mode === 'unavailable'
+            ? 'Menyusun instruksi tanpa hasil pencarian memori...'
+            : 'Menyusun instruksi...'
+      )
+      const promptStarted = performance.now()
       const systemPrompt = await awaitWithTimeout(
         buildPlanningSystemPrompt(
           userInput,
@@ -1668,7 +1681,8 @@ export const useMarkPlan = ({
             currentMusicTrack,
             systemTelemetry,
             activeTaskObjective: durableActiveStep?.objective,
-            existingSubagents
+            existingSubagents,
+            projectSnapshot: codingWorkspace
           },
           unifiedContext,
           contextMsgStr
@@ -1681,6 +1695,7 @@ export const useMarkPlan = ({
       // ------------------------------------------------------------------------
       // FASE 3.5: PRE-FLIGHT CONTEXT COMPACTION (Ambang Batas 256.000 Tokens)
       // ------------------------------------------------------------------------
+      timings.promptMs = performance.now() - promptStarted
       let activeSessionCompact = storedCompact
 
       const activeSummaryBlock =
@@ -1693,6 +1708,7 @@ export const useMarkPlan = ({
       const currentUserMsg = { ...userMessage, content: payloadContent }
       let effectiveSourceMessages = [...sourceChatData, currentUserMsg]
 
+      const tokenStarted = performance.now()
       currentUserMsg.tokens = calculateMessageTokens(currentUserMsg)
       const currentEstimatedTokens = calculateSessionTokens(
         effectiveSourceMessages,
@@ -1702,6 +1718,8 @@ export const useMarkPlan = ({
         activeSessionCompact?.lastCompactedAt || activeSessionCompact?.last_compacted_at || null,
         activeSessionCompact
       )
+
+      timings.tokensMs = performance.now() - tokenStarted
 
       // Bypass proses kompaksi berat jika instruksi internal (greeting sistem / awareness autonomous / disableTools)
       const isInternalTurn = Boolean(
@@ -1728,6 +1746,7 @@ export const useMarkPlan = ({
           }
         ])
 
+        const compactStarted = performance.now()
         try {
           const compactionResult = await executeSessionCompaction({
             sessionId: String(activeSessionNum),
@@ -1791,6 +1810,7 @@ export const useMarkPlan = ({
             code: compactErr.code || 'CONTEXT_COMPACTION_FAILED'
           })
         } finally {
+          compactionMs += performance.now() - compactStarted
           targetSetChatData((prev) => (prev || []).filter((item) => item.id !== compactBannerId))
         }
       }
@@ -1892,7 +1912,11 @@ export const useMarkPlan = ({
               fetchAI(
                 restoreSkillContext(messages, sessionRecord.skills.values()),
                 stream,
-                settings
+                {
+                  ...settings,
+                  onRequest: () => recordFirstRequest(currentEstimatedTokens),
+                  onFirstResponse: measuredFirstRequest ? null : recordFirstResponse
+                }
               ),
               45000,
               'Menyusun jawaban penutup',
@@ -2197,12 +2221,14 @@ export const useMarkPlan = ({
           isSystem || isAutonomous || opts.disableTools
             ? null
             : buildProgressReminder(executedToolsList, { initial: stepCount === 1 })
+        const loopTokensStarted = performance.now()
         const reservedTokens =
           (activeTools ? countTokens(JSON.stringify(activeTools)) : 0) +
           (progressReminder
             ? calculatePayloadTokens([{ role: 'system', content: progressReminder }])
             : 0)
         const tokensBeforeCompact = calculatePayloadTokens(loopMessages) + reservedTokens
+        if (!measuredFirstRequest) timings.tokensMs += performance.now() - loopTokensStarted
         const inputBudget = geminiBudget && {
           ...geminiBudget,
           overheadBytes:
@@ -2219,6 +2245,7 @@ export const useMarkPlan = ({
           tokensBeforeCompact >= MAX_CONTEXT_TOKENS * IN_LOOP_COMPACT_THRESHOLD
         )
         let inLoopBannerId = null
+        const loopCompactStarted = performance.now()
         try {
           const inLoopResult = await checkAndCompressInLoop({
             loopMessages,
@@ -2270,6 +2297,7 @@ export const useMarkPlan = ({
           }
         } finally {
           if (inLoopBannerId) {
+            compactionMs += performance.now() - loopCompactStarted
             targetSetChatData((prev) => prev.filter((msg) => msg.id !== inLoopBannerId))
           }
         }
@@ -2278,9 +2306,11 @@ export const useMarkPlan = ({
         const requestMessages = progressReminder
           ? [...loopMessages, { role: 'system', content: progressReminder }]
           : loopMessages
+        const payloadTokensStarted = performance.now()
         const inFlightTokens =
           calculatePayloadTokens(requestMessages) +
           (activeTools ? countTokens(JSON.stringify(activeTools)) : 0)
+        if (!measuredFirstRequest) timings.tokensMs += performance.now() - payloadTokensStarted
         if (inFlightTokens >= MAX_CONTEXT_TOKENS) {
           throw new Error(
             'Konteks masih melebihi 256K token setelah kompaksi. Permintaan AI dibatalkan.'
@@ -2314,8 +2344,10 @@ export const useMarkPlan = ({
           streamResult = await browserRequest(
             panelSessionId,
             sessionAbortController.signal,
-            (requestSignal) =>
-              fetchAI(requestMessages, true, {
+            (requestSignal) => {
+              return fetchAI(requestMessages, true, {
+                onRequest: () => recordFirstRequest(inFlightTokens),
+                onFirstResponse: measuredFirstRequest ? null : recordFirstResponse,
                 sessionId: String(activeSessionNum || 1),
                 tools: isDurableTaskCompleted ? null : activeTools,
                 signal: requestSignal,
@@ -2434,6 +2466,7 @@ export const useMarkPlan = ({
                   })
                 }
               })
+            }
           )
         } catch (error) {
           if (error.code === 'GEMINI_CONTEXT_LENGTH' && error.inputBudget && !geminiLimitRetried) {
@@ -3625,6 +3658,13 @@ export const useMarkPlan = ({
           setIsLoading(false)
         }
         lastUserPromptRef.current = ''
+      }
+
+      if (!isSystem && !isAutonomous && savedTurnAiMsg) {
+        const title = codingWorkspace.title || (activeSessionNum === 1 ? 'Main Thread' : null)
+        saveCompletedTurn(activeSessionNum, title, userMessage, savedTurnAiMsg).catch(() => {
+          console.warn('[Memory] Pasangan percakapan belum tersimpan.')
+        })
       }
 
       // Post-Turn Context Sync: Hitung total token terkini dan trigger event ke UI

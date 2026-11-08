@@ -3,8 +3,6 @@
  * Menyediakan antarmuka async yang kompatibel dengan seluruh komponen UI/hooks,
  * namun menyimpan data secara persisten dan terpusat di server SQLite backend.
  */
-import { generateVector } from './vectorMemory'
-import { insertMemoryToOrama, updateMemoryInOrama, deleteMemoryFromOrama } from './oramaStore'
 import { API_BASE } from './web-bridge'
 export { SERVER_CONFIG, SERVER_HOST, SERVER_PORT, API_BASE } from './web-bridge'
 
@@ -398,23 +396,14 @@ function getValidType(type) {
 export async function insertMemory(data) {
   const memoryText = data.memory.trim()
   const type = getValidType(data.type)
-  const vector = (await generateVector(memoryText)) || []
 
   try {
     const record = await db.memory.put({
       type: type,
       summary: data.summary || '',
-      memory: memoryText,
-      vector: vector
+      memory: memoryText
     })
     const id = record?.id || record
-    insertMemoryToOrama({
-      id,
-      type,
-      summary: data.summary || '',
-      memory: memoryText,
-      vector
-    }).catch(console.error)
     return id
   } catch (error) {
     console.error('Error Save Memory:', error)
@@ -472,7 +461,7 @@ export async function createSession(title = 'Percakapan Baru', { workspaceRoot =
 export async function saveSession(id, data, title = null) {
   try {
     const cleanId = normalizeDbId(id)
-    const existing = await db.sessions.get(cleanId)
+    const existing = await getSessionSummary(cleanId)
     const session = {
       ...(existing || { id: cleanId, title: cleanId === '1' ? 'Main Thread' : 'Percakapan Baru' }),
       id: cleanId,
@@ -572,10 +561,6 @@ export async function bulkInsertTurns(turns) {
   }
 }
 
-export async function saveBatchChatTurns(turns) {
-  return await bulkInsertTurns(turns)
-}
-
 export async function saveChatTurn(turn) {
   try {
     const res = await db.chatTurns.put(turn)
@@ -620,29 +605,21 @@ export async function updateMemory(id, data) {
       return
     }
 
-    const memoryText = (data.memory || existing.memory).trim()
+    const memoryText = (typeof data === 'string' ? data : data.memory || existing.memory).trim()
     const type = getValidType(data.type || existing.type)
     const summary = data.summary || existing.summary || ''
-
-    let vector = existing.vector
-    if (data.memory && data.memory !== existing.memory) {
-      vector = (await generateVector(memoryText)) || existing.vector
-    }
 
     const updatedRecord = {
       ...existing,
       type,
       summary,
       memory: memoryText,
-      vector,
       updated_at: Date.now()
     }
 
-    await db.memory.put(updatedRecord)
-    if (vector && vector.length === 384) {
-      updateMemoryInOrama(id, updatedRecord).catch(console.error)
-      console.log(`[DB Proxy] Memory ID ${id} berhasil di-update.`)
-    }
+    const saved = await db.memory.put(updatedRecord)
+    if (!saved?.id) throw new Error('Perubahan memori belum tersimpan.')
+    return saved
   } catch (error) {
     console.error('Error in updateMemory logic:', error)
   }
@@ -653,9 +630,8 @@ export async function deleteMemory(data) {
   try {
     const id = typeof data === 'object' && data !== null ? data.id : String(data)
     if (id) {
-      await db.memory.delete(id)
-      deleteMemoryFromOrama(id).catch(console.error)
-      return { success: true }
+      const success = await db.memory.delete(id)
+      return { success }
     }
     return { success: false, error: 'ID is required for deletion' }
   } catch (error) {
@@ -867,14 +843,6 @@ export async function deleteLearnedSkill(id) {
 export async function resetAiDatabase() {
   try {
     const res = await apiPost('/api/db/reset-ai', {})
-    // Re-inisialisasi Orama index di frontend agar sinkron
-    try {
-      const { initOramaIndices, hydrateFromDb } = await import('./oramaStore')
-      await initOramaIndices()
-      await hydrateFromDb()
-    } catch (e) {
-      console.warn('[DB Proxy] Gagal re-hydrate Orama setelah reset:', e)
-    }
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ai-reset-complete', { detail: res }))

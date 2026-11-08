@@ -46,14 +46,9 @@ Dokumen ini merangkum panduan diagnostik, solusi masalah teknis yang sering dite
 
 ### D. Model Embeddings Vektor Lambat atau Gagal Diunduh
 
-- **Gejala:** Saat startup, terminal terhenti lama pada tahap pembuatan vektor memori Orama.
-- **Penyebab:** Library `@huggingface/transformers` sedang mengunduh model pembobotan WASM (`Xenova/paraphrase-multilingual-MiniLM-L12-v2`, ~90 MB) untuk pertama kali dan koneksi internet mengalami hambatan (_timeout_).
-- **Solusi:**
-  - MARK hanya mengunduh model ini **satu kali**. Berkas akan disimpan permanen di cache direktori lokal:
-    ```
-    C:\Users\<Username>\.cache\huggingface\hub\
-    ```
-  - Pastikan koneksi internet aktif saat inisialisasi awal. Setelah terunduh, MARK dapat berjalan 100% offline tanpa perlu koneksi internet lagi untuk fungsi pencarian semantik.
+Selama model embedding dimuat, Mark menampilkan bahwa pencarian memori terbatas pada kata kunci. Chat tetap dapat digunakan. Model yang sudah terunduh disimpan di `%USERPROFILE%\.cache\mark-transformers\` dan bisa dipakai secara offline.
+
+Periksa kesiapan worker, ekstensi, dan model melalui `GET /api/memory/status`. Setelah mengatasi penyebab kegagalan, panggil `POST /api/memory/prepare` untuk mencoba lagi.
 
 ---
 

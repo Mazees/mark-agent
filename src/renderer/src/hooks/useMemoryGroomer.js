@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { findSimilarMemoryClusters } from '../api/oramaStore'
+import { findSimilarMemoryClusters } from '../api/vectorMemory'
 import { runBatchConsolidation } from '../api/ai/memoryGroomer'
 import { updateMemory, deleteMemory } from '../api/db'
 
@@ -80,7 +80,8 @@ export function useMemoryGroomer(enableAutoOnStartup = false) {
 
         try {
           // 1. Update memori utama dengan narasi kronologis yang sudah digabungkan
-          await updateMemory(keep_id, merged_text)
+          const saved = await updateMemory(keep_id, merged_text)
+          if (!saved) continue
           mergedCount++
 
           // 2. Hapus duplikat setelah merge sukses

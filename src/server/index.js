@@ -6,7 +6,7 @@ import express from 'express'
 import cors from 'cors'
 import { wsHub } from './ws-hub.js'
 import { launchUI } from './launcher.js'
-import { initOramaIndices } from './memory/orama-store.js'
+import { prepareMemory, stopMemoryWorker } from './memory/memory-retrieval.js'
 import { dbStore } from './memory/db-store.js'
 import { loadAllPlugins } from '../main/plugins/plugin-loader.js'
 import { startOsActivityTracking } from './tools/awareness-tracker.js'
@@ -81,11 +81,11 @@ app.use('/api/db/restore', express.json({ limit: '512mb' }))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
-// Inisialisasi WebSocket Hub, Orama, Plugins & Awareness Tracking
+// Inisialisasi WebSocket Hub, memori, plugins, dan Awareness Tracking.
 wsHub.init(server)
 migrateStoredCodingRuns().catch((error) => console.warn('[Coding migration]', error.message))
 subagentRuntime.start()
-initOramaIndices().catch(() => {})
+prepareMemory().catch((error) => console.warn('[Memory]', error.message))
 loadAllPlugins().catch((e) => console.error('[Plugin Init Error]:', e))
 chromeBridge.events.on('status', (status) =>
   wsHub.broadcast('addon:status', { id: 'chrome-bridge', ...status })
@@ -98,6 +98,7 @@ server.on('close', () => {
   mcpRuntime.shutdown().catch(() => {})
   geminiAuth.stop().catch(() => {})
   deepseekAuth.stop().catch(() => {})
+  stopMemoryWorker().catch(() => {})
 })
 const shutdownServices = () => {
   const timeout = setTimeout(() => process.exit(0), 1500)
@@ -108,7 +109,8 @@ const shutdownServices = () => {
     mcpRuntime.shutdown(),
     shutdownTerminals(),
     geminiAuth.stop(),
-    deepseekAuth.stop()
+    deepseekAuth.stop(),
+    stopMemoryWorker()
   ]).finally(() => {
     for (const client of wsHub.clients) client.terminate()
     server.close(() => {

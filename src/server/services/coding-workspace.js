@@ -2,21 +2,27 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { runGit } from '../../main/git-runtime.js'
 import { createHash } from 'node:crypto'
-import { dbStore, codingStore } from '../memory/db-store.js'
+import { dbStore, codingStore, normalizeSqliteId } from '../memory/db-store.js'
 import { DEFAULT_WORKSPACE_ROOT } from '../workspace-policy.js'
 
 export const git = runGit
 export const fileHash = (bytes) =>
   bytes == null ? null : createHash('sha256').update(bytes).digest('hex')
 export const rootKey = (root) => path.resolve(root).replaceAll('\\', '/').toLowerCase()
+const readWorkspaceSession = dbStore.sqlite.prepare(
+  'SELECT title, workspace_root AS workspaceRoot FROM sessions WHERE id = ?'
+)
+
 export function workspaceFor(sessionId = '1') {
   const id = String(sessionId)
-  let session = dbStore.sessions.getById(id)
+  let session = readWorkspaceSession.get(normalizeSqliteId(id))
   if (id !== '1' && !session) throw new Error('Percakapan workspace tidak ditemukan.')
   const worktree = codingStore.get('worktree', id)
   if (worktree?.active) {
     dbStore.sqlite.transaction(() => {
-      session = dbStore.sessions.insert({ ...session, id, workspaceRoot: worktree.root })
+      session = dbStore.sessions.insert({
+        ...dbStore.sessions.getById(id), id, workspaceRoot: worktree.root
+      })
       codingStore.put('worktree', id, { ...worktree, active: false, retired: true })
     })()
   }
@@ -24,7 +30,8 @@ export function workspaceFor(sessionId = '1') {
   return {
     sessionId: id,
     root: localRoot,
-    sourceRoot: localRoot
+    sourceRoot: localRoot,
+    title: session?.title
   }
 }
 export function scopedPath(root, value = '.') {

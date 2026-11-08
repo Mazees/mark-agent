@@ -239,7 +239,7 @@ Synthesis learned skill memakai status dan hasil tool yang tercatat. Tindakan ga
 stateDiagram-v2
     [*] --> Idle: Menunggu Masukan
     Idle --> Inisialisasi: Input Diterima (handlePlanningCommand)
-    Inisialisasi --> Retrieval: Ambil Memori Vektor & Orama
+    Inisialisasi --> Retrieval: Ambil konteks memori dari SQLite
     Retrieval --> Compaction: Evaluasi Batas Token Konteks
     Compaction --> Inferensi: Panggil fetchAI dengan Tools
     Retrieval --> GatewayHygiene: Cek Kapasitas Sesi (>= 90%)

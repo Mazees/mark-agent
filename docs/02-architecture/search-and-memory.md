@@ -1,110 +1,29 @@
-# Mesin Pencarian Vektor & Manajemen Konteks
+# Pencarian memori dan manajemen konteks
 
-Dokumen ini menjelaskan subsistem pencarian cerdas pada **MARK**, mencakup pembuatan embeddings vektor lokal 384-dimensi via `@huggingface/transformers`, mesin pencarian hibrida Orama WASM, dan sistem pemadatan memori sesi (_Context Management Engine_).
+## 1. Embedding lokal
 
----
+Mark membuat embedding 384 dimensi dengan model `Xenova/paraphrase-multilingual-MiniLM-L12-v2` melalui Transformers.js. Pembuatan embedding mempertahankan pemotongan input, mean pooling, dan normalisasi yang sudah digunakan. Model disimpan di `~/.cache/mark-transformers/`. Setelah model tersedia di cache, pembuatan embedding berjalan secara lokal.
 
-## 1. Local Embedding Engine (`vector-engine.js`)
+Backend memanaskan model di worker ketika Mark mulai. Chat dan Minibot dapat langsung berjalan. Selama model belum siap atau ekstensi SQLite tidak dapat dimuat, pencarian menggunakan kata kunci dan menandai hasilnya sebagai terbatas.
 
-MARK menghasilkan representasi semantik (_vector embeddings_) secara 100% lokal di mesin pengguna tanpa bergantung pada API embedding eksternal berbayar (seperti OpenAI `text-embedding-ada-002`).
+## 2. Pencarian hibrida dari SQLite
 
-### Karakteristik Model:
+`memory-worker.js` membuka koneksi baca-saja ke `mark.db` dan memuat ekstensi Windows `sqlite-vec` 0.1.9. Jarak kosinus dihitung menggunakan nilai di kolom `vector TEXT` yang sudah ada. Vektor kosong, rusak, atau berbeda dimensi tetap dapat ditemukan lewat teks. Vektor valid lama tetap bisa digunakan. Koneksi tidak membuat indeks tambahan atau mengubah skema dan format backup.
 
-- **Pustaka**: [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js) (Transformers.js v3)
-- **Model**: `Xenova/paraphrase-multilingual-MiniLM-L12-v2`
-- **Dimensi Vektor**: 384 dimensi float
-- **Dukungan Bahasa**: Multilingual (termasuk Bahasa Indonesia dan Bahasa Inggris)
-- **Runtime**: ONNX Runtime via WebAssembly (WASM) dengan model terkuantisasi (_quantized_ q8)
-- **Lokasi Cache Model**: `~/.cache/mark-transformers/` (diunduh otomatis sekali pada pemanggilan pertama, selanjutnya 100% offline).
+Pencocokan teks mengutamakan frasa utuh, lalu pengenal seperti `package.json`, kemudian kecocokan token. Filter sumber, jenis memori, dan sesi diterapkan sebelum pemeringkatan. Setiap jalur mengambil hingga empat kali batas hasil. Mark menggabungkan keduanya dengan Reciprocal Rank Fusion (konstanta 60). Nilai `score` adalah kemiripan kosinus, atau `null` jika hasil hanya berasal dari kata kunci. Ambang kemiripan hanya berlaku pada jalur semantik.
 
-### Pola Inisialisasi Singleton & Queue:
+Pencarian tetap memindai kandidat. Cache konversi JSON yang dibatasi ukurannya mengurangi penguraian ulang pada basis data yang sering dicari. Cache berada di worker dan dibersihkan saat reset atau restore. Jika data sangat besar, biaya pemindaian dan penguraian JSON tetap bertambah.
 
-Pada [`src/server/memory/vector-engine.js`](file:///d:/My%20Project/mark-project/mark/src/server/memory/vector-engine.js), pipeline diinisialisasi secara thread-safe menggunakan antrean _initWaiters_ untuk mencegah pemanggilan ganda (_race condition_) saat sistem booting:
+## 3. Persiapan jawaban
 
-```javascript
-let extractor = null
-let isInitializing = false
-const initWaiters = []
+- Profile dan preference dibaca utuh melalui SQL tanpa mengambil vektornya. Worker mencari hingga tiga arsip (ambang 0,25) dan tiga pasangan percakapan (ambang 0,30).
+- Konteks proyek, memori, dan metadata sesi mulai dimuat bersamaan. Penyusun prompt menggunakan hasil konteks proyek tersebut. Jika pencarian melampaui anggaran, Mark menggunakan konteks yang masih tersedia.
+- Tool `memory-search` digunakan Mark dan Minibot melalui layanan yang sama. Formatnya `query || threshold || limit`, dengan default 0,5 dan lima hasil per sumber. Pencarian tersedia pada `POST /api/memory/search`, dan konteks awal pada `POST /api/memory/context`.
+- Kesiapan worker, ekstensi, dan model tersedia pada `GET /api/memory/status`. `POST /api/memory/prepare` memulai ulang persiapan yang gagal.
+- Penulisan teks baru segera tersedia untuk pencarian kata kunci. Backend menyimpan embedding di latar belakang jika isi yang tersimpan masih sama. Pasangan baru memakai ID giliran stabil serta ID sesi string.
+- Catatan kinerja `mark:preparation` di Performance Timeline renderer berisi durasi persiapan sampai pengiriman ke gateway AI, waktu kompaksi, dan jumlah token. `mark:provider-wait` mencatat waktu dari pengiriman itu sampai keluaran pertama kembali, termasuk antrean gateway. Isinya berupa angka tanpa teks percakapan.
 
-export async function getExtractor() {
-  if (extractor) return extractor
-  if (isInitializing) {
-    return new Promise((resolve) => initWaiters.push(resolve))
-  }
-  isInitializing = true
-  try {
-    extractor = await pipeline(
-      'feature-extraction',
-      'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
-      { quantized: true }
-    )
-    isInitializing = false
-    initWaiters.forEach((resolve) => resolve(extractor))
-    initWaiters.length = 0
-    return extractor
-  } catch (err) {
-    isInitializing = false
-    initWaiters.forEach((resolve) => resolve(null))
-    initWaiters.length = 0
-    return null
-  }
-}
-```
-
----
-
-## 2. Pencarian Hibrida Orama WASM (`orama-store.js`)
-
-Untuk mengindeks dan mencari memori pengguna serta riwayat percakapan, MARK menggunakan engine pencarian in-memory: [`@orama/orama`](https://orama.com/).
-
-### Indeks Aktif:
-
-1. **`archiveIndex`**: Menyimpan dan mengindeks seluruh giliran percakapan yang diarsipkan (`chat_archives`).
-2. **`memoryIndex`**: Mengindeks memori eksplisit pengguna.
-3. **`turnPairIndex`**: Mengindeks pasangan pesan pengguna dan jawaban AI.
-
-Dokumen Knowledge lama tidak lagi dimuat, dibuatkan embedding, atau dicari. Tabel SQLite `documents` hanya dipertahankan untuk kompatibilitas backup. Tool `read-document` membaca file langsung tanpa memakai indeks Knowledge.
-
-### Algoritma Pencarian Vektor + BM25:
-
-Orama menggabungkan pencarian teks tradisional (BM25 full-text keyword matching) dengan pencarian kemiripan kosinus vektor (_cosine vector similarity_). Hal ini menjamin kata kunci spesifik (seperti nama variabel kode atau nomor telepon) tetap dapat ditemukan, sekaligus memahami konteks sinonim pertanyaan pengguna.
-
-### Ambang Batas Kemiripan (_Similarity Thresholds_):
-
-- **Orama Search Threshold**: **0.25** (diatur di `src/server/memory/orama-store.js`).
-- **Client Vector Memory Threshold**: **0.30** (diatur di `src/renderer/src/api/vectorMemory.js` untuk membuang memori kognitif yang tidak relevan).
-
----
-
-## 3. Alur Pengambilan Konteks Terpadu (_Unified Context_)
-
-Sebelum perintah pengguna diteruskan ke model LLM, `getUnifiedContext()` mengumpulkan memori profil/preferensi, arsip, dan pasangan percakapan yang relevan:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as Chat Engine (useMarkPlan.js)
-    participant VM as Vector Memory (vectorMemory.js)
-    participant SQLite as SQLite (db.memories)
-    participant Orama as Orama (Renderer)
-    participant Prompt as System Prompt Assembler
-
-    UI->>VM: getUnifiedContext(userInput)
-
-    par Ambil Memori Kognitif (MMS)
-        VM->>SQLite: db.memories.toArray()
-        VM->>VM: Pilih profil dan preferensi
-    and Cari Arsip Percakapan Lampau
-        VM->>Orama: Cari di archiveIndex (Threshold >= 0.25)
-    and Cari Pasangan Percakapan
-        VM->>Orama: Cari di turnPairIndex (Threshold >= 0.30)
-    end
-
-    VM->>Prompt: Kembalikan { memories, archives, turnPairs }
-    Prompt->>Prompt: Susun blok konteks terpadu ke System Prompt
-```
-
----
+Tabel `documents` lama tetap tersedia untuk kompatibilitas backup. Tool `read-document` membaca berkas secara langsung.
 
 ## 4. Context Management Engine (`contextManager.js`)
 

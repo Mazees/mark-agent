@@ -485,13 +485,13 @@ export const guideArticles = [
     summary:
       'Neural Core adalah halaman untuk meninjau karakter, memori, dan pengetahuan yang disimpan Mark. Informasi tersebut membantu Mark menggunakan konteks yang relevan dalam percakapan berikutnya.',
     keywords:
-      'neural core memory vector RAG orama SQLite profile preference notes learn karakter warmth sarcasm trust energy obedience kepatuhan peta node daftar groom backup',
+      'neural core memory vector RAG sqlite-vec SQLite profile preference notes learn karakter warmth sarcasm trust energy obedience kepatuhan peta node daftar groom backup',
     sections: [
       {
         title: 'Cara memori digunakan',
         paragraphs: [
-          'Mark menyimpan riwayat sesi, pasangan percakapan, arsip ringkasan, memori pengguna, dan skill yang dipelajari. Pencarian mempertimbangkan teks dan kemiripan makna untuk memilih informasi yang relevan.',
-          'Tidak semua informasi tersimpan dimasukkan ke setiap jawaban. Jika konteks penting belum digunakan, sebutkan kembali informasi tersebut atau arahkan Mark ke berkas sumbernya.'
+          'Profil dan preferensi menjadi bagian dari konteks inti Mark. Saat Anda mengirim pesan, Mark juga mencari arsip dan pasangan percakapan yang relevan. Pencarian menggabungkan kemiripan makna dengan kecocokan teks agar nama berkas dan pengenal tertentu tetap mudah ditemukan.',
+          'Anda bisa mulai mengobrol saat model pencarian masih disiapkan. Dalam kondisi ini, Mark memakai memori inti dan hasil pencarian kata kunci yang tersedia. Jika konteks penting belum digunakan, sebutkan kembali informasinya atau arahkan Mark ke berkas sumbernya.'
         ]
       },
       {

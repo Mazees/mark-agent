@@ -3,6 +3,7 @@ import { skillSummary } from '../../../shared/skill-context.js'
 import path from 'node:path'
 import fs from 'node:fs'
 import { codingStore, dbStore } from '../../memory/db-store.js'
+import { searchToolMemory } from '../../memory/memory-retrieval.js'
 import { workspaceFor, saveProjectMemory } from '../coding-workspace.js'
 import { notifyCoding } from '../coding-execution.js'
 import { wsHub } from '../../ws-hub.js'
@@ -58,15 +59,8 @@ async function dispatch(name, args, ctx, call) {
       : { success: false, error: 'Grup tool tidak ditemukan.' }
   }
   if (name === 'memory-search') {
-    const { searchMemories, searchTurnPairs } = await import('../../memory/orama-store.js')
-    const [query, rawThreshold, rawLimit] = String(args.query || '').split('||')
-    const threshold = Number(rawThreshold) || 0.5
-    const limit = Number(rawLimit) || 5
-    const [memories, chatTurns] = await Promise.all([
-      searchMemories(query, threshold, limit),
-      searchTurnPairs(query, threshold, limit)
-    ])
-    return { success: true, data: { memories, chatTurns } }
+    const { hits, mode } = await searchToolMemory(args.query, ctx.signal)
+    return { success: true, data: { ...hits, mode } }
   }
   if (name === 'update-working-memory') {
     if (typeof args.notes !== 'string' || !args.notes.trim())

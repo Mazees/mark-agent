@@ -1,7 +1,17 @@
 import { subagentRuntime } from '../services/subagents/service.js'
 import { Router } from 'express'
 import { dbStore, normalizeSqliteId } from '../memory/db-store.js'
-import { initOramaIndices } from '../memory/orama-store.js'
+import {
+  generateMemoryVector,
+  invalidateMemoryWork,
+  memoryClusters,
+  memoryContext,
+  memoryStatus,
+  prepareMemory,
+  saveSearchSource,
+  saveSearchTurns,
+  searchMemory
+} from '../memory/memory-retrieval.js'
 import { wsHub } from '../ws-hub.js'
 import { sessionForClient, isInvalidMainWorkspace } from '../workspace-policy.js'
 import { recoverTaskWorkflows } from '../services/task-workflow.js'
@@ -12,6 +22,41 @@ import { toolApprovals } from '../services/tool-approvals.js'
 
 export const memoryRouter = Router()
 
+memoryRouter.get('/memory/status', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json({ success: true, data: memoryStatus() })
+})
+
+function memoryRequest(handler) {
+  return async (req, res) => {
+    const controller = new AbortController()
+    const abort = () => {
+      if (!res.writableEnded) controller.abort()
+    }
+    res.once('close', abort)
+    try {
+      const data = await handler(req.body ?? {}, controller.signal)
+      if (!controller.signal.aborted) res.json({ success: true, data })
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        res.status(error instanceof TypeError ? 400 : 503).json({
+          success: false,
+          error: error instanceof TypeError ? error.message : 'Pencarian memori tidak tersedia.'
+        })
+      }
+    } finally {
+      res.removeListener('close', abort)
+    }
+  }
+}
+
+memoryRouter.post('/memory/prepare', memoryRequest(() => prepareMemory()))
+memoryRouter.post(
+  '/memory/context',
+  memoryRequest(({ query, lexicalQuery }, signal) => memoryContext(query, signal, lexicalQuery))
+)
+memoryRouter.post('/memory/search', memoryRequest(searchMemory))
+memoryRouter.post('/memory/clusters', memoryRequest(({ threshold }, signal) => memoryClusters(threshold, signal)))
+
 // 1. Memories
 memoryRouter.get('/memories', (_req, res) => {
   res.json({ success: true, data: dbStore.memories.getAll() })
@@ -19,7 +64,7 @@ memoryRouter.get('/memories', (_req, res) => {
 
 memoryRouter.post('/memories', (req, res) => {
   const item = req.body
-  const record = dbStore.memories.insert(item)
+  const record = saveSearchSource('memories', item)
   res.json({ success: true, data: record })
 })
 
@@ -36,13 +81,13 @@ memoryRouter.get('/turns', (_req, res) => {
 
 memoryRouter.post('/turns', (req, res) => {
   const item = req.body
-  const record = dbStore.chatTurns.insert(item)
+  const record = saveSearchSource('chatTurns', item)
   res.json({ success: true, data: record })
 })
 
 memoryRouter.post('/turns/batch', (req, res) => {
   const items = req.body || []
-  const records = dbStore.chatTurns.insertBatch(items)
+  const records = Array.isArray(items) ? saveSearchTurns(items) : []
   res.json({ success: true, count: records.length, data: records })
 })
 
@@ -68,7 +113,8 @@ memoryRouter.get('/sessions/:id', (req, res) => {
     const summary = dbStore.sqlite
       .prepare(
         `
-      SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode, effort_level AS effortLevel, timestamp
+        SELECT id, title, workspace_root AS workspaceRoot, approval_mode AS approvalMode,
+          effort_level AS effortLevel, timestamp, created_at AS createdAt
       FROM sessions WHERE id = ?
     `
       )
@@ -81,9 +127,12 @@ memoryRouter.get('/sessions/:id', (req, res) => {
 
 memoryRouter.post('/sessions', (req, res) => {
   const item = { ...req.body }
-  item.effortLevel = dbStore.sessions.getById(item.id)?.effortLevel || 'high'
+  const current = dbStore.sqlite.prepare(
+    'SELECT approval_mode AS approvalMode, effort_level AS effortLevel FROM sessions WHERE id = ?'
+  ).get(normalizeSqliteId(item.id))
+  item.effortLevel = current?.effortLevel || 'high'
   delete item.effort_level
-  item.approvalMode = dbStore.sessions.getById(item.id)?.approvalMode || 'smart'
+  item.approvalMode = current?.approvalMode || 'smart'
   delete item.approval_mode
   if (item.data != null) item.data = subagentRuntime.mergeReports(String(item.id || '1'), item.data)
   if (isInvalidMainWorkspace(item))
@@ -200,7 +249,7 @@ memoryRouter.get('/archives', (_req, res) => {
 
 memoryRouter.post('/archives', (req, res) => {
   const item = req.body
-  const record = dbStore.chatArchives.insert(item)
+  const record = saveSearchSource('archives', item)
   res.json({ success: true, data: record })
 })
 
@@ -242,6 +291,7 @@ memoryRouter.post('/db/restore', async (req, res) => {
     await subagentRuntime.stop()
     await mcpRuntime.shutdown()
     await shutdownTerminals()
+    invalidateMemoryWork()
     const result = dbStore.restoreFullDatabase(dumpData, { overwrite })
     toolApprovals.clear()
     if (Array.isArray((dumpData.tables || dumpData).mcpAddons)) {
@@ -251,7 +301,6 @@ memoryRouter.post('/db/restore', async (req, res) => {
     }
     recoverTaskWorkflows(dbStore)
     subagentRuntime.start()
-    initOramaIndices().catch(() => {})
     wsHub.broadcast('db:restored', { timestamp: Date.now(), imported: result.imported })
     res.json({ success: true, data: result })
   } catch (err) {
@@ -264,10 +313,10 @@ memoryRouter.post('/db/reset-ai', async (_req, res) => {
   try {
     await subagentRuntime.stop()
     await shutdownTerminals()
+    invalidateMemoryWork()
     const result = dbStore.resetAllExceptConfig()
     toolApprovals.clear()
     subagentRuntime.start()
-    initOramaIndices().catch(() => {})
     wsHub.broadcast('db:restored', { timestamp: Date.now(), reset: true })
     res.json({ success: true, data: result })
   } catch (err) {
@@ -279,8 +328,7 @@ memoryRouter.post('/db/reset-ai', async (_req, res) => {
 memoryRouter.post('/vector', async (req, res) => {
   const { text } = req.body || {}
   try {
-    const { generateVector } = await import('../memory/vector-engine.js')
-    const vector = await generateVector(text)
+    const vector = await generateMemoryVector(text)
     res.json({ success: true, vector })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })

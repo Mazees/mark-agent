@@ -2,6 +2,10 @@ import { webApi } from './web-bridge.js'
 
 export async function getWorkspaceContext(sessionId = '1') {
   const project = await webApi.codingRequest('/workspace/context', sessionId, {}, 'POST')
+  return describeWorkspaceContext(project)
+}
+
+export function describeWorkspaceContext(project) {
   return {
     project,
     workingMemoryText: project.memory ? JSON.stringify(project.memory) : '',

@@ -62,7 +62,9 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     onMeta = null,
     onToolCall = null,
     sessionId = null,
-    purpose = null
+    purpose = null,
+    onRequest = null,
+    onFirstResponse = null
   } = actualOptions
 
   const cleanSignal = resolveAbortSignal(signal)
@@ -76,6 +78,12 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     throw error
   }
   if (cleanSignal?.aborted) throw cleanSignal.reason || new Error('AbortError')
+  let received = false
+  const recordResponse = () => {
+    if (received || !onFirstResponse) return
+    received = true
+    onFirstResponse()
+  }
 
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     window.__LAST_AI__ = {
@@ -103,10 +111,11 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     let unsubToken = null
     let unsubMood = null
 
-    if (window.api?.onAiToken && (onToken || onReasoning)) {
+    if (window.api?.onAiToken && (onToken || onReasoning || onFirstResponse)) {
       unsubToken = window.api.onAiToken((payload) => {
         if (payload?.requestId !== requestId || (sessionId != null && String(payload?.sessionId) !== String(sessionId))) return
         if (!payload?.token) return
+        recordResponse()
         if (payload.type === 'thought') {
           onReasoning?.(payload.token)
         } else {
@@ -131,10 +140,12 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
     }
 
     try {
+      onRequest?.()
       const result = await window.api.fetchAI(
         { messages, tools, config: conf, isSmallTask, stream: true, sessionId, requestId },
         cleanSignal
       )
+      recordResponse()
       if (import.meta.env.DEV && typeof window !== 'undefined') {
         window.__LAST_AI_RESULT__ = result
         console.log('[MARK AI Result]', result)
@@ -151,10 +162,12 @@ export const fetchAI = async (messages, stream = false, options = {}) => {
   }
 
   // 2. Non-Streaming Mode
+  onRequest?.()
   const result = await window.api.fetchAI(
     { messages, config: conf, isSmallTask, jsonSchema, stream: false, sessionId, purpose },
     cleanSignal
   )
+  recordResponse()
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     window.__LAST_AI_RESULT__ = result
     console.log('[MARK AI Result]', result)

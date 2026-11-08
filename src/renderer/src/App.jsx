@@ -19,7 +19,6 @@ import { ApprovalProvider } from './contexts/ApprovalContext'
 import { YoutubeMusicPlayer } from './components/YoutubeMusicPlayer'
 import { GlobalCameraManager } from './components/GlobalCameraManager'
 import { getAllConfig } from './api/db'
-import { initOramaIndices, hydrateFromDb } from './api/oramaStore'
 import { pauseStaleAgentTasks } from './api/taskStore'
 
 const GlobalListener = () => {
@@ -170,7 +169,6 @@ const MainLayout = () => {
 function App() {
   const [hasConfig, setHasConfig] = useState(true)
   const [isChecking, setIsChecking] = useState(true)
-  const [loadingText, setLoadingText] = useState('Membangunkan Mark...')
   const [showRecovery, setShowRecovery] = useState(false)
 
   useEffect(() => {
@@ -198,53 +196,9 @@ function App() {
         console.error('[App] Failed to check initial config:', err)
       }
 
-      // 1. Init Orama and Hydrate from Database (hanya saat config sudah tersedia)
-      try {
-        setLoadingText('Memuat indeks memori...')
-        await initOramaIndices()
-        await hydrateFromDb((current, total) => {
-          setLoadingText(`Mengindeks memori percakapan lama (${current}/${total})...`)
-        })
-        // Recovery saat boot: task yang terputus tidak boleh tetap berstatus running.
-        const pausedTaskCount = await pauseStaleAgentTasks('app_restart')
-        if (pausedTaskCount > 0) {
-          console.log(`[App] ${pausedTaskCount} durable task dipause setelah restart.`)
-        }
-        console.log('[App] Orama indices ready!')
-      } catch (e) {
-        console.error('[App] Failed to init Orama:', e)
-      }
-
-      // 1.5 Load Embeddings Model
-      try {
-        setLoadingText('Memuat Memori Kognitif...')
-        const { getExtractor } = await import('./api/vectorMemory')
-        let memStats = {}
-        await getExtractor((info) => {
-          if (info.status === 'initiate') {
-            memStats[info.file] = { loaded: 0, total: info.total || 0 }
-          } else if (info.status === 'progress') {
-            if (memStats[info.file]) {
-              memStats[info.file].loaded = info.loaded
-              memStats[info.file].total = info.total
-            }
-            const values = Object.values(memStats)
-            const totalBytes = values.reduce((acc, curr) => acc + curr.total, 0)
-            const loadedBytes = values.reduce((acc, curr) => acc + curr.loaded, 0)
-            if (totalBytes > 0) {
-              const percent = Math.round((loadedBytes / totalBytes) * 100)
-              const loadedMB = (loadedBytes / 1024 / 1024).toFixed(1)
-              const totalMB = (totalBytes / 1024 / 1024).toFixed(1)
-              setLoadingText(`Mengunduh Memori AI... ${percent}% (${loadedMB}MB / ${totalMB}MB)`)
-            }
-          } else if (info.status === 'done' || info.status === 'ready') {
-            setLoadingText('Membangunkan Mark...')
-          }
-        })
-      } catch (e) {
-        console.error('[App] Failed to load Transformers:', e)
-      }
-
+      await pauseStaleAgentTasks('app_restart').catch((error) => {
+        console.warn('[App] Gagal memulihkan status workflow:', error.message)
+      })
       setIsChecking(false)
     }
     checkConfig()
@@ -256,7 +210,7 @@ function App() {
         <div className="flex-1 flex flex-col items-center justify-center gap-5">
           <span className="loading loading-infinity w-16 text-primary"></span>
           <p className="text-sm font-semibold tracking-[0.2em] text-white/40 uppercase animate-pulse text-center px-4">
-            {loadingText}
+            Membangunkan Mark…
           </p>
           {showRecovery && (
             <div className="absolute bottom-10 flex flex-col items-center animate-fade-in">

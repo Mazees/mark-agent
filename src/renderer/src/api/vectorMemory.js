@@ -1,136 +1,89 @@
-import { searchArchives, searchMemoriesInOrama, searchTurnPairsInOrama } from './oramaStore'
-import { getAllMemory } from './db'
+import { parseMemorySearch } from '@shared/memory-search.js'
 import { API_BASE } from './web-bridge'
 
-export const getExtractor = async () => {
-  return true
+async function requestMemory(operation, body, signal) {
+  const response = await fetch(`${API_BASE}/api/memory/${operation}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal
+  })
+  const result = await response.json()
+  if (!response.ok || !result.success)
+    throw new Error(result.error || 'Pencarian memori tidak tersedia.')
+  return result.data
 }
 
-export const generateVector = async (text) => {
-  if (!text || typeof text !== 'string' || !text.trim()) {
-    return null
-  }
-
-  try {
-    const res = await fetch(`${API_BASE}/api/vector`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(8000)
-    })
-    const json = await res.json()
-    return json.vector || null
-  } catch (error) {
-    console.warn(
-      '[vectorMemory] Gagal generate vector via server API (timeout/error):',
-      error?.message
-    )
-    return null
-  }
+export function getUnifiedContext(query, signal, lexicalQuery = query) {
+  return requestMemory('context', { query, lexicalQuery }, signal)
 }
 
-// SEARCH: Rumus matematika buat ngukur kemiripan (0 sampai 1)
-export const cosineSimilarity = (vecA, vecB) => {
-  if (!Array.isArray(vecA) || !Array.isArray(vecB) || vecA.length === 0 || vecB.length === 0) {
-    return 0
-  }
-
-  return vecA.reduce((sum, a, i) => sum + a * vecB[i], 0)
+export async function getRelevantMemory() {
+  return (await getUnifiedContext('')).memories
 }
 
-export const getRelevantMemory = async (userInput, memoryList) => {
-  let list = memoryList
-  if (!Array.isArray(list)) {
-    try {
-      list = await getAllMemory()
-    } catch (e) {
-      list = []
-    }
-  }
-  if (!Array.isArray(list)) {
-    list = []
-  }
-  const coreMemories = list
-    .filter((m) => m && typeof m === 'object' && (m.type === 'profile' || m.type === 'preference'))
-    .map(({ vector, ...rest }) => rest)
-
-  return coreMemories
-}
-
-export const searchExtendedMemory = async (query, threshold = 0.5, limit = 5) => {
-  const queryVector = await generateVector(query)
-  if (!queryVector) return { memories: [], chatTurns: [] }
-
-  const memories = await searchMemoriesInOrama(
-    query,
-    queryVector,
-    limit,
-    ['notes', 'learn'],
-    threshold
+export async function findSimilarMemory(query, type, signal) {
+  const { hits } = await requestMemory(
+    'search',
+    {
+      query,
+      sources: ['memories'],
+      types: [type],
+      threshold: 0.82,
+      limit: 1,
+      semanticOnly: true
+    },
+    signal
   )
-  const chatTurns = await searchTurnPairsInOrama(query, queryVector, limit, threshold)
-
-  return { memories, chatTurns }
+  return hits.memories[0]
 }
 
-export const executeMemorySearch = async (rawQuery) => {
-  const parts = (rawQuery || '').split('||')
-  const searchKeyword = parts[0]?.trim() || ''
-  const customThreshold =
-    parts[1] && !isNaN(parseFloat(parts[1])) ? parseFloat(parts[1].trim()) : 0.5
-  const customLimit = parts[2] && !isNaN(parseInt(parts[2], 10)) ? parseInt(parts[2].trim(), 10) : 5
+export function findSimilarMemoryClusters(threshold) {
+  return requestMemory('clusters', { threshold })
+}
 
-  const { memories = [], chatTurns = [] } = await searchExtendedMemory(
-    searchKeyword,
-    customThreshold,
-    customLimit
+export async function executeMemorySearch(rawQuery, signal) {
+  const { query, threshold, limit } = parseMemorySearch(rawQuery)
+  const { hits, mode } = await requestMemory(
+    'search',
+    {
+      query,
+      threshold,
+      limit,
+      sources: ['memories', 'chatTurns'],
+      types: ['notes', 'learn']
+    },
+    signal
   )
-
-  const formattedMemories =
-    memories.length > 0
-      ? memories
-          .map(
-            (m) =>
-              `- [${m.type.toUpperCase()}] (ID:${m.id}, Score:${(m.score || 0).toFixed(2)}) ${m.memory}`
-          )
+  const { memories, chatTurns } = hits
+  const score = (hit) => (hit.score == null ? 'Kata kunci' : `Score:${hit.score.toFixed(2)}`)
+  const sections = []
+  if (memories.length) {
+    sections.push(
+      '[CATATAN & MEMORI PENGGUNA]\n' +
+        memories
+          .map((m) => `- [${m.type.toUpperCase()}] (ID:${m.id}, ${score(m)}) ${m.memory}`)
           .join('\n')
-      : ''
-
-  const formattedTurns =
-    chatTurns.length > 0
-      ? chatTurns
+    )
+  }
+  if (chatTurns.length) {
+    sections.push(
+      '[RIWAYAT PERCAKAPAN ASLI (TURN PAIRS)]\n' +
+        chatTurns
           .map(
             (t) =>
-              `--- [RIWAYAT CHAT: "${t.sessionTitle || 'Session'}" | Score:${(t.score || 0).toFixed(2)}] ---\n${t.combinedText}`
+              `--- [RIWAYAT CHAT: "${t.sessionTitle || 'Session'}" | ${score(t)}] ---\n${t.combinedText}`
           )
           .join('\n\n')
-      : ''
-
-  let sections = []
-  if (formattedMemories) {
-    sections.push(`[CATATAN & MEMORI PENGGUNA]\n${formattedMemories}`)
+    )
   }
-  if (formattedTurns) {
-    sections.push(`[RIWAYAT PERCAKAPAN ASLI (TURN PAIRS)]\n${formattedTurns}`)
-  }
-
-  if (sections.length > 0) {
-    return `[MEMORY SEARCH RESULTS (Threshold: ${customThreshold}, Limit: ${customLimit})]\n\n${sections.join('\n\n')}`
-  }
-  return `[MEMORY SEARCH RESULTS (Threshold: ${customThreshold}, Limit: ${customLimit})]\nTidak ditemukan memori atau percakapan yang relevan dengan kata kunci "${searchKeyword}".`
-}
-
-export const getUnifiedContext = async (userInput, memoryList) => {
-  const memories = await getRelevantMemory(userInput, memoryList)
-
-  const output = await generateVector(userInput)
-  if (!output) return { memories, archives: [], turnPairs: [] }
-  const userVector = Array.from(output)
-
-  const [archives, turnPairs] = await Promise.all([
-    searchArchives(userVector, 3),
-    searchTurnPairsInOrama(userInput, userVector, 3, 0.3)
-  ])
-
-  return { memories, archives, turnPairs }
+  const title = `[MEMORY SEARCH RESULTS (Threshold: ${threshold}, Limit: ${limit})]`
+  const modeNotice = mode === 'keyword' && query ? '\nPencarian terbatas pada kata kunci.' : ''
+  return (
+    title +
+    modeNotice +
+    '\n\n' +
+    (sections.join('\n\n') ||
+      `Tidak ditemukan memori atau percakapan yang relevan dengan "${query}".`)
+  )
 }

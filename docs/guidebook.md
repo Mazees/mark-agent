@@ -31,7 +31,7 @@ Guidebook diperbarui berdasarkan source UI, route server, registry tool, add-on,
 | Proses latar belakang    | Berkas dan terminal                 | `task-tools.js`, `task-daemon.js`, `tasks.routes.js`                                                         |
 | Multi-agent              | Minibots      | `Subagents.jsx`, komponen `subagent/`, `subagentStore.js`, `subagentExecutor.js`                             |
 | Workflow dan checkpoint  | Task Workflow dan hasil bertahap    | `taskStore.js`, `taskExecutor.js`, `executeAgentTool.js`, `DurableTaskBubble.jsx`, skill `/task`             |
-| Memori dan karakter      | Memori dan Neural Core              | `NeuralCore.jsx`, komponen `neural-core/`, `db.js`, `db-store.js`, `orama-store.js`                          |
+| Memori dan karakter      | Memori dan Neural Core              | `NeuralCore.jsx`, komponen `neural-core/`, `db.js`, `db-store.js`, `memory-retrieval.js`                          |
 | Awareness dan avatar     | Avatar, karakter, dan Awareness     | `useAwareness.js`, `awareness.js`, `useRelationalGrowth.js`, `MarkHome.jsx`                                  |
 | Suara dan kamera         | Suara, mikrofon, kamera, dan vision | `useVAD.js`, `webSpeech.js`, `VoiceSection.jsx`, `CameraSection.jsx`, `GlobalCameraManager.jsx`, media tools |
 | YouTube dan musik        | YouTube dan pemutar musik           | `YoutubeMusicContext.jsx`, `YoutubeMusicPlayer.jsx`, schema `youtube_music`                                  |

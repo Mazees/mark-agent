@@ -19,7 +19,7 @@ mark/
 │   │   ├── index.js                 # Server bootstrapper & dynamic port listener
 │   │   ├── launcher.js              # Edge App Mode browser launcher
 │   │   ├── ws-hub.js                # WebSocket Hub (/stream)
-│   │   ├── memory/                  # SQLite db-store.js, Orama WASM, Vector Engine
+│   │   ├── memory/                  # SQLite db-store.js, worker pencarian SQLite, Vector Engine
 │   │   ├── routes/                  # Modular REST routers (index.js, chat, tasks, dll)
 │   │   ├── services/                # ai-bridge.js (fetchAI) & gemini-web.js
 │   │   └── tools/                   # pc-agent.js, media-tools.js, group-tools.js

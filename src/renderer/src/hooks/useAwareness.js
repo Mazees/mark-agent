@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { getAllMemory } from '../api/db'
 import { getRelevantMemory } from '../api/vectorMemory'
 import { getAwarenessResponse } from '../api/ai/awareness'
 import { subagentStore } from '../api/subagent/subagentStore'
@@ -101,8 +100,7 @@ export const useAwareness = ({
           buffer.telemetry = telemetry
         }
 
-        const allMemory = await getAllMemory()
-        const memoryRef = await getRelevantMemory('aktivitas user bekerja dan rutinitas', allMemory)
+        const memoryRef = await getRelevantMemory()
 
         const recentChat = (chatDataRef.current || [])
           .filter((m) => !m.isThinking && !m.isSearching && !m.isSummarizing)

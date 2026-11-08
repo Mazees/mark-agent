@@ -21,7 +21,7 @@ MARK diciptakan sebagai asisten otonom tingkat sistem operasi (_Autonomous AI OS
 | **Lingkungan Eksekusi**  | Server Cloud Tertutup                      | Container / Python Server                 | Mesin Pengguna (Windows Desktop)    |
 | **Akses Sistem Operasi** | Tidak Ada                                  | Terbatas pada Sandbox Docker              | Langsung ke Win32 API & Shell Lokal |
 | **Otomasi Browser**      | Serverless / Cloud Browser                 | Playwright Server                         | Multi-Session Puppeteer Terisolasi  |
-| **Penyimpanan Data**     | Basis Data Penyedia Cloud                  | Basis Data Eksternal / Vector DB SaaS     | SQLite Terpusat Lokal + Orama WASM  |
+| **Penyimpanan Data**     | Basis Data Penyedia Cloud                  | Basis Data Eksternal / Vector DB SaaS     | SQLite lokal + sqlite-vec  |
 | **Kontrol Keamanan**     | Hardcoded di Server                        | Bergantung Pengembang                     | 4-Tier Approval & Auto Mode (YOLO)  |
 | **Interaksi Suara**      | WebRTC Cloud                               | Cloud API (Whisper / ElevenLabs)          | Web Speech API Lokal + Edge-TTS     |
 
@@ -54,7 +54,7 @@ graph TB
             PortMgr["Dynamic Port Manager (3000 + Fallback)"]
             DBStore["SQLite Store (better-sqlite3)"]
             VectorEng["Vector Engine (Transformers.js 384d)"]
-            OramaStore["Orama WASM Hybrid Search Engine"]
+            MemorySearch["Pencarian hibrida SQLite di worker"]
             AIBridge["AI Bridge (Multi-Provider HTTP & RPC)"]
         end
 
@@ -77,7 +77,7 @@ graph TB
 
     ExpressApp --> DBStore
     ExpressApp --> VectorEng
-    ExpressApp --> OramaStore
+    ExpressApp --> MemorySearch
     ExpressApp --> AIBridge
     ExpressApp --> NodeTools
 
@@ -96,7 +96,7 @@ graph TB
 - **Web Framework**: [Express 4](https://expressjs.com/)
 - **Real-Time Stream**: [ws](https://github.com/websockets/ws) (WebSocket Hub di rute `/stream`)
 - **Basis Data Utama**: [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) (SQLite terpusat dengan Write-Ahead Logging di `~/.config/mark-agent/mark.db`)
-- **Pencarian Vektor & Full-Text**: [@orama/orama](https://orama.com/) (Pencarian hibrida berbasis WebAssembly)
+- **Pencarian Vektor dan Kata Kunci** menggunakan SQLite dan sqlite-vec di worker backend.
 - **Model Vektor Lokal**: [@huggingface/transformers](https://huggingface.co/docs/transformers.js) (Model embeddings 384 dimensi `Xenova/paraphrase-multilingual-MiniLM-L12-v2` berjalan lokal via WASM)
 
 ### Frontend & Antarmuka Pengguna

@@ -25,7 +25,7 @@ graph TD
     UI <-->|WebSocket Stream /stream| WSHub["WebSocket Hub (ws-hub.js)"]
 
     Server --> SQLite[("SQLite Engine (better-sqlite3)")]
-    Server --> Orama[("Orama WASM Hybrid Search")]
+    Server --> Search[("Worker pencarian hibrida SQLite")]
     Server --> Transformers["Vector Engine (Transformers.js 384d)"]
 
     Server --> Bridge["AI HTTP Bridge (Multi-Provider Router)"]
@@ -59,7 +59,7 @@ Bedah arsitektur internal backend, komunikasi IPC, dan penyimpanan basis data.
 
 - [Desain Sistem & Komunikasi IPC](./02-architecture/system-design.md): Alur request HTTP REST, WebSocket `/stream`, dan dynamic port manager.
 - [SQLite & Client DB Proxy](./02-architecture/state-and-database.md): Struktur 12 tabel relasional, auto-migration skema, dan transparent REST proxy `TableProxy`.
-- [Vector Engine, Search, & Context](./02-architecture/search-and-memory.md): Embeddings lokal Transformers.js (384d), Orama WASM, dan Context Manager compaction.
+- [Vector Engine, Search, & Context](./02-architecture/search-and-memory.md): Embeddings lokal Transformers.js (384d), sqlite-vec, dan Context Manager compaction.
 
 ### [03. Agent Engine & Cognitive Brain](./03-agent-engine/react-loop.md)
 

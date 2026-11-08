@@ -27,7 +27,7 @@
 - **Operator-Style Execution Timeline & Parameter Reason:** Visualisasi langkah eksekusi ReAct bergaya modern operator dengan status badge lipat (_collapsible details_), parameter `reason` terstruktur pada setiap eksekusi tool, dan rendering intervensi pengguna langsung di alur langkah eksekusi (_in-flight user intervention_).
 - **Interactive File Diff Modal & Syntax Safety:** Inspeksi visual perbedaan berkas (_file diff_) sebelum dan sesudah perubahan kode diterapkan. Mendukung peninjauan baris kode yang ditambah/dihapus secara interaktif serta validasi sintaksis otomatis (_syntax validator_) sebelum penulisan ke disk untuk mencegah kerusakan berkas kode.
 - **Kapasitas Konteks Masif (256K Tokens) & Zero-Recalc Caching:** Manajemen konteks cerdas berkapasitas hingga 256.000 token dengan caching token persisten di basis data SQLite. Mencegah komputasi ulang token yang boros sumber daya dan memungkinkan dialog teknis serta analisis repositori kode bervolume besar secara instan.
-- **Centralized SQLite & Real-Time Hybrid Vector Engine:** Seluruh data (memori kognitif, riwayat obrolan, turn pairs, konfigurasi, Minibot, dan tasks) tersimpan terpusat di `%USERPROFILE%\.config\mark-agent\mark.db` menggunakan `better-sqlite3` dalam WAL mode berkecepatan tinggi. Diindeks secara _real-time_ ke mesin pencari hybrid `@orama/orama` menggunakan model embedding lokal 384-dimensi (`Xenova/paraphrase-multilingual-MiniLM-L12-v2`) via Transformers.js tanpa ketergantungan API luar.
+- **Centralized SQLite & Real-Time Hybrid Vector Engine:** Seluruh data (memori kognitif, riwayat obrolan, turn pairs, konfigurasi, Minibot, dan tasks) tersimpan terpusat di `%USERPROFILE%\.config\mark-agent\mark.db` menggunakan `better-sqlite3` dalam WAL mode berkecepatan tinggi. Pencarian hibrida berjalan di worker melalui SQLite dan `sqlite-vec`. Embedding 384 dimensi dibuat secara lokal dengan `Xenova/paraphrase-multilingual-MiniLM-L12-v2`.
 - **Universal Zero-Hallucination Policy & Strict Groundedness:** Menerapkan kebijakan anti-halusinasi ketat di seluruh ekosistem Mark. Jika data riwayat percakapan lama, berkas kode, atau fakta dokumen tidak ditemukan, Mark wajib jujur mengakuinya dan dilarang keras mengarang informasi, menambah-nambahkan poin fiktif (_anti-extrapolation_), atau berpura-pura mengingat hal yang belum pernah dibahas.
 - **Multi-Session Isolated Browser Automation:** Sistem browser Chromium fisik Mark mendukung sesi independen tanpa batas berbasis `puppeteer-core`. Beberapa Minibot dapat melakukan riset web, menavigasi Google, mengekstrak data, dan mengisi formulir secara bersamaan tanpa saling mengganggu, didukung oleh **Multi-Card Holo Preview** yang menampilkan status visual tiap sesi di antarmuka desktop.
 - **Dynamic Agentic Planning (ReAct Loop):** Mengganti sistem penjawab statis dengan arsitektur penalaran cerdas. Mark mampu memecah masalah, memikirkan strategi, menggunakan _tools_ secara otonom berulang kali, dan mengevaluasi hasilnya sebelum memberikan jawaban akhir yang komprehensif.
@@ -38,7 +38,7 @@
 - **Workspace Tagging (`@workspace`) & Context Clusters:** Dukungan penandaan konteks direktori kerja secara eksplisit (`@workspace`), pencarian semantik file kerja lokal (_Workspace RAG_), dan pengelompokan tool dinamis (_tool clusters_) sesuai kebutuhan tugas.
 - **Developer-Grade Responsive CLI Live Monitor & Auto-Updater:** Antarmuka terminal interaktif yang beradaptasi secara dinamis dengan lebar layar terminal mana pun (`process.stdout.columns`), notifikasi pembaruan resmi otomatis di latar belakang, zero emoji, dan shortcut kontrol cepat (`[u]` buka UI, `[p]` update info, `[c]` bersihkan layar, `[q]` keluar).
 - **Infinite Memory:** Sistem Vector Retrieval-Augmented Generation (RAG) berjalan secara _offline_. Mark menyimpan riwayat memori obrolan masif tanpa batas.
-- **Automatic Memory Groomer (Hippocampus Engine):** Sistem pembersihan dan konsolidasi memori mandiri berbasis _Orama Clustering_ dan _LLM Batch Processing_. Hippocampus Engine mendeteksi klaster memori serupa (`profile` & `preference`) lalu menggabungkannya secara kronologis tanpa kehilangan riwayat penting.
+- **Automatic Memory Groomer (Hippocampus Engine):** Sistem pembersihan dan konsolidasi memori mandiri berbasis pengelompokan berdasarkan kemiripan vektor dan _LLM Batch Processing_. Hippocampus Engine mendeteksi klaster memori serupa (`profile` & `preference`) lalu menggabungkannya secara kronologis tanpa kehilangan riwayat penting.
 - **Visualisasi Jaringan Otak (Memory Visualizer):** Antarmuka _Live Feed_ "Mark Neural Core" berbasis grafis Neural Network 2D interaktif (`react-force-graph-2d`) untuk menjelajahi riwayat chat, memori pengguna, dan skill yang dipelajari.
 - **Relational Growth System & Tactile Avatar:** Hubungan Anda dengan Mark dievaluasi layaknya manusia sungguhan melalui 4 parameter krusial (_Warmth, Sarcasm, Trust, Energy_) dengan preservasi riwayat mood AI dan respons interaksi visual taktil pada avatar. Tingkat kesopanan, kelancangan (_roasting_), dan kepribadian Mark akan berevolusi organik sesuai gaya komunikasi Anda.
 - **Multi AI Provider (Built-in Gemini / DeepSeek / Local / Cloud):** Mark hadir dengan **Google Gemini Engine (Gratis)** sebagai _provider_ bawaan yang siap pakai tanpa API Key. Anda juga memiliki fleksibilitas penuh untuk menggunakan **DeepSeek Web RPC**, **Local AI** (LM Studio), **Cloud AI** (Groq / Cerebras), maupun _Custom OpenAI-Compatible API_.
@@ -76,7 +76,7 @@ Arsitektur memori Mark dirancang untuk kontinuitas ingatan jangka panjang (_Long
 1. **Episodic Memory (Turn-Pair Vector Index)**:
    - Setiap sesi percakapan dipecah ke dalam unit dialog utuh (Pertanyaan Pengguna + Jawaban AI).
    - Dihitung embedding-nya (vektor 384-dimensi) menggunakan model lokal Transformers.js (`MiniLM-L12-v2`).
-   - Disimpan secara persisten di tabel `chat_turns` SQLite dan diindeks ke `@orama/orama` untuk pencarian semantik hybrid (BM25 + Cosine Similarity).
+   - Disimpan secara persisten di tabel `chat_turns` SQLite dan dapat ditemukan melalui pencocokan kata kunci serta kemiripan kosinus.
 2. **Semantic & Core Memory (`profile`, `preference`, `notes`)**:
    - Menyimpan fakta identitas pengguna, preferensi gaya bicara, dan catatan eksplisit di tabel `memories`.
    - Dikelola dan dirampingkan secara otomatis oleh _Hippocampus Memory Groomer_.
@@ -104,7 +104,7 @@ mark/
 │   │   ├── routes/            # Modular Express Routers (tasks.routes.js, etc.)
 │   │   ├── memory/
 │   │   │   ├── db-store.js    # Centralized SQLite Engine (better-sqlite3, 12 tables)
-│   │   │   ├── orama-store.js # Hybrid Orama Vector & Text Search
+│   │   │   ├── memory-worker.js # Pencarian hibrida pada SQLite
 │   │   │   └── vector-engine.js # Transformers.js 384d Local Embeddings
 │   │   ├── services/
 │   │   │   ├── ai-bridge.js   # Multi-Provider Router, Rate Limiter, JSON Repair
@@ -150,7 +150,7 @@ mark/
 | **Antarmuka (UI)**         | React 19, Vite 7, Tailwind CSS 4, DaisyUI 5, Monaco Editor, Lucide Icons                |
 | **Desktop Launcher**       | Node.js CLI Live Monitor (`mark`), Microsoft Edge App Mode                              |
 | **Database & Storage**     | Centralized SQLite (`better-sqlite3` WAL Mode), REST Proxy Layer                        |
-| **Pencarian & Vektor**     | `@orama/orama` WASM, Transformers.js (`@huggingface/transformers`, 384d)                |
+| **Pencarian & Vektor**     | `sqlite-vec`, SQLite, Transformers.js (`@huggingface/transformers`, 384d)                |
 | **Mesin AI**               | Google Gemini (Bawaan Gratis) / Custom Open AI API Format / LM Studio (Offline)         |
 | **Browser Automation**     | `puppeteer-core` (Multi-Session Chromium Isolation)                                     |
 | **Desktop Automation**     | Win32 UIAutomation, persistent PowerShell C# Daemon, WinRT OCR                          |

@@ -1,7 +1,5 @@
 import { fetchAI } from './core'
-import { generateVector } from '../vectorMemory'
 import { insertChatArchive } from '../db'
-import { insertArchiveToOrama } from '../oramaStore'
 
 export async function summarizeAndArchive(recentMessages, activeTopic, config) {
   if (!recentMessages || recentMessages.length === 0) return
@@ -42,36 +40,15 @@ Aturan:
     const summary = response.content?.trim()
     if (!summary) return
 
-    const vector = await generateVector(summary)
-    if (!vector) {
-      console.error('[ChatSummarizer] Gagal generate vector untuk summary')
-      return
-    }
-
     const timestamp = Date.now()
     const topic = activeTopic || 'Obrolan Umum'
 
-    // 1. Simpan ke SQLite Database
     const dbId = await insertChatArchive({
       summary,
       timestamp,
-      topic,
-      vector
+      topic
     })
-
-    // 2. Insert ke Orama
-    await insertArchiveToOrama({
-      summary,
-      topic,
-      timestamp,
-      dbId: String(dbId),
-      vector
-    })
-
-    console.log(
-      '[ChatSummarizer] Sukses merangkum dan mengarsipkan:',
-      summary.substring(0, 60) + '...'
-    )
+    if (!dbId) throw new Error('Ringkasan belum dapat disimpan.')
   } catch (error) {
     if (error.name !== 'AbortError' && !error.message.includes('AbortError')) {
       console.error('[ChatSummarizer] Exception saat merangkum:', error)

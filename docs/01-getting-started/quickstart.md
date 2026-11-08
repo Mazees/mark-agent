@@ -53,7 +53,7 @@ sequenceDiagram
     CLI->>Server: Inisialisasi startServer({ port, dev, headless })
     Server->>SQLite: Buka koneksi WAL mode & pastikan skema 12 tabel
     Server->>Server: Inisialisasi WebSocket Hub (/stream)
-    Server->>Server: Muat plugin, tracker awareness, & Orama search
+    Server->>Server: Muat plugin dan tracker awareness. Panaskan model memori di latar belakang
     Server->>CLI: Server siap pada port aktif (misal 3000)
 
     par Terminal Monitor & UI Launcher
